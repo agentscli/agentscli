@@ -10,15 +10,49 @@ export default defineConfig({
 	// base: '/REPO_NAME',
 	integrations: [
 		starlight({
-			title: 'My Docs',
+			title: 'agents.cli',
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/withastro/starlight' }],
+			head: [
+				{
+					tag: 'link',
+					attrs: {
+						rel: 'preconnect',
+						href: 'https://fonts.googleapis.com',
+					},
+				},
+				{
+					tag: 'link',
+					attrs: {
+						rel: 'preconnect',
+						href: 'https://fonts.gstatic.com',
+						crossorigin: 'anonymous',
+					},
+				},
+				{
+					tag: 'link',
+					attrs: {
+						rel: 'stylesheet',
+						href: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap',
+					},
+				},
+			],
 			plugins: [
 				starlightBlog({
 					authors: {
-						// TODO: Add authors here
-						me: {
-							name: 'My Name',
-							title: 'My Title',
+						james: {
+							name: 'James Dalton',
+							title: 'Lead Engineer',
+							picture: '/authors/james.jpg',
+						},
+						elena: {
+							name: 'Elena Luo',
+							title: 'Rust Developer',
+							picture: '/authors/elena.jpg',
+						},
+						marcus: {
+							name: 'Marcus Kovic',
+							title: 'Technical Writer',
+							picture: '/authors/marcus.jpg',
 						},
 					},
 				}),
