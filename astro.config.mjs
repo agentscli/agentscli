@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightBlog from 'starlight-blog';
+import react from '@astrojs/react';
 
 // https://astro.build/config
 export default defineConfig({
@@ -9,8 +10,15 @@ export default defineConfig({
 	// site: 'https://USERNAME.github.io',
 	// base: '/REPO_NAME',
 	integrations: [
+		react(),
 		starlight({
 			title: 'agents.cli',
+			logo: {
+				src: './public/logo.svg',
+				replacesTitle: true,
+			},
+			// Apply custom dark/purple theme globally to all pages
+			customCss: ['./src/styles/theme.css'],
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/withastro/starlight' }],
 			head: [
 				{
