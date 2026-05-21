@@ -1,0 +1,82 @@
+---
+// Individual Blog Post Page - Custom Figma Design
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import BlogPostLayout from '../../layouts/BlogPostLayout.astro';
+import { getHero } from '../../lib/cover';
+
+// Generate paths for all blog posts
+export async function getStaticPaths() {
+  const docs = await getCollection('docs');
+
+  // Filter for blog posts (those with a date field)
+  const blogPosts = docs.filter(doc => 'date' in doc.data && doc.data.date);
+
+  return blogPosts.map(post => {
+    // Extract slug from the post id (e.g., "blog/my-post" -> "my-post")
+    const slug = post.id.replace('blog/', '');
+
+    return {
+      params: { slug },
+      props: { post },
+    };
+  });
+}
+
+interface Props {
+  post: CollectionEntry<'docs'>;
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+const data = post.data as any;
+
+// Author mapping
+const authorMap: Record<string, { name: string; title: string }> = {
+  sourabh: { name: 'Sourabh Kushwah', title: 'Software Engineer' },
+  sanjay: { name: 'Sanjay Kushwah', title: 'Software Engineer' },
+};
+
+// Get author info
+function getAuthor() {
+  if (data.authors) {
+    if (typeof data.authors === 'string') {
+      return authorMap[data.authors] || { name: data.authors, title: '' };
+    }
+    if (typeof data.authors === 'object' && data.authors.name) {
+      return { name: data.authors.name, title: data.authors.title || '' };
+    }
+  }
+  return { name: 'Unknown', title: '' };
+}
+
+const author = getAuthor();
+
+// Calculate read time
+function calculateReadTime(wordCount: number): string {
+  const minutes = Math.ceil(wordCount / 200);
+  return `${minutes} min read`;
+}
+
+// Format date
+function formatDate(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
+// Get word count from remark plugin frontmatter if available
+const wordCount = (data as any).wordCount || 500;
+const readTime = calculateReadTime(wordCount);
+const formattedDate = formatDate(new Date(data.date));
+const heroImage = getHero(post.id);
+---
+
+<BlogPostLayout
+  title={data.title}
+  description={data.description || data.excerpt}
+  category={data.category || 'TECHNICAL GUIDES'}
+  author={author}
+  date={formattedDate}
+  readTime={readTime}
+  heroImage={heroImage}
+>
+  <Content />
+</BlogPostLayout>

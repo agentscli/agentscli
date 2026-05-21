@@ -1,49 +1,60 @@
-# Starlight Starter Kit: Basics
+<div align="center">
+  <img src="public/hero.png" alt="agents.cli hero banner" width="100%" />
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+  # 🤖 agents.cli
 
+  **The missing layer between you and your AI agents.**
+  
+  [![Website](https://img.shields.io/badge/Website-agents.cli-blueviolet?style=for-the-badge)](#)
+  [![License](https://img.shields.io/badge/License-Private-red?style=for-the-badge)](#)
+</div>
+
+---
+
+## 🌟 Overview
+
+**agents.cli** is your ultimate **warehouse and learning hub** for the most powerful AI coding assistants available today. Whether you're working with **Claude**, **OpenCode**, **KiloCode**, **GitHub Copilot**, or other cutting-edge tools, we provide a centralized website and knowledge base to help you master them all.
+
+Beyond just a repository, it's a living educational platform designed to help you leverage AI skills, custom commands, integration hooks, and multi-tool workflows.
+
+---
+
+## 🚀 Key Features
+
+*   🧠 **The Agent Warehouse**: Discover, compare, and integrate popular AI agents including Claude, OpenCode, KiloCode, GitHub Copilot, and more.
+*   🎓 **Interactive Learning Hub**: Access comprehensive blogs, tutorials, and deep-dives on how to maximize your productivity with AI tools.
+*   🛠️ **Master Skills & Commands**: Learn to define, configure, and execute custom skills and CLI commands that supercharge your daily workflow.
+*   🔗 **Hooks & Integrations**: Connect your existing toolchain seamlessly with powerful webhooks and CLI extensions.
+*   📚 **Rich Content Library**: Regularly updated guides detailing exactly how specific features are provided across multiple tools.
+
+## 📖 What You'll Learn
+
+*   **Agent Integration**: How to plug multiple AI agents seamlessly into your development environment.
+*   **Workflow Automation**: Strategies for chaining commands and automating repetitive coding tasks.
+*   **Advanced Hook Usage**: Utilizing lifecycle hooks to trigger AI reviews, tests, and deployments automatically.
+*   **Skill Building**: Crafting specialized skills that your agents can utilize on demand natively.
+
+## 📚 Documentation & Blogs
+
+Dive into our growing collection of resources:
+*   [Getting Started with agents.cli](#)
+*   [Comparing Claude vs. GitHub Copilot in the CLI](#)
+*   [How to Build Custom Skills for OpenCode](#)
+*   [Automating Workflows with Hooks](#)
+
+## 🛠️ Quick Start
+
+Explore our documentation and install the CLI globally to get started:
+
+```bash
+npm install -g agents-cli
+agents-cli init
 ```
-npm create astro@latest -- --template starlight
-```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+## 🤝 Contributing
 
-## 🚀 Project Structure
+We welcome contributions from the community! Whether it's adding a new tutorial, fixing a bug, or suggesting a new agent integration, please read our contributing guidelines.
 
-Inside of your Astro + Starlight project, you'll see the following folders and files
+## 📄 License
 
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
-```
-
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
-
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
-
-Static assets, like favicons, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+This project is proprietary and closed-source. All rights reserved.

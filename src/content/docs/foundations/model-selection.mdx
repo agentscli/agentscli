@@ -1,0 +1,147 @@
+---
+title: Model selection & multi-provider
+description: Which models each CLI can drive, and which one breaks the single-vendor mould.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What model selection is
+
+Every CLI in scope can be steered to a specific underlying model — and most can swap models *mid-session*. The model is the engine: a "smarter" model reasons more deeply, plans longer, and costs more per token; a "lighter" model is faster, cheaper, and good enough for most mechanical work.
+
+Two of the three CLIs are vendor-locked: **Claude Code** runs Anthropic models, **Codex** runs OpenAI models. **opencode** is multi-provider — Anthropic, OpenAI, Google, local models, or anything that fits its provider abstraction. That distinction shapes everything downstream: model swaps, cost optimisation, side-by-side comparisons.
+
+## Why you'd want to think about this
+
+You glance at the month's API bill and realise you've been paying flagship-model rates to do… *flagship-model things*: renaming variables, regenerating docstrings, running greps and summarising the results, reformatting a JSON file. Tasks the cheapest model in the lineup would handle in half a second. You don't need Opus to spell `connectionTimeout` correctly.
+
+The reverse trap exists too. You've been letting the cheap fast model lead a complex refactor because you didn't want to pay for the big one, and now you're three rounds into untangling a design it tied itself in knots over. The cheap model's hourly cost was negligible. The *total* cost — yours, in time spent unscrewing what it did — wasn't.
+
+That's the gap model selection closes. Match the model to the work: heavyweight for hard reasoning (planning, code review of long diffs, debugging, architecture), default for everyday coding, lightweight for mechanical or exploratory tasks. The same CLI runs all three; you choose per task or per subagent.
+
+**Real-world examples of how teams allocate models:**
+
+- **The main loop uses the default** — Sonnet (Claude Code) or GPT-5.x default (Codex) — calibrated for general coding.
+- **Heavy planning / review uses the flagship** — switch to Opus / strongest GPT-5 for *"design this feature,"* *"review this 800-line diff,"* *"debug this race condition."* Switch back after.
+- **Exploration subagents use the cheap fast model** — Haiku / `gpt-5.4-mini` / a small Gemini for *"find every place we call X"* or *"summarise these 40 files."* The work is high-volume and low-stakes per call.
+- **Side-by-side comparisons (opencode)** — same prompt to Claude, GPT-5, and a Gemini; diff the answers. Useful for hard architecture questions where you don't trust any single answer.
+- **Local / private models for sensitive code** — opencode pointed at a local Ollama or LM Studio for code that mustn't leave the machine.
+- **Provider failover** — when one provider has an outage or rate-limits, opencode lets you swap providers without changing tool.
+
+The test: if you've been using the same model for everything, you're either overpaying or under-thinking. The right answer is usually "two or three models, picked per task."
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Cheaper, faster runs on simple tasks | **Switch to a lighter model** | A heavier prompt on the flagship |
+| Deeper reasoning on a hard problem | **Switch to the flagship** | More skills/context on a lighter one |
+| Different model per worker | Per-[subagent](/foundations/subagents/) `model` field | Restarting the whole session |
+| Compare two models on the same task | opencode side-by-side agents | Running the same prompt twice manually |
+| Run a model offline / on-prem | **opencode** with local provider | Claude Code or Codex |
+| Lock the team to one model for consistency | Pin `model` in [project config](/foundations/configuration/) | Verbal agreement |
+
+Switching models doesn't replace your prompt, skills, or memory — it changes *who's reading them*. If your output quality problem isn't about reasoning depth, a model swap won't fix it.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    **Models** (current Claude 4.x tier):
+    - `claude-opus-4-7` — flagship; 1M-token context
+    - `claude-sonnet-4-6` — balanced; 1M-token context
+    - `claude-haiku-4-5` — fast; 200K-token context
+
+    **Switching:** `/model` mid-session lists available models; pick one to switch the rest of the conversation. Pin a default via the `model` setting or the `ANTHROPIC_MODEL` env var.
+
+    **Tier strategy:**
+    - **Opus** — heaviest model; use for hard reasoning, planning, code review of long diffs.
+    - **Sonnet** — default for most coding work.
+    - **Haiku** — fast and cheap; use for trivial work or as a subagent's model.
+
+    Claude Code does not support non-Anthropic models.
+  </TabItem>
+
+  <TabItem label="Codex">
+    **Models:** OpenAI GPT-5.x family (and successors).
+
+    **Switching:** `/model` mid-session or `--model <id>` at launch. A `model` field in `config.toml` (or in a profile — see [Configuration](/foundations/configuration/)) sets the default.
+
+    Codex does not support non-OpenAI models.
+
+    **Default model:** `gpt-5.5` for ChatGPT-authenticated sessions (with `gpt-5.4` as fallback); `gpt-5.2-codex` for API-key auth. **Known model IDs** referenced in current docs include `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.3-codex-spark` (research preview), `gpt-5.2-codex`, `gpt-5.1-codex-max`. Codex doesn't publish a static catalog — run `codex debug models` for the live list available to your account.
+  </TabItem>
+
+  <TabItem label="opencode">
+    **Multi-provider** is opencode's defining feature. Each agent can have its own `model` field pointing at any supported provider. Configure providers in `opencode.json`; switch in-session via TUI or per-agent.
+
+    **"Zen"** is opencode's curated model selection — a vetted list of model+provider combinations tested for opencode's workflow.
+
+    Common opencode setups:
+    - Default agent uses one provider (e.g. Sonnet for the loop), with `explore` subagent on Haiku for cheap context scans.
+    - Side-by-side compare: spawn the same agent against two providers and diff the outputs.
+
+    **Provider list:** ~75+ providers preloaded via the [Models.dev](https://models.dev) catalog — Anthropic, OpenAI, OpenRouter, Groq, Google (Gemini / Vertex AI), Amazon Bedrock, Azure OpenAI, Ollama, LM Studio, GitHub Copilot, GitLab Duo, DeepSeek, Together AI, Hugging Face, and many more. Credentials are added via `/connect` (or `opencode auth login`).
+
+    **Custom providers:** add a `provider` block to `opencode.json`. For OpenAI-compatible endpoints, use the `@ai-sdk/openai-compatible` npm package:
+
+    ```json
+    {
+      "provider": {
+        "my-provider": {
+          "npm": "@ai-sdk/openai-compatible",
+          "name": "My Provider",
+          "options": { "baseURL": "https://api.example.com/v1", "apiKey": "{env:MY_API_KEY}" },
+          "models": { "my-model": { "name": "My Model" } }
+        }
+      }
+    }
+    ```
+
+    Reference the model as `my-provider/my-model`.
+  </TabItem>
+</Tabs>
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| Vendor | Anthropic only | OpenAI only | **Multi-provider** |
+| In-session switch | `/model` | `/model`, `--model` | Per-agent / TUI |
+| Curated model list | Implicit (Opus/Sonnet/Haiku) | Implicit (GPT-5.x) | **Zen** (curated) |
+| Different model per subagent | Yes (subagent frontmatter `model:`) | Yes (TOML `model` field; inherits parent if omitted) | **Yes** |
+| Side-by-side comparison | N/A | N/A | Native (different agents) |
+
+## When this matters
+
+- **Pinning subagent costs.** Giving a cheap exploration subagent a cheap model while the main loop uses a heavyweight one saves real money. All three support per-subagent model selection: Claude Code via `model:` in subagent frontmatter, Codex via `model` in the agent TOML file, opencode via per-agent `model` in the agent's markdown frontmatter.
+- **Comparison reviews.** Want to compare how three models answer the same code-review question? opencode's per-agent provider is the only built-in path.
+- **Vendor risk.** If you've standardised on Claude Code or Codex and need to switch providers, you switch tools, not just config.
+
+## Name collisions
+
+- **"Model"** sometimes means the *family* (Opus, Sonnet, GPT-5) and sometimes the *snapshot ID* (`claude-opus-4-7-20...`). Be explicit when documenting model selection — snapshot IDs change over time.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Model setting',
+      url: 'https://docs.claude.com/en/docs/claude-code/settings',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'Models',
+      url: 'https://developers.openai.com/codex/models',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'Models',
+      url: 'https://opencode.ai/docs/models/',
+    },
+  ]}
+/>

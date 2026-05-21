@@ -1,0 +1,155 @@
+---
+title: Hooks
+description: Lifecycle event handlers — the deterministic guardrails and side effects each CLI lets you wire in.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What a hook is
+
+A **hook** is a piece of code or a command that fires automatically when a specific lifecycle event happens inside the CLI — before a tool call, after a file edit, when a session starts, when the model wants to compact context, when a permission is requested. You declare *what event* and *what to run*, and the CLI takes it from there.
+
+The defining property: **a hook is deterministic**. It always fires on its event. It doesn't depend on the model deciding to use it, noticing a description, or remembering a `CLAUDE.md` line. Where a memory rule is a *request* and a skill is *opt-in by the model*, a hook is *enforcement by the runtime*.
+
+## Why you'd want one
+
+You told the agent, in `CLAUDE.md`, *"never push to `main`."* You said it again at the start of the session: *"don't push to main, the release branch is `release/2026.04`."* Two hours later, mid-flow, you ask it to "ship the fix." It runs `git push origin main`.
+
+The agent didn't ignore you on purpose. It read the instruction, weighed it against the goal, and the goal won. That's what models do — they're persuadable, including by their own reasoning. A `CLAUDE.md` rule is a *strong suggestion to a probabilistic system*. And probabilistic systems, sometimes, push to main.
+
+The only way to make a rule unbreakable is to take the decision away from the model. A hook on `PreToolUse` that pattern-matches `git push.*main` and blocks the call doesn't ask the model nicely. It just doesn't run. That's the gap hooks close: turning *"please don't"* into *"can't."*
+
+**Real-world examples of what teams put in hooks:**
+
+- **Hard guardrails** — block `rm -rf`, block edits to `.env`, block writes to `/etc`, block pushes to protected branches. The model can attempt; the hook says no.
+- **Auto-run linters and formatters** — `PostToolUse` on file edits runs `prettier`/`eslint`/`ruff` and feeds errors back to the agent as context it can fix.
+- **Auto-run tests on touched modules** — when the agent edits `src/auth/*.ts`, fire the auth test suite. Catches regressions inside the session, not at PR time.
+- **Notifications and observability** — post to Slack when a long session ends, log every shell command to a file, ping yourself when the agent's been idle for 5 minutes.
+- **Context injection at session start** — `SessionStart` hook that runs `git status` / `git log -5` and feeds the output in, so the agent always knows the current branch state.
+- **Secret scanning** — `PreToolUse` on writes that scans content for API keys before they hit disk.
+- **Compaction control** — `PreCompact` hook that snapshots the conversation to a file before the model summarises it away.
+
+The test: if "the agent forgot" or "the agent did the thing I told it not to" is a failure mode you can't accept, you want a hook, not a memory rule.
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Make a rule unbreakable (the model literally cannot do X) | **Hook** | Memory rule |
+| Give context the model uses on every turn | [Rules](/foundations/rules/) | Hook |
+| Encode a procedure the model picks up when relevant | [Skill](/foundations/skills/) | Hook |
+| Restrict what tools/commands are allowed at all | [Permissions](/foundations/permissions/) | Hook |
+| Run a side effect (lint, notify, log) on a CLI event | **Hook** | Skill |
+| Isolate noisy work in its own context | [Subagent](/foundations/subagents/) | Hook |
+
+Hooks are for *every time event X happens, do Y, no exceptions*. Skills are for *when the situation looks like X, the model might decide to do Y*. Memory is for *the model should know X*. If you've been frustrated that the agent "knew the rule but did it anyway," you wanted a hook.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    **Configuration:** hooks live in `settings.json` (project, user, or managed levels). All registered hooks merge — Claude Code fires every hook that matches a given event, regardless of where it was defined.
+
+    **Events:** `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `Stop`, `SubagentStop`, `PreCompact`, `Notification`, and more.
+
+    **Hook actions** can be:
+    - A shell command
+    - An HTTP request
+    - A prompt sent to Claude
+    - A subagent invocation
+
+    **Example** (`.claude/settings.json`):
+
+    ```json
+    {
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "command": "scripts/check-bash-command.sh"
+          }
+        ]
+      }
+    }
+    ```
+
+    Hook output can land in the conversation as a message — a `PostToolUse` hook running your linter feeds errors back to Claude as text it can read and act on.
+  </TabItem>
+
+  <TabItem label="Codex">
+    **Configuration:** Codex hooks load from either an inline `[hooks]` table in `config.toml` or a standalone `hooks.json`, at user (`~/.codex/`) and project (`.codex/`) levels. Enterprise admins can also ship managed hooks via `requirements.toml`.
+
+    **Events:** `PreToolUse`, `PostToolUse`, `PermissionRequest`, `SessionStart`, `UserPromptSubmit`, `Stop`.
+
+    **Hook actions:** only `type = "command"` handlers actually run today (the schema parses `prompt` and `agent` types but skips them). The script receives a JSON event payload on stdin (`session_id`, `cwd`, `hook_event_name`, `model`, `permission_mode`, plus a `turn_id` for turn-scoped events).
+
+    **Example** (`~/.codex/config.toml`):
+
+    ```toml
+    [[hooks.PreToolUse]]
+    matcher = "Bash"
+
+      [[hooks.PreToolUse.hooks]]
+      type = "command"
+      command = "scripts/check-bash-command.sh"
+    ```
+  </TabItem>
+
+  <TabItem label="opencode">
+    opencode's hook model is **plugin-based**. You write a JS/TS plugin module that exports a hook map, and opencode wires the hooks in.
+
+    A plugin function receives a context object (`project`, `client`, `$`, `directory`, `worktree`) and returns an object whose keys are event names:
+
+    ```ts
+    export default ({ project, client, $ }) => ({
+      'file.edited': async (event) => {
+        await $`pnpm lint ${event.path}`;
+      },
+    });
+    ```
+
+    **Available events** include `command.executed`, `file.edited`, `file.watcher.updated`, LSP events, message events, `permission.asked`, `permission.replied`, session/server events, shell/tool execution events (including env injection), and TUI prompts/commands/notifications.
+
+    The event taxonomy is richer than Claude Code's, but you need to author a plugin to use any of it — there's no `settings.json`-style declarative hook list.
+  </TabItem>
+</Tabs>
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| Where defined | `settings.json` | `config.toml` `[hooks]` table or `hooks.json` | JS/TS plugin module |
+| Declarative vs code | Declarative | Declarative | Code (JS/TS) |
+| Event taxonomy | ~10+ named events | `PreToolUse`, `PostToolUse`, `PermissionRequest`, `SessionStart`, `UserPromptSubmit`, `Stop` | Richest of the three |
+| Action types | Shell / HTTP / prompt / subagent | Shell (`type = "command"`) | JS code |
+| Output lands in context | Yes | Yes — hook script emits JSON on stdout with fields like `additionalContext` (PreToolUse) or `systemMessage`; exit 2 + stderr blocks the action | Plugin-controlled |
+| Layered (project + user + managed) | Yes — all merge | Yes (user + project, managed available) | Yes (global + project + managed) |
+
+## Name collisions
+
+- An opencode "hook" lives inside a [plugin](/foundations/plugins/) — you can't have a hook without writing a plugin. In Claude Code and Codex, hooks are a standalone primitive declared in config.
+- Don't confuse Claude Code's `PreCompact` (model-level context compaction) with shell-level "pre-commit" hooks. Despite the name they have nothing in common.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Hooks',
+      url: 'https://docs.claude.com/en/docs/claude-code/hooks-guide',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'Hooks',
+      url: 'https://developers.openai.com/codex/hooks',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'Plugins & hooks',
+      url: 'https://opencode.ai/docs/plugins/',
+    },
+  ]}
+/>

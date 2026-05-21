@@ -1,0 +1,131 @@
+---
+title: Headless & CI
+description: Non-interactive invocation — single-prompt runs, CI/CD integration, and automation entry points.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What headless mode is
+
+Every CLI in scope has a way to run **non-interactively**: you pass a prompt, the agent runs its loop to completion, prints a result, and exits. No TUI, no live editing, no approvals — just *call it from a script, get an answer back*.
+
+The shapes converge — all three give you a `run` / `exec` / `-p` subcommand — but the surrounding ecosystem (SDKs, GitHub Actions, structured-output formats, remote execution) differs significantly. That's usually what tips the decision when you're choosing one for an automation.
+
+## Why you'd want one
+
+You've got a thing the agent is *great* at when you're driving it: triaging an incoming bug report, drafting a release-notes summary from a diff, sweeping the codebase for missing test coverage, generating a TL;DR of a long PR description. You'd love this to just *happen*. On the schedule. On the GitHub event. As part of CI. Without you sitting there.
+
+Then you try to wire it up and the TUI gets in the way. It wants to confirm permissions. It wants to draw a status bar. It's expecting a human to type. The thing that's effortless interactively is suddenly a fight against the loop you didn't realise was assumed.
+
+That's the gap headless mode closes. The same agent, the same skills, the same model — but invoked as a subprocess that takes input from `stdin` or a flag, produces output to `stdout` (often as structured JSON), and exits with a status code. Now your nightly job, your GitHub Action, your `pre-push` git hook, your Slack `/triage` slash-handler — all of them can call the agent like any other command-line tool.
+
+**Real-world examples of headless agent runs:**
+
+- **CI code review** — on every PR, an Action runs the agent against the diff and posts findings as a PR comment. Catches the easy stuff before a human reviews.
+- **Issue triage** — incoming GitHub issue triggers a workflow that asks the agent to label it, link related issues, and ping the right code-owner.
+- **Release notes** — nightly, the agent reads the day's merged PRs and drafts a `CHANGELOG` entry. Human edits before publishing.
+- **Test-gap audits** — scheduled job: *"list every public function added this week that has no test."* Output goes to a Slack channel.
+- **Doc freshness checks** — weekly run that grep's for `TODO: verify` markers and asks the agent to confirm each one against current code, opening issues for the stale ones.
+- **Cron-style summaries** — daily standup digest from `git log`, weekly velocity report, monthly tech-debt scan.
+- **Embedded in tooling** — a custom CLI in your repo (`bin/team-tool review`) that wraps the agent SDK for repeatable, parameterised flows.
+
+The test: if you're describing the task to the agent in approximately the same shape every time, and the result is something a script could consume, it belongs in headless mode.
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Run the agent unattended from a script or CI job | **Headless / `run` / `exec`** | Interactive TUI |
+| Build a long-running custom automation around the agent | **SDK** (Claude Agent SDK / Codex SDK / opencode SDK) | Shelling out to `-p` every time |
+| Run the agent on a remote machine / sandboxed env | Codex Cloud, opencode + Docker, Claude Agent SDK | Local headless alone |
+| Get structured JSON output for scripts to parse | `--output-format json` / `--json` / `--format json` | Grepping plaintext |
+| Resume a previous session non-interactively | `codex resume` (Codex), session APIs in SDKs | Restarting from scratch |
+| Run unattended *and* keep humans in the loop on risky actions | Headless + tight [permissions](/foundations/permissions/) + [hooks](/foundations/hooks/) | Headless with full access |
+| Embed the agent inside another product | **SDK** | Wrapping the CLI binary |
+
+The TUI is for *driving the agent*. Headless mode is for *the agent being driven by something else*. SDKs are for *the agent being part of a bigger program*. Pick by how much orchestration you need around the call.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    **Command:** `claude -p "<prompt>"` (or `claude --print "<prompt>"`).
+
+    Runs the agent loop until it produces a final answer, prints stdout, exits. Suitable for shell pipelines.
+
+    **CI integration:** the **Claude Agent SDK** is the recommended path for richer automation than `-p` allows — for example, in GitHub Actions, you'd typically wrap an SDK call rather than shell out to the CLI.
+
+    **Streaming output:** `--output-format json` for structured output; `--output-format stream-json` for line-delimited streaming.
+
+    **SDK packages:**
+    - npm: `@anthropic-ai/claude-agent-sdk` (renamed from `@anthropic-ai/claude-code` in early 2026)
+    - PyPI: `claude-agent-sdk`
+  </TabItem>
+
+  <TabItem label="Codex">
+    **Command:** `codex exec "<prompt>"` (alias `codex e`).
+
+    **Session resume / fork:** `codex resume` re-enters the last session; `codex fork` branches a session. Useful for CI flows where one run produces context another consumes.
+
+    **Codex Cloud:** `codex cloud exec` runs the prompt against a remote execution environment with configurable network policy — for sandboxed CI work.
+
+    **GitHub Action:** a first-party GitHub Action ships from OpenAI for CI/CD integration.
+
+    **Codex SDK:** programmatic API for orchestrating Codex from a parent program; pairs with the OpenAI Agents SDK for multi-agent flows.
+
+    **Structured output:** `--json` (alias `--experimental-json`) on `codex exec` emits newline-delimited JSON events — one per state change (`thread.started`, `turn.completed`, `item.*`, `error`, etc.). `--output-schema <file>` accepts a JSON Schema constraining the final response; `--output-last-message -o <file>` writes only the final assistant message. Streaming is the default behavior of `--json`. Known bug: `--json` + `--output-schema` is silently ignored when MCP servers are active ([issue #15451](https://github.com/openai/codex/issues/15451)).
+  </TabItem>
+
+  <TabItem label="opencode">
+    **Command:** `opencode run "<prompt>"`.
+
+    **GitHub / GitLab integrations** are first-class; opencode publishes connectors for repo-platform workflows.
+
+    **ACP (Agent Client Protocol)** is the IDE/host integration layer, but is also the cleanest path for embedding opencode in another tool.
+
+    **Docker support** for containerised deployments simplifies running opencode in CI.
+
+    **Structured output:** `--format json` is supported on `opencode run`, `opencode session list`, and `opencode db` for machine-readable streams. There is no separate `--output-format` or schema-validation flag.
+  </TabItem>
+</Tabs>
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| Headless command | `claude -p` | `codex exec` | `opencode run` |
+| Structured output | `--output-format json` | `--json` / `--experimental-json` + optional `--output-schema` | `--format json` |
+| Streaming output | `stream-json` | NDJSON (default with `--json`) | line-delimited JSON via `--format json` |
+| Session resume/fork | `/resume` (TUI) | `codex resume`, `codex fork` | Sessions w/ undo-redo |
+| Remote/cloud execution | Agent SDK | `codex cloud exec` | Docker / self-hosted |
+| First-party CI integration | Claude Agent SDK | GitHub Action | GitHub/GitLab integrations |
+| Programmatic SDK | Claude Agent SDK | Codex SDK | opencode SDK |
+
+## Name collisions
+
+- "Headless" in Claude Code (`claude -p`) is the same idea as Codex's `exec` and opencode's `run` — but each tool's *SDK* is the more powerful path for non-trivial automation.
+- Codex Cloud is *not* the same as "remote MCP" — Cloud runs the whole CLI remotely; remote MCP just connects a local CLI to a remote tool server.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Headless mode',
+      url: 'https://docs.claude.com/en/docs/claude-code/headless',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'Non-interactive mode',
+      url: 'https://developers.openai.com/codex/noninteractive',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'Server mode',
+      url: 'https://opencode.ai/docs/server/',
+    },
+  ]}
+/>

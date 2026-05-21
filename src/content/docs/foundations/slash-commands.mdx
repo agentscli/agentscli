@@ -1,0 +1,123 @@
+---
+title: Slash commands
+description: How each CLI exposes user-triggered named shortcuts you can fire mid-session.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What a slash command is
+
+A **slash command** is a named, user-invokable shortcut. You type `/<name>` (or sometimes `$<name>`) mid-session and the CLI runs a predefined prompt, workflow, or built-in action — without you having to retype the whole thing.
+
+Each tool ships a set of bundled commands (`/model`, `/mcp`, `/diff`, etc.) and lets you author your own. In Claude Code, the slash-command surface and the [skills](/foundations/skills/) surface have largely merged in 2026 — every user-defined skill is also a slash command. In Codex and opencode they're still distinct primitives.
+
+## Why you'd want one
+
+You have an incantation. Every time you start a fresh session in this repo, you type:
+
+> *"Read the latest PR description from the `release` branch, summarise what changed, list any TODOs that have piled up, and check if there's a migration we forgot to run."*
+
+It's eight lines. You've typed it forty times. You've copy-pasted it from a Notion doc thirty of those times. The other ten times you re-typed it from memory and got it slightly wrong. The instructions aren't complex — they're just *yours*, and the CLI has no way to know you keep wanting this exact thing.
+
+A skill could pull this in when relevant, but the model has to *decide* it's relevant. Sometimes you just want to *say*, deterministically, "run the release-check thing." Type `/release-check`, the prompt gets expanded, the agent does the thing. No describing, no remembering, no waiting for the model to infer intent.
+
+That's the gap slash commands close: turning a thing you keep typing into a thing you keep *invoking*.
+
+**Real-world examples of user-defined slash commands:**
+
+- **Repo-specific check-ins** — `/release-check`, `/pre-merge`, `/morning-status`. Same prompt, same shape, every time.
+- **Personal habits** — `/tldr` ("summarise what we've done this session in three bullets"), `/sanity-check` ("look at the diff and tell me what would break in prod").
+- **Standardised reviews** — `/security-review <file>`, `/perf-review <file>`. Argument substitution does the targeting.
+- **Workflow shortcuts** — `/spike <idea>` ("scaffold a throwaway prototype for this idea"), `/ship` ("run the team's full pre-ship checklist").
+- **Tone or persona switches** — `/skeptic` ("from here on, push back hard on any decision that seems convenient"), `/junior` ("explain the next change as if I've never seen this codebase").
+- **Side-effect commands** (Claude Code, with `disable-model-invocation: true`) — things the model shouldn't auto-trigger but you want one keystroke away: `/deploy-dry-run`, `/db-snapshot`.
+
+The test: if it's a prompt you've typed (or pasted) more than five times, it's a slash command.
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Fire a predefined prompt by typing its name | **Slash command** | Skill |
+| Have the agent reach for instructions on its own when the situation matches | [Skill](/foundations/skills/) | Slash command |
+| Inject context on *every* turn of *every* session | [Rules](/foundations/rules/) | Slash command |
+| Run automatically on a CLI lifecycle event | [Hook](/foundations/hooks/) | Slash command |
+| Pass arguments and have them substituted into the prompt | **Slash command** with `$ARGUMENTS` / `$1`–`$9` | Plain skill |
+| Bundle a command + its skills + its MCP servers to share | [Plugin](/foundations/plugins/) | Slash command alone |
+
+In Claude Code the line is fuzzy — your user-defined skill *is* the slash command. Decide by intent: if the model should be able to invoke it on its own, you wrote a skill; if you want it to fire only on your keystroke, set `disable-model-invocation: true` and treat it as a slash-command-first artefact.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    **Bundled slash commands** ship with Claude Code: `/simplify`, `/batch`, `/debug`, `/model`, `/mcp`, `/context`, `/resume`, `/plan`, `/clear`, and more.
+
+    **User-defined slash commands** are skills. A skill at `.claude/skills/<name>/SKILL.md` is invokable as `/<name>`. The legacy `.claude/commands/<name>.md` form still works but skills are the recommended path.
+
+    **Plugin slash commands** are namespaced: `/my-plugin:review`.
+
+    **Argument passing:** the `$ARGUMENTS` placeholder in the skill content is replaced with whatever the user typed after the command.
+
+    **Invisible-by-default:** set `disable-model-invocation: true` in frontmatter so Claude won't auto-load the skill — you must type `/<name>` to use it. Good for skills with side effects.
+  </TabItem>
+
+  <TabItem label="Codex">
+    **Built-in slash commands:** `/model`, `/review`, `/approvals`, `/diff`, `/mcp`, `/skills`, and others. Codex also lets you **queue** input (including a slash command) with Tab while a turn is running — it fires once the current turn finishes.
+
+    **Custom prompts** are a distinct primitive: drop a markdown file in `~/.codex/prompts/` and invoke it from the TUI.
+
+    **Skills** are also invokable, via `/skills` to browse or `$<skill-name>` to invoke directly. Skills and custom prompts overlap in practice — custom prompts are simpler; skills are more structured. OpenAI now flags custom prompts as deprecated and recommends Skills for reusable prompts.
+
+    **Argument passing in custom prompts:** positional `$1`–`$9` for space-separated tokens, `$ARGUMENTS` for the full tail, `$$` for a literal `$`. Named placeholders like `$FILE` or `$TICKET_ID` are supported. Frontmatter accepts `description` and `argument-hint`.
+
+    **Invocation:** custom prompts use `/<name>` (filename minus `.md`); skills use `$<skill-name>` (or pick interactively from `/skills`). They are not interchangeable syntaxes.
+  </TabItem>
+
+  <TabItem label="opencode">
+    **Commands** live in `.opencode/commands/` (project) or `~/.config/opencode/commands/`. Each command is a markdown file with optional frontmatter; invokable as `/<name>`.
+
+    **Argument passing:** `$ARGUMENTS` substitutes the full string the user typed after the command; `$1`, `$2`, … substitute positional tokens.
+
+    Skills (`skills/`) are a separate primitive — commands are the user-triggered slash surface specifically.
+  </TabItem>
+</Tabs>
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| User-defined slash commands | Skills (`/<name>`) | Custom prompts + Skills | `commands/` |
+| Bundled commands | Yes (`/simplify`, `/batch`, …) | Yes (`/model`, `/review`, …) | Yes |
+| Plugin/namespaced | `/plugin:cmd` | — | No (plugins can't register slash commands today) |
+| Arguments | `$ARGUMENTS` | `$1`–`$9`, `$ARGUMENTS`, named (`$FILE`) | `$ARGUMENTS`, `$1`, `$2`, … |
+| Queueable for next turn | No | **Yes** | No (executes immediately) |
+
+## Name collisions
+
+- In Claude Code, **slash commands and skills are nearly the same thing** — every user-invokable skill is reachable as a slash command. In Codex and opencode they're separate primitives that overlap in use.
+- "Commands" in opencode ≠ "commands" in Claude Code's old `.claude/commands/` (now mostly superseded by skills).
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Slash commands',
+      url: 'https://docs.claude.com/en/docs/claude-code/slash-commands',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'Slash commands',
+      url: 'https://developers.openai.com/codex/cli/slash-commands',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'Commands',
+      url: 'https://opencode.ai/docs/commands/',
+    },
+  ]}
+/>
