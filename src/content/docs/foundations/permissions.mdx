@@ -1,0 +1,162 @@
+---
+title: Permissions, sandboxing & approval modes
+description: How each CLI decides which actions need your blessing — the most divergent area in vocabulary across the three tools.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What permissions are
+
+Every CLI in scope has some way of deciding three things, on every action the agent attempts: *do it without asking*, *ask me first*, or *refuse outright*. The shapes are wildly different:
+
+- **Claude Code:** rule-based allow/ask/deny per tool, layered with managed policy.
+- **Codex:** OS-level sandbox tiers combined with approval policies.
+- **opencode:** per-tool allow/ask/deny, scoped per primary agent.
+
+Same job in all three — decide what the agent can do unattended — different mental models, different vocabulary, different layers.
+
+## Why you'd want one
+
+You're two settings into the agent's lifecycle and you've already hit the wall. Either it pops up a confirmation dialog on *every single command* — and you spend the session pressing `y`, `y`, `y` until you stop reading what you're approving — or you've turned approvals off and now there's nothing between the agent and `rm -rf node_modules` in the wrong directory.
+
+There's a real range of actions the agent does in a session: reading a file (boring, always fine), running tests (boring, always fine), editing your code (usually fine), running a one-off shell command (depends on the command), pushing to remote (you definitely want to know), `chmod`-ing system files (probably not). Treating all of those as one "do you approve?" question is what produces both fatigue and accidents.
+
+That's the gap permissions close. Decide *once*, declaratively: which tools are always fine, which always need you in the loop, which are flatly forbidden. Then the agent runs unattended through the boring 80% and only interrupts you for the genuinely risky 20% — and the truly dangerous things just can't happen, even if the agent decides they're a good idea.
+
+**Real-world examples of permission rules people actually set:**
+
+- **Always allow** — reads (Read, Grep, Glob), test runs (`pnpm test`, `pytest`), formatters (`prettier`, `ruff`), git status/log/diff.
+- **Ask first** — any `git push`, any `git rebase`, deletions, anything touching `node_modules` or `package-lock.json`, `npm install`/`pip install`.
+- **Always deny** — `rm -rf`, edits to `.env` or secrets, writes outside the project root, `sudo`, `chmod`, pushing to `main` directly.
+- **Scoped allow patterns** — `Bash(npm run *)` allowed, `Bash(npm install *)` asked. Same tool, different command shapes.
+- **Per-agent profiles (opencode)** — your `plan` agent is read-only no matter what; your `build` agent has full edit access; a custom `security-review` agent has read + a narrow shell allowlist.
+- **Org-wide policy** — managed config forbids any tool that can touch `prod` for everyone in the team, regardless of what they set locally.
+
+The test: if you've ever caught yourself approving a command without actually reading it, your permission rules are too tight. If you've ever discovered the agent did something you wouldn't have approved, they're too loose.
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Decide *broadly* what the agent can do unattended | **Permissions** | Hooks |
+| Block one specific command pattern with logic (regex against args, conditional logic) | [Hook](/foundations/hooks/) on `PreToolUse` | Permissions alone |
+| Take the agent fully read-only for one session | [Plan mode](/foundations/plan-mode/) | Toggling every permission |
+| Restrict a worker subagent's tools | [Subagent](/foundations/subagents/) `tools:` field | Session-wide permissions |
+| Enforce a rule across the whole org | Managed/policy config | Per-user settings |
+
+Permissions are *coarse and declarative* — "Bash is ask, Read is allow." Hooks are *fine and procedural* — "if the bash command matches `git push.*main`, block it and log it." Use permissions for the policy; reach for hooks when the policy needs logic.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    **Permission rules** live in `settings.json` (project, user, or managed). Each rule targets a tool with allow / ask / deny:
+
+    ```json
+    {
+      "permissions": {
+        "allow": ["Bash(npm run test:*)", "Read(src/**)"],
+        "deny":  ["Bash(rm:*)", "Edit(.env)"],
+        "ask":   ["Bash(*)"]
+      }
+    }
+    ```
+
+    **Layering:** managed policy beats user beats project. An org admin can deny tool patterns globally; project settings can broaden within those limits.
+
+    **Plan mode** (Shift-Tab) gates *all* mutations as a posture — see [Plan mode](/foundations/plan-mode/).
+
+    Claude Code does not impose OS-level process sandboxing; permissions are enforced at the tool-dispatch layer.
+  </TabItem>
+
+  <TabItem label="Codex">
+    Codex separates **what the agent is allowed to touch** (sandbox) from **when it asks before acting** (approval policy). The two combine.
+
+    **Sandbox modes** (`--sandbox`):
+    - **`read-only`** — agent can read but cannot edit files or run commands
+    - **`workspace-write`** — agent can edit files inside the workspace and run sandboxed commands
+    - **`danger-full-access`** — no sandboxing (use deliberately)
+
+    **Approval policies** (`--ask-for-approval`):
+    - **`untrusted`** — ask for every action
+    - **`on-request`** — agent decides when to ask
+    - **`never`** — never ask
+
+    `on-failure` is deprecated.
+
+    Common combinations:
+    - **Plan-like behaviour:** `--sandbox read-only --ask-for-approval untrusted`
+    - **YOLO mode:** `--sandbox danger-full-access --ask-for-approval never` (only in throwaway environments)
+  </TabItem>
+
+  <TabItem label="opencode">
+    Permissions are **per-tool per-agent**. Each primary agent (`build`, `plan`, custom) gets its own permission map:
+
+    ```yaml
+    permission:
+      read: allow
+      edit: ask
+      bash: ask
+      glob: allow
+      grep: allow
+      list: allow
+      task: allow
+    ```
+
+    Switching primary agents (Tab between `build` and `plan`) effectively switches permission policies — `plan` typically has `edit: ask` or `edit: deny` while `build` has `edit: allow`.
+
+    Wildcards `*` and `?` are supported in tool patterns (but not `**` recursive globs). Evaluation is **last-match-wins** — a common pattern is to put the catch-all `"*"` rule first and put more specific rules after it.
+
+    opencode itself does not ship a built-in OS-level sandbox; for stronger isolation, run the CLI inside a container (Docker, Incus, etc.) as a wrapper layer.
+  </TabItem>
+</Tabs>
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| Primary axis | Allow/ask/deny per tool | Sandbox tier × approval policy | Per-tool per-agent |
+| OS-level sandbox | No | Yes (`read-only` / `workspace-write` / `danger-full-access`) | No (wrap in a container if you need it) |
+| Approval modes | `ask` rules | `untrusted` / `on-request` / `never` | `allow` / `ask` / `deny` |
+| Org/managed override | Yes (managed `settings.json`) | Yes (managed config) | Yes (managed config) |
+| Evaluation order | Deny > Ask > Allow | Sandbox blocks first, then approval gate | Last match wins |
+| Per-agent profile | No (single profile per session) | No (single mode per session) | **Yes** (per primary agent) |
+| "YOLO mode" | Allow `Bash(*)` + `Edit(*)` etc. | `danger-full-access` + `never` | All tools `allow` |
+
+## Translation: "make it stop asking"
+
+| Tool | How |
+|---|---|
+| Claude Code | Add `allow` rules for the tool pattern, or move `Bash(...)` out of `ask`. |
+| Codex | `--ask-for-approval never` (and pick a sandbox you trust). |
+| opencode | Set the relevant tool to `allow` on the active primary agent. |
+
+## Name collisions
+
+- **"Sandbox"** is a real OS-level isolation tier in Codex; in Claude Code and opencode the word is used loosely (or refers to Docker).
+- **"Approval"** in Codex is the *frequency* policy (ask/never); in Claude Code it's the *result* of an `ask` rule. Same word, different layer.
+- Codex's `on-failure` approval mode is deprecated — don't recommend it.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Settings & permissions',
+      url: 'https://docs.claude.com/en/docs/claude-code/settings',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'Approvals & sandbox',
+      url: 'https://developers.openai.com/codex/agent-approvals-security',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'Permissions',
+      url: 'https://opencode.ai/docs/permissions/',
+    },
+  ]}
+/>

@@ -1,0 +1,165 @@
+---
+title: Subagents
+description: Isolated worker contexts spawned by a parent — what they share, what they don't, and how each CLI shapes them.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What a subagent is
+
+A **subagent** is an isolated worker the main agent spawns to do a discrete task. It runs its own loop — reading files, running searches, making tool calls — in a fresh context window that doesn't touch yours. When it finishes, the parent receives only a summary. Whatever the subagent read, tried, backtracked through, or threw away never lands in your conversation.
+
+## Why you'd want one
+
+You asked the agent to debug a flaky test. Forty messages later, it's read seventeen files, tried four hypotheses, run the test six times with different env vars, and finally pinned it down. Now you want to actually fix the test and ship the feature you originally came in to build — and your context window is *full of debug noise*. Stack traces. Trial fixes. Failed reproductions. The agent is now somewhat less coherent than it was an hour ago, because half its context is rabbit-hole.
+
+The cost wasn't the debugging. It was that the debugging happened *in the same window as the rest of your work*. Everything the agent learned to find the bug is now polluting the context it needs to write the fix.
+
+That's the gap subagents close. Hand the debug task to a subagent: it spawns fresh, burns through whatever context it needs, and returns *"the bug is in `auth/session.ts:142`, the session token is being mutated by the middleware before the test asserts on it."* One sentence back. Forty messages of investigation: gone. Your main context stays clean for the actual fix.
+
+**Real-world examples of what teams use subagents for:**
+
+- **Codebase exploration** — "find every place we call the auth API and how each one handles errors." Dozens of file reads collapse into a one-paragraph map.
+- **Code review** — give a subagent the diff plus a checklist (security, perf, naming) and let it return findings. The 200-line diff and 50 lines of analysis don't enter your conversation.
+- **Verification / audit** — "go check that every endpoint in the new router has a corresponding test." Returns a list of gaps, not a tour of the test suite.
+- **Parallel work** — spawn three subagents at once: one writes the migration, one writes the seed data, one drafts the rollback. Merge results.
+- **Specialised personas** — a "security reviewer" subagent with a tighter tool surface (read-only, no shell) and a system prompt focused on threat modelling.
+- **Research and synthesis** — "read the last six release notes and summarise the breaking changes we need to handle." Returns the summary, not the raw notes.
+
+The test: if a task would generate a lot of intermediate noise but you only care about the final answer, it's a subagent task.
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Isolate a side-quest's context so it doesn't bloat the main thread | **Subagent** | Skill |
+| Encode reusable instructions the model picks up on its own | [Skill](/foundations/skills/) | Subagent |
+| Run two or more pieces of work in parallel | **Subagent** (one per piece) | Single agent serially |
+| Enforce a deterministic rule on every tool call | [Hook](/foundations/hooks/) | Subagent |
+| Restrict a worker to a narrow tool surface (read-only, etc.) | **Subagent** with tool restrictions | Permissions alone |
+| Have peer agents coordinate and message each other | Agent teams (Claude Code, experimental) | Subagent |
+
+A subagent returns once. It doesn't continue the conversation. If you need a back-and-forth peer, you want an agent team (Claude Code) or the Agents SDK (Codex), not a subagent.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    **Subagents** are spawned via the `Agent` tool. Custom subagents live at:
+    - `.claude/agents/<name>.md` — project
+    - `~/.claude/agents/<name>.md` — user
+    - Plugin-bundled
+    - Managed-policy
+
+    **Frontmatter:**
+
+    ```yaml
+    ---
+    name: code-reviewer
+    description: Reviews a diff for bugs, performance, and security issues.
+    tools: [Read, Grep, Glob]      # restrict the subagent's tool surface
+    skills: [security-checklist]   # preload these skills into its context
+    ---
+    ```
+
+    **Precedence (most-wins):** managed > CLI flag > project > user > plugin.
+
+    **What the subagent inherits:** the system prompt (shared for cache efficiency), `CLAUDE.md` content, git status, plus whatever the parent passes in the prompt. It does **not** inherit the parent's conversation history.
+
+    **Agent teams (experimental)** are different — independent peer Claude Code sessions that message each other and share a task list. Use a subagent when only the result matters; use an agent team when teammates need to discuss and coordinate.
+  </TabItem>
+
+  <TabItem label="Codex">
+    Codex ships **three built-in subagents**:
+    - **`default`** — general-purpose fallback
+    - **`worker`** — execution-focused (implementation/fixes)
+    - **`explorer`** — read-heavy codebase exploration
+
+    **Custom subagents** are standalone TOML files at `~/.codex/agents/<name>.toml` (user) or `.codex/agents/<name>.toml` (project). One agent per file; the `name` field is authoritative.
+
+    **TOML schema — required:** `name`, `description`, `developer_instructions`. **Optional:** `nickname_candidates`, `model`, `model_reasoning_effort`, `sandbox_mode`, `mcp_servers`, `skills.config`. Unset optionals inherit from the parent.
+
+    ```toml
+    name = "reviewer"
+    description = "Reviews a diff for bugs, performance, and security issues."
+    developer_instructions = "..."
+    model = "gpt-5.4"
+    ```
+
+    **Invocation:** natural-language dispatch from the parent (e.g. *"Have the reviewer agent look at the diff…"*). Codex only spawns when explicitly asked. The `/agent` CLI command **inspects** active threads — it does not spawn them.
+
+    **Tool restriction:** Codex's documented TOML schema has no explicit `tools` / `allowed_tools` allowlist field. The subagent's tool surface is shaped indirectly via `mcp_servers` and `sandbox_mode`. (Related open issue: [#15250](https://github.com/openai/codex/issues/15250).)
+
+    The OpenAI **Agents SDK** is the heavier orchestration layer — for complex multi-agent workflows beyond what the CLI exposes directly.
+  </TabItem>
+
+  <TabItem label="opencode">
+    opencode is the most opinionated here. It ships **three built-in subagents**:
+
+    - **`general`** — full-access worker
+    - **`explore`** — read-only worker for codebase scans
+    - **`scout`** — read-only docs/dependencies worker
+
+    Invoke a subagent by `@mention` in your prompt — e.g. `@explore find every place we call the auth API`.
+
+    **Custom subagents:** `opencode agent create`, or hand-write a markdown file in `~/.config/opencode/agents/` or `.opencode/agents/`. Frontmatter `mode: subagent` (vs `primary` for build/plan-style top-level agents).
+
+    **Frontmatter schema:** `description`, `mode` (`subagent` | `primary` | `all`), `model` (per-agent override, e.g. `anthropic/claude-sonnet-4-6`), `temperature`, `top_p`, `permission` (preferred — object with `edit` / `bash` / `webfetch` / `skill` keys taking `allow` / `deny` / `ask`; supports glob patterns for bash), `tools` (deprecated; per-tool booleans), `steps` (max agentic iterations), `color`, `hidden` (suppress from `@`-mention autocomplete).
+
+    ```yaml
+    ---
+    description: Read-only auditor for security findings
+    mode: subagent
+    model: anthropic/claude-sonnet-4-6
+    permission:
+      edit: deny
+      bash: { "git *": allow, "*": ask }
+      skill: { "security-*": allow }
+    ---
+    ```
+
+    Skills aren't statically baked into a subagent's prompt; they load on demand via a native `skill` tool, gated by per-agent `permission.skill` rules. Set `tools: { skill: false }` to disable skills for an agent entirely.
+  </TabItem>
+</Tabs>
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| Built-in subagents | None by default | `default`, `worker`, `explorer` | `general`, `explore`, `scout` |
+| Custom subagent path | `.claude/agents/*.md` | `.codex/agents/*.toml` | `.opencode/agents/*.md` |
+| Invocation | Via `Agent` tool from parent | Natural-language dispatch from parent | `@<name>` mention |
+| Tool restriction | Frontmatter `tools:` field | No explicit allowlist field; shape via `mcp_servers` / `sandbox_mode` | `permission` (preferred) or deprecated `tools` |
+| Skill preload | Frontmatter `skills:` field | TOML `skills.config` field | Via `permission.skill` rules |
+| Inherits parent history | No | No | No |
+| Peer-to-peer coordination | Agent teams (experimental) | Via Agents SDK | — |
+
+## Name collisions
+
+- **"Agent" vs "subagent"** — in opencode, "agent" alone usually means a *primary agent* (`build`, `plan`) you switch into with Tab. "Subagent" means a worker the primary spawns. In Claude Code, "agent" colloquially means a subagent unless someone says "agent team."
+- **Subagent vs Agent team (Claude Code)** — a subagent returns a summary; an agent team is a set of independent peer sessions that communicate directly and share a task list.
+- Don't confuse the Codex CLI's *child agents* with the OpenAI **Agents SDK**, which is a separate framework for production multi-agent orchestration.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Subagents',
+      url: 'https://docs.claude.com/en/docs/claude-code/sub-agents',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'Subagents',
+      url: 'https://developers.openai.com/codex/subagents',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'Agents',
+      url: 'https://opencode.ai/docs/agents/',
+    },
+  ]}
+/>

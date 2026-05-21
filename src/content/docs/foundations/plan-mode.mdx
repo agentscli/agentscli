@@ -1,0 +1,122 @@
+---
+title: Plan mode / read-only agent
+description: Same posture — agent can think but not change — three different implementations.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What plan mode is
+
+**Plan mode** is a posture: the agent can read, search, grep, and reason — but cannot write, edit, or run mutating commands. You drop into it when you want a plan, a code review, a "tell me what you'd change before you change anything," or a safe exploration of an unfamiliar codebase.
+
+It's the same idea everywhere — *think first, act later* — but each CLI implements it differently: a toggle in Claude Code, a flag combination in Codex, a separate primary agent in opencode.
+
+## Why you'd want one
+
+You say *"refactor the payments module to use the new transaction API."* The agent starts editing. Before you've finished forming a mental model of what it's doing, it's three files deep, two abstractions in, and confidently moving toward a design you can already tell you wouldn't have chosen. Now you're either reading every diff to catch the wrong turn, or rolling back and starting over with a longer prompt.
+
+The problem isn't that the agent is wrong. It's that you handed it a *direction* and it interpreted that as a *go*. You wanted to align on approach first. The agent doesn't pause to align unless you explicitly tell it to.
+
+That's the gap plan mode closes. In plan mode the agent literally *can't* edit, so it has to put the plan in front of you first. You read it, push back, adjust, and only then drop out of plan mode to execute. The same conversation, but with the alignment step put back where it belongs — before the writes, not after.
+
+**Real-world examples of when you'd switch into plan mode:**
+
+- **Non-trivial refactors** — anything touching more than two files. Have the agent map the change set before any edits land.
+- **First contact with an unfamiliar codebase** — *"give me the tour: where's auth, what's the data model, what's the testing pattern"* without any risk of accidental writes.
+- **Code review** — paste a diff (or point at a branch) and ask for findings. No edits, just analysis.
+- **Architecture discussions** — *"if we wanted to split this monolith, what would the seams be?"* The output is a doc, not a PR.
+- **Pre-incident dry runs** — *"walk me through how a rollback would work if the deploy fails"* without the rollback actually running.
+- **Reviewing the agent's own proposal** — when the agent suggests a design, switch to plan mode to discuss it before letting it implement.
+
+The test: if the right next action is *"talk about it,"* not *"do it,"* you want plan mode.
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Have the agent think and propose, but not modify anything | **Plan mode** | Permissions tuning per call |
+| Permanently restrict a worker to read-only | [Subagent](/foundations/subagents/) with read-only tools | Plan mode |
+| Block specific dangerous commands while keeping the rest permissive | [Permissions](/foundations/permissions/) / [hooks](/foundations/hooks/) | Plan mode |
+| Get a structured plan artifact (file, checklist) | [Skill](/foundations/skills/) that produces a plan + plan mode | Plan mode alone |
+| Pause the agent mid-flow to check approach | **Plan mode toggle** | Restarting the session |
+
+Plan mode is a *session-level posture*, not a permanent setting. You flip in, get your plan, flip out, execute. If you find yourself never flipping out, what you actually wanted was a read-only subagent or a tighter permissions profile.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    Press **Shift-Tab** to toggle Plan mode. Or invoke `/plan` to enter.
+
+    In Plan mode:
+    - Read, search, and grep tools work normally.
+    - Write, Edit, and Bash (non-read commands) are blocked.
+    - Claude is instructed to produce a plan, not action.
+    - Toggle Shift-Tab again (or accept the plan) to drop back into normal mode.
+
+    Plan mode is a *session toggle*, not a separate agent — it modifies the active agent's permissions for the duration.
+  </TabItem>
+
+  <TabItem label="Codex">
+    Codex doesn't have a single "plan mode" toggle. The same posture is reached by combining permission primitives:
+
+    ```bash
+    codex --sandbox read-only --ask-for-approval untrusted
+    ```
+
+    - **`--sandbox read-only`** — the agent physically cannot write files or run mutating commands.
+    - **`--ask-for-approval untrusted`** — anything that needs escalation prompts you.
+
+    Switching out of this posture mid-session: `/permissions` opens an interactive picker with presets like **Read Only** and **Auto** that applies the change to the running session. Restarting with new flags is the alternative.
+  </TabItem>
+
+  <TabItem label="opencode">
+    opencode treats Plan as a **primary agent**, not a toggle. There are two primary agents shipped:
+
+    - **`build`** — full edit access (the default)
+    - **`plan`** — read-only with edits gated to ask/deny
+
+    Switch between them with the **Tab** key. Custom primary agents can define their own permission profiles, so you can build a "review" or "audit" primary that lives alongside `build` and `plan`.
+
+    Because plan-vs-build is a *primary agent*, not a mode flag, you can have history-preserving toggling: switch into plan, ask the agent to outline an approach, then Tab back to build and execute it — same session, distinct contexts.
+  </TabItem>
+</Tabs>
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| Mechanism | Session toggle (Shift-Tab) | Sandbox + approval combo | Primary agent (Tab) |
+| Mid-session toggle | Yes (Shift-Tab) | Yes (`/permissions` picker) | Yes (Tab) |
+| Edit attempts | Blocked by mode | Blocked by sandbox | Gated to ask/deny |
+| Custom plan-like profiles | No | Compose your own flags | **Yes** (custom primary) |
+| Preserves history on switch | Yes | N/A (restart) | Yes |
+
+## Name collisions
+
+- **"Plan mode"** in Claude Code is a *toggle*. In opencode it's a *primary agent*. In Codex it's an *emergent combination of flags*. Always say which.
+- The Claude Code `/plan` skill is different from Shift-Tab Plan mode — `/plan` is a skill that asks Claude to outline a plan; Plan mode is the permission posture. They're often used together.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Headless & plan mode',
+      url: 'https://docs.claude.com/en/docs/claude-code/headless',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'Read-only mode',
+      url: 'https://developers.openai.com/codex/agent-approvals-security',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'Plan agent',
+      url: 'https://opencode.ai/docs/agents/',
+    },
+  ]}
+/>

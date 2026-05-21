@@ -1,0 +1,150 @@
+---
+title: Skills
+description: Reusable, model-invocable capability bundles — and the cross-tool standard that emerged in late 2025.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What a skill is
+
+A **skill** is a folder you drop into your project (or your home directory) containing a `SKILL.md` file. The frontmatter describes *when* the skill should fire — a name, a one-line description, a "use this when..." hint. The body is whatever the agent needs to actually do the thing: a checklist, a procedure, domain knowledge, a workflow.
+
+The agent reads every skill's *description* at session start, but only loads a skill's *body* when it decides the description matches what you just asked for. So a skill is cheap to keep around — it costs almost no context until the moment it's relevant.
+
+## Why you'd want one
+
+It's the fourth time this week. You're reviewing a PR and you paste the same three sentences into the agent: *"check the migration is reversible, confirm the feature flag is wired, make sure the integration test hits the real DB and not a mock."* You wrote it down once in a Notion doc. You wrote it again in a comment on your dotfiles. You've now typed it into three separate sessions because you keep forgetting where you saved it.
+
+The instructions aren't the problem. *Reaching them at the right moment* is the problem. That's the gap skills exist to close: write the instructions once, attach a description that tells the model when to pull them in, and from then on the knowledge shows up the moment the situation does — without you remembering it exists.
+
+**Real-world examples of what teams put in skills:**
+
+- A **release checklist** — every step of cutting a version, in order, with the exact commands. Fires when you say "let's ship."
+- A **library cheat-sheet** — "when working with our internal `flux-db` SDK, here's the gotchas, the right patterns, the deprecated APIs to avoid." Fires when the model touches that import.
+- An **incident runbook** — "when prod is down, here's the diagnostic order, the dashboards to check, the rollback procedure." Fires when you paste a stack trace.
+- A **style guide** — "how we write commit messages, name PRs, structure ADRs." Fires when the model is drafting one.
+- A **domain-specific procedure** — "how we model multi-tenant data in this codebase," "how we handle timezones," "how we write tests for the payments module." Fires when the model is about to do that work.
+
+The pattern: anything you've explained more than twice, anything that lives in a Notion doc nobody opens, anything where the failure mode is "the model didn't know we do it this way here." Skills turn institutional knowledge into something the agent reaches for on its own.
+
+## Why this and not...
+
+This is the part that trips people up. Skills overlap with several other primitives. Here's how to decide:
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Run a fixed sequence of commands you'll type by name | [Slash command](/foundations/slash-commands/) | Skill |
+| Encode "how we do X here" as knowledge the model uses contextually, without you typing a command | **Skill** | Slash command |
+| Bundle a long, multi-file procedure with helper scripts and reference docs | **Skill** | Slash command (too thin) |
+| Isolate a side-quest (research, audit, search) into its own context window | [Subagent](/foundations/subagents/) | Skill |
+| Block, gate, or rewrite tool calls deterministically | [Hook](/foundations/hooks/) | Skill |
+| Persist facts across every session in this repo | [Rules](/foundations/rules/) | Skill |
+| Add a new data source or external tool (Jira, Postgres, Figma) | [MCP server](/foundations/mcp-servers/) | Skill |
+
+The defining trait of a skill: **the model decides when to use it**, based on a description you wrote. A slash command waits for you to type its name. A hook fires on an event. A skill activates on *intent*.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    **Locations** (precedence: managed > user > project):
+    - `.claude/skills/<name>/SKILL.md` — project
+    - `~/.claude/skills/<name>/SKILL.md` — user
+    - Plugin-bundled skills (namespaced as `/plugin:name`)
+
+    **Frontmatter fields:**
+
+    ```yaml
+    ---
+    name: deploy
+    description: Run the team's deploy checklist.
+    disable-model-invocation: false  # if true, only invokable via /<name>
+    context: fork                    # optional: run in an isolated subagent
+    ---
+    ```
+
+    **Loading model:**
+    - Skill *descriptions* load at session start so Claude knows what's available.
+    - Full skill body loads on invocation (manual `/<name>` or model-decided).
+    - With `disable-model-invocation: true`, the skill is invisible until you type `/<name>` — useful for skills with side effects.
+
+    **In subagents:** a subagent's `skills:` frontmatter field preloads skills into its context — different from on-demand loading in the main session.
+  </TabItem>
+
+  <TabItem label="Codex">
+    **Locations** (discovered in scope order):
+    - `.agents/skills/<name>/SKILL.md` — project (walked up from cwd to repo root)
+    - `~/.agents/skills/<name>/SKILL.md` — user
+    - `/etc/codex/skills/` — admin
+    - Skills bundled with Codex by OpenAI — system
+
+    **Invocation:** type `/skills` to browse, or `$<skill-name>` to mention a skill directly in a prompt. Codex can also auto-select skills whose descriptions match the current task.
+
+    **Standard:** Codex implements the Agent Skills open standard. A skill folder with `SKILL.md` is portable to and from Claude Code for the basic shape; tool-specific extensions don't cross-map.
+
+    **Frontmatter fields:** only `name` and `description` are required. Codex's SKILL.md does **not** read Claude Code's `disable-model-invocation`, `context: fork`, or `allowed-tools` frontmatter keys.
+
+    **Auto-loader control:** Codex's equivalent of `disable-model-invocation` is a sidecar file `agents/openai.yaml` inside the skill, setting `policy.allow_implicit_invocation: false` (defaults to `true`). With that off, Codex won't auto-invoke the skill — `$<skill-name>` still works.
+
+    **Skill directory layout:** `SKILL.md` (required), optional `scripts/`, `references/`, `assets/`, optional `agents/openai.yaml` (UI metadata, invocation policy, declared MCP/tool dependencies).
+  </TabItem>
+
+  <TabItem label="opencode">
+    **Locations:** opencode reads skills from its own paths *and* from the Claude Code and Codex paths, walking up from cwd to the git worktree root:
+    - Project: `.opencode/skills/<name>/SKILL.md`, `.claude/skills/<name>/SKILL.md`, `.agents/skills/<name>/SKILL.md`
+    - Global: `~/.config/opencode/skills/<name>/SKILL.md`, `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`
+
+    **Frontmatter fields:** `name` (1–64 chars, must match the directory) and `description` (1–1024 chars) are required; `license`, `compatibility`, and `metadata` are optional. There's no opencode equivalent to `disable-model-invocation` or `context: fork` in the frontmatter.
+
+    **Invocation:** skills are exposed through a built-in `skill` tool — the agent sees the available skill names and descriptions and calls the tool to load a skill's body on demand.
+
+    Because opencode reads `.claude/skills/` and `.agents/skills/` directly, a skill folder authored for Claude Code or Codex generally works in opencode unchanged; tool-specific frontmatter keys are simply ignored.
+  </TabItem>
+</Tabs>
+
+## The cross-tool standard
+
+In late 2025, Anthropic published Agent Skills as an open specification, and within days OpenAI shipped support in Codex CLI. This is the unusual part of skills as a primitive: **a skill you write today is largely portable across tools**. A `SKILL.md` plus its supporting files works in Claude Code and Codex with no changes to the body, and opencode reads the Claude Code and Codex skill directories directly. Tool-specific frontmatter keys (Claude's `disable-model-invocation`, `context: fork`) don't cross-map, but the core shape — frontmatter `name` + `description`, Markdown body, optional bundled scripts/assets — is shared.
+
+That portability is why teams converging on multiple coding agents tend to push knowledge into skills rather than slash commands or per-tool config — it's the one extension format that survives the choice of CLI.
+
+## Cross-tool comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| Format | `SKILL.md` + assets | `SKILL.md` + assets | `SKILL.md` + assets (narrower frontmatter) |
+| Cross-tool portable | Yes (to Codex / opencode) | Yes (to Claude Code / opencode) | Yes (reads `.claude/skills/` and `.agents/skills/` natively; non-opencode frontmatter ignored) |
+| Project path | `.claude/skills/` | `.agents/skills/` | `.opencode/skills/` (+ reads `.claude/`, `.agents/`) |
+| Invocation | `/<name>` | `/skills`, `$<skill>` | Built-in `skill` tool, model-selected |
+| Model auto-loads | Yes (by description) | Yes (by description) | Yes (by description) |
+| Can be hidden from model | `disable-model-invocation: true` | `agents/openai.yaml` → `policy.allow_implicit_invocation: false` | — |
+| Subagent access control | `skills:` field preloads | `[[skills.config]]` in agent TOML (note: enable/disable overrides currently buggy — openai/codex#14161) | `permission.skill` rules per agent gate which skills are visible |
+
+## Name collisions
+
+- Don't confuse a **skill** (reusable content bundle) with a **subagent** (isolated worker). They can combine — a skill can run inside a forked subagent context via `context: fork` in Claude Code — but they solve different problems. See [subagents](/foundations/subagents/).
+- "Skills" in Claude Code overlap almost completely with [slash commands](/foundations/slash-commands/); in Codex and opencode they're distinct primitives.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Skills',
+      url: 'https://docs.claude.com/en/docs/claude-code/skills',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'Agent skills',
+      url: 'https://developers.openai.com/codex/skills',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'Agent skills',
+      url: 'https://opencode.ai/docs/skills/',
+    },
+  ]}
+/>

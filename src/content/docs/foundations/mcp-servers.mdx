@@ -1,0 +1,117 @@
+---
+title: MCP servers
+description: How each CLI consumes Model Context Protocol servers — and why Codex can also be one.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What an MCP server is
+
+The **Model Context Protocol** (MCP) is an open wire format for connecting an AI tool to an external service — a database, a browser, a ticket tracker, a file store, a search index. An MCP *server* exposes a set of tools (e.g. `jira.search_issues`, `postgres.query`, `figma.get_node`) over that protocol. The CLI is the *client*: it discovers the server's tools at startup and lets the model call them as if they were built in.
+
+All three CLIs in scope are MCP *clients*. Codex is the only one that can also *be* an MCP server — exposing its own coding capabilities as a tool other agents can call.
+
+## Why you'd want one
+
+The agent is brilliant at the code. It knows your language, your patterns, your test framework. You ask it to *"close out the auth bug ticket once the fix is in,"* and it doesn't know what a ticket is. You ask it to *"check what tickets are blocked on the migration"* and it can't see Jira at all. You ask it to *"pull the current pricing from the staging DB to test against"* and it has no way to reach the database.
+
+So you do what you always do: you switch tabs, open Jira, copy the ticket title, paste it back. Open a SQL client, run the query, paste the rows back. Hit Figma, screenshot a frame, drop it in. The agent does the coding; *you* are the integration layer to everything else. Every external system is a context switch you pay for.
+
+That's the gap MCP servers close. An MCP server is a typed adapter that gives the agent first-class access to one of these systems — *the agent itself* runs `jira.get_ticket("AUTH-412")` or `postgres.query("select * from prices where ...")` as a tool call, sees the result, and acts on it. The integration moves from "you, by hand" to "the agent, in-flow."
+
+**Real-world examples of MCP servers people actually run:**
+
+- **Issue trackers** — Jira, Linear, GitHub Issues. The agent reads the ticket it's working on, posts updates, closes it on merge.
+- **Databases** — Postgres, MySQL, SQLite. *"Check the actual schema before you write this query."* No more guessing the column name.
+- **Browser automation** — Playwright/Puppeteer. The agent navigates a staging site, fills a form, screenshots the result to verify a UI change.
+- **Cloud consoles** — AWS, Cloudflare, Vercel. List buckets, check deployments, read logs without leaving the session.
+- **Design tools** — Figma. The agent reads the actual component spec instead of you describing it.
+- **Search & knowledge** — Notion, Confluence, internal vector stores. The agent looks up the runbook on its own.
+- **Filesystem at scale** — large data lakes, S3, object stores. Beyond what local Read/Glob can reach.
+
+The test: if the answer to *"why did you do it that way?"* is *"I had to guess because I can't see the source,"* there's probably an MCP server that closes the gap.
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Connect the agent to a real external system | **MCP server** | Skill describing the system |
+| Encode procedures or institutional knowledge | [Skill](/foundations/skills/) | MCP server |
+| Inject the same context every session | [Rules](/foundations/rules/) | MCP server |
+| Restrict what tools the agent can call | [Permissions](/foundations/permissions/) | MCP-server choice alone |
+| Run a side effect on every tool call | [Hook](/foundations/hooks/) | MCP server |
+| Bundle and distribute a server + skills + commands | [Plugin](/foundations/plugins/) | Raw MCP install |
+
+MCP is about *reach* — letting the agent touch systems outside the CLI. Skills, memory, and hooks are about *behaviour*. If you're trying to teach the agent what to do, you want a skill. If you're trying to give the agent something to *act on*, you want an MCP server.
+
+## How it works in each tool
+
+<Tabs syncKey="tool">
+  <TabItem label="Claude Code">
+    **Configuration:** `.mcp.json` at the project root, or `claude mcp add` to register from the CLI. Servers can be scoped:
+    - **Local** (default) — stored in `~/.claude.json` under the current project, private to you
+    - **Project** — `.mcp.json` checked into the repo, shared with your team
+    - **User** — registered via `claude mcp add --scope user`, available across all your projects
+
+    **Precedence (most-wins):** local > project > user.
+
+    **Inspect and manage:** `/mcp` in-session shows connected servers, token cost per server, and current health. MCP connections can fail silently mid-session — use `/mcp` if Claude stops being able to use a tool it had access to earlier.
+
+    **Tool search is on by default** — idle MCP tools consume minimal context until used. You can disable this for predictable token accounting.
+  </TabItem>
+
+  <TabItem label="Codex">
+    **Configuration:** `~/.codex/config.toml` with a `[mcp_servers.<name>]` table per server, or the `codex mcp` subcommand (`codex mcp add`, `codex mcp login`) to manage them from the CLI. Codex supports both **stdio** (local process via `command`/`args`) and **streamable HTTP** (`url`) transports.
+
+    **Codex as an MCP server:** the `codex mcp-server` subcommand runs Codex itself as an MCP server over stdio, exposing `codex` and `codex-reply` tools so another MCP client (Claude Desktop, Zed, the OpenAI Agents SDK, etc.) can drive it.
+
+    **Inspect:** `/mcp` in the TUI shows active MCP servers.
+  </TabItem>
+
+  <TabItem label="opencode">
+    **Configuration:** the `mcp` field in `opencode.json`. Each server is declared with `type: "local"` (with a `command` array) or `type: "remote"` (with a `url`, plus optional `headers` and OAuth). MCP servers inherit opencode's general config layering — project (`opencode.json` in the project root) merges over global (`~/.config/opencode/opencode.json`), with macOS-managed preferences and file-based managed settings taking precedence above everything else.
+
+    opencode also ships **LSP server** integration alongside MCP, configured via a separate `lsp` field in `opencode.json`. The agent receives LSP **diagnostics** as feedback while working in the codebase, without needing an MCP wrapper.
+  </TabItem>
+</Tabs>
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode |
+|---|---|---|---|
+| Config file | `.mcp.json` | `~/.codex/config.toml` | `opencode.json` |
+| Scopes | local / project / user / managed | user (`~/.codex/`) / project (`.codex/`) / managed | global / project / managed |
+| Inspect command | `/mcp` | `/mcp` | `/mcp` |
+| Transports | stdio, HTTP (streamable-http), SSE (deprecated) | stdio, streamable HTTP | local (stdio), remote (HTTP) |
+| Can be an MCP server | No | **Yes** (`codex mcp-server`) | No |
+| Tool search (lazy schemas) | Yes (default on) | — | — |
+| LSP servers as first-class | No (LSP via MCP if at all) | No | **Yes** (diagnostics into agent context) |
+
+## Name collisions
+
+- "MCP" specifically refers to the [Model Context Protocol](https://modelcontextprotocol.io/). Don't confuse with generic "plugins" — see [Plugins & marketplaces](/foundations/plugins/) for distribution-layer packaging.
+- Codex's dual MCP role — both *consumer* and *producer* — is unique among the three. When someone says "I'm using Codex over MCP," ask which direction.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'MCP',
+      url: 'https://docs.claude.com/en/docs/claude-code/mcp',
+    },
+
+    {
+      tool: 'Codex',
+      label: 'MCP',
+      url: 'https://developers.openai.com/codex/mcp',
+    },
+
+    {
+      tool: 'opencode',
+      label: 'MCP servers',
+      url: 'https://opencode.ai/docs/mcp-servers/',
+    },
+  ]}
+/>

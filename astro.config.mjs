@@ -19,7 +19,10 @@ export default defineConfig({
 			},
 			// Apply custom dark/purple theme globally to all pages
 			customCss: ['./src/styles/theme.css'],
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/withastro/starlight' }],
+			components: {
+				ThemeSelect: './src/components/ThemeSelect.astro',
+			},
+			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/agentscli' }],
 			head: [
 				{
 					tag: 'link',
@@ -47,36 +50,35 @@ export default defineConfig({
 			plugins: [
 				starlightBlog({
 					authors: {
-						james: {
-							name: 'James Dalton',
-							title: 'Lead Engineer',
-							picture: '/authors/james.jpg',
+						sourabh: {
+							name: 'Sourabh Kushwah',
+							title: 'Software Engineer',
 						},
-						elena: {
-							name: 'Elena Luo',
-							title: 'Rust Developer',
-							picture: '/authors/elena.jpg',
-						},
-						marcus: {
-							name: 'Marcus Kovic',
-							title: 'Technical Writer',
-							picture: '/authors/marcus.jpg',
+						sanjay: {
+							name: 'Sanjay Kushwah',
+							title: 'Software Engineer',
 						},
 					},
 				}),
 			],
 			sidebar: [
 				{
-					label: 'Guides',
+					label: 'Foundations',
 					items: [
-						// Each item here is one entry in the navigation menu.
-						{ label: 'Getting Started', slug: 'guides/getting-started' },
-						{ label: 'Example Guide', slug: 'guides/example' },
+						{ label: 'Overview', slug: 'foundations' },
+						{ label: 'Rules', slug: 'foundations/rules' },
+						{ label: 'Subagents', slug: 'foundations/subagents' },
+						{ label: 'Model selection', slug: 'foundations/model-selection' },
+						{ label: 'Slash commands', slug: 'foundations/slash-commands' },
+						{ label: 'Skills', slug: 'foundations/skills' },
+						{ label: 'MCP servers', slug: 'foundations/mcp-servers' },
+						{ label: 'Hooks', slug: 'foundations/hooks' },
+						{ label: 'Permissions & sandboxing', slug: 'foundations/permissions' },
+						{ label: 'Plan mode', slug: 'foundations/plan-mode' },
+						{ label: 'Configuration', slug: 'foundations/configuration' },
+						{ label: 'Headless & CI', slug: 'foundations/headless' },
+						{ label: 'Plugins & marketplaces', slug: 'foundations/plugins' },
 					],
-				},
-				{
-					label: 'Reference',
-					autogenerate: { directory: 'reference' },
 				},
 			],
 		}),
