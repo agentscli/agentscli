@@ -3,15 +3,16 @@ title: Headless & CI
 description: Non-interactive invocation — single-prompt runs, CI/CD integration, and automation entry points.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
+import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 
 ## What headless mode is
 
 Every CLI in scope has a way to run **non-interactively**: you pass a prompt, the agent runs its loop to completion, prints a result, and exits. No TUI, no live editing, no approvals — just *call it from a script, get an answer back*.
 
-The shapes converge — all three give you a `run` / `exec` / `-p` subcommand — but the surrounding ecosystem (SDKs, GitHub Actions, structured-output formats, remote execution) differs significantly. That's usually what tips the decision when you're choosing one for an automation.
+The shapes converge — all of them give you a `run` / `exec` / `-p` / `--prompt` subcommand — but the surrounding ecosystem (SDKs, GitHub Actions, structured-output formats, remote execution, async background agents) differs significantly. That's usually what tips the decision when you're choosing one for an automation.
+
+Two tools in scope go further than a local headless command. **Copilot's** canonical headless surfaces are **Coding Agent** (background, async, GitHub-native) and the **`copilot` CLI** — both non-IDE. **Cursor** ships `cursor-agent` plus Cloud Agents (REST API) and Bugbot (PR reviewer).
 
 ## Why you'd want one
 
@@ -30,6 +31,7 @@ That's the gap headless mode closes. The same agent, the same skills, the same m
 - **Doc freshness checks** — weekly run that grep's for `TODO: verify` markers and asks the agent to confirm each one against current code, opening issues for the stale ones.
 - **Cron-style summaries** — daily standup digest from `git log`, weekly velocity report, monthly tech-debt scan.
 - **Embedded in tooling** — a custom CLI in your repo (`bin/team-tool review`) that wraps the agent SDK for repeatable, parameterised flows.
+- **Background PR work** — assign a GitHub Issue to Copilot Coding Agent, walk away, come back to a draft PR.
 
 The test: if you're describing the task to the agent in approximately the same shape every time, and the result is something a script could consume, it belongs in headless mode.
 
@@ -37,76 +39,39 @@ The test: if you're describing the task to the agent in approximately the same s
 
 | You want to... | Reach for | Not |
 |---|---|---|
-| Run the agent unattended from a script or CI job | **Headless / `run` / `exec`** | Interactive TUI |
-| Build a long-running custom automation around the agent | **SDK** (Claude Agent SDK / Codex SDK / opencode SDK) | Shelling out to `-p` every time |
-| Run the agent on a remote machine / sandboxed env | Codex Cloud, opencode + Docker, Claude Agent SDK | Local headless alone |
+| Run the agent unattended from a script or CI job | **Headless / `run` / `exec` / `--prompt`** | Interactive TUI |
+| Build a long-running custom automation around the agent | **SDK** (Claude Agent SDK / Codex SDK / opencode SDK) | Shelling out every time |
+| Run the agent on a remote machine / sandboxed env | Codex Cloud, opencode + Docker, Claude Agent SDK, Cursor Cloud Agents | Local headless alone |
 | Get structured JSON output for scripts to parse | `--output-format json` / `--json` / `--format json` | Grepping plaintext |
 | Resume a previous session non-interactively | `codex resume` (Codex), session APIs in SDKs | Restarting from scratch |
 | Run unattended *and* keep humans in the loop on risky actions | Headless + tight [permissions](/foundations/permissions/) + [hooks](/foundations/hooks/) | Headless with full access |
 | Embed the agent inside another product | **SDK** | Wrapping the CLI binary |
+| Trigger an agent from a GitHub Issue or `@`-mention | **Copilot Coding Agent** | Polling for events from a local headless run |
 
 The TUI is for *driving the agent*. Headless mode is for *the agent being driven by something else*. SDKs are for *the agent being part of a bigger program*. Pick by how much orchestration you need around the call.
 
 ## How it works in each tool
 
-<Tabs syncKey="tool">
-  <TabItem label="Claude Code">
-    **Command:** `claude -p "<prompt>"` (or `claude --print "<prompt>"`).
-
-    Runs the agent loop until it produces a final answer, prints stdout, exits. Suitable for shell pipelines.
-
-    **CI integration:** the **Claude Agent SDK** is the recommended path for richer automation than `-p` allows — for example, in GitHub Actions, you'd typically wrap an SDK call rather than shell out to the CLI.
-
-    **Streaming output:** `--output-format json` for structured output; `--output-format stream-json` for line-delimited streaming.
-
-    **SDK packages:**
-    - npm: `@anthropic-ai/claude-agent-sdk` (renamed from `@anthropic-ai/claude-code` in early 2026)
-    - PyPI: `claude-agent-sdk`
-  </TabItem>
-
-  <TabItem label="Codex">
-    **Command:** `codex exec "<prompt>"` (alias `codex e`).
-
-    **Session resume / fork:** `codex resume` re-enters the last session; `codex fork` branches a session. Useful for CI flows where one run produces context another consumes.
-
-    **Codex Cloud:** `codex cloud exec` runs the prompt against a remote execution environment with configurable network policy — for sandboxed CI work.
-
-    **GitHub Action:** a first-party GitHub Action ships from OpenAI for CI/CD integration.
-
-    **Codex SDK:** programmatic API for orchestrating Codex from a parent program; pairs with the OpenAI Agents SDK for multi-agent flows.
-
-    **Structured output:** `--json` (alias `--experimental-json`) on `codex exec` emits newline-delimited JSON events — one per state change (`thread.started`, `turn.completed`, `item.*`, `error`, etc.). `--output-schema <file>` accepts a JSON Schema constraining the final response; `--output-last-message -o <file>` writes only the final assistant message. Streaming is the default behavior of `--json`. Known bug: `--json` + `--output-schema` is silently ignored when MCP servers are active ([issue #15451](https://github.com/openai/codex/issues/15451)).
-  </TabItem>
-
-  <TabItem label="opencode">
-    **Command:** `opencode run "<prompt>"`.
-
-    **GitHub / GitLab integrations** are first-class; opencode publishes connectors for repo-platform workflows.
-
-    **ACP (Agent Client Protocol)** is the IDE/host integration layer, but is also the cleanest path for embedding opencode in another tool.
-
-    **Docker support** for containerised deployments simplifies running opencode in CI.
-
-    **Structured output:** `--format json` is supported on `opencode run`, `opencode session list`, and `opencode db` for machine-readable streams. There is no separate `--output-format` or schema-validation flag.
-  </TabItem>
-</Tabs>
+<ToolTabs chapter="headless" />
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | opencode |
-|---|---|---|---|
-| Headless command | `claude -p` | `codex exec` | `opencode run` |
-| Structured output | `--output-format json` | `--json` / `--experimental-json` + optional `--output-schema` | `--format json` |
-| Streaming output | `stream-json` | NDJSON (default with `--json`) | line-delimited JSON via `--format json` |
-| Session resume/fork | `/resume` (TUI) | `codex resume`, `codex fork` | Sessions w/ undo-redo |
-| Remote/cloud execution | Agent SDK | `codex cloud exec` | Docker / self-hosted |
-| First-party CI integration | Claude Agent SDK | GitHub Action | GitHub/GitLab integrations |
-| Programmatic SDK | Claude Agent SDK | Codex SDK | opencode SDK |
+| Aspect | Claude Code | Codex | opencode | Cursor | Copilot |
+|---|---|---|---|---|---|
+| Headless command | `claude -p` | `codex exec` | `opencode run` | `cursor-agent -p` | `copilot --prompt` |
+| Structured output | `--output-format json` | `--json` / `--experimental-json` + optional `--output-schema` | `--format json` | `json`, `stream-json`, `--stream-partial-output` | — |
+| Streaming output | `stream-json` | NDJSON (default with `--json`) | line-delimited JSON via `--format json` | `stream-json` / partial output | — |
+| Session resume/fork | `/resume` (TUI) | `codex resume`, `codex fork` | Sessions w/ undo-redo | `/resume` (CLI) | — |
+| Remote / async execution | Agent SDK | `codex cloud exec` | Docker / self-hosted | **Cloud Agents API** (REST) | **Coding Agent** (background, GitHub-native) |
+| First-party CI integration | Claude Agent SDK | GitHub Action | GitHub / GitLab integrations | Bugbot (PR reviewer) | GitHub Actions, Coding Agent, PR review |
+| Programmatic SDK | Claude Agent SDK | Codex SDK | opencode SDK | Cloud Agents REST API | REST API (*Unverified* on stable path) |
 
 ## Name collisions
 
-- "Headless" in Claude Code (`claude -p`) is the same idea as Codex's `exec` and opencode's `run` — but each tool's *SDK* is the more powerful path for non-trivial automation.
+- "Headless" in Claude Code (`claude -p`) is the same idea as Codex's `exec`, opencode's `run`, Cursor's `cursor-agent -p`, and Copilot CLI's `--prompt` — but each tool's *SDK* or *background-agent* surface is the more powerful path for non-trivial automation.
 - Codex Cloud is *not* the same as "remote MCP" — Cloud runs the whole CLI remotely; remote MCP just connects a local CLI to a remote tool server.
+- Copilot **Coding Agent** (background async PR work) is a different surface from Copilot **CLI** headless (`copilot --prompt`) and from **`gh copilot`** (the legacy GitHub-CLI extension, not an agent).
+- Cursor **Cloud Agents** (REST API, GitHub-native) ≠ **`cursor-agent` headless** (local CLI) ≠ **Bugbot** (PR reviewer service).
 
 <UpstreamRefs
   links={[
@@ -115,17 +80,25 @@ The TUI is for *driving the agent*. Headless mode is for *the agent being driven
       label: 'Headless mode',
       url: 'https://docs.claude.com/en/docs/claude-code/headless',
     },
-
     {
       tool: 'Codex',
       label: 'Non-interactive mode',
       url: 'https://developers.openai.com/codex/noninteractive',
     },
-
     {
       tool: 'opencode',
       label: 'Server mode',
       url: 'https://opencode.ai/docs/server/',
+    },
+    {
+      tool: 'Cursor',
+      label: 'CLI headless',
+      url: 'https://cursor.com/docs/cli/headless',
+    },
+    {
+      tool: 'Copilot',
+      label: 'About Copilot CLI',
+      url: 'https://docs.github.com/copilot/concepts/agents/about-copilot-cli',
     },
   ]}
 />

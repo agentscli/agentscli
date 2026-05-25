@@ -4,11 +4,15 @@ import starlight from '@astrojs/starlight';
 import starlightBlog from 'starlight-blog';
 import react from '@astrojs/react';
 
+// Cloudflare Web Analytics beacon token (public value — safe to commit).
+// Get it from the Cloudflare dashboard → Web Analytics → add agentscli.com → copy token.
+// Set CF_BEACON_TOKEN in the build env, or paste the token as the '' fallback below.
+// Leave empty to disable the beacon (keeps local dev clean).
+const CF_BEACON_TOKEN = process.env.CF_BEACON_TOKEN ?? '';
+
 // https://astro.build/config
 export default defineConfig({
-	// TODO: Replace with your GitHub username and repository name
-	// site: 'https://USERNAME.github.io',
-	// base: '/REPO_NAME',
+	site: 'https://www.agentscli.com',
 	integrations: [
 		react(),
 		starlight({
@@ -46,6 +50,20 @@ export default defineConfig({
 						href: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap',
 					},
 				},
+				// Cloudflare Web Analytics — privacy-friendly, cookieless. Only emitted
+				// when CF_BEACON_TOKEN is set, so local dev and untokened builds stay clean.
+				...(CF_BEACON_TOKEN
+					? [
+							{
+								tag: 'script',
+								attrs: {
+									defer: true,
+									src: 'https://static.cloudflareinsights.com/beacon.min.js',
+									'data-cf-beacon': `{"token": "${CF_BEACON_TOKEN}"}`,
+								},
+							},
+						]
+					: []),
 			],
 			plugins: [
 				starlightBlog({

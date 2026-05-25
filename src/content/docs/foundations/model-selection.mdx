@@ -3,15 +3,14 @@ title: Model selection & multi-provider
 description: Which models each CLI can drive, and which one breaks the single-vendor mould.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
+import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 
 ## What model selection is
 
 Every CLI in scope can be steered to a specific underlying model — and most can swap models *mid-session*. The model is the engine: a "smarter" model reasons more deeply, plans longer, and costs more per token; a "lighter" model is faster, cheaper, and good enough for most mechanical work.
 
-Two of the three CLIs are vendor-locked: **Claude Code** runs Anthropic models, **Codex** runs OpenAI models. **opencode** is multi-provider — Anthropic, OpenAI, Google, local models, or anything that fits its provider abstraction. That distinction shapes everything downstream: model swaps, cost optimisation, side-by-side comparisons.
+The single-vendor / multi-vendor split shapes everything downstream. **Claude Code** runs Anthropic models only. **Codex** runs OpenAI models only. **opencode** is fully multi-provider — any model that fits its provider abstraction. **Cursor** ships a wide built-in roster (Anthropic, OpenAI, Google, xAI, Moonshot, plus its own Composer family). **Copilot** offers a tiered roster (Claude, GPT, Gemini) gated by plan and org policy. That distinction shapes model swaps, cost optimisation, side-by-side comparisons, and vendor-risk posture.
 
 ## Why you'd want to think about this
 
@@ -47,82 +46,31 @@ Switching models doesn't replace your prompt, skills, or memory — it changes *
 
 ## How it works in each tool
 
-<Tabs syncKey="tool">
-  <TabItem label="Claude Code">
-    **Models** (current Claude 4.x tier):
-    - `claude-opus-4-7` — flagship; 1M-token context
-    - `claude-sonnet-4-6` — balanced; 1M-token context
-    - `claude-haiku-4-5` — fast; 200K-token context
-
-    **Switching:** `/model` mid-session lists available models; pick one to switch the rest of the conversation. Pin a default via the `model` setting or the `ANTHROPIC_MODEL` env var.
-
-    **Tier strategy:**
-    - **Opus** — heaviest model; use for hard reasoning, planning, code review of long diffs.
-    - **Sonnet** — default for most coding work.
-    - **Haiku** — fast and cheap; use for trivial work or as a subagent's model.
-
-    Claude Code does not support non-Anthropic models.
-  </TabItem>
-
-  <TabItem label="Codex">
-    **Models:** OpenAI GPT-5.x family (and successors).
-
-    **Switching:** `/model` mid-session or `--model <id>` at launch. A `model` field in `config.toml` (or in a profile — see [Configuration](/foundations/configuration/)) sets the default.
-
-    Codex does not support non-OpenAI models.
-
-    **Default model:** `gpt-5.5` for ChatGPT-authenticated sessions (with `gpt-5.4` as fallback); `gpt-5.2-codex` for API-key auth. **Known model IDs** referenced in current docs include `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.3-codex-spark` (research preview), `gpt-5.2-codex`, `gpt-5.1-codex-max`. Codex doesn't publish a static catalog — run `codex debug models` for the live list available to your account.
-  </TabItem>
-
-  <TabItem label="opencode">
-    **Multi-provider** is opencode's defining feature. Each agent can have its own `model` field pointing at any supported provider. Configure providers in `opencode.json`; switch in-session via TUI or per-agent.
-
-    **"Zen"** is opencode's curated model selection — a vetted list of model+provider combinations tested for opencode's workflow.
-
-    Common opencode setups:
-    - Default agent uses one provider (e.g. Sonnet for the loop), with `explore` subagent on Haiku for cheap context scans.
-    - Side-by-side compare: spawn the same agent against two providers and diff the outputs.
-
-    **Provider list:** ~75+ providers preloaded via the [Models.dev](https://models.dev) catalog — Anthropic, OpenAI, OpenRouter, Groq, Google (Gemini / Vertex AI), Amazon Bedrock, Azure OpenAI, Ollama, LM Studio, GitHub Copilot, GitLab Duo, DeepSeek, Together AI, Hugging Face, and many more. Credentials are added via `/connect` (or `opencode auth login`).
-
-    **Custom providers:** add a `provider` block to `opencode.json`. For OpenAI-compatible endpoints, use the `@ai-sdk/openai-compatible` npm package:
-
-    ```json
-    {
-      "provider": {
-        "my-provider": {
-          "npm": "@ai-sdk/openai-compatible",
-          "name": "My Provider",
-          "options": { "baseURL": "https://api.example.com/v1", "apiKey": "{env:MY_API_KEY}" },
-          "models": { "my-model": { "name": "My Model" } }
-        }
-      }
-    }
-    ```
-
-    Reference the model as `my-provider/my-model`.
-  </TabItem>
-</Tabs>
+<ToolTabs chapter="model-selection" />
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | opencode |
-|---|---|---|---|
-| Vendor | Anthropic only | OpenAI only | **Multi-provider** |
-| In-session switch | `/model` | `/model`, `--model` | Per-agent / TUI |
-| Curated model list | Implicit (Opus/Sonnet/Haiku) | Implicit (GPT-5.x) | **Zen** (curated) |
-| Different model per subagent | Yes (subagent frontmatter `model:`) | Yes (TOML `model` field; inherits parent if omitted) | **Yes** |
-| Side-by-side comparison | N/A | N/A | Native (different agents) |
+| Aspect | Claude Code | Codex | opencode | Cursor | Copilot |
+|---|---|---|---|---|---|
+| Vendor lock-in | Anthropic only | OpenAI only | **Multi-provider** | Multi-provider (built-in roster) | Multi-provider (curated, plan-gated) |
+| In-session switch | `/model` | `/model`, `--model` | Per-agent / TUI | Per-chat picker | Per-chat picker (`/model` in CLI) |
+| Curated model list | Implicit (Opus/Sonnet/Haiku) | Implicit (GPT-5.x) | **Zen** (curated) | Composer + roster | Plan-tier roster |
+| Auto-routing mode | — | — | — | **Auto Mode** | **Auto model selection** (10% discount) |
+| Different model per subagent | Yes (frontmatter `model:`) | Yes (TOML `model` field) | **Yes** | Yes | — |
+| Side-by-side comparison | N/A | N/A | Native (different agents) | — | — |
+| Org / policy gating | Managed settings | Managed settings | Config | Team / Enterprise | Business / Enterprise allow-deny |
 
 ## When this matters
 
-- **Pinning subagent costs.** Giving a cheap exploration subagent a cheap model while the main loop uses a heavyweight one saves real money. All three support per-subagent model selection: Claude Code via `model:` in subagent frontmatter, Codex via `model` in the agent TOML file, opencode via per-agent `model` in the agent's markdown frontmatter.
+- **Pinning subagent costs.** Giving a cheap exploration subagent a cheap model while the main loop uses a heavyweight one saves real money. Claude Code via `model:` in subagent frontmatter, Codex via `model` in the agent TOML file, opencode via per-agent `model` in the agent's markdown frontmatter, Cursor via subagent frontmatter.
 - **Comparison reviews.** Want to compare how three models answer the same code-review question? opencode's per-agent provider is the only built-in path.
-- **Vendor risk.** If you've standardised on Claude Code or Codex and need to switch providers, you switch tools, not just config.
+- **Vendor risk.** If you've standardised on Claude Code or Codex and need to switch providers, you switch tools, not just config. Cursor, opencode, and Copilot soften that by carrying multiple vendors inside one tool.
+- **Premium-request burn (Copilot).** Coding Agent runs consume premium requests; long autonomous sessions can burn quotas fast — a 2026 sticker-shock issue flagged in the press.
 
 ## Name collisions
 
 - **"Model"** sometimes means the *family* (Opus, Sonnet, GPT-5) and sometimes the *snapshot ID* (`claude-opus-4-7-20...`). Be explicit when documenting model selection — snapshot IDs change over time.
+- **"Auto"** means different things across tools. Cursor's **Auto Mode** picks a model on Cursor's terms from a discounted pool. Copilot's **Auto model selection** picks for you with a 10% premium-request discount. They are not the same primitive.
 
 <UpstreamRefs
   links={[
@@ -131,17 +79,25 @@ Switching models doesn't replace your prompt, skills, or memory — it changes *
       label: 'Model setting',
       url: 'https://docs.claude.com/en/docs/claude-code/settings',
     },
-
     {
       tool: 'Codex',
       label: 'Models',
       url: 'https://developers.openai.com/codex/models',
     },
-
     {
       tool: 'opencode',
       label: 'Models',
       url: 'https://opencode.ai/docs/models/',
+    },
+    {
+      tool: 'Cursor',
+      label: 'Models',
+      url: 'https://cursor.com/docs/models',
+    },
+    {
+      tool: 'Copilot',
+      label: 'Supported models',
+      url: 'https://docs.github.com/en/copilot/reference/ai-models/supported-models',
     },
   ]}
 />

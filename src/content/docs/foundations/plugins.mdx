@@ -3,18 +3,19 @@ title: Plugins & marketplaces
 description: The packaging layer — how each CLI lets you bundle and share extensions. Codex's gap is part of the story.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
+import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 
 ## What a plugin is
 
 A **plugin** is the packaging unit that bundles a CLI's extension primitives — skills, hooks, subagents, MCP servers, commands — into one installable thing. Instead of dropping six files in six different directories, you install one plugin and the whole set lands together, namespaced so it doesn't collide with anything else.
 
-Of the three tools in scope:
+Across the tools in scope:
 
 - **Claude Code** has plugins *and* marketplaces (hosted plugin collections you browse from inside the CLI).
+- **Copilot** has the densest surface: **Extensions** (Chat-centric, GitHub Marketplace) *and* **plugins** (bundle skills + agents + hooks + MCP + LSP, distributed via marketplaces — preview in 2026).
 - **opencode** has plugins as JS/TS modules; no marketplace concept of its own, but an [`awesome-opencode`](https://github.com/awesome-opencode/awesome-opencode) community index.
+- **Cursor** inherits the **VS Code extension** model (OpenVSX-backed) plus an **MCP Marketplace**, but has **no first-class "bundle of rules + skills + agents + hooks" plugin format** yet.
 - **Codex** has **no first-class plugin format** — you compose its primitives (skills, MCP, SDK) directly. That's a deliberate design choice as much as a gap.
 
 ## Why you'd want one
@@ -51,100 +52,25 @@ A plugin pays its weight when there are *multiple* extension pieces that belong 
 
 ## How it works in each tool
 
-<Tabs syncKey="tool">
-  <TabItem label="Claude Code">
-    A **plugin** is a directory bundling some combination of:
-
-    - Skills (`skills/<name>/SKILL.md`)
-    - Subagents (`agents/<name>.md`)
-    - Hooks
-    - MCP servers
-    - Commands
-
-    Each plugin's skills/commands are namespaced when installed — they appear as `/my-plugin:cmd` so multiple plugins coexist without colliding.
-
-    **Marketplaces** are hosted collections of plugins. You point Claude Code at a marketplace URL and browse/install from inside the CLI.
-
-    **Marketplace commands:**
-
-    ```text
-    /plugin marketplace add <owner/repo | git-url | local-path | marketplace.json-url>
-    /plugin marketplace list
-    /plugin marketplace update <marketplace-name>
-    /plugin marketplace remove <marketplace-name>
-    ```
-
-    (`/plugin market` is a shortcut for `/plugin marketplace`; `rm` aliases `remove`.)
-
-    **Plugin commands:**
-
-    ```text
-    /plugin install <plugin>@<marketplace>
-    /plugin enable|disable <plugin>@<marketplace>
-    /plugin uninstall <plugin>@<marketplace>
-    /reload-plugins                            # hot-reload without restart
-    claude plugin install <plugin>@<marketplace> --scope project
-    ```
-
-    **Scopes:** user (default), project (committed to `.claude/settings.json`), local (this repo, not shared), managed (admin-set).
-
-    **On-disk layout:** installed plugins are copied into a cache rooted at `~/.claude/plugins/cache/`. Because plugins live in the cache (not their source repo), paths referencing files outside the plugin directory don't work. Plugin skills are namespaced under the plugin (e.g. `commit-commands` exposes `/commit-commands:commit`). Project-scope marketplaces are registered in `.claude/settings.json` under `extraKnownMarketplaces`. The official Anthropic marketplace `claude-plugins-official` is auto-available.
-  </TabItem>
-
-  <TabItem label="Codex">
-    Codex does **not** have a first-class plugin packaging format.
-
-    The closest analogues:
-    - **Skills** as a portable bundle (see [Skills](/foundations/skills/)) — closest to plugin-shaped distribution.
-    - **MCP servers** as separate processes — give you tool-level extension without a plugin wrapper.
-    - **Codex SDK** for programmatic orchestration of larger flows.
-
-    Codex's "plug in" path is: write a skill (for prompt-shaped extensions), an MCP server (for tool-shaped extensions), or an SDK orchestrator (for full custom behaviour). The composition is up to you.
-  </TabItem>
-
-  <TabItem label="opencode">
-    A **plugin** is a JS/TS module that exports a function. The function receives a context (`project`, `client`, `$`, `directory`, `worktree`) and returns a map of hook handlers and/or tool definitions.
-
-    ```ts
-    export default ({ project, client, $ }) => ({
-      hooks: {
-        'file.edited': async (event) => { /* ... */ },
-      },
-      tools: {
-        myCustomTool: {
-          schema: /* Zod schema */,
-          execute: async (input) => { /* ... */ },
-        },
-      },
-    });
-    ```
-
-    Plugins are *live JS code*, not static bundles — closer in spirit to a VS Code extension than to a Claude Code plugin.
-
-    **Discovery / loading.** Two paths:
-    - Local files in `.opencode/plugins/` (project) or `~/.config/opencode/plugins/` (global) — auto-loaded at startup.
-    - npm packages listed under the top-level `plugin` array in `opencode.json` — installed automatically using Bun at startup (e.g. `"plugin": ["opencode-helicone-session", "@my-org/custom-plugin"]`). Packages and their dependencies are cached in `~/.cache/opencode/node_modules/`.
-
-    **Slash commands.** The plugin docs describe hook subscriptions (e.g. `file.edited`, `tool.execute.before`, `session.created`) and custom tool registration, but do not document slash-command registration as a plugin capability. Slash commands live in `.opencode/commands/` as standalone markdown files.
-
-    **Ecosystem.** No official registry. The community index is [awesome-opencode](https://github.com/awesome-opencode/awesome-opencode); the docs ecosystem page also links community plugins.
-  </TabItem>
-</Tabs>
+<ToolTabs chapter="plugins" />
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | opencode |
-|---|---|---|---|
-| First-class plugin format | Yes (static bundle) | **No** | Yes (live JS/TS) |
-| Bundles skills + hooks + agents + MCP | Yes | — | Yes (via plugin code) |
-| Namespacing | `/plugin:cmd` | — | Slash commands not a documented plugin capability |
-| Distribution mechanism | Marketplaces | — | npm + community [`awesome-opencode`](https://github.com/awesome-opencode/awesome-opencode) index |
-| Closest analogue (if no native plugins) | — | Skills + MCP + SDK | — |
+| Aspect | Claude Code | Codex | opencode | Cursor | Copilot |
+|---|---|---|---|---|---|
+| First-class plugin format | Yes (static bundle) | **No** | Yes (live JS/TS) | **No** (bundle of rules + skills + agents) | Yes (preview, 2026) |
+| Bundles skills + hooks + agents + MCP | Yes | — | Yes (via plugin code) | — | Yes (skills + agents + hooks + MCP + LSP) |
+| Namespacing | `/plugin:cmd` | — | Slash commands not a documented plugin capability | — | Plugin-scoped |
+| Distribution mechanism | Marketplaces | — | npm + community [`awesome-opencode`](https://github.com/awesome-opencode/awesome-opencode) index | OpenVSX extensions + MCP Marketplace (cursor.directory) | GitHub Marketplace (Extensions), plus plugin marketplaces (default: [`github/copilot-plugins`](https://github.com/github/copilot-plugins), [`github/awesome-copilot`](https://github.com/github/awesome-copilot)) |
+| Closest analogue (if no native plugins) | — | Skills + MCP + SDK | — | Share `.cursor/*` files directly | — |
+| Separate `@`-invocable extension surface | — | — | — | — | **Copilot Extensions** (Skillsets / Agents) via GitHub Marketplace |
 
 ## Name collisions
 
 - A **Claude Code plugin** is a static bundle of files. An **opencode plugin** is live JS/TS code. They are *not* the same abstraction layer — one is content packaging, the other is event-driven code.
 - Codex's lack of plugins isn't an oversight — the design treats skills + MCP + SDK as a sufficient composition surface. Don't recommend "wait for plugins"; recommend the existing primitives.
+- In Copilot, **Extensions** and **plugins** are two distinct primitives that both ship in 2026. Extensions are `@`-invocable Chat agents distributed via GitHub Marketplace; plugins are marketplace-registered bundles (skills + agents + hooks + MCP + LSP) for VS Code Chat and Copilot CLI. Don't conflate them.
+- **Cursor** doesn't yet have a "bundle of rules + skills + subagents + hooks" plugin abstraction. Its plugin-like surfaces are inherited from the VS Code extension model and the MCP Marketplace, not a Cursor-native packaging format.
 
 <UpstreamRefs
   links={[
@@ -164,6 +90,18 @@ A plugin pays its weight when there are *multiple* extension pieces that belong 
       tool: 'opencode',
       label: 'Plugins',
       url: 'https://opencode.ai/docs/plugins/',
+    },
+
+    {
+      tool: 'Cursor',
+      label: 'Extensions',
+      url: 'https://cursor.com/docs/configuration/extensions',
+    },
+
+    {
+      tool: 'Copilot',
+      label: 'About Copilot Extensions',
+      url: 'https://docs.github.com/en/copilot/concepts/about-copilot-extensions',
     },
   ]}
 />
