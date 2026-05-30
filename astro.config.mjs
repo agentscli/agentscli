@@ -228,14 +228,10 @@ export default defineConfig({
 								{ label: 'Plugins & marketplaces', slug: 'foundations/plugins' },
 							],
 						},
-						// NOTE: the legacy "Tool guides" topic (/guide/*) is parked until those
-						// pages are committed. Re-add the topic block here when /guide/ lands.
 					],
 					{
 						// The blog has its own sidebar from starlight-blog; keep it out of topics.
-						// /guide/** is excluded while its pages are uncommitted (present on disk
-						// locally) so the topics plugin's "every page matches a topic" check passes.
-						exclude: ['/blog', '/blog/', '/blog/**', '/guide', '/guide/', '/guide/**'],
+						exclude: ['/blog', '/blog/', '/blog/**'],
 					},
 				),
 			],
