@@ -1,0 +1,61 @@
+---
+title: Enter plan mode to research before you change code
+description: "Plan mode lets Claude read your codebase and run read-only commands to understand it, then write a proposal — without editing a single file. Here's how to enter it and what it can and can't do."
+sidebar:
+  label: "Enter · Shift+Tab / /plan"
+---
+
+The double-charge bug is in front of you and the temptation is to just describe the fix and let the agent go. Resist it for one move. You don't yet know how the current charge path is wired — whether there's already a request ID you can key on, where charges get written, whether retries even reach the same process. Editing before you know those things is how the agent picks a design you'll have to unpick later. So the first thing you do is put it in the mode where it *can't* edit, only learn and propose.
+
+## Three ways in
+
+**Plan mode** tells Claude to research and propose changes without making them. You can enter it three ways, and which one you reach for depends on whether you want it for one prompt or the whole session:
+
+```text
+# the ladder — one press past accept-edits
+[Shift+Tab]  →  ⏸ plan mode on
+
+# just this one prompt, then back to where you were
+> /plan how should we make the charge endpoint idempotent?
+
+# start the whole session in it
+claude --permission-mode plan
+```
+
+`Shift+Tab` cycles `default → accept edits → plan` and the current mode shows in the status bar, same ladder you met in the permissions chapter. `/plan` is the lightweight option — it plans a single prompt without changing the session's mode. And `--permission-mode plan` is for when you already know the task is big enough that you want every prompt planned until you say otherwise. To leave plan mode without approving anything, press `Shift+Tab` again to cycle on round.
+
+## What it can do, and what it can't
+
+This is the part worth being precise about, because plan mode is *not* a passive read-only freeze. Inside it, Claude can:
+
+- **read any file** in your project — open the charge handler, follow the imports, look at the tests
+- **run read-only shell commands to explore** — `grep` for where charges are written, `git log` on the payments module, list the migrations directory
+
+What it will *not* do is touch your source. No edits, no writes, no destructive commands — it researches and then writes you a plan instead of changing anything. So pointed at our bug, it does exactly the investigation you'd do by hand, faster:
+
+```text
+> [Shift+Tab]  ⏸ plan mode on
+
+> we're double-charging on retries. research how the charge endpoint works
+  today and propose how to make it idempotent. don't write any code yet.
+
+  ⏵ Read  src/routes/charges.js
+  ⏵ Read  src/services/payment.js
+  ⏵ Bash  grep -rn "INSERT INTO charges" src/   (read-only, allowed)
+  ⏵ Read  migrations/0007_charges.sql
+
+  Here's what I found and what I propose:
+
+  ## Current behavior
+  POST /charge writes a row and calls the gateway with no dedupe key.
+  Two identical requests = two gateway calls = two charges.
+
+  ## Proposed approach
+  1. Require an Idempotency-Key header on POST /charge
+  2. New table idempotency_keys (key, status, charge_id, created_at)
+  3. ... [full plan continues]
+```
+
+One caveat so you're not surprised: plan mode auto-approves *reads*, but anything beyond a read still prompts the same as default mode would. If Claude's research wants to run a command that isn't plainly read-only, you'll get a permission prompt for it — plan mode narrows what runs freely to reading, it doesn't silence the permission system. The current rules for exactly what's auto-approved live in the [permission-modes docs](https://code.claude.com/docs/en/permission-modes); they shift, so check there rather than trusting a fixed memory.
+
+What you have now is the valuable artifact: a researched proposal, with zero risk taken, that you can read and push back on before any code exists. The agent did the investigation and committed to an approach — and committed *nothing else*. [Now you decide what happens to that plan](/course/claude-code/planning/approve/).

@@ -1,0 +1,60 @@
+---
+title: "Ask side-questions and reuse commands without breaking flow"
+description: "Mid-task you'll want to ask a quick question, catch up on what happened, or rerun a command — and naively doing any of them costs you focus or context. /btw, /recap, and history search keep the thread clean."
+sidebar:
+  label: "Flow · /btw /recap history"
+---
+
+The [sessions chapter](/course/claude-code/sessions-context/) drilled one discipline into you: the context window is a resource you watch and spend on purpose. That discipline has a daily-workflow cost most people pay without noticing. You're mid-task — the agent is halfway through the idempotency middleware — and a small need surfaces: *what was that config file called again?* The naive move is to just ask, in the main thread. But that question and its answer are now permanent residents of your context, padding the window with something you'll never need again. Do that twenty times a day and you've quietly bloated every session. The moves here are how a fluent operator handles those interruptions without polluting the thread or losing the plot.
+
+## /btw — ask without polluting the thread
+
+`/btw` is built for exactly the interruption above: a quick side-question that has full visibility into your current conversation but never *enters* it. Per the [interactive-mode docs](https://code.claude.com/docs/en/interactive-mode), the question and its answer appear in a dismissible overlay and stay out of the conversation history entirely.
+
+```text
+> /btw what's the env var that toggles the dedupe store again?
+
+  ⎿ CLAUDE_PAYMENTS_DEDUPE_BACKEND — set in src/config/payments.ts,
+    read at startup. (this answer is not added to the conversation)
+```
+
+Three properties make it the right tool:
+
+- **It sees everything, costs nothing lasting.** It answers from what's already in context — code the agent read, decisions it made earlier this session — so you can ask about the work in progress. But the exchange evaporates when you dismiss it; the window is unchanged.
+- **It works while the agent is busy.** You can fire a `/btw` even while Claude is mid-response on the main turn. The side-question runs independently and doesn't interrupt the work.
+- **It has no tools.** A side-question answers only from context — it can't read new files or run commands. The docs frame it as the exact inverse of a [subagent](/course/claude-code/subagents/): `/btw` sees your whole conversation but has no tools; a subagent has full tools but starts blank. Reach for `/btw` to ask about what Claude *already knows*; reach for a subagent to go *find out something new*.
+
+If a side-question turns out to deserve real work, the overlay lets you press `f` to fork it into its own session with full tool access, leaving your main thread untouched. The everyday case, though, is the one-line answer that would have been litter in your context and instead leaves no trace.
+
+## /recap — catch up on a session
+
+The companion problem is *coming back*. You stepped away while a long run finished, or you're resuming after lunch and the scrollback is a wall. Rather than read it all, ask for a recap. Claude Code already shows a one-line recap automatically when you return to an unfocused terminal after a few minutes away, and you can generate a fuller one on demand with `/recap`, per the [interactive-mode docs](https://code.claude.com/docs/en/interactive-mode):
+
+```text
+> /recap
+
+  ⎿ Added idempotency middleware reading the Idempotency-Key header;
+    new + in-flight + completed cases handled. 2 tests added, both green.
+    Open: the 409 path for in-flight keys still needs a test.
+```
+
+This is the lightweight cousin of [`/compact`](/course/claude-code/sessions-context/compact/). Compaction *rewrites* the thread to reclaim tokens; `/recap` just *summarises* it for your benefit and changes nothing about the context. Use recap to orient yourself; use compact when the window itself is the problem. If you find the automatic recaps noisy, they toggle off under `/config` → Session recap.
+
+## History search — stop retyping commands
+
+The third flow-killer is retyping. Over a week you build up the same handful of awkward prompts and `!` commands — the `npm test … | tail -20` incantation, the long "build this as express middleware" spec. Pulling them back from memory is wasted keystrokes.
+
+`Ctrl+R` opens **reverse history search**, the same readline muscle memory you have from your shell. Start typing and it surfaces your most recent matching input; press `Ctrl+R` again to step back through older matches. Per the [interactive-mode docs](https://code.claude.com/docs/en/interactive-mode), `Tab` or `Esc` accepts a match into the prompt so you can edit it, `Enter` accepts and runs it, and `Ctrl+S` cycles the search **scope** through this session, this project, and everywhere — so a command you ran in another repo last month is still reachable.
+
+```text
+(Ctrl+R) bck-i-search: middleware_
+
+  ⎿ here's what the idempotency middleware needs to do: ...
+    [Tab to edit, Enter to submit, Ctrl+R for older matches]
+```
+
+For the simpler case — the *last* thing you typed — plain `Up` and `Down` walk your history without opening search at all. History is stored per working directory and persists across sessions, so it survives a `/clear`.
+
+One nicety that does the reverse favour, surfacing a command you haven't typed yet: Claude Code offers **prompt suggestions** — a grayed-out next step in the input, drawn from your git history when a session opens and from the conversation as it goes. `Tab` or `Right arrow` accepts it; start typing to dismiss it. It's not load-bearing, but it occasionally saves you the keystrokes of describing an obvious next move.
+
+You can now move through a session without the small interruptions costing you anything — questions stay out of context, catch-up is one command, and nothing gets typed twice. The last set of moves is lower-level still: the editing model and the keys themselves. [That's ergonomics](/course/claude-code/daily-workflow/ergonomics/).

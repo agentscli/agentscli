@@ -1,0 +1,54 @@
+---
+title: Fan out across parallel subagents on independent slices of a problem
+description: "When a problem splits into parts that don't depend on each other, spawn several subagents at once. Each works its slice in isolation; Claude synthesizes the results. Plus when parallelism is overkill."
+sidebar:
+  label: "Fan out · parallel slices"
+---
+
+The ledger map handed you four independent write sites, and now the next task wants depth on each: for the charge path, the refund path, the reconcile job, and the webhook, you want a real audit — what it writes, under what conditions, and whether the test coverage actually exercises the failure cases. Four self-contained investigations that don't touch each other. Run them one after another in a single subagent and you wait for the sum of all four. But because none of them depends on the others, you don't have to.
+
+## Spawning workers at once
+
+Ask for parallel subagents and Claude spawns several, each on its own slice, each in its own isolated context:
+
+```text
+> audit the four ledger write sites in parallel — one subagent each for the
+  charge path, the refund path, the reconcile job, and the webhook handler.
+  for each, report what it writes, the edge cases, and gaps in test coverage.
+```
+
+```text
+  ⏵ Agent (general-purpose)  charge path        ▶ running
+  ⏵ Agent (general-purpose)  refund path        ▶ running
+  ⏵ Agent (general-purpose)  reconcile job      ▶ running
+  ⏵ Agent (general-purpose)  webhook handler    ▶ running
+
+  ⎿ charge path     done (12 tool uses)
+  ⎿ webhook handler done (9 tool uses)
+  ⎿ refund path     done (15 tool uses)
+  ⎿ reconcile job   done (18 tool uses)
+
+  Synthesized findings across all four:
+  - charge & refund: writes are guarded and well-tested
+  - webhook: writes on settlement, but no test for the duplicate-settlement case
+  - reconcile job: no coverage at all, and it writes with a different code path
+  ...
+```
+
+Four investigations ran concurrently, and crucially *each one's noise stayed in its own window* — the eighteen tool calls the reconcile worker made never mixed with the charge worker's twelve, and none of them entered your thread. When they all finished, Claude read the four summaries back and synthesized them into one set of findings. This is the documented [parallel research](https://code.claude.com/docs/en/sub-agents#run-parallel-research) pattern, and the line that makes it work is *the research paths don't depend on each other*. Independence is the whole license for parallelism here.
+
+## When parallel pays — and when it's just overkill
+
+The temptation, once you've seen the fan-out work, is to reach for it constantly. Resist that. Parallelism pays when two things are both true: the slices are genuinely independent, and each is heavy enough that doing them in sequence would actually make you wait. The ledger audit qualifies on both counts — four separate code paths, each a real dig.
+
+It's overkill, or worse, when:
+
+- **The slices depend on each other.** If auditing the refund path requires what the charge-path audit found, they can't run at the same time — you'd just be guessing. Chain them instead: one subagent's result feeds the next, which the docs cover under [chaining subagents](https://code.claude.com/docs/en/sub-agents#chain-subagents).
+- **The work is light.** Spinning up four fresh agents that each have to gather context from scratch can be slower than one main thread that already knows the codebase. Fan-out has fixed startup cost; tiny tasks don't earn it back.
+- **You're fanning out wide just because you can.** The docs carry a real warning here, and it's the sharp edge of this whole technique.
+
+That warning is worth quoting straight, because it's the one that bites: *when subagents complete, their results return to your main conversation. Running many subagents that each return detailed results can consume significant context.* See [run parallel research](https://code.claude.com/docs/en/sub-agents#run-parallel-research). Read that twice. The reason you delegated in the first place was to keep noise out of your thread — but ten subagents each handing back a detailed report is its own flood, arriving all at once. The fix is in how you brief them: ask for *conclusions, not dumps*. "Report the coverage gaps," not "report everything you found." A subagent that returns three lines protects your context; one that returns three pages just relocated the problem.
+
+So the shape that works: fan out across a *handful* of independent, heavy slices, and tell each worker to come back terse. That's leverage. Twenty subagents each writing you an essay is a different kind of mess than the one you were avoiding — but a mess all the same.
+
+These four ran fast and you watched them finish. But some investigations aren't fast — a worker churning through a thousand-file migration, or running the full integration suite, can take long enough that you don't want to sit and wait. [Next we push that kind of work into the background](/course/claude-code/subagents/background/) and keep going while it grinds.

@@ -1,0 +1,53 @@
+---
+title: Pre-approve safe commands and run shell inline
+description: "Accept-edits frees your edits but not your shell. Add an allow rule so the agent stops asking about the commands you trust — and run your own commands inline with !."
+sidebar:
+  label: "Allow rules · ! shell"
+---
+
+With the rename done, the next task is to harden the new `capturePayment` path with a few more tests, and that means the agent runs `npm test` over and over as it iterates. In accept-edits mode the edits fly, but every single test run still stops and asks — because accept-edits deliberately doesn't cover arbitrary shell commands. The mode was a *bulk* loosening; what you want now is a *surgical* one: silence this one trusted command and nothing else.
+
+## An allow rule retires a repeated prompt
+
+A permission rule moves a specific action from **ask** to **allow** permanently, written into your settings so it survives restarts. The quickest way to create one is at the moment the prompt appears — Claude Code offers to remember your answer:
+
+```text
+  ⏵ Run  npm test
+    1. Yes
+    2. Yes, and don't ask again for `npm test`     ← creates the allow rule
+    3. No
+
+> 2
+
+  ✓ Added allow rule: Bash(npm test). Won't ask again.
+```
+
+From here on, `npm test` runs silently in any mode — the agent can lean on your test suite as a feedback loop without interrupting you for permission each lap. The rule lands in your settings file under a `permissions.allow` list, so you can also write it by hand or commit it to share with the team:
+
+```text
+// .claude/settings.json
+{
+  "permissions": {
+    "allow": ["Bash(npm test)", "Bash(npm run build)"]
+  }
+}
+```
+
+The discipline that keeps this safe is to **allow narrowly**. `Bash(npm test)` is a precise, low-risk command and a fine thing to silence. A blanket `Bash(*)` that green-lights *any* shell command is how you hand the agent an unsupervised root shell — exactly the thing the permission system exists to prevent. Allow the specific commands you'd run a hundred times without thinking; leave everything else to prompt. *Rule patterns support more than exact strings — prefixes, arguments, and tool-specific forms — and the current syntax lives in the [permissions docs](https://code.claude.com/docs/en/permissions).*
+
+## Running shell yourself, inline with `!`
+
+There's a neighbour to this worth knowing, because it solves a related friction: sometimes *you* want to run a command and put its output in front of the agent — check what's failing, look at `git status`, see a directory listing — without leaving the session or waiting for the agent to do it. In the CLI, prefix a line with `!` and it runs in your shell immediately, with the result dropped into the conversation:
+
+```text
+> !npm test 2>&1 | tail -20
+
+  ⎿ FAIL test/capture.test.js — expected 200, got 500
+    (output added to context)
+
+> that 500 is the bug — the capture path is missing the auth header. fix it.
+```
+
+That `!` is *you* running the command, not the agent asking to — so there's no permission prompt at all; it's your shell, your call. It's the fastest way to feed the agent a concrete fact instead of describing it, and it pairs naturally with allow rules: you reach for `!` when you want to look yourself, and allow rules for when you want the agent to stop asking about the looking it does on your behalf. *(This inline `!` is a CLI feature; the graphical editor extension doesn't carry it — run such commands in the integrated terminal there instead.)*
+
+You've now loosened the leash about as far as is comfortable while still reviewing the direction: edits auto-apply, trusted commands run silently, and you can drop in a command whenever you want. Which makes this the right moment to do the opposite — because the next task touches a secrets directory, and "loose by default" is precisely when you need something the agent *cannot* do, no matter how relaxed the rest of the session gets. [Time to lock it out](/course/claude-code/permissions-modes/deny/).
