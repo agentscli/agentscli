@@ -33,6 +33,107 @@ The only way to make a rule unbreakable is to take the decision away from the mo
 
 The test: if "the agent forgot" or "the agent did the thing I told it not to" is a failure mode you can't accept, you want a hook, not a memory rule.
 
+## The lifecycle
+
+Hooks fire on events along the loop. The exact event names differ across tools (the [comparison table](#comparison) below has the per-tool list), but the rough timeline is the same:
+
+```text
+  session opens
+       │
+       ▼
+   ┌─────────────┐
+   │ SessionStart│  ── one-shot: inject context, log who/where
+   └─────┬───────┘
+         │
+         ▼  ┌──────── per turn ─────────────────────────────────┐
+            │                                                   │
+            │   ┌──────────────────┐                            │
+            │   │ UserPromptSubmit │  ── inspect or modify your │
+            │   └────────┬─────────┘     prompt before model    │
+            │            │                                      │
+            │            ▼  ┌──────── per tool call ────────┐   │
+            │               │                               │   │
+            │               │   ┌─────────────┐             │   │
+            │               │   │ PreToolUse  │ ◄── gate:   │   │
+            │               │   └─────┬───────┘    allow,   │   │
+            │               │         │            deny,    │   │
+            │               │         ▼            modify   │   │
+            │               │   [ tool runs ]               │   │
+            │               │         │                     │   │
+            │               │         ▼                     │   │
+            │               │   ┌─────────────┐             │   │
+            │               │   │ PostToolUse │ ── side     │   │
+            │               │   └─────────────┘    effects: │   │
+            │               │                      lint,    │   │
+            │               │                      test,    │   │
+            │               │                      log      │   │
+            │               └───────────────────────────────┘   │
+            │                                                   │
+            └───────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+                          ┌──────────────┐
+                          │     Stop     │  ── notify, snapshot
+                          └──────────────┘
+                                  │
+                                  ▼
+                            session closes
+```
+
+Two kinds of hook live on this timeline:
+
+- **Gating hooks** (`PreToolUse`, equivalents) intercept *before* an action runs. They can allow, modify the arguments, or block outright. This is where "make a rule unbreakable" lives.
+- **Reactive hooks** (`PostToolUse`, `SessionStart`, `Stop`) run *after* something happens. They don't decide anything; they react — lint the file you just wrote, fire a notification, append to a log.
+
+A hook's superpower is being inside the loop but outside the model's reasoning. The model can want to push to main all it likes; the gating hook simply doesn't let the tool call complete.
+
+## A worked example: blocking pushes to main
+
+The classic. You've told the agent not to push to main. Three sessions in a row, it pushed to main. A `PreToolUse` hook on shell commands fixes it forever.
+
+The shape, in pseudocode (real syntax in the per-tool tabs below):
+
+```text
+event:  PreToolUse
+match:  tool == "Bash"  AND  command matches /git\s+push.*\smain(\s|$)/
+action: { "decision": "block",
+          "reason": "Pushes to main are blocked. Use a release branch." }
+```
+
+Walked through one turn:
+
+```text
+you:      ship the fix
+model:    I'll run: git push origin main
+          [ proposes the Bash tool call ]
+              │
+              ▼
+   ┌─ PreToolUse hook fires ─────────────────────────────────┐
+   │  regex matches "git push origin main"                   │
+   │  hook returns: decision=block, reason="…"               │
+   └──────────────────────┬──────────────────────────────────┘
+                          │
+                          ▼
+          tool call NEVER runs
+                          │
+                          ▼
+model:    [ sees the block + reason in its next turn ]
+model:    Blocked — pushes to main aren't allowed.
+          Pushing to release/2026.05 instead: git push origin release/2026.05
+              │
+              ▼
+   ┌─ PreToolUse hook fires again ───────────────────────────┐
+   │  regex does NOT match — release branch                  │
+   └──────────────────────┬──────────────────────────────────┘
+                          │
+                          ▼
+          tool call runs normally
+```
+
+Notice two things. First: the hook fires *between* "the model proposes a tool call" and "the tool actually runs." That's the only place a deterministic gate can live. Second: when the hook blocks, it returns a *reason* the model can read on its next turn. The model isn't punished or kicked out — it's told *no*, gets the reason in its context, and adapts. The combination is what makes hooks safer than just denying via [permissions](/foundations/permissions/) — permissions say no; hooks say no *and explain*.
+
+The same pattern generalises. Replace the match condition and you get: block `rm -rf` outside the project, block edits to `.env`, block `npm install` without a lockfile, run prettier after every write, post to Slack on `Stop`. Same lifecycle, same shape.
+
 ## Why this and not...
 
 | You want to... | Reach for | Not |

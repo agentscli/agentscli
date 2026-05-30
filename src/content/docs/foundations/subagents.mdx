@@ -29,6 +29,71 @@ That's the gap subagents close. Hand the debug task to a subagent: it spawns fre
 
 The test: if a task would generate a lot of intermediate noise but you only care about the final answer, it's a subagent task.
 
+## What "isolated context" actually looks like
+
+The subagent's defining property is that it runs in its own context window — separate from yours. Picture two windows:
+
+```text
+┌─ parent context ──────────────────┐    ┌─ subagent context ───────────┐
+│                                   │    │                              │
+│  rules, skills, conversation,     │    │  (fresh window)              │
+│  the work you actually came       │    │   system prompt              │
+│  here to do                       │    │   subagent's instructions    │
+│                                   │    │   task: "debug the flaky     │
+│  ── you delegate a task ──────────┼───►│    test in auth/session.ts"  │
+│                                   │    │                              │
+│                                   │    │   reads 17 files             │
+│                                   │    │   runs the test 6 times      │
+│                                   │    │   tries 4 hypotheses         │
+│                                   │    │   ↓                          │
+│  "the bug is in session.ts:142,   │◄───┼── returns ONE sentence ──    │
+│   token mutated by middleware"    │    │                              │
+│                                   │    │  (window discarded)          │
+│                                   │    │                              │
+└───────────────────────────────────┘    └──────────────────────────────┘
+```
+
+The seventeen reads, the four hypotheses, the six test runs — none of them enter your parent window. The parent receives the one-sentence summary and nothing else. Whatever the subagent learned to *find* the answer is gone the moment it returns; whatever you needed to *act* on the answer is still there, uncluttered.
+
+The trade-off is also right there in the picture. The subagent starts with no shared history. It doesn't know what you discussed earlier, what you've already ruled out, what you care about. You have to brief it in the task description — the more precisely, the better. Subagents shine for self-contained work; they're a poor fit for tasks that need ongoing back-and-forth with you, because every "wait, also…" is a fresh subagent with no memory of the last one.
+
+## A worked example
+
+You're mid-flow on a feature when CI flags a flaky test. Without a subagent:
+
+```text
+you:       why is auth/session.test.ts flaky on CI?
+agent:     [reads session.test.ts]
+agent:     [reads session.ts]
+agent:     [runs the test locally — passes]
+agent:     [reads the test runner config]
+agent:     [reads the middleware]
+agent:     [tries a hypothesis: timezone? — runs again, still passes]
+agent:     [reads the CI workflow file]
+agent:     [tries another hypothesis: ordering? — runs in --random]
+... 30 messages later ...
+agent:     found it — middleware mutates the session token.
+you:       great, now back to the feature.
+agent:     [main context now full of debugging trail; coherence dropping]
+```
+
+With a subagent:
+
+```text
+you:       spawn a subagent: investigate why auth/session.test.ts is
+           flaky on CI, return the root cause in one paragraph.
+agent:     [spawns subagent — fresh context]
+                       ... 30 messages happen elsewhere ...
+subagent:  Root cause: middleware in src/auth/middleware.ts:64
+           mutates session.token before the test asserts on it.
+           Reproduces locally only under --random-order.
+agent:     [receives the paragraph, parent window otherwise untouched]
+you:       great, now back to the feature.
+agent:     [main context still clean; full coherence on the feature]
+```
+
+Same work happens. Same answer returns. The difference is what your conversation looks like afterward.
+
 ## Why this and not...
 
 | You want to... | Reach for | Not |
