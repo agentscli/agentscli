@@ -19,7 +19,8 @@ export default defineConfig({
 		starlight({
 			title: 'agents.cli',
 			logo: {
-				src: './public/logo.svg',
+				light: './src/assets/logo-light.png',
+				dark: './src/assets/logo-dark.svg',
 				replacesTitle: true,
 			},
 			// Apply custom dark/purple theme globally to all pages
@@ -29,6 +30,14 @@ export default defineConfig({
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/agentscli' }],
 			head: [
+				{
+					tag: 'link',
+					attrs: {
+						rel: 'icon',
+						type: 'image/svg+xml',
+						href: '/favicon.svg',
+					},
+				},
 				{
 					tag: 'link',
 					attrs: {
