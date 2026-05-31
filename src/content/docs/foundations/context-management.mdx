@@ -1,0 +1,135 @@
+---
+title: Context window management
+description: The levers for keeping a long session coherent — inspecting what's in the window, compacting it when it fills, and carrying state across the session boundary.
+---
+
+import ToolTabs from '../../../components/ToolTabs.astro';
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+## What context window management is
+
+[How agents work](/foundations/how-agents-work/) establishes the substrate: the agent runs a loop, everything it can see lives in a finite **context window**, and that window both fills up and loses fidelity as a session grows. This chapter is the set of levers for operating *within* that limit over a long session — the management layer on top of the substrate.
+
+There are three of them:
+
+- **Inspect** — see what's currently eating the window, before it bites.
+- **Compact** — replace a long, noisy history with a short summary so the session can keep going.
+- **Carry state across the boundary** — resume, fork, or otherwise pick up a window instead of starting from an empty one.
+
+None of these change *what* the agent can do. They change what it can still see clearly after an hour of work.
+
+## Why you'd want to think about this
+
+You've been pairing with the agent for two hours on a gnarly migration. It was sharp at the start. Now it's started re-suggesting a fix it already tried and you already rejected, it's "forgotten" the constraint you stated forty messages ago, and its edits are getting vaguer. Nothing is broken. The window is just *full* — mostly of stale file reads, greps that didn't pan out, and abandoned attempts — and the signal you actually need is buried under noise it can no longer tell apart from signal.
+
+That's the failure context management addresses. The window has a hard size limit and a softer coherence limit, and a long session walks into both. The levers above are how you stay ahead of them: notice the window filling (**inspect**), squeeze the dead weight out without losing the thread (**compact**), and never pay to rebuild context you already had (**carry it across**).
+
+**The concrete moves teams make:**
+
+- **Compact at phase boundaries** — finished the migration, about to start the tests? Compact first, so the test work starts on a lean window instead of dragging the migration trail behind it.
+- **Clear, don't compact, for unrelated work** — switching to a different bug entirely? Start clean. Compaction *summarises* the old work; clearing *drops* it, which is what you want when none of it is relevant.
+- **Watch the gauge** — check what's consuming the window (tool schemas, a giant file read, an over-long rules file) instead of waiting for degradation to tell you.
+- **Delegate the noise instead of compacting after** — if a sub-task will generate a lot of throwaway context, hand it to a [subagent](/foundations/subagents/) so it never enters your window in the first place.
+- **Resume instead of re-explaining** — pick up yesterday's session with its context intact rather than opening a fresh window and re-establishing everything.
+
+The test: if the agent is getting *less* sharp the longer you work — not wrong, just hazier — you have a context-management problem, not a model problem.
+
+## What compaction keeps, and what it drops
+
+Compaction is lossy by definition: it trades a faithful, expensive transcript for a cheap, approximate summary. Knowing what survives the trade is the difference between compacting safely and compacting away the thing you needed.
+
+```text
+   BEFORE compaction (window ~90% full)         AFTER compaction (~35%)
+ ┌─────────────────────────────────────┐      ┌────────────────────────────┐
+ │ system prompt        ← always kept  │      │ system prompt              │
+ │ rules (AGENTS.md / CLAUDE.md) kept  │      │ rules                      │
+ │ tool definitions     ← always kept  │      │ tool definitions           │
+ │ ── ~40 turns of work ────────────── │      │ ┌── summary (lossy) ─────┐ │
+ │    17 file reads (full contents)    │  ►   │ │ goal · key decisions · │ │
+ │    9 greps, 6 test runs             │      │ │ files touched ·        │ │
+ │    4 abandoned hypotheses           │      │ │ next steps             │ │
+ │    exact error/command output       │      │ └────────────────────────┘ │
+ │ most recent turns    ← kept         │      │ most recent turns          │
+ └─────────────────────────────────────┘      └────────────────────────────┘
+        the middle is what gets compressed
+```
+
+**Reliably kept:** the high-level goal, the decisions made and why, which files matter (by name), the state of the in-progress task, and the most recent turns verbatim.
+
+**Reliably lost:** the full contents of files read (they become a *name*, not a body), exact error and command output (summarised to prose), and the precise sequence of steps. The practical consequence: **write unsaved work to disk before compacting** — a diff that exists only in the conversation gets flattened into "edited `auth.ts`," and after compaction the agent may need to re-read the file to see its own change.
+
+This is also the cleanest restatement of the [rules](/foundations/rules/) argument: a constraint stated in conversation can be summarised away, but a constraint in the rules file is reloaded every turn and survives every compaction. Durable facts belong in always-loaded context, not in the chat.
+
+## The shape compaction is converging on
+
+The tools in scope reached the same design independently. Every one of them, when the window approaches full, makes a single summarisation call and replaces the bulk of the history with a **structured Markdown summary** — and the structure is nearly identical across tools: *goal, what was done, key decisions, important files, next steps.* Several expose a manual `/compact` that takes optional instructions (`/compact focus on the API changes`) so you can bias what the summary preserves. The vocabulary differs; the mechanism has standardised. If you understand compaction in one tool, you understand it in all of them — the only real differences left are *how much control you get over when it fires and what it keeps* (the [comparison](#comparison) below).
+
+## Why this and not...
+
+| You want to... | Reach for | Not |
+|---|---|---|
+| Free up a full / degrading window mid-task | **Compact** | Clear (drops everything, including what you still need) |
+| Start unrelated work on a clean slate | **Clear / new session** | Compact (keeps a summary you don't want) |
+| Keep a noisy side-quest out of the main window entirely | [Subagent](/foundations/subagents/) | Compacting after the noise already landed |
+| Make a fact survive *every* turn and every compaction | [Rules](/foundations/rules/) | Restating it in chat |
+| See what's actually consuming the window | **Inspect** (`/context`, `/status`, usage gauge) | Waiting for coherence to drop |
+| Pick up a previous session with context intact | **Resume / continue** | New window + re-explaining |
+| Explore a risky branch without losing the current thread | **Fork** (where supported) | Compacting, then regretting it |
+
+Compaction is a *recovery* tool — it salvages a window that's already heavy. The cheaper move is usually to keep the window light in the first place: delegate noise to [subagents](/foundations/subagents/), keep [rules](/foundations/rules/) lean, and lean on [MCP tool-schema deferral](/foundations/mcp-servers/) so unused tool definitions don't sit in the window as permanent weight.
+
+## How it works in each tool
+
+<ToolTabs chapter="context-management" />
+
+## Comparison
+
+| Aspect | Claude Code | Codex | opencode | Cursor | Copilot |
+|---|---|---|---|---|---|
+| Inspect usage | `/context`, `/usage`, status line | `/status` | status indicator *Unverified* | input-box gauge | chat input context control |
+| Manual compaction | `/compact [instructions]` | `/compact` | agent-/auto-driven | manual summarise *Unverified* | `/compact [instructions]` (CLI) |
+| Automatic compaction | Yes, near limit | Not documented *Unverified* | Yes, on overflow | Yes, near limit (uses a faster model) | Yes (~80% of window) |
+| Custom compact instructions | Yes (inline + `CLAUDE.md`) | Not exposed *Unverified* | Fixed structured template | Not exposed *Unverified* | Yes (inline) |
+| Disable auto-compaction | Via config *Unverified* | n/a | `compaction.auto=false` / `OPENCODE_DISABLE_AUTOCOMPACT` | Not exposed *Unverified* | `github.copilot.chat.summarizeAgentConversationHistory.enabled=false` |
+| Fresh window (same app) | `/clear` | `/new`, `/clear` | new session | New Chat | New Chat |
+| Resume prior session | `/resume`, `claude --continue`/`-c` | `/resume`, `codex resume` | `opencode --continue`/`-c`, `--session`/`-s` | Chat history | Chat history |
+| Fork / branch a session | — | `/fork`, `/side` | `opencode --fork` | — | — |
+
+Auto-compaction is now the default everywhere it's offered; the axis that still separates the tools is **control** — whether you can see the window filling, steer what the summary keeps, and turn the automation off. The terminal CLIs expose the most knobs; the IDE tools manage it for you with the fewest. *Verify tool-specific flags against the upstream docs below before relying on them — these settings move between releases.*
+
+## Name collisions
+
+- **Compact vs clear vs new.** "Compact" summarises and keeps a thread going; "clear" / "new" abandons the thread for a fresh window. In Codex, `/new` starts a fresh conversation *inside the same CLI process* while `/clear` resets both the view and the conversation — neither is `/compact`.
+- **"Summarize" vs "compact".** Cursor and Copilot surface the behaviour as "summarising conversation history"; the terminal tools call the same operation "compaction." Same mechanism, different label.
+- **"Session" is overloaded.** In [how agents work](/foundations/how-agents-work/) a *session* is one run of the loop with one window. opencode also has an `opencode session` CLI noun and `/share`-able sessions; don't read the CLI sense as a different concept.
+- **Compaction vs memory.** Compaction works *within* a session to fit the window. Agent-managed **memory** persists facts *across* sessions and is a separate primitive (deferred; distinct from [rules](/foundations/rules/)). Resuming a session is not the same as the agent remembering it.
+
+<UpstreamRefs
+  links={[
+    {
+      tool: 'Claude Code',
+      label: 'Manage costs & context',
+      url: 'https://code.claude.com/docs/en/costs',
+    },
+    {
+      tool: 'Codex',
+      label: 'Slash commands',
+      url: 'https://developers.openai.com/codex/cli/',
+    },
+    {
+      tool: 'opencode',
+      label: 'Docs',
+      url: 'https://opencode.ai/docs/',
+    },
+    {
+      tool: 'Cursor',
+      label: 'Summarization',
+      url: 'https://cursor.com/docs/agent/chat/summarization',
+    },
+    {
+      tool: 'Copilot',
+      label: 'Manage context for AI',
+      url: 'https://code.visualstudio.com/docs/copilot/chat/copilot-chat-context',
+    },
+  ]}
+/>

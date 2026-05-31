@@ -1,0 +1,62 @@
+---
+title: "Let Claude keep its own notes with auto memory and /memory"
+description: "Rules are context you author. Auto memory is context the agent writes for itself — build commands and fixes it learns as it works, saved automatically and reviewable with /memory. Knowing which primitive fits keeps both useful."
+sidebar:
+  label: "Memory · auto memory & /memory"
+---
+
+Every rule so far has had you as its author. You decided the cents fact mattered, you typed the test command, you chose which scope each belonged in. That's the right model for *standing* truths about the project — facts stable enough to commit to a file. But a lot of what's worth remembering doesn't arrive that cleanly. You correct the agent mid-session — "no, the integration tests need a local Redis running first" — and that correction is genuinely useful tomorrow, but it's not something you sat down to write into `CLAUDE.md`. It surfaced in the flow of work. Auto memory is the primitive for exactly that.
+
+## Two writers, two systems
+
+The chapter intro named the split; here's where it pays off. Claude Code has *two* persistence systems, and the dividing line is **who writes them**:
+
+- **CLAUDE.md files** — *you* write them. Instructions and rules. Loaded in full into every session. This is everything from the last three lessons.
+- **Auto memory** — *Claude* writes it, for itself, based on your corrections and what it discovers as it works. You don't author it; you audit it.
+
+Auto memory is on by default, and it's not indiscriminate — Claude doesn't save something every session. It decides whether a fact would be useful in a *future* conversation, and only then writes it down. The Redis-for-tests correction, a tricky build flag it figured out, a debugging insight that cost it twenty minutes to rediscover — these are what it captures, so it doesn't pay the same cost twice. The behavior and version requirements are documented on the [memory page](https://code.claude.com/docs/en/memory).
+
+## Asking the agent to remember
+
+You can also nudge it directly. Tell Claude in plain language to remember something and it routes the fact into auto memory:
+
+```text
+> remember that the integration tests need a local Redis instance running first
+
+  ⎿ Writing memory… saved to project memory.
+```
+
+There's a deliberate fork here, and it's the practical heart of this lesson. When you say "remember X," it goes to **auto memory** — the agent's own notes. When you want a fact in the **team-shared rules** instead, say so explicitly: "add this to CLAUDE.md." Same gesture, different destination. The first is a private note the agent keeps for itself on this machine; the second is a durable rule your whole team inherits through git. Choose the destination on purpose:
+
+- **Reach for a rule (`CLAUDE.md`)** when the fact is a standing truth your teammates also need — the cents convention, the commit format. Authored, committed, shared.
+- **Let auto memory hold it** when it's a learning that emerged from working — a build quirk, a debugging shortcut, a preference you expressed in passing. Machine-local, agent-curated, no ceremony.
+
+## Auditing what it kept
+
+Memory the agent writes by itself is only trustworthy if you can see it, and you can. The `/memory` command is your window into both systems at once: it lists every `CLAUDE.md`, `CLAUDE.local.md`, and rules file loaded this session, lets you toggle auto memory on or off, and opens the auto-memory folder so you can read exactly what Claude has saved for itself.
+
+```text
+> /memory
+
+  Loaded instruction files:
+    ~/.claude/CLAUDE.md           (user)
+    ./CLAUDE.md                   (project)
+    ./CLAUDE.local.md             (local)
+
+  Auto memory:  [on]   →  open folder
+
+  Recent memory: "Integration tests require local Redis (npm run test:int)"
+                 "Charge gateway sandbox is flaky on weekends — retry"
+```
+
+Everything auto memory saves is plain markdown you can open, edit, or delete. That matters: an agent writing its own notes could drift, capture something wrong, or hold onto a fact that's gone stale. Periodically reading what's in there — and pruning it — is the same hygiene you apply to your hand-written rules, just pointed at the file the agent maintains instead of the one you do. It's stored per-project on your machine, so it follows the repo across worktrees but never leaks to a teammate's checkout.
+
+:::note[Memory is context, not enforcement]
+Neither system is a hard gate. Both CLAUDE.md and auto memory are loaded as *context* the agent reads and tries to follow — not rules mechanically forced on it. When you need something to happen no matter what the agent decides — block a path, run a check before every commit — that's a job for a hook, which you'll meet later. Memory shapes behavior; it doesn't enforce it.
+:::
+
+## Where this leaves the agent
+
+Step back and look at what you've built across this chapter. The payments service now explains itself. The agent opens every session already knowing the test command, the cents convention, the commit format, the frozen `v1/` routes — rules you wrote once and never repeat. And as it works, it quietly accumulates its own notes about the quirks it hits, so it stops relearning them. The daily re-explanation tax from the chapter intro is paid off. You start each session past the basics, not at them.
+
+That's the *knowledge* problem solved. The agent knows your project. But knowing the project is only half of getting good work out of it — the other half is which brain it brings to a given task, and how hard you let it think before it answers. A throwaway rename and a subtle concurrency bug in the charge path shouldn't get the same horsepower. [The next chapter is about that lever: picking the model and dialing the thinking.](/course/claude-code/models-thinking/)

@@ -1,0 +1,48 @@
+---
+title: Lock the agent out with deny rules and protected paths
+description: "Some files the agent should never read or touch, no matter how loose the session. A deny rule is a hard wall — stronger than asking it nicely not to."
+sidebar:
+  label: "Deny rules · protected paths"
+---
+
+The next change touches the billing config, and right next to it in the repo sits `.env` and a `secrets/` directory full of live API keys. You've spent this whole chapter *loosening* the leash — accept-edits on, test commands allowed — and that's exactly the condition under which a mistake gets expensive: a loose session, one careless prompt, and the agent reads a secret into its context or rewrites a credentials file. What you want here isn't caution-by-prompt. It's a wall.
+
+## Telling it nicely doesn't count
+
+The tempting move is to just say it: "don't touch anything in `secrets/`." And in the moment, the agent will respect that. But a sentence in the conversation is not a guarantee — it's an instruction that lives in the context window, and the context window is a thing that gets [compacted, cleared, and resumed](/course/claude-code/sessions-context/). The boundary you stated on Monday can quietly fall out of the thread by Thursday, and now the only thing protecting your keys is the agent's memory of a request it can no longer see. For anything that actually matters, you don't want a request. You want a rule.
+
+## A deny rule is the hard wall
+
+A **deny** rule moves an action to *forbidden* — not "ask first," but "refuse, always," in every mode, regardless of what else is loosened. You write it into settings the same place as allow rules:
+
+```text
+// .claude/settings.json
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./secrets/**)",
+      "Edit(./config/production.*)"
+    ]
+  }
+}
+```
+
+Now the wall is real:
+
+```text
+> check what database URL we use in the env file
+
+  ⚠ Read(./.env) is denied by your permission rules. I can't open that file.
+  If you need a value from it, paste the specific line you want me to use.
+```
+
+Note the two verbs. `Read` deny means the file's contents can't enter the agent's context *at all* — which is the one you want for secrets, because a key the agent never reads is a key it can never leak into a log, a commit, or an API call. `Edit` deny means it can't modify the file — the one you want for production config you'll only ever change by hand. And because deny lives in settings rather than the conversation, it holds across compaction, across `/clear`, across a fresh `--resume` tomorrow. It is the hard guarantee that a stated boundary can't be. *The full matcher syntax — globs, path scoping, which tools you can gate — is in the [permissions docs](https://code.claude.com/docs/en/permissions).*
+
+## The walls you already have
+
+You don't start from zero here. Claude Code ships with a set of **protected paths** that are never silently written in any normal mode — your `.git` directory, its own `.claude` configuration, your shell startup files like `.zshrc`, your `.mcp.json`. The agent can't quietly corrupt your repository's history or rewrite the config that governs its own permissions, even in accept-edits, even with a broad allow rule in play. Your deny rules are how you extend that same protection to the paths *your* project considers sacred — the secrets, the prod config, whatever a leak or an overwrite would actually hurt.
+
+This is the real shape of operating an agent well: not a single global trust level, but a high floor and a low ceiling at once. Loose where it's safe — edits auto-applied, tests running free. Walled where it isn't — secrets unreadable, prod untouchable. You've now built both halves in one session, which is the whole skill.
+
+There's one place left to take this. So far every loosening still kept *you* in the room. The last task today is a long batch you want to walk away from entirely — and that raises a sharper question than any prompt: how do you let the agent run with nobody watching [without handing it the keys to the whole machine](/course/claude-code/permissions-modes/autonomous/)?

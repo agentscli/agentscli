@@ -1,0 +1,49 @@
+---
+title: Inspect the context window with /context and /usage
+description: "\"The agent's getting dumber\" is a symptom, not a diagnosis. Turn it into a number with /context and /usage."
+sidebar:
+  label: "/context · /usage"
+---
+
+By Thursday afternoon the session has been running, on and off, since Monday morning, and Claude Code has started to feel *off*. It forgot a naming convention it was happily following yesterday. It re-read a file it had already read twice. Its answers have gone a little vague, a little generic. The easy story to tell yourself is that the model is having a bad day — that you've somehow used it up.
+
+Almost always, that story is wrong, and the real cause is mechanical. A model doesn't get tired; its context window gets *full*. Four days of turns, file dumps, and command output have piled up until the signal you care about — this afternoon's task — is a thin layer floating on a deep pool of stale history, and the agent is splitting its attention across all of it. "Getting dumber" is what a saturated window feels like from the outside. But it stays a vague feeling, and you stay stuck guessing at fixes, until you can actually *see* the window.
+
+## Reading the gauge
+
+```text
+/context        # what's in the window right now, broken down by category
+/usage          # where you stand against your plan and rate limits
+```
+
+`/context` is the one that ends the guessing. It lays the window out as a budget, split into the things competing for it — the system prompt, the tool definitions, any connected [MCP](/foundations/mcp-servers/) servers, your `CLAUDE.md`, and the conversation itself — and shows you what each is spending:
+
+```text
+> /context
+
+  Context window: 142k / 200k tokens (71%)
+
+  ████████░░  System prompt + tools     18k    9%
+  ███░░░░░░░  MCP servers (3)           22k   11%   ← postgres, github, puppeteer
+  ██░░░░░░░░  CLAUDE.md                  6k    3%
+  ████████████████████████  Conversation        96k   48%
+  ░░░░░░░░░░  Free                      58k   29%
+```
+
+In one screen the vague feeling becomes two specific facts. The **conversation** is nearly half the window — four days of accumulated thread, exactly as you'd guess. And there are **three MCP servers** loaded, one of which, `puppeteer`, has nothing to do with this week's API work but is still spending eleven thousand tokens on its tool definitions before you type a single word. You weren't imagining the haze; you're looking at its two sources.
+
+## What the readout teaches you to notice
+
+The first lesson hiding in that breakdown is that **MCP servers cost tokens at rest.** Every server you've connected sits in the window from the start of the session — its tool schemas are loaded whether or not you ever call them. A handful of "might need it" servers can quietly eat a fifth of your budget on every turn of every conversation. `/context` is how you catch the tax; the fix is to connect only what the task in front of you needs, and disconnect the rest.
+
+The second is that **a single careless read can dominate.** Ask the agent to "read the whole config module" and a four-thousand-line file lands in context entire. If `/context` shows the conversation lurching upward right after one read, that's usually the culprit — and the habit that prevents it is pointing the agent at the specific function with [`@file`](/foundations/) rather than turning it loose on the whole thing.
+
+And mind the difference between the two commands, because they answer different questions and have different fixes. `/context` is *how full is this conversation's window* — a problem you solve by compacting, clearing, or dropping a server. `/usage` is *how much of my plan or rate limit have I burned* — a different ceiling entirely, one no amount of compacting will move. Diagnosing a full window as a hit rate limit (or the reverse) sends you fixing the wrong thing.
+
+## From feeling to gauge
+
+The real shift this lesson is after isn't a command, it's a stance. An opaque "context just fills up" breeds superstition — restarting at random, blaming the model, developing little rituals. The moment the window has a gauge, the right move is usually obvious from the numbers: conversation too big, compact it; switching tasks, clear it; a server you're not using, drop it. You stop guessing and start reading.
+
+So make `/context` a reflex at **phase boundaries** — finished a feature, about to start the next — not just a panic button for when things already feel broken. Caught early, a filling window is one command away from fixed. Caught late, you've already spent an afternoon getting worse answers for no reason, which is roughly where this Thursday has left you.
+
+The numbers are clear: the conversation is the problem, and you're not done with the task, so you can't just throw it away. What you need is to keep everything that matters about this week's work and shed everything that doesn't — [in place, without losing the thread](/course/claude-code/sessions-context/compact/).

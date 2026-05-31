@@ -3,7 +3,7 @@ title: Hooks
 description: Lifecycle event handlers — the deterministic guardrails and side effects each CLI lets you wire in.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import ToolTabs from '../../../components/ToolTabs.astro';
 
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 
@@ -33,6 +33,107 @@ The only way to make a rule unbreakable is to take the decision away from the mo
 
 The test: if "the agent forgot" or "the agent did the thing I told it not to" is a failure mode you can't accept, you want a hook, not a memory rule.
 
+## The lifecycle
+
+Hooks fire on events along the loop. The exact event names differ across tools (the [comparison table](#comparison) below has the per-tool list), but the rough timeline is the same:
+
+```text
+  session opens
+       │
+       ▼
+   ┌─────────────┐
+   │ SessionStart│  ── one-shot: inject context, log who/where
+   └─────┬───────┘
+         │
+         ▼  ┌──────── per turn ─────────────────────────────────┐
+            │                                                   │
+            │   ┌──────────────────┐                            │
+            │   │ UserPromptSubmit │  ── inspect or modify your │
+            │   └────────┬─────────┘     prompt before model    │
+            │            │                                      │
+            │            ▼  ┌──────── per tool call ────────┐   │
+            │               │                               │   │
+            │               │   ┌─────────────┐             │   │
+            │               │   │ PreToolUse  │ ◄── gate:   │   │
+            │               │   └─────┬───────┘    allow,   │   │
+            │               │         │            deny,    │   │
+            │               │         ▼            modify   │   │
+            │               │   [ tool runs ]               │   │
+            │               │         │                     │   │
+            │               │         ▼                     │   │
+            │               │   ┌─────────────┐             │   │
+            │               │   │ PostToolUse │ ── side     │   │
+            │               │   └─────────────┘    effects: │   │
+            │               │                      lint,    │   │
+            │               │                      test,    │   │
+            │               │                      log      │   │
+            │               └───────────────────────────────┘   │
+            │                                                   │
+            └───────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+                          ┌──────────────┐
+                          │     Stop     │  ── notify, snapshot
+                          └──────────────┘
+                                  │
+                                  ▼
+                            session closes
+```
+
+Two kinds of hook live on this timeline:
+
+- **Gating hooks** (`PreToolUse`, equivalents) intercept *before* an action runs. They can allow, modify the arguments, or block outright. This is where "make a rule unbreakable" lives.
+- **Reactive hooks** (`PostToolUse`, `SessionStart`, `Stop`) run *after* something happens. They don't decide anything; they react — lint the file you just wrote, fire a notification, append to a log.
+
+A hook's superpower is being inside the loop but outside the model's reasoning. The model can want to push to main all it likes; the gating hook simply doesn't let the tool call complete.
+
+## A worked example: blocking pushes to main
+
+The classic. You've told the agent not to push to main. Three sessions in a row, it pushed to main. A `PreToolUse` hook on shell commands fixes it forever.
+
+The shape, in pseudocode (real syntax in the per-tool tabs below):
+
+```text
+event:  PreToolUse
+match:  tool == "Bash"  AND  command matches /git\s+push.*\smain(\s|$)/
+action: { "decision": "block",
+          "reason": "Pushes to main are blocked. Use a release branch." }
+```
+
+Walked through one turn:
+
+```text
+you:      ship the fix
+model:    I'll run: git push origin main
+          [ proposes the Bash tool call ]
+              │
+              ▼
+   ┌─ PreToolUse hook fires ─────────────────────────────────┐
+   │  regex matches "git push origin main"                   │
+   │  hook returns: decision=block, reason="…"               │
+   └──────────────────────┬──────────────────────────────────┘
+                          │
+                          ▼
+          tool call NEVER runs
+                          │
+                          ▼
+model:    [ sees the block + reason in its next turn ]
+model:    Blocked — pushes to main aren't allowed.
+          Pushing to release/2026.05 instead: git push origin release/2026.05
+              │
+              ▼
+   ┌─ PreToolUse hook fires again ───────────────────────────┐
+   │  regex does NOT match — release branch                  │
+   └──────────────────────┬──────────────────────────────────┘
+                          │
+                          ▼
+          tool call runs normally
+```
+
+Notice two things. First: the hook fires *between* "the model proposes a tool call" and "the tool actually runs." That's the only place a deterministic gate can live. Second: when the hook blocks, it returns a *reason* the model can read on its next turn. The model isn't punished or kicked out — it's told *no*, gets the reason in its context, and adapts. The combination is what makes hooks safer than just denying via [permissions](/foundations/permissions/) — permissions say no; hooks say no *and explain*.
+
+The same pattern generalises. Replace the match condition and you get: block `rm -rf` outside the project, block edits to `.env`, block `npm install` without a lockfile, run prettier after every write, post to Slack on `Stop`. Same lifecycle, same shape.
+
 ## Why this and not...
 
 | You want to... | Reach for | Not |
@@ -48,89 +149,26 @@ Hooks are for *every time event X happens, do Y, no exceptions*. Skills are for 
 
 ## How it works in each tool
 
-<Tabs syncKey="tool">
-  <TabItem label="Claude Code">
-    **Configuration:** hooks live in `settings.json` (project, user, or managed levels). All registered hooks merge — Claude Code fires every hook that matches a given event, regardless of where it was defined.
-
-    **Events:** `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `Stop`, `SubagentStop`, `PreCompact`, `Notification`, and more.
-
-    **Hook actions** can be:
-    - A shell command
-    - An HTTP request
-    - A prompt sent to Claude
-    - A subagent invocation
-
-    **Example** (`.claude/settings.json`):
-
-    ```json
-    {
-      "hooks": {
-        "PreToolUse": [
-          {
-            "matcher": "Bash",
-            "command": "scripts/check-bash-command.sh"
-          }
-        ]
-      }
-    }
-    ```
-
-    Hook output can land in the conversation as a message — a `PostToolUse` hook running your linter feeds errors back to Claude as text it can read and act on.
-  </TabItem>
-
-  <TabItem label="Codex">
-    **Configuration:** Codex hooks load from either an inline `[hooks]` table in `config.toml` or a standalone `hooks.json`, at user (`~/.codex/`) and project (`.codex/`) levels. Enterprise admins can also ship managed hooks via `requirements.toml`.
-
-    **Events:** `PreToolUse`, `PostToolUse`, `PermissionRequest`, `SessionStart`, `UserPromptSubmit`, `Stop`.
-
-    **Hook actions:** only `type = "command"` handlers actually run today (the schema parses `prompt` and `agent` types but skips them). The script receives a JSON event payload on stdin (`session_id`, `cwd`, `hook_event_name`, `model`, `permission_mode`, plus a `turn_id` for turn-scoped events).
-
-    **Example** (`~/.codex/config.toml`):
-
-    ```toml
-    [[hooks.PreToolUse]]
-    matcher = "Bash"
-
-      [[hooks.PreToolUse.hooks]]
-      type = "command"
-      command = "scripts/check-bash-command.sh"
-    ```
-  </TabItem>
-
-  <TabItem label="opencode">
-    opencode's hook model is **plugin-based**. You write a JS/TS plugin module that exports a hook map, and opencode wires the hooks in.
-
-    A plugin function receives a context object (`project`, `client`, `$`, `directory`, `worktree`) and returns an object whose keys are event names:
-
-    ```ts
-    export default ({ project, client, $ }) => ({
-      'file.edited': async (event) => {
-        await $`pnpm lint ${event.path}`;
-      },
-    });
-    ```
-
-    **Available events** include `command.executed`, `file.edited`, `file.watcher.updated`, LSP events, message events, `permission.asked`, `permission.replied`, session/server events, shell/tool execution events (including env injection), and TUI prompts/commands/notifications.
-
-    The event taxonomy is richer than Claude Code's, but you need to author a plugin to use any of it — there's no `settings.json`-style declarative hook list.
-  </TabItem>
-</Tabs>
+<ToolTabs chapter="hooks" />
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | opencode |
-|---|---|---|---|
-| Where defined | `settings.json` | `config.toml` `[hooks]` table or `hooks.json` | JS/TS plugin module |
-| Declarative vs code | Declarative | Declarative | Code (JS/TS) |
-| Event taxonomy | ~10+ named events | `PreToolUse`, `PostToolUse`, `PermissionRequest`, `SessionStart`, `UserPromptSubmit`, `Stop` | Richest of the three |
-| Action types | Shell / HTTP / prompt / subagent | Shell (`type = "command"`) | JS code |
-| Output lands in context | Yes | Yes — hook script emits JSON on stdout with fields like `additionalContext` (PreToolUse) or `systemMessage`; exit 2 + stderr blocks the action | Plugin-controlled |
-| Layered (project + user + managed) | Yes — all merge | Yes (user + project, managed available) | Yes (global + project + managed) |
+| Aspect | Claude Code | Codex | opencode | Cursor | Copilot |
+|---|---|---|---|---|---|
+| Where defined | `settings.json` | `config.toml` `[hooks]` table or `hooks.json` | JS/TS plugin module | `hooks.json` | Per-surface (CLI files / Coding Agent repo / VS Code preview) |
+| Declarative vs code | Declarative | Declarative | Code (JS/TS) | Declarative (commands) | Declarative |
+| Event taxonomy | ~10+ named events | `PreToolUse`, `PostToolUse`, `PermissionRequest`, `SessionStart`, `UserPromptSubmit`, `Stop` | Richest among the CLIs (plugin events) | **21+ events** incl. `beforeReadFile`, `beforeMCPExecution`, `beforeShellExecution` | `sessionStart`, `sessionEnd`, `userPromptSubmitted`, `preToolUse` |
+| Action types | Shell / HTTP / prompt / subagent | Shell (`type = "command"`) | JS code | Subprocess (stdin/stdout JSON) | External command |
+| Output lands in context | Yes | Yes — hook script emits JSON on stdout with fields like `additionalContext` (PreToolUse) or `systemMessage`; exit 2 + stderr blocks the action | Plugin-controlled | Yes — JSON response with `user_message` / `agent_message` | Yes (where supported) |
+| Layered (project + user + managed) | Yes — all merge | Yes (user + project, managed available) | Yes (global + project + managed) | Yes (user + project + enterprise) | Per-surface |
+| Deterministic gate (allow/deny) | Yes (`PreToolUse`) | Yes (`PreToolUse`, exit 2) | Yes (plugin `permission.asked`) | Yes (`"permission": "allow" \| "deny" \| "ask"`) | Yes (`preToolUse`, where supported) |
 
 ## Name collisions
 
-- An opencode "hook" lives inside a [plugin](/foundations/plugins/) — you can't have a hook without writing a plugin. In Claude Code and Codex, hooks are a standalone primitive declared in config.
+- An opencode "hook" lives inside a [plugin](/foundations/plugins/) — you can't have a hook without writing a plugin. In Claude Code, Codex, and Cursor, hooks are a standalone primitive declared in config.
 - Don't confuse Claude Code's `PreCompact` (model-level context compaction) with shell-level "pre-commit" hooks. Despite the name they have nothing in common.
+- **Cursor's `beforeReadFile` and `beforeMCPExecution`** have no direct analog in any other tool in the foundations set — they let you gate file reads and individual MCP tool calls before they happen.
+- **Copilot's `copilot-setup-steps.yml`** is sometimes called a "pre-flight hook" but it isn't one. It's a GitHub Actions workflow that runs once before a Coding Agent task to prep the sandbox — not a runtime gate, not part of the hook taxonomy, and not applicable to the VS Code IDE surface.
 
 <UpstreamRefs
   links={[
@@ -150,6 +188,18 @@ Hooks are for *every time event X happens, do Y, no exceptions*. Skills are for 
       tool: 'opencode',
       label: 'Plugins & hooks',
       url: 'https://opencode.ai/docs/plugins/',
+    },
+
+    {
+      tool: 'Cursor',
+      label: 'Hooks',
+      url: 'https://cursor.com/docs/hooks',
+    },
+
+    {
+      tool: 'Copilot',
+      label: 'Hooks configuration',
+      url: 'https://docs.github.com/en/copilot/reference/hooks-configuration',
     },
   ]}
 />

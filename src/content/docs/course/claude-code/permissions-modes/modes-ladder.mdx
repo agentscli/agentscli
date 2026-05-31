@@ -1,0 +1,46 @@
+---
+title: Loosen the leash with Shift+Tab and accept-edits
+description: "A two-dozen-file rename shouldn't cost two dozen y/n prompts. Cycle to accept-edits mode and let the agent make scoped changes while you review the diff after."
+sidebar:
+  label: "Shift+Tab · accept edits"
+---
+
+The rename is pure mechanical work — the same safe edit, twenty-four times — and approving each one is exactly the kind of friction that makes people stop using an agent for the boring jobs it's best at. The fix is to move the whole *category* of "edit a file" from **ask** to **allow** for the duration of this task, and the fastest way to do that is a single keypress.
+
+## The mode ladder
+
+Press **Shift+Tab** and Claude Code cycles through its permission modes, the current one shown in the status bar:
+
+```text
+  default        → ⏵⏵ accept edits on   → ⏸ plan mode on   → (back to default)
+  reads only        edits don't prompt     research, no edits
+```
+
+One press from default lands you in **accept-edits**. Now the rename runs end to end without stopping:
+
+```text
+> [Shift+Tab]
+  ⏵⏵ accept edits on
+
+> finish the rename across all remaining files
+
+  ⏵ Edit src/routes/payments.js   ✓ applied
+  ⏵ Edit test/charges.test.js     ✓ applied
+  ⏵ Edit src/refunds.js           ✓ applied
+  ... 21 more files edited
+  Done. Renamed chargeCard → capturePayment across 24 files.
+```
+
+Twenty-four edits, zero prompts. You didn't approve each one — you approved the *kind of work* up front by choosing the mode, and you'll review the result in one pass with `git diff` instead of in two dozen interruptions. That's the trade accept-edits makes: it swaps inline-per-edit review for after-the-fact batch review, which is the right trade when the edits are mechanical and you trust the direction.
+
+## What accept-edits still won't do
+
+Here's the part that makes accept-edits *safe* rather than reckless, and it's worth being precise about. Loosening the leash on edits does not loosen it on everything:
+
+- It auto-approves **file edits and a handful of routine filesystem commands** (`mkdir`, `touch`, `mv`, `cp`, and the like) — but only for paths **inside your working directory**. An edit to something outside the project still stops and asks.
+- It does **not** auto-approve arbitrary shell commands. The agent wanting to run `npm test` or `curl` still prompts — that's the next lesson's problem.
+- It still refuses to silently touch **protected paths** — your `.git` directory, `.claude` config, shell startup files. Those are guarded in every mode but the most dangerous one, which we'll get to last.
+
+So accept-edits is a *scoped* loosening: free rein over ordinary edits in your project, the same caution everywhere else. That scoping is why it's the natural default for an afternoon of hands-on iteration where you're watching the diffs anyway. *The exact set of auto-approved commands and protected paths is enumerated in the [permission-modes docs](https://code.claude.com/docs/en/permission-modes); it's a list that shifts, so check there rather than trusting a fixed memory of it.*
+
+You'll have noticed the third rung on that ladder — **plan mode** — which reads and proposes but makes no edits at all. It's the *tighter* neighbor of default, and it's powerful enough to earn [its own chapter](/course/claude-code/planning/), so we'll skip past it here. For now you've got the looser end working: the rename flew by. But the next chunk of work is a test-and-build loop, and accept-edits won't help — running the tests still prompts every time. [Time to pre-approve the commands you trust](/course/claude-code/permissions-modes/rules/).

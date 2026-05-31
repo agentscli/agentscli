@@ -1,0 +1,52 @@
+---
+title: Run the review on every pull request with GitHub Actions
+description: "The headless command, fired by a pull request instead of by you. Install the action, add one secret, and the payments review runs on every PR before a human looks at it."
+sidebar:
+  label: "CI · GitHub Actions on every PR"
+---
+
+You can run the review from a script. Now we let the script run *itself* — once on every pull request, with no one pressing enter. This is the first of the two unattended jobs we set out to build, and it's the one a team feels immediately: the payments diff gets a review the moment it's opened, not whenever someone gets around to it.
+
+## The action
+
+GitHub integration runs through the official **`anthropics/claude-code-action`** action, documented in the [GitHub Actions guide](https://code.claude.com/docs/en/github-actions). It's built on the same headless engine you've been driving — your prompt, your permission flags, the same agent — just triggered by GitHub events instead of your terminal.
+
+The fastest way to wire it up is from the agent itself: run **`/install-github-app`** in an interactive Claude Code session and it walks you through installing the GitHub app and setting up the secret. The exact command and the manual fallback are in the [setup section](https://code.claude.com/docs/en/github-actions) of the docs. You'll need to be a repo admin, since it's installing an app and adding secrets.
+
+## The one secret
+
+The action authenticates with your Claude API key, which must live in **GitHub Secrets** as `ANTHROPIC_API_KEY` — never hardcoded in the workflow file. You reference it in the workflow as `${{ secrets.ANTHROPIC_API_KEY }}`. That's the entire auth story for the direct API path; the [docs cover](https://code.claude.com/docs/en/github-actions) the Bedrock and Vertex variants if your org routes through a cloud provider.
+
+## The workflow that runs on every PR
+
+There are two shapes this action takes. By default it responds to **`@claude` mentions** — someone types `@claude fix this` in a PR comment and it acts. But our job is different: we want it to run *automatically* on every pull request, no mention required. You get that by triggering on the `pull_request` event and passing an explicit `prompt`. Drop this in `.github/workflows/`:
+
+```text
+name: Payments Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "Review this pull request for regressions in the payments flow. Be terse: flag anything risky, stay quiet if it's clean."
+          claude_args: "--max-turns 10"
+```
+
+A few things worth pinning, because they're easy to get wrong and they change between versions:
+
+- The action is referenced as `anthropics/claude-code-action@v1`. Older beta workflows used `@beta` with a `mode:` input; v1 dropped `mode` and auto-detects whether to respond to a mention or run a prompt. If you're copying an old example, check it against the [current docs](https://code.claude.com/docs/en/github-actions).
+- `synchronize` in the trigger types is what re-runs the review when someone pushes new commits to an open PR — without it you only review the first push.
+- Any CLI flag you'd pass to `claude -p` goes through **`claude_args`**, including the permission flags from the [last lesson](/course/claude-code/automation/permissions/). `--max-turns` caps how long the run can iterate, which is your seatbelt against a runaway job burning minutes and tokens.
+
+## Permissions still carry, even here
+
+It's tempting to think the CI sandbox makes the permission discipline moot — it's GitHub's runner, not your laptop. It doesn't. The runner has a checkout of your repo and your `ANTHROPIC_API_KEY` sitting in its environment; a review that reads a malicious instruction out of a PR's own diff is exactly the prompt-injection surface deny rules exist for. Your `.claude/settings.json` deny rules travel with the repo into CI, so the secrets you walled off in the [permissions lesson](/course/claude-code/automation/permissions/) stay walled off on the runner too. Pass your allow rules through `claude_args` the same way, and the CI run inherits the same high-floor-low-ceiling posture you'd give it locally.
+
+There's a related ready-made path worth knowing about: Anthropic ships a **code-review** capability you can invoke as a packaged skill from the action, for teams that want a maintained review rather than a hand-written prompt. The [GitHub Actions docs](https://code.claude.com/docs/en/github-actions) show the workflow that installs and runs it. Reach for it when you'd rather not own the prompt; keep the explicit-prompt version above when the review needs to know something specific about your payments flow.
+
+That's half the job done — every pull request now gets a review without anyone asking for one. The other half runs when there *is* no pull request and no one's awake: a nightly pass that catches the regressions a PR review can't, by running the whole thing on a schedule. Composing that is [the last lesson](/course/claude-code/automation/loops/).

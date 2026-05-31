@@ -1,0 +1,75 @@
+---
+title: Raise extended thinking when the problem earns deeper reasoning
+description: "A concurrency bug needs the agent to reason before it acts. Turn extended thinking up with the effort level and /effort, reach for the ultrathink keyword on a single hard turn, and learn when deeper reasoning is wasted."
+sidebar:
+  label: "thinking · reason before acting"
+---
+
+The concurrency bug is in front of you, you've switched up to the capable model, and the temptation is to describe the symptom and let it start editing. On this particular bug that's a mistake. Two requests hit the charge ledger at once, both read the same running balance, both write back their own increment, and one update silently clobbers the other — so the ledger ends up short. The fix isn't a line; it's an *interleaving* the agent has to hold in its head and reason through. This is exactly the kind of problem where you want it to **think before it acts**, and Claude Code gives you a dial for precisely that.
+
+## What extended thinking is
+
+Extended thinking is the reasoning the agent does *before* it answers — working the problem out internally, considering the race, ruling out approaches, before it commits to an edit. On a copy tweak that's wasted motion; there's nothing to reason about. On a concurrency bug it's the whole game, because the failure lives in the ordering and the agent that hasn't reasoned about the ordering will confidently patch the wrong line.
+
+How much of this reasoning happens is governed by an **effort level** — higher effort means the model spends more of its budget thinking on the steps that benefit from it, lower effort means it answers faster and cheaper. For the ledger bug you want to turn that up.
+
+## Turning the effort up
+
+The dedicated control is `/effort`:
+
+```text
+/effort              # open a slider — drag from lower to higher reasoning
+/effort high         # set a level directly by name
+/effort auto         # hand the choice back to the model's default
+```
+
+Run it with no argument for an interactive slider, or name a level to set it directly. You can also nudge the same slider with the left/right arrow keys from inside the `/model` picker, so choosing a model and choosing how hard it thinks happen in one place. The current level shows next to the spinner — something like "with high effort" — so you can always see which gear you're in. The exact level names and which models support which levels are documented in [model-config](https://code.claude.com/docs/en/model-config#adjust-effort-level); they vary by model, so read the slider rather than trusting a remembered name.
+
+Pointed at the ledger bug with the effort turned up, the agent does what you'd want a careful engineer to do — reason about the race *first*, then propose:
+
+```text
+> /effort high
+
+> charges sometimes come up short under load. i think two concurrent writes
+  to the ledger are racing. find the race and fix it.
+
+  ✻ Thinking…
+    Two requests read balance=100, both add their charge, both write back.
+    Last write wins, the other increment is lost — classic read-modify-write
+    race. Options: row-level lock on the ledger row, an atomic UPDATE … SET
+    balance = balance + ? in one statement, or an optimistic version column.
+    The atomic UPDATE is the smallest correct fix and avoids holding a lock…
+
+  Here's the race and the fix I propose:
+  ## The race
+  src/ledger.js reads the balance, computes, then writes — three steps,
+  not atomic. Under concurrency the read is stale by the time it writes.
+  ## Fix
+  Replace read-modify-write with a single atomic UPDATE … [continues]
+```
+
+That reasoning block is the agent earning its keep. It caught that the read and the write aren't atomic — the actual bug — instead of guessing at a lock and moving on.
+
+### The toggle and the verbose view
+
+Two smaller controls worth knowing. Extended thinking has a **session toggle** — `Option+T` on macOS, `Alt+T` on Windows and Linux — to turn thinking on or off for the current session without opening a menu. And by default the thinking is collapsed; press `Ctrl+O` to expand it and watch the reasoning as it happens, which is how the block above became visible. To make thinking-on your global default rather than toggling each session, set it in `/config`. The current keys and the setting name live in [model-config](https://code.claude.com/docs/en/model-config#extended-thinking) — pin to the docs, not to muscle memory, since these shift.
+
+## The one-turn escalation keyword
+
+Sometimes you don't want to change a session-wide setting — you've got *one* turn that's unusually hard and you want maximum reasoning on just that prompt. Claude Code recognises the keyword **`ultrathink`** anywhere in your message and requests deeper reasoning for that turn alone, then drops back to your normal level:
+
+```text
+> ultrathink about whether the atomic UPDATE still races if two charges
+  arrive on different ledger rows that both touch the same account total
+```
+
+Be precise about this, because it's easy to assume more keywords work than do: `ultrathink` is the recognised one. Phrases like "think", "think hard", or "think more" read as ordinary English in your prompt — the agent sees them as instructions to consider, but they are **not** special escalation keywords and don't change the reasoning budget. If you want a guaranteed one-turn boost, use `ultrathink`; if you want it on for a stretch of work, raise the effort level instead. The current behaviour is documented in [model-config](https://code.claude.com/docs/en/model-config#adjust-effort-level).
+
+## When deeper reasoning is wasted
+
+The flip side is the lesson the copy tweak already taught you, now from the thinking side. Turning effort up on a mechanical task doesn't make the rename better — there's nothing to reason about, so the extra thinking tokens are pure cost and latency for an answer that was never in doubt. Deeper reasoning pays off in proportion to how *ambiguous* the problem is:
+
+- **Genuinely hard** — a race condition, a subtle design decision, a bug that only shows under load — turn it up. The reasoning is what finds the real answer instead of a plausible wrong one.
+- **Mechanical and unambiguous** — copy, rename, format, boilerplate — leave it low. You're paying for thinking the task doesn't have.
+
+That asymmetry is the whole chapter in one line: the heavy gear belongs on the hard problem, not on the workload as a whole. Which is exactly the discipline the last lesson pulls together — [matching model and reasoning per task, and knowing when raw speed is worth paying for too.](/course/claude-code/models-thinking/cost/)

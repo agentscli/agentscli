@@ -1,0 +1,74 @@
+---
+title: Define a reusable custom subagent so a recurring job always runs the same way
+description: "Turn a job you keep re-describing into a saved subagent: a markdown file with frontmatter and a system prompt that pins its name, tools, and model. How to create one and which fields to set."
+sidebar:
+  label: "Custom · reusable agent"
+---
+
+You've now run the ledger audit three times, re-typing the same brief each time — map the writes, scope the tools to read-only, come back terse. That repetition is the signal the docs point to directly: *define a custom subagent when you keep spawning the same kind of worker with the same instructions.* Instead of describing the job, you save it once as a named specialist, and from then on you just call it by name — same tools, same instructions, same shape, every time.
+
+## What a custom subagent actually is
+
+It's a markdown file with YAML frontmatter on top and a system prompt below. The frontmatter configures the worker; the body *is* its instructions. The minimal shape, straight from the [subagent file format](https://code.claude.com/docs/en/sub-agents#write-subagent-files):
+
+```text
+---
+name: ledger-auditor
+description: Maps where the payments code writes to the ledger and which tests
+  cover those writes. Use before any migration touching the ledger.
+tools: Read, Grep, Glob
+model: inherit
+---
+
+You are a ledger audit specialist for the payments service.
+
+When invoked:
+1. Grep for every write to the ledger across src/.
+2. For each write site, identify the function and the conditions it writes under.
+3. Find the tests that exercise each write site, and flag any with no coverage.
+
+Return a table: write site, function, covering tests. Then list coverage gaps.
+Report the conclusion only — do not dump file contents back.
+```
+
+That last instruction in the body is doing the same work you did by hand every time: telling the worker to hand back the verdict, not the transcript. Bake it into the definition and you never have to remember to ask.
+
+## The fields that matter
+
+Only `name` and `description` are required; the rest tune behavior. The ones you'll reach for first, all from the [supported frontmatter fields](https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields):
+
+- **`name`** — a unique identifier in lowercase-with-hyphens. This is how you invoke it.
+- **`description`** — *when Claude should delegate to this subagent*. This isn't decoration: Claude reads it to decide whether a task matches, so write it as a trigger. Phrases like "use proactively" or "use before any migration" push it to delegate on its own.
+- **`tools`** — an allowlist of the tools the worker may use; omit it and the subagent inherits everything the main conversation has. Scoping the auditor to `Read, Grep, Glob` means it *cannot* edit a file even if it tries — the isolation is enforced, not just suggested. There's also `disallowedTools` for the inverse: inherit everything *except* a few.
+- **`model`** — pins which model the worker runs on, or `inherit` (the default) to use whatever your main session is on. Routing a cheap, mechanical job like this audit to a lighter, faster model is a documented way to control cost; the [supported values are listed in the docs](https://code.claude.com/docs/en/sub-agents#supported-frontmatter-fields). This is the [model-selection](/course/claude-code/models-thinking/) call from two chapters back, made permanent in the worker's definition.
+
+Other fields exist for sharper control — `permissionMode`, `skills` to preload domain knowledge, `background: true` to always run it off-thread, `isolation: worktree` to give it a throwaway copy of the repo — and the full table is in the docs. Start with the four above; reach for the rest when a specific need shows up.
+
+## Creating and calling it
+
+You don't have to hand-write the file. The fastest path is the `/agents` command, which opens a tabbed interface — its **Library** tab walks you through creating one, and can even generate the description and system prompt from a plain-English sketch of the job. The guided flow is documented at [use the /agents command](https://code.claude.com/docs/en/sub-agents#use-the-%2Fagents-command).
+
+Where the file lands sets its scope:
+
+- **`.claude/agents/`** in your project — the right home for `ledger-auditor`, since it's specific to this codebase. Check it into version control and your whole team gets the same audit, run the same way.
+- **`~/.claude/agents/`** in your home directory — for personal specialists you want in every project.
+
+Once it exists, you stop describing the job and just name it:
+
+```text
+> use the ledger-auditor before I start this migration
+
+  ⏵ Agent (ledger-auditor)  auditing ledger writes
+  ⎿ Done (9 tool uses)
+
+  | Write site   | Function          | Tests                       |
+  ...
+```
+
+Same isolated context, same terse return — but now reproducible. The worker that took a paragraph of briefing every time is a single name, and everyone who pulls the repo runs the identical audit. (One boundary worth knowing, from the docs: subagents can't spawn other subagents — if you need nested delegation, chain them from the main thread instead.)
+
+## Where this points next
+
+Sit with what you just built. The custom subagent solved *configuration* repetition — you stopped re-typing the auditor's tools and instructions. But notice the worker still only runs when you *call* it. Each invocation is a task you initiate, by name, every time.
+
+That's the exact seam where the next primitive picks up. A subagent runs a task you hand it; a **skill** packages a *procedure* once and the agent invokes it itself, automatically, every time a situation matches — no call from you. The auditor waits to be summoned; a skill recognizes its own moment. [The Skills chapter](/course/claude-code/skills/) is about teaching the agent procedures it reaches for on its own, and it's where the course goes next.
