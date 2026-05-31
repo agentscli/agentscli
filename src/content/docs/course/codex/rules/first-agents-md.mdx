@@ -1,0 +1,71 @@
+---
+title: "Write the first AGENTS.md for budgetcli"
+description: "Codex keeps reintroducing the float-money bug and inventing categories that don't exist. Capture the three facts it can't infer from the code — money is integer cents, the real category list, how dates are handled — in an AGENTS.md it reads automatically every run."
+sidebar:
+  label: "First AGENTS.md · capture the facts"
+---
+
+You've spent enough sessions correcting the same three things that you can predict them. Codex writes `total = sum(t.amount) / 100.0` and hands you a float where the rest of the codebase deals in integer cents. It tags an imported transaction `"dining"` when `budgetcli` has only ever recognised `"groceries"` and `"restaurants"`. It parses a statement date as `MM/DD` when the bank exports `DD/MM`. None of these are things Codex *should* know — it can't read the original author's intent out of code that's already half-wrong about them. So you tell it. Once. In a file it reads on its own before every run.
+
+## Create the file at the repo root
+
+`AGENTS.md` is plain Markdown. Codex looks for it automatically — put it at the root of the `budgetcli` repo and it gets loaded at the top of every session in that directory, no flag, no command, nothing to remember. Create it next to your `README.md`:
+
+```text
+budgetcli/
+├── AGENTS.md          ← the standing brief Codex reads every run
+├── README.md
+├── pyproject.toml
+└── src/budgetcli/...
+```
+
+There's no special syntax to learn. Codex reads the file the way the model reads any prose you'd give it — headings, bullets, short declarative sentences. Write it the way you'd brief a sharp new engineer who's never seen the project: tell them the things that bite, skip the things they'll figure out from the code.
+
+## The three facts that bite
+
+Here's a first `AGENTS.md` for `budgetcli`. Every line earns its place because it's something Codex got *wrong*, not something it could have read off the source:
+
+```markdown title="AGENTS.md"
+# budgetcli
+
+A self-hosted personal-finance budgeting API (FastAPI, Python).
+You are working on the maintainer's own financial data — be precise.
+
+## Money
+
+- Money is **integer cents**, always. Never float, never `Decimal`, never dollars.
+- A $10.00 charge is the integer `1000`. A $4.99 charge is `499`.
+- Never divide by 100 to "convert to dollars" in business logic. Format to
+  dollars only at the API boundary, for display, never in storage or maths.
+- When summing or comparing amounts, stay in integer cents end to end.
+
+## Categories
+
+Transactions are tagged with a category from this **fixed** list. Do not
+invent new ones; if a transaction fits none, leave it uncategorised:
+
+`groceries`, `restaurants`, `rent`, `utilities`, `transport`,
+`subscriptions`, `income`, `transfer`.
+
+## Dates
+
+- Bank CSV exports use **DD/MM/YYYY**. Parse them as day-first, not month-first.
+- Store and compare dates as ISO `YYYY-MM-DD`.
+- Transactions are dated by the statement's posting date, not import time.
+
+## Running it
+
+- Tests: `pytest`
+- Run the API locally: `uvicorn budgetcli.main:app --reload`
+- Lint before committing: `ruff check .`
+```
+
+Notice what's *not* in there. Nothing says "write clean code" or "follow Python best practices" — Codex already aims for those, and the words would just burn context. Nothing transcribes the directory layout or the framework name; Codex reads those from the repo. Every line is a fact that's specific to `budgetcli`, true beyond this week, and something the code itself either omits or gets wrong. That's the bar, and the [good-rules lesson](/course/codex/rules/good-rules/) sharpens it further.
+
+## Watch it land
+
+Drop the file in, start a fresh session in the repo, and ask Codex to add a report endpoint that totals spend by category. Two things should now be different from last week. The total comes back in integer cents, summed without a stray `/ 100.0`. And the category breakdown uses only the eight names from your list — no `"dining"`, no `"misc"`. You didn't say any of it in the prompt. Codex read it before you typed.
+
+That's the whole trade: three facts you used to repeat every morning, written down once, paid for once. The money bug and the phantom categories stop being a per-session argument.
+
+One file at the repo root covers the team-shared truth about `budgetcli`. But rules don't all want the same home — some are personal, some belong to a subdirectory, and Codex actually pulls from *several* `AGENTS.md` files at once. [Next: how Codex discovers and layers them.](/course/codex/rules/the-hierarchy/)

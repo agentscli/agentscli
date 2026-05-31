@@ -1,0 +1,47 @@
+---
+title: "How Codex discovers and layers AGENTS.md files"
+description: "Codex doesn't read one AGENTS.md — it walks from your global ~/.codex file down through the git root to where you launched, concatenating every file it finds. Closer files win, and AGENTS.override.md beats plain AGENTS.md at the same level."
+sidebar:
+  label: "The hierarchy · how rules layer"
+---
+
+You've put every rule in one file: the `AGENTS.md` at the `budgetcli` root, shared with anyone who clones the repo. That's the right home for most of them. But two don't quite fit there. "Always show me a diff and explain your reasoning before editing" is a *personal* habit — it shouldn't ship to everyone who checks out the project. And the rule about how `budgetcli`'s CSV-import module handles each bank's quirks only matters when Codex is actually working in that directory; loading it into every session about the reports endpoint is wasted context. Both want a different scope. Codex has one for each, because it doesn't read a single `AGENTS.md` — it assembles several.
+
+## The discovery walk
+
+When Codex starts in a directory, it builds the project brief by walking a defined path and reading every `AGENTS.md` it finds along the way. The walk goes from broadest scope to most specific:
+
+```text
+Global      ~/.codex/AGENTS.md            (you, every project on this machine)
+Project     <git root>/AGENTS.md          (the repo, shared via git)
+            <git root>/src/AGENTS.md       ↓ intermediate directories, if present
+Local       <cwd>/AGENTS.md               (the directory you launched Codex in)
+```
+
+It starts at your **global** file in `~/.codex/`, then jumps to the **git root** of the project and walks *down* the directory tree toward your current working directory, picking up any `AGENTS.md` it passes. The personal-habit rule goes in `~/.codex/AGENTS.md` — it follows you across every repo and never lands in anyone else's checkout. The CSV-import rule goes in `src/budgetcli/importers/AGENTS.md`, where it only enters context when Codex is working in that corner of the tree.
+
+The discovery runs **once per run** — in the TUI that's typically once per launched session. The full mechanics are pinned in [the official AGENTS.md guide](https://developers.openai.com/codex/guides/agents-md).
+
+## They concatenate — they don't fight
+
+This is the part people get wrong, so be precise about it. These files **do not override each other wholesale.** Codex collects every `AGENTS.md` on the walk and **concatenates them** — root down to cwd — joining them with blank lines into one combined brief. Your global file *and* the project file *and* any subdirectory file are all present at once. None cancels another.
+
+Order is how conflicts resolve. Files closer to your working directory appear *later* in the concatenated text, and **the closer file wins** when two rules brush against the same topic — later guidance overrides earlier guidance. So a rule in `src/budgetcli/importers/AGENTS.md` takes precedence over the same-topic rule at the repo root, which in turn takes precedence over your global `~/.codex/AGENTS.md`. Broadest is the default; most specific is the final word.
+
+That gives you a clean layering for `budgetcli`:
+
+- **Global** (`~/.codex/AGENTS.md`) — your personal working style across all projects. "Explain your reasoning before editing." Follows you, ships to no one.
+- **Project root** (`budgetcli/AGENTS.md`) — the team-shared truth: integer cents, the category list, date handling. Committed to git so every clone gets it. This is where the bulk of your last lesson lives.
+- **Subdirectory** (`src/budgetcli/importers/AGENTS.md`) — rules that only matter in one module: the per-bank CSV quirks. Cheap, because it only enters context when Codex works there.
+
+## AGENTS.override.md wins at its level
+
+There's one more file in the picture. At **every** level of the walk — global and each project directory — Codex checks for `AGENTS.override.md` *before* the plain `AGENTS.md`, and the override file takes precedence at that level. It's the escape hatch for when you need to supersede a rule without editing the shared file everyone depends on.
+
+Concretely: if `budgetcli/AGENTS.md` is the committed team file and you drop a `budgetcli/AGENTS.override.md` next to it, the override beats the base file at the project root. That's the move when you want a local exception — say, temporarily loosening a convention while you experiment — without touching version-controlled guidance your teammates rely on. Same idea globally: `~/.codex/AGENTS.override.md` wins over `~/.codex/AGENTS.md`.
+
+:::note[The precedence in one line]
+At each level Codex checks `AGENTS.override.md` first, then `AGENTS.md`. Across levels, the file closer to your working directory wins. Override beats base at a level; closer beats farther across levels.
+:::
+
+You now have the full map of how Codex *assembles* its rules: global to subdirectory, concatenated in order, closer-wins, override-on-top. But layering rules well only pays off if the rules themselves are the kind Codex actually follows. [That's the next move — what separates a rule it obeys from one it skims past.](/course/codex/rules/good-rules/)
