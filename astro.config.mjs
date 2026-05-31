@@ -26,6 +26,11 @@ export default defineConfig({
 			customCss: ['./src/styles/theme.css'],
 			components: {
 				ThemeSelect: './src/components/ThemeSelect.astro',
+				// Custom Sidebar override. It wins over starlight-sidebar-topics'
+				// own Sidebar override (the plugin merges user components last) and
+				// swaps the flat topic switcher for one that nests the course
+				// topics (Claude Code, Codex) under the "Courses" parent.
+				Sidebar: './src/components/Sidebar.astro',
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/agentscli' }],
 			head: [
@@ -67,9 +72,11 @@ export default defineConfig({
 					: []),
 			],
 			// NOTE: the sidebar is intentionally NOT set here. starlight-sidebar-topics
-			// owns the sidebar and splits the site into separate topics (Course /
-			// Foundations / Tool guides), each with its own isolated sidebar. The plugin
-			// throws if a top-level `sidebar` is also configured.
+			// owns the sidebar and splits the site into separate topics, each with its
+			// own isolated sidebar. The plugin throws if a top-level `sidebar` is also
+			// configured. The two course topics (Claude Code, Codex) are siblings of
+			// the "Courses" hub; the custom Sidebar override nests them under it in the
+			// switcher so each course opens in isolation.
 			plugins: [
 				starlightBlog({
 					authors: {
@@ -86,11 +93,20 @@ export default defineConfig({
 				starlightSidebarTopics(
 					[
 						{
-							label: 'Course',
+							label: 'Courses',
+							link: '/course/',
+							icon: 'open-book',
+							items: [
+								{ label: 'Claude Code', link: '/course/claude-code/' },
+								{ label: 'Codex', link: '/course/codex/' },
+							],
+						},
+						{
+							label: 'Claude Code',
 							link: '/course/claude-code/',
 							icon: 'open-book',
 							items: [
-								{ label: 'Overview', slug: 'course/claude-code' },
+								{ label: 'Claude Code overview', slug: 'course/claude-code' },
 								{
 									label: 'Getting started',
 									items: [
@@ -202,6 +218,116 @@ export default defineConfig({
 										{ label: 'Inline · ! @ paste', slug: 'course/claude-code/daily-workflow/inline-input' },
 										{ label: 'Flow · /btw /recap history', slug: 'course/claude-code/daily-workflow/staying-in-flow' },
 										{ label: 'Ergonomics · vim · /config', slug: 'course/claude-code/daily-workflow/ergonomics' },
+									],
+								},
+							],
+						},
+						{
+							label: 'Codex',
+							link: '/course/codex/',
+							icon: 'open-book',
+							items: [
+								{ label: 'Codex overview', slug: 'course/codex' },
+								{
+									label: 'Getting started',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/getting-started' },
+										{ label: 'Install · the CLI & surfaces', slug: 'course/codex/getting-started/install' },
+										{ label: 'Authenticate · sign-in vs API key', slug: 'course/codex/getting-started/authenticate' },
+										{ label: 'The loop · read→propose→approve', slug: 'course/codex/getting-started/the-loop' },
+										{ label: 'First change · fix, review, commit', slug: 'course/codex/getting-started/first-change' },
+										{ label: 'Editor · IDE integration', slug: 'course/codex/getting-started/editor' },
+									],
+								},
+								{
+									label: 'Sessions & context',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/sessions-context' },
+										{ label: 'Resume · codex resume / --last', slug: 'course/codex/sessions-context/resume' },
+										{ label: '/fork · two approaches', slug: 'course/codex/sessions-context/fork' },
+										{ label: '/side · quick tangent', slug: 'course/codex/sessions-context/side' },
+										{ label: '/compact · shrink thread', slug: 'course/codex/sessions-context/compact' },
+										{ label: '/status · window usage', slug: 'course/codex/sessions-context/status' },
+										{ label: '/new & /clear · reset', slug: 'course/codex/sessions-context/reset' },
+									],
+								},
+								{
+									label: 'Approvals & sandbox',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/approvals-sandbox' },
+										{ label: 'Two axes · -a × -s', slug: 'course/codex/approvals-sandbox/two-axis' },
+										{ label: 'Sandbox levels · the wall', slug: 'course/codex/approvals-sandbox/sandbox-modes' },
+										{ label: 'Approval policies · the checkpoint', slug: 'course/codex/approvals-sandbox/approval-modes' },
+										{ label: 'Network & dirs · network-off default', slug: 'course/codex/approvals-sandbox/network-and-dirs' },
+										{ label: 'Profiles · trust as one flag', slug: 'course/codex/approvals-sandbox/profiles-for-trust' },
+									],
+								},
+								{
+									label: 'Rules (AGENTS.md)',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/rules' },
+										{ label: 'First AGENTS.md · capture facts', slug: 'course/codex/rules/first-agents-md' },
+										{ label: 'Hierarchy · how rules layer', slug: 'course/codex/rules/the-hierarchy' },
+										{ label: 'Good rules · what Codex follows', slug: 'course/codex/rules/good-rules' },
+										{ label: 'Not a boundary · size cap & limits', slug: 'course/codex/rules/not-a-boundary' },
+									],
+								},
+								{
+									label: 'Models & effort',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/models-effort' },
+										{ label: 'The effort dial · think as hard as needed', slug: 'course/codex/models-effort/the-effort-dial' },
+										{ label: 'Switch models · /model & --model', slug: 'course/codex/models-effort/switch-models' },
+										{ label: 'Profiles · a whole posture', slug: 'course/codex/models-effort/profiles' },
+										{ label: 'Cost-aware · spend where it pays', slug: 'course/codex/models-effort/cost-aware' },
+									],
+								},
+								{
+									label: 'Subagents',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/subagents' },
+										{ label: 'Delegate · isolated context', slug: 'course/codex/subagents/delegate' },
+										{ label: 'Fan out · parallel slices', slug: 'course/codex/subagents/fan-out' },
+										{ label: 'Worktrees · conflict-free edits', slug: 'course/codex/subagents/worktrees' },
+										{ label: 'Orchestrate · gate and merge', slug: 'course/codex/subagents/orchestrate' },
+									],
+								},
+								{
+									label: 'Skills',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/skills' },
+										{ label: 'Create · SKILL.md', slug: 'course/codex/skills/create' },
+										{ label: 'Trigger · the description', slug: 'course/codex/skills/trigger' },
+										{ label: 'Choose · Skill vs rule vs prompt', slug: 'course/codex/skills/vs' },
+									],
+								},
+								{
+									label: 'Extending Codex',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/extending' },
+										{ label: 'MCP · connect a server', slug: 'course/codex/extending/mcp-connect' },
+										{ label: 'MCP · Codex as a server', slug: 'course/codex/extending/mcp-serve' },
+										{ label: 'Hooks · the determinism gate', slug: 'course/codex/extending/hooks-gate' },
+										{ label: 'Hooks · vs judgment & permissions', slug: 'course/codex/extending/hooks-vs' },
+									],
+								},
+								{
+									label: 'Automation',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/automation' },
+										{ label: 'Headless · codex exec', slug: 'course/codex/automation/headless' },
+										{ label: 'CI · GitHub, unattended', slug: 'course/codex/automation/ci' },
+										{ label: 'Reproducible · ignore config & rules', slug: 'course/codex/automation/reproducible' },
+										{ label: 'Agents SDK · beyond exec', slug: 'course/codex/automation/sdk' },
+									],
+								},
+								{
+									label: 'Daily workflow',
+									items: [
+										{ label: 'Module intro', slug: 'course/codex/daily-workflow' },
+										{ label: 'Profiles · the two-profile habit', slug: 'course/codex/daily-workflow/profiles-habit' },
+										{ label: 'Prompting · brief well, edit fast', slug: 'course/codex/daily-workflow/prompting-ergonomics' },
+										{ label: 'Finale · the whole arc', slug: 'course/codex/daily-workflow/finale' },
 									],
 								},
 							],
