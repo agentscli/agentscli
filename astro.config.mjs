@@ -99,6 +99,7 @@ export default defineConfig({
 							items: [
 								{ label: 'Claude Code', link: '/course/claude-code/' },
 								{ label: 'Codex', link: '/course/codex/' },
+								{ label: 'GitHub Copilot', link: '/course/copilot/' },
 							],
 						},
 						{
@@ -328,6 +329,124 @@ export default defineConfig({
 										{ label: 'Profiles · the two-profile habit', slug: 'course/codex/daily-workflow/profiles-habit' },
 										{ label: 'Prompting · brief well, edit fast', slug: 'course/codex/daily-workflow/prompting-ergonomics' },
 										{ label: 'Finale · the whole arc', slug: 'course/codex/daily-workflow/finale' },
+									],
+								},
+							],
+						},
+						{
+							label: 'GitHub Copilot',
+							link: '/course/copilot/',
+							icon: 'open-book',
+							items: [
+								{ label: 'GitHub Copilot overview', slug: 'course/copilot' },
+								{
+									label: 'Getting started',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/getting-started' },
+										{ label: 'Setup · install & sign in', slug: 'course/copilot/getting-started/setup' },
+										{ label: 'Two surfaces · completions vs chat', slug: 'course/copilot/getting-started/completions-vs-chat' },
+										{ label: 'First change · a small reviewed edit', slug: 'course/copilot/getting-started/first-change' },
+									],
+								},
+								{
+									label: 'The modes',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/modes' },
+										{ label: 'Ask · understand before you touch', slug: 'course/copilot/modes/ask' },
+										{ label: 'Edit · a scoped change', slug: 'course/copilot/modes/edit' },
+										{ label: 'Agent · hand off the whole task', slug: 'course/copilot/modes/agent' },
+										{ label: 'Plan · see the plan first', slug: 'course/copilot/modes/plan' },
+										{ label: 'Switch · match the mode to the risk', slug: 'course/copilot/modes/switching' },
+									],
+								},
+								{
+									label: 'Rules (custom instructions)',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/rules' },
+										{ label: 'Repo-wide · copilot-instructions.md', slug: 'course/copilot/rules/copilot-instructions' },
+										{ label: 'The bridge · AGENTS.md & CLAUDE.md', slug: 'course/copilot/rules/the-bridge' },
+										{ label: 'Path-specific · applyTo globs', slug: 'course/copilot/rules/path-specific' },
+										{ label: 'Hierarchy · personal, repo, org', slug: 'course/copilot/rules/hierarchy' },
+										{ label: 'Good rules · what earns its place', slug: 'course/copilot/rules/good-rules' },
+									],
+								},
+								{
+									label: 'Prompt files & slash commands',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/prompt-files' },
+										{ label: 'Create · .prompt.md & /create-prompt', slug: 'course/copilot/prompt-files/create' },
+										{ label: 'Prompt vs rule · invoked vs always-on', slug: 'course/copilot/prompt-files/vs-rules' },
+										{ label: 'Wire it · arguments, agent, tools', slug: 'course/copilot/prompt-files/wire-it' },
+									],
+								},
+								{
+									label: 'Custom agents & subagents',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/custom-agents' },
+										{ label: 'Create · .agent.md & /create-agent', slug: 'course/copilot/custom-agents/create' },
+										{ label: 'A reviewer · a persona for shared-lib', slug: 'course/copilot/custom-agents/a-reviewer' },
+										{ label: 'Subagents · fan out across consumers', slug: 'course/copilot/custom-agents/subagents' },
+										{ label: 'Handoffs · chaining agents', slug: 'course/copilot/custom-agents/handoffs-plan' },
+									],
+								},
+								{
+									label: 'Skills',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/skills' },
+										{ label: 'Create · SKILL.md', slug: 'course/copilot/skills/create' },
+										{ label: 'Trigger · the description does the work', slug: 'course/copilot/skills/trigger' },
+										{ label: 'The standard · the cross-tool skill', slug: 'course/copilot/skills/the-standard' },
+									],
+								},
+								{
+									label: 'Extending: MCP',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/extending' },
+										{ label: 'Connect · .vscode/mcp.json', slug: 'course/copilot/extending/connect' },
+										{ label: 'Trust · confirm before it runs', slug: 'course/copilot/extending/trust' },
+										{ label: 'Scope · per-agent servers', slug: 'course/copilot/extending/scope' },
+									],
+								},
+								{
+									label: 'Permissions & autonomy',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/permissions' },
+										{ label: 'Levels · default, bypass, autopilot', slug: 'course/copilot/permissions/levels' },
+										{ label: 'The checkpoint · risky commands', slug: 'course/copilot/permissions/the-checkpoint' },
+										{ label: 'Match · autonomy to blast radius', slug: 'course/copilot/permissions/match-to-stakes' },
+									],
+								},
+								{
+									label: 'Models & credits',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/models' },
+										{ label: 'Picker · choose per request', slug: 'course/copilot/models/picker' },
+										{ label: 'Credits · spend where it pays', slug: 'course/copilot/models/credits' },
+									],
+								},
+								{
+									label: 'Automation: cloud coding agent',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/automation' },
+										{ label: 'Assign · hand an issue to Copilot', slug: 'course/copilot/automation/assign' },
+										{ label: 'Draft PRs · it proposes, you merge', slug: 'course/copilot/automation/draft-prs' },
+										{ label: 'Environment · copilot-setup-steps.yml', slug: 'course/copilot/automation/environment' },
+									],
+								},
+								{
+									label: 'Beyond VS Code',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/beyond-vscode' },
+										{ label: 'JetBrains · near-parity, called out', slug: 'course/copilot/beyond-vscode/jetbrains' },
+										{ label: 'CLI · the terminal footnote', slug: 'course/copilot/beyond-vscode/cli' },
+									],
+								},
+								{
+									label: 'Daily workflow',
+									items: [
+										{ label: 'Module intro', slug: 'course/copilot/daily-workflow' },
+										{ label: 'A day · careful lib, fast app', slug: 'course/copilot/daily-workflow/a-day' },
+										{ label: 'The arc · and where to go next', slug: 'course/copilot/daily-workflow/the-arc' },
 									],
 								},
 							],
