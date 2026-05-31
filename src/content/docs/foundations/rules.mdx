@@ -3,14 +3,14 @@ title: Rules
 description: How each CLI loads persistent, human-authored context into every session — CLAUDE.md, AGENTS.md, and per-path rule files.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 
 ## What rules are
 
 **Rules** are the persistent, human-authored context each CLI reads automatically at session start and injects into the model's context — before you've typed anything. They live in a file (or set of files) you write and check into the repo: build commands, naming conventions, "we use pnpm not npm," "the API lives in `services/api`," "never edit migrations after they've been merged."
 
-There's a cross-tool convention here. Codex and opencode both read [`AGENTS.md`](https://agents.md/) natively. Claude Code reads `CLAUDE.md` but can import `@AGENTS.md` for interop. The clean pattern is one `AGENTS.md` at your repo root, imported into `CLAUDE.md` — single source of truth across all three tools.
+There's a cross-tool convention here. Codex, opencode, Cursor, and Copilot all read [`AGENTS.md`](https://agents.md/) natively (Copilot also reads `CLAUDE.md` and `GEMINI.md` from the repo root). Claude Code reads `CLAUDE.md` but can import `@AGENTS.md` for interop. The clean pattern is one `AGENTS.md` at your repo root, imported into `CLAUDE.md` — a single source of truth that every major tool will load.
 
 Rules are *declarative* — **you** write them, the agent reads them. That's the distinction from agent-managed memory (where the agent decides what to remember about a session or a user); memory is a separate primitive, not covered here. This chapter is about the static, version-controlled context you author.
 
@@ -47,77 +47,23 @@ Rules are *always loaded, every turn*. That makes them powerful — and expensiv
 
 ## How it works in each tool
 
-<Tabs syncKey="tool">
-  <TabItem label="Claude Code">
-    **Files Claude Code reads on every session:**
-
-    - `./CLAUDE.md` — project root
-    - Nested `CLAUDE.md` files in subdirectories — load when Claude works in that subdir
-    - `~/.claude/CLAUDE.md` — your user-wide file (applies to every project)
-    - Managed-policy `CLAUDE.md` — org-controlled, takes precedence
-    - `.claude/rules/*.md` — optional path-scoped rules (new in 2026)
-
-    **Layering:** all levels are *additive*. Claude reads every applicable file and uses judgment when they conflict; more specific takes precedence.
-
-    **Path-scoped rules** keep `CLAUDE.md` small. A rule file in `.claude/rules/` with `paths:` frontmatter only loads when Claude touches matching files:
-
-    ```md
-    ---
-    paths: ["src/api/**"]
-    ---
-    Use Zod for all request validation.
-    ```
-
-    **Imports:** `@path/to/file` anywhere in `CLAUDE.md` inlines that file's content. Use `@AGENTS.md` to share rules with Codex and opencode from a single file.
-
-    **Sizing:** keep `CLAUDE.md` under ~200 lines. Move reference material to [skills](/foundations/skills/), and path-specific guidance to `.claude/rules/`.
-  </TabItem>
-
-  <TabItem label="Codex">
-    **Files Codex reads:**
-
-    - `./AGENTS.md` — project root
-    - Closest `AGENTS.md` walking up from the working directory
-    - `~/.codex/AGENTS.md` — user-wide
-
-    **Standard:** Codex implements the open [`agents.md` spec](https://agents.md/). Any tool that follows the spec reads the same file.
-
-    **Layering — nested files:** Codex *concatenates* AGENTS.md files from the root downward into one combined prompt, joined by blank lines. Files closer to the working directory appear *later* and therefore override earlier guidance positionally — additive with positional override, not replacement.
-
-    **`@path` imports:** Not supported. AGENTS.md is read as-is; there is no file-inclusion directive.
-  </TabItem>
-
-  <TabItem label="opencode">
-    **Files opencode reads:**
-
-    - `./AGENTS.md` — project root
-    - `~/.config/opencode/AGENTS.md` — user-wide
-
-    **Standard:** opencode is the other implementation of the [`agents.md` spec](https://agents.md/). A project's `AGENTS.md` is portable between opencode and Codex with no changes.
-
-    **Behavioral rules:** opencode does **not** have a separate "Rules" file — `AGENTS.md` *is* the rules layer. For additional rule sources, point at extra files via the `instructions` field in `opencode.json` (accepts file paths or glob patterns).
-
-    **Nested files:** opencode walks up from the current working directory and the **first matching file wins per category** — a subdirectory's `AGENTS.md` *replaces* (does not merge with) a parent's.
-
-    **`@path` imports:** Not parsed. opencode does not auto-resolve `@path` references inside `AGENTS.md`. Workarounds: list the files in `opencode.json`'s `instructions` field, or instruct the agent in prose to read specific files on demand.
-  </TabItem>
-</Tabs>
+<ToolTabs chapter="rules" />
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | opencode |
-|---|---|---|---|
-| Default project file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` |
-| Cross-tool standard | Via `@AGENTS.md` import | Native (`agents.md`) | Native (`agents.md`) |
-| User-global file | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | `~/.config/opencode/AGENTS.md` |
-| Path-scoped rules | `.claude/rules/` with `paths:` | — | `instructions:` in `opencode.json` |
-| Nested files per subdir | Concatenated (additive) | Concatenated; deeper files override by appearing later | First match wins (no merging) |
-| `@path` imports | Yes (bare `@path`) | No | No |
-| Managed/org override | Yes | Yes | Yes |
+| Aspect | Claude Code | Codex | opencode | Cursor | Copilot |
+|---|---|---|---|---|---|
+| Default project file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` | `.cursor/rules/*.mdc` or `AGENTS.md` | `.github/copilot-instructions.md` or `AGENTS.md` |
+| Cross-tool standard | Via `@AGENTS.md` import | Native (`agents.md`) | Native (`agents.md`) | Native (`AGENTS.md`) | Native (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) |
+| User-global file | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | `~/.config/opencode/AGENTS.md` | User Rules (UI; no local file) | Personal instructions (github.com) |
+| Path-scoped rules | `.claude/rules/` with `paths:` | — | `instructions:` in `opencode.json` | `globs:` in `.mdc` frontmatter | `.instructions.md` with `applyTo:` |
+| Nested files per subdir | Concatenated (additive) | Concatenated; deeper files override by appearing later | First match wins (no merging) | Nested `AGENTS.md` auto-applied in subtree | Nearest `AGENTS.md` takes precedence |
+| `@path` imports | Yes (bare `@path`) | No | No | `@RuleName` only (manual invocation) | No |
+| Managed/org override | Yes | Yes | Yes | Yes (Team Rules) | Yes (Business / Enterprise) |
 
 ## Name collisions
 
-- **"Rules"** means different things across tools. In Claude Code it's path-scoped Markdown files in `.claude/rules/` (a subset of the rules layer). In opencode there is no separate "Rules" file — `AGENTS.md` carries that role, supplemented by the `instructions` field in `opencode.json`. In this chapter, "rules" is the umbrella term for all of it.
+- **"Rules"** means different things across tools. In **Claude Code** it's path-scoped Markdown files in `.claude/rules/` (a subset of the rules layer). In **opencode** there is no separate "Rules" file — `AGENTS.md` carries that role, supplemented by the `instructions` field in `opencode.json`. In **Cursor**, "Rules" is the umbrella name for the whole layer (`.cursor/rules/*.mdc`, User Rules, Team Rules, plus `AGENTS.md`). **Copilot** calls the same concept "instructions" (`copilot-instructions.md`, `.instructions.md`, personal and org instructions). In this chapter, "rules" is the cross-tool umbrella term.
 - **`AGENTS.md` vs `CLAUDE.md`** — same purpose, different filenames. Don't write conflicting copies of both in one repo; have one import the other.
 - **"Memory"** is *not* the same as rules. Rules are human-authored, declarative, version-controlled. Memory (in the strict sense) is agent-managed — the agent itself decides what facts to remember about a user or project across sessions, often without you seeing the write. They solve different problems and live in different places. This chapter covers rules only.
 
@@ -137,6 +83,16 @@ Rules are *always loaded, every turn*. That makes them powerful — and expensiv
       tool: 'opencode',
       label: 'Rules',
       url: 'https://opencode.ai/docs/rules/',
+    },
+    {
+      tool: 'Cursor',
+      label: 'Rules',
+      url: 'https://cursor.com/docs/rules',
+    },
+    {
+      tool: 'Copilot',
+      label: 'Custom instructions',
+      url: 'https://docs.github.com/en/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot',
     },
   ]}
 />

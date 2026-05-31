@@ -1,0 +1,56 @@
+---
+title: Build the nightly regression loop and fence it in
+description: "A pull-request review only fires when someone opens a PR. The nightly job is the other half: a headless call on a schedule, composed into a repeatable loop, with guardrails that stop an unattended run from doing damage."
+sidebar:
+  label: "Loops · nightly job, guardrails"
+---
+
+The CI review catches what arrives in a pull request. But plenty of regressions don't — a dependency that shifted under you, a flaky test that started failing for real, drift that no single PR introduced. The fix is the second job we set out to build: a **nightly pass** that runs the whole suite against `main` while the team sleeps and leaves a flag for the first person online. This is the moment all the pieces of the chapter compose into one thing — and the moment the guardrails matter most, because a loop that runs unattended every night is a loop that gets exactly one chance to be safe.
+
+## A loop is just a headless call with a trigger and a place to put the answer
+
+Don't overthink what "building a loop" means. It's three parts you already have:
+
+1. **A trigger** that fires on a schedule instead of a keystroke.
+2. **A headless call** — the `claude -p` command from the [first lesson](/course/claude-code/automation/headless/), with the permission posture from the [second](/course/claude-code/automation/permissions/).
+3. **Somewhere for the result to land** — a log, a Slack message, an issue — so a verdict nobody's awake to read isn't lost.
+
+You can host the trigger anywhere a cron job lives — a server's crontab, a scheduled GitHub Actions workflow, whatever your team already runs. The agent part is identical regardless. A scheduled GitHub workflow is the least new infrastructure if you already did the [CI lesson](/course/claude-code/automation/ci/):
+
+```text
+name: Nightly Payments Regression
+on:
+  schedule:
+    - cron: "0 4 * * *"
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "Run the full payments test suite against main. If anything fails or looks like a regression, open a GitHub issue titled 'Nightly regression' with the details. If everything passes, do nothing."
+          claude_args: "--max-turns 15"
+```
+
+Same action, same secret as CI — the only real change is `schedule` with a cron expression instead of `pull_request`. Run it as a raw script instead of an action and the shape is the same: a cron line calling `claude -p` with your prompt, `--permission-mode dontAsk`, and a tight `--allowedTools`, piping the result somewhere durable.
+
+## The guardrails that keep a nightly loop from biting
+
+An interactive run that goes wrong, you catch in seconds — you're watching. A nightly loop that goes wrong runs to completion, alone, and you find out in the morning. So the guardrails aren't polish; they're the reason the job is allowed to exist at all. Four of them carry the weight:
+
+- **Fail closed on permissions.** This is the [permissions lesson](/course/claude-code/automation/permissions/) cashed in. `dontAsk` plus a tight `--allowedTools` means the run can execute the suite and open an issue, and *refuse everything else by default* — there's no human to wave through the thing you didn't anticipate. Deny rules wall off secrets and prod config so a poisoned input can't reach them even if the loop runs every night for a year.
+
+- **Cap the run.** `--max-turns` is a hard ceiling on how long the agent can iterate before it stops. Without it, a confused run can loop on a failing fix for hours, burning tokens and minutes with no one to interrupt it. For an unattended job, an explicit cap is non-negotiable.
+
+- **Give it read-mostly work.** The safest unattended loop is one that *observes and reports* rather than one that *changes things*. Our nightly job runs tests and files an issue — it doesn't push fixes. The more an unattended loop is allowed to mutate, the larger the radius when it's wrong. Let the night job find the problem; let a human, in the morning, approve the fix.
+
+- **Make the result loud.** A regression the loop found but didn't surface is worse than no loop, because it breeds false confidence. The prompt above opens an issue on failure and stays silent on success — so silence means clean, and a fresh issue means look now. Pick whatever channel your team actually watches.
+
+The pattern underneath all four: an unattended loop should be *narrow, capped, walled, and loud.* Narrow in what it can touch, capped in how long it can run, walled off from anything a mistake would make expensive, and loud enough that its findings can't be missed. Get those right and a nightly job is a teammate who works the graveyard shift. Get them wrong and it's a robot with your credentials and all night to use them.
+
+## Where this leaves you
+
+Step back at what you've assembled. The same review pass you used to run by hand now runs in two places without you: on every pull request the moment it opens, and every night against `main` before anyone's awake. Both are the same headless call you learned first, wrapped in the same permission posture you learned second, fired by a trigger instead of a keystroke. That's the whole of automation — not a new capability, but the old one let off the leash, with the safety rules from earlier chapters now doing the watching you used to do yourself.
+
+And that's the real arc of this course nearly complete: you've gone from approving every edit by hand to trusting the agent to run all night inside walls you built. What's left isn't another primitive. The [final chapter](/course/claude-code/daily-workflow/) is about the small habits and shortcuts that compound once all of this is second nature — the difference between someone who *can* use these tools and someone for whom they've disappeared into reflex. Head to [Daily workflow](/course/claude-code/daily-workflow/).

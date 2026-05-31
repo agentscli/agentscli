@@ -1,0 +1,90 @@
+---
+title: Write a repeated procedure as a SKILL.md the agent can run
+description: "A skill is a folder with a SKILL.md inside — YAML frontmatter saying when to use it, a markdown body saying what to do. Build the PR-ritual skill end to end."
+sidebar:
+  label: "Create · SKILL.md"
+---
+
+You've decided the four-step wrap-up ritual is worth writing down. Good instinct — the test for "this should be a skill" is exactly the one you just applied: *you keep re-typing the same multi-step procedure into the chat.* That's the signal. Let's turn it into a file the agent can follow without you in the loop.
+
+## A skill is a directory, not a line of config
+
+A skill isn't a setting you toggle. It's a folder on disk with one required file inside it: `SKILL.md`. The folder's name becomes the skill's name, and the `SKILL.md` is the entrypoint the agent reads. For a skill you want available in *this* project only, it lives in the repo under `.claude/skills/`:
+
+```text
+payments/
+└── .claude/
+    └── skills/
+        └── finish-pr/
+            └── SKILL.md
+```
+
+That `finish-pr` directory name is the command name too — if you ever want to run it by hand you'd type `/finish-pr`. Where the folder lives decides who gets the skill: `.claude/skills/` in the repo means everyone who clones the payments service has it; `~/.claude/skills/` in your home directory would make it personal, available across all your projects but yours alone. Since the PR ritual is a property of *this codebase*, it belongs in the repo, where it gets committed and shared like any other project file. The full set of locations and their precedence is on the [skills page](https://code.claude.com/docs/en/skills).
+
+```text
+> mkdir -p .claude/skills/finish-pr
+```
+
+## The two halves of SKILL.md
+
+Every `SKILL.md` has two parts. YAML frontmatter between `---` markers, and a markdown body below it. They do completely different jobs, and keeping that distinction straight is the whole skill of writing skills:
+
+- **Frontmatter** is the *label on the outside of the box.* The agent reads it to decide *whether* to open the skill at all. The one field that matters here is `description` — it's what the agent matches your request against.
+- **Body** is *what's inside the box.* It only loads once the skill actually fires. This is where the procedure lives: the actual steps.
+
+Here's the whole thing for our ritual:
+
+```text
+// .claude/skills/finish-pr/SKILL.md
+---
+description: >-
+  Run the standard wrap-up checks before opening a pull request on the
+  payments service. Use when the user says a change is done, is ready to
+  open or push a PR, or asks to finish up a branch.
+---
+
+Run these four steps in order before this branch is opened as a PR.
+Stop and report if any step fails — do not continue past a failure.
+
+1. Run the test suite with `npm test`. All tests must pass.
+2. Regenerate the API snapshot with `npm run snapshot`. If it changed,
+   the contract changed — call that out explicitly in your summary.
+3. Add a changelog entry. Read the staged diff, write one line in the
+   present tense under the "Unreleased" heading in CHANGELOG.md.
+4. Check formatting with `npm run format:check`. If it reports issues,
+   run `npm run format` to fix them.
+
+When all four pass, summarize what each step did and flag anything the
+reviewer should look at — especially a changed API snapshot.
+```
+
+The `description` is doing the heavy lifting: it names the *situation* ("a change is done… ready to open or push a PR") rather than just the action. That phrasing is what the agent will pattern-match against when you say "I think this is ready" — we'll tune it deliberately in the [next lesson](/course/claude-code/skills/trigger/). For now, notice it's the *only* required field; everything else about a skill is optional. The agent uses `description` to decide when to apply the skill, so an empty or vague one is the single most common reason a skill never fires.
+
+## Keep the body a procedure, not an essay
+
+The body is a set of standing instructions, and once a skill fires its content stays in the conversation for the rest of the session — so every line is a recurring cost. Write it the way you'd write the rules file: *state what to do, skip the why.* Numbered steps, exact commands, clear failure behavior. No narration about why the snapshot matters or how the changelog is formatted historically — just the four moves, in order, with the one rule that matters (*stop on failure*) stated once.
+
+Two details in that body are worth seeing for what they are:
+
+- **The "stop and report if any step fails" line.** A procedure run by a human has an implicit "obviously don't push if tests are red." The agent has no such instinct unless you write it. Bake the guardrails into the body; a skill is only as safe as its instructions.
+- **The explicit "call that out" on the snapshot step.** The ritual isn't just *run four commands* — it's *run them and tell me what a reviewer needs to know.* A skill can carry judgment, not only commands.
+
+## Trying it once, by hand
+
+You don't have to wait for the agent to decide to use the skill — you can run it directly to confirm it works. Type its name with a slash:
+
+```text
+> /finish-pr
+
+  ⎿ Running finish-pr…
+    1. npm test — 84 passed
+    2. npm run snapshot — snapshot changed (charge response gained `idempotency_key`)
+    3. CHANGELOG.md — added "Charge endpoint now returns the idempotency key"
+    4. npm run format:check — clean
+
+  Heads up for the reviewer: the API snapshot changed. The charge
+  response now includes `idempotency_key`, so downstream consumers
+  see a new field. Everything else is green.
+```
+
+That's the procedure you used to narrate four times a week, now a single command — and, more importantly, a thing the agent can reach for on its own. But "by hand with `/finish-pr`" is the *fallback*. The reason a skill beats a slash command is that you shouldn't have to remember to invoke it at all: the agent should recognize "this branch is ready" and run the ritual itself. That recognition lives entirely in the `description` — so [let's make it fire at the right time, and only the right time](/course/claude-code/skills/trigger/).

@@ -1,0 +1,61 @@
+---
+title: Compare two approaches with branches
+description: "Two ways to do validation, and you can't tell which is better on paper. Build both off a shared checkpoint instead of betting on one."
+sidebar:
+  label: "Branch · checkpoints + git"
+---
+
+The validation layer is the last piece, and you're of two minds about it. You could lean on a schema library — declarative, batteries included, a dependency. Or you could hand-roll plain guard functions — no dependency, more code, total control. On paper it's a wash, and you've learned not to trust *on paper*. You want to see both, in your actual codebase, against your actual handlers, and then decide.
+
+The wrong way to do this is the obvious one: ask the agent to build it with the library, then say "now also try it the other way" in the same conversation. Do that and the window now holds both approaches at once, the agent starts blending them — guard functions that suspiciously resemble schema calls — and you can no longer tell which idea is which. Comparing two designs in one thread destroys the very thing you're trying to compare.
+
+What you want is a branch: one clean starting point, two independent lines of work growing out of it.
+
+## Branching off a checkpoint
+
+The checkpoints from the last lesson aren't just a straight line backward — they're a tree, and you can grow a new branch from any point on it. The move is to rewind to the moment *before* you committed to either approach (right after the handlers were ready, before any validation existed), and take a different path from there:
+
+```text
+> [Esc][Esc]
+  ❯ "the handlers are ready, now add validation"   ← shared starting point
+    "add zod schemas for each route"                   (the library approach grew here)
+
+  Restore: code + conversation
+
+> implement the validation as plain guard functions instead — no library,
+  explicit checks in each handler
+```
+
+The first approach isn't destroyed by this; its checkpoints still hang off the tree, and you can rewind back onto that line to look at it again. For a quick "which feels right," that in-session branching is enough.
+
+But you're going to want these two side by side for more than a minute — to diff them, sleep on it, maybe show a teammate — and that's past what the checkpoint tree is for. So promote the comparison into git, where each approach becomes a real, durable branch:
+
+```text
+# lock in approach A before you explore
+> !git checkout -b validation-zod && git commit -am "validation via zod"
+
+> [Esc][Esc]              # back to the shared "handlers ready" checkpoint
+  ⎿ Restored. On branch validation-zod, 1 commit ahead.
+
+> !git checkout -b validation-handrolled
+> reimplement validation as plain guard functions, no library
+
+  [builds approach B on its own branch, from the identical starting point]
+
+# now compare for real, not from memory
+> !git diff validation-zod validation-handrolled -- src/validation
+```
+
+Now the decision is concrete. You're reading an actual diff — lines added, dependency added, the shape of each handler under each scheme — instead of arguing two half-remembered designs in your head.
+
+## The durability line
+
+The thing to internalize here is *where* each kind of branch lives, because it determines how long it survives. The checkpoint tree is fast and in-session — perfect for a throwaway "what if," gone the moment you `/clear` or quit. Git branches are slower to make and outlive everything. So use the checkpoint tree for the quick exploration and git the instant you decide both approaches are worth keeping. Trusting the checkpoint tree as durable storage is how you lose the approach you didn't pick.
+
+And hold the line on one conversation per approach. The whole reason this works is that each branch grew in its own focused context, uncontaminated by the other. Collapse them back into one thread to "save time" and you're right back to guard functions that think they're schemas.
+
+## Naming the cost
+
+There's a quieter payoff under all this. When getting back is cheap, exploration becomes cheap — you can try an approach, diff it, and throw it away without the nagging fear that trying B means losing A. That fear is exactly what pushes people to settle for the first thing that compiles. Remove it and you'll explore more, and ship better code for it.
+
+You pick the hand-rolled version, delete the other branch, and merge. The feature's done. But it's now Thursday afternoon, this session has been alive since Monday, and the agent has started feeling... *slower*. Vaguer. You're about to learn that the right response to "the agent's getting dumb" isn't to restart on faith — it's to [look at what's actually in its memory](/course/claude-code/sessions-context/inspect/).

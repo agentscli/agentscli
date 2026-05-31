@@ -3,8 +3,7 @@ title: Skills
 description: Reusable, model-invocable capability bundles — and the cross-tool standard that emerged in late 2025.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
+import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 
 ## What a skill is
@@ -47,80 +46,25 @@ The defining trait of a skill: **the model decides when to use it**, based on a 
 
 ## How it works in each tool
 
-<Tabs syncKey="tool">
-  <TabItem label="Claude Code">
-    **Locations** (precedence: managed > user > project):
-    - `.claude/skills/<name>/SKILL.md` — project
-    - `~/.claude/skills/<name>/SKILL.md` — user
-    - Plugin-bundled skills (namespaced as `/plugin:name`)
-
-    **Frontmatter fields:**
-
-    ```yaml
-    ---
-    name: deploy
-    description: Run the team's deploy checklist.
-    disable-model-invocation: false  # if true, only invokable via /<name>
-    context: fork                    # optional: run in an isolated subagent
-    ---
-    ```
-
-    **Loading model:**
-    - Skill *descriptions* load at session start so Claude knows what's available.
-    - Full skill body loads on invocation (manual `/<name>` or model-decided).
-    - With `disable-model-invocation: true`, the skill is invisible until you type `/<name>` — useful for skills with side effects.
-
-    **In subagents:** a subagent's `skills:` frontmatter field preloads skills into its context — different from on-demand loading in the main session.
-  </TabItem>
-
-  <TabItem label="Codex">
-    **Locations** (discovered in scope order):
-    - `.agents/skills/<name>/SKILL.md` — project (walked up from cwd to repo root)
-    - `~/.agents/skills/<name>/SKILL.md` — user
-    - `/etc/codex/skills/` — admin
-    - Skills bundled with Codex by OpenAI — system
-
-    **Invocation:** type `/skills` to browse, or `$<skill-name>` to mention a skill directly in a prompt. Codex can also auto-select skills whose descriptions match the current task.
-
-    **Standard:** Codex implements the Agent Skills open standard. A skill folder with `SKILL.md` is portable to and from Claude Code for the basic shape; tool-specific extensions don't cross-map.
-
-    **Frontmatter fields:** only `name` and `description` are required. Codex's SKILL.md does **not** read Claude Code's `disable-model-invocation`, `context: fork`, or `allowed-tools` frontmatter keys.
-
-    **Auto-loader control:** Codex's equivalent of `disable-model-invocation` is a sidecar file `agents/openai.yaml` inside the skill, setting `policy.allow_implicit_invocation: false` (defaults to `true`). With that off, Codex won't auto-invoke the skill — `$<skill-name>` still works.
-
-    **Skill directory layout:** `SKILL.md` (required), optional `scripts/`, `references/`, `assets/`, optional `agents/openai.yaml` (UI metadata, invocation policy, declared MCP/tool dependencies).
-  </TabItem>
-
-  <TabItem label="opencode">
-    **Locations:** opencode reads skills from its own paths *and* from the Claude Code and Codex paths, walking up from cwd to the git worktree root:
-    - Project: `.opencode/skills/<name>/SKILL.md`, `.claude/skills/<name>/SKILL.md`, `.agents/skills/<name>/SKILL.md`
-    - Global: `~/.config/opencode/skills/<name>/SKILL.md`, `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`
-
-    **Frontmatter fields:** `name` (1–64 chars, must match the directory) and `description` (1–1024 chars) are required; `license`, `compatibility`, and `metadata` are optional. There's no opencode equivalent to `disable-model-invocation` or `context: fork` in the frontmatter.
-
-    **Invocation:** skills are exposed through a built-in `skill` tool — the agent sees the available skill names and descriptions and calls the tool to load a skill's body on demand.
-
-    Because opencode reads `.claude/skills/` and `.agents/skills/` directly, a skill folder authored for Claude Code or Codex generally works in opencode unchanged; tool-specific frontmatter keys are simply ignored.
-  </TabItem>
-</Tabs>
+<ToolTabs chapter="skills" />
 
 ## The cross-tool standard
 
-In late 2025, Anthropic published Agent Skills as an open specification, and within days OpenAI shipped support in Codex CLI. This is the unusual part of skills as a primitive: **a skill you write today is largely portable across tools**. A `SKILL.md` plus its supporting files works in Claude Code and Codex with no changes to the body, and opencode reads the Claude Code and Codex skill directories directly. Tool-specific frontmatter keys (Claude's `disable-model-invocation`, `context: fork`) don't cross-map, but the core shape — frontmatter `name` + `description`, Markdown body, optional bundled scripts/assets — is shared.
+In late 2025, Anthropic published Agent Skills as an open specification, and within days OpenAI shipped support in Codex CLI; Cursor and Copilot followed in their own 2026 releases (both explicitly position the format as wire-compatible with the Claude Code spec, and both fall back to `.claude/skills/` paths). This is the unusual part of skills as a primitive: **a skill you write today is largely portable across tools**. A `SKILL.md` plus its supporting files works in Claude Code, Codex, Cursor, and Copilot with no changes to the body, and opencode reads the Claude Code and Codex skill directories directly. Tool-specific frontmatter keys (Claude's `disable-model-invocation`, `context: fork`) don't cross-map everywhere, but the core shape — frontmatter `name` + `description`, Markdown body, optional bundled scripts/assets — is shared.
 
 That portability is why teams converging on multiple coding agents tend to push knowledge into skills rather than slash commands or per-tool config — it's the one extension format that survives the choice of CLI.
 
 ## Cross-tool comparison
 
-| Aspect | Claude Code | Codex | opencode |
-|---|---|---|---|
-| Format | `SKILL.md` + assets | `SKILL.md` + assets | `SKILL.md` + assets (narrower frontmatter) |
-| Cross-tool portable | Yes (to Codex / opencode) | Yes (to Claude Code / opencode) | Yes (reads `.claude/skills/` and `.agents/skills/` natively; non-opencode frontmatter ignored) |
-| Project path | `.claude/skills/` | `.agents/skills/` | `.opencode/skills/` (+ reads `.claude/`, `.agents/`) |
-| Invocation | `/<name>` | `/skills`, `$<skill>` | Built-in `skill` tool, model-selected |
-| Model auto-loads | Yes (by description) | Yes (by description) | Yes (by description) |
-| Can be hidden from model | `disable-model-invocation: true` | `agents/openai.yaml` → `policy.allow_implicit_invocation: false` | — |
-| Subagent access control | `skills:` field preloads | `[[skills.config]]` in agent TOML (note: enable/disable overrides currently buggy — openai/codex#14161) | `permission.skill` rules per agent gate which skills are visible |
+| Aspect | Claude Code | Codex | opencode | Cursor | Copilot |
+|---|---|---|---|---|---|
+| Format | `SKILL.md` + assets | `SKILL.md` + assets | `SKILL.md` + assets (narrower frontmatter) | `SKILL.md` + assets | `SKILL.md` + assets |
+| Cross-tool portable | Yes (to Codex / opencode) | Yes (to Claude Code / opencode) | Yes (reads `.claude/skills/` and `.agents/skills/` natively; non-opencode frontmatter ignored) | Yes (reads `.claude/skills/`, `.codex/skills/`, `.agents/skills/`) | Yes (reads `.claude/skills/`, `.agents/skills/`) |
+| Project path | `.claude/skills/` | `.agents/skills/` | `.opencode/skills/` (+ reads `.claude/`, `.agents/`) | `.cursor/skills/` (+ reads `.agents/`, `.claude/`, `.codex/`) | `.github/skills/` (+ reads `.claude/`, `.agents/`) |
+| Invocation | `/<name>` | `/skills`, `$<skill>` | Built-in `skill` tool, model-selected | `/skill-name`, `@skill-name`, or auto | `/` menu, or auto |
+| Model auto-loads | Yes (by description) | Yes (by description) | Yes (by description) | Yes (by description) | Yes (by description) |
+| Can be hidden from model | `disable-model-invocation: true` | `agents/openai.yaml` → `policy.allow_implicit_invocation: false` | — | `disable-model-invocation: true` | `disable-model-invocation: true` |
+| Subagent access control | `skills:` field preloads | `[[skills.config]]` in agent TOML (note: enable/disable overrides currently buggy — openai/codex#14161) | `permission.skill` rules per agent gate which skills are visible | — | — |
 
 ## Name collisions
 
@@ -145,6 +89,18 @@ That portability is why teams converging on multiple coding agents tend to push 
       tool: 'opencode',
       label: 'Agent skills',
       url: 'https://opencode.ai/docs/skills/',
+    },
+
+    {
+      tool: 'Cursor',
+      label: 'Skills',
+      url: 'https://cursor.com/docs/skills',
+    },
+
+    {
+      tool: 'Copilot',
+      label: 'Agent skills',
+      url: 'https://code.visualstudio.com/docs/copilot/customization/agent-skills',
     },
   ]}
 />
