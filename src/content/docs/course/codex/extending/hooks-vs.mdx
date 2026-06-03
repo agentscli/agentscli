@@ -1,0 +1,32 @@
+---
+title: When a hook beats judgment or a permission
+description: "A rule asks the model. An approval setting asks the model first too. A hook asks no one — it's deterministic code on the rail. Knowing which guarantee you actually need is the skill, and it's what makes unattended runs safe."
+sidebar:
+  label: "Hooks · vs judgment & permissions"
+---
+
+You've now governed Codex three different ways across this course, and the ledger gate you just built sits apart from the other two in a way worth making explicit — because reaching for the wrong one leaves you with a guarantee weaker than you think you have. Lay them side by side:
+
+- A **rule** (a line in [`AGENTS.md`](/course/codex/rules/)) is *context*. It tells the model what's true and what you want, and the model weighs it when it decides. It lives in the context window, which means it can be compacted out, buried under a long session, or simply not weighted heavily enough on a given turn. You're trusting the model to remember and to care.
+- The **approvals and sandbox dials** are *model-mediated and environmental enforcement*. They're stronger than a rule — [the sandbox is a genuine wall](/course/codex/approvals-sandbox/), and the agent can't write outside its writable roots or hit the network when you've turned it off. But they govern *capability*: which tools the agent may invoke, where it may write, whether it may reach the network. They answer "may the agent do this *kind* of thing?" — not "is the content of this *specific* command acceptable?"
+- A **hook** is *deterministic, model-independent code*. It doesn't advise the model and doesn't sit in the context window at all. It runs on the rail at a lifecycle event, inspects the actual payload, and decides in plain shell. The model's reasoning, its mood, its remaining context budget — none of it is in the loop.
+
+The sharpest way to feel the difference: a rule routes through the model's judgment, and the sandbox routes through a capability check. **A hook routes through neither.** That's why the ledger guarantee had to be a hook. "Never write to `ledger_prod`" isn't a fact to remember (a rule), and it isn't a capability to revoke (running `psql` is a thing you obviously *do* let Codex do). It's a *condition on the content* of a specific command, checked deterministically at the instant that command is attempted. Only a hook expresses that.
+
+## A decision rule
+
+So which do you reach for? The test is about what kind of guarantee the situation demands:
+
+- **State a preference or a fact** the agent should weigh — "money is integer cents, never float," "the categoriser is fragile, be careful." That's a [rule](/course/codex/rules/). You want the model *informed*, and you accept that it's the model deciding.
+- **Constrain what the agent can do or where it can reach** — read-only on this run, no network, don't write outside the data dir. That's the [approvals and sandbox model](/course/codex/approvals-sandbox/). You want a wall around a *capability or a path*, with no per-command judgment involved.
+- **Enforce a condition no instruction can be trusted to hold, checked against the real action** — no write to the production ledger, run the money tests after every edit, never commit without CI. That's a **hook**. You want a guarantee that survives a forgetful agent and an unattended run.
+
+Put plainly: a rule shapes what the agent *knows*, the sandbox shapes what it *can do*, and a hook enforces what *must be true* regardless of either. The first two trust the agent inside the lines you draw. The hook doesn't need to trust it at all — and it can also do the positive version, firing a test suite or a format pass every time, not just blocking.
+
+## Why this is the hinge of the whole chapter
+
+That last property — *runs regardless, with nobody in the loop* — is exactly why hooks become load-bearing the moment you stop watching Codex work. Sitting at the TUI, you are the gate: you see the bad `UPDATE` coming and hit no. The hook's real value shows up when you're *not* there — when the report regenerates on a schedule, when the categoriser runs against new transactions in CI, when a turn finishes at 2am. In those runs the model's judgment is the only thing standing between your data and a mistake, unless you've put deterministic walls on the rail ahead of time.
+
+Which is the whole reason this chapter came before the next one. You've now given `budgetcli` both halves of what unattended work needs: **reach** (the rate API over MCP, so a headless run can actually do the conversion) and a **gate** (the ledger hook and the test-on-edit hook, so it can't quietly break the money math). With both in place, running Codex without a human watching stops being reckless and starts being the point.
+
+That's [Chapter 9](/course/codex/automation/): generate the monthly report with `codex exec`, wire the categoriser and the tests into CI, and let the whole loop run with nobody in the chair. Everything you built here is what makes that safe.

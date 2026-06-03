@@ -1,0 +1,65 @@
+---
+title: Compare two approaches with /fork
+description: "Two ways to categorise transactions, and you can't tell which wins on paper. Fork the session and build both off a shared starting point."
+sidebar:
+  label: "/fork · two approaches"
+---
+
+The migration's working, and now you're at the interesting part: how `budgetcli` decides that a transaction is *groceries* and not *dining*. You're of two minds. You could lean on a table of regex rules — `WHOLE FOODS` matches groceries, `UBER` matches transport — fast, transparent, but brittle when a new merchant shows up. Or you could match against a small set of keyword sets with a scoring fallback — fuzzier, more forgiving, harder to reason about when it gets a call wrong. On paper it's a wash, and you've learned not to trust *on paper*. You want to see both, running against your actual imported statements, and then decide.
+
+The wrong way to do this is the obvious one: ask Codex to build the regex version, then say "now also try it the other way" in the same conversation. Do that and the window now holds both designs at once. Codex starts blending them — a scoring fallback that suspiciously reaches for regex, regex rules that have grown a fuzzy edge — and you can no longer tell which idea is which. Comparing two designs in one thread destroys the very thing you're trying to compare.
+
+What you want is a *fork*: one clean starting point, two independent lines of work growing out of it.
+
+## Forking the thread
+
+`/fork` takes the session you're in and splits off a copy that carries the full conversation so far but evolves separately from the original. You build approach A in the fork, leave the original untouched, and you've got two threads that share a history and then diverge:
+
+```text
+> [you've just finished the importer; no categoriser exists yet]
+
+> /fork
+
+  ⎿ Forked. This thread now evolves independently from the original.
+    Shared history up to here is intact in both.
+
+> build the categoriser as a table of regex rules, one pattern per category,
+  first match wins
+```
+
+The original session is right where you left it, still sitting at "importer done, no categoriser." When you've seen enough of the regex approach, you reopen the original and grow the *other* design from the identical starting point:
+
+```text
+$ codex resume        # back to the un-forked original
+  ❯ budgetcli · cents migration (pre-fork)
+
+> build the categoriser as keyword sets with a scoring fallback — no regex,
+  pick the highest-scoring category and fall back to "other" under a threshold
+```
+
+Now each design grew in its own focused context, uncontaminated by the other. You can run both over the same statement file and read the actual disagreements — which transactions each one lands differently — instead of arguing two half-remembered designs in your head.
+
+## Make the comparison durable
+
+The fork lives in your session history, which is excellent for the decision itself and weak as long-term storage — it's tied to Codex's session list, not to your repo. The moment you decide both approaches are worth keeping for more than this sitting — to diff them properly, sleep on it, show a teammate — promote the comparison into git, where each becomes a real, durable branch:
+
+```text
+# lock in approach A on its own branch before you explore the other
+> !git checkout -b cat-regex && git add -A && git commit -m "categoriser: regex table"
+
+# ...then build approach B on a branch off the shared starting point
+> !git checkout main && git checkout -b cat-scoring
+
+# now compare for real, not from memory
+> !git diff cat-regex cat-scoring -- budgetcli/categorise
+```
+
+The principle is the same one the whole chapter keeps circling: the fast, in-session tool is for the throwaway "what if," and git is for the thing you've decided to keep. Trusting your session list as durable storage is how you lose the approach you didn't pick.
+
+## Hold the line on one thread per approach
+
+The reason forking works is that each design stays in its own context. Collapse them back into one conversation to "save time" and you're right back to a scoring fallback that thinks it's a regex table. Keep them apart until you've decided.
+
+And there's a quieter payoff under all this. When getting back to a clean starting point is cheap, *exploration* becomes cheap — you can try an approach, run it against real data, and abandon it without the nagging fear that trying B means losing A. That fear is exactly what pushes people to ship the first thing that runs. Remove it and you'll explore more, and `budgetcli` gets a categoriser you actually trust.
+
+You pick the regex table — transparent beats clever when it's your own money on the line — and merge it. The categoriser's in. But a fork is the heavyweight move, meant for when you genuinely want two parallel lines of work. Sometimes what jumps the queue is far smaller than that: a thirty-second question you don't want to pollute the main thread with at all. For that, [there's a lighter touch](/course/codex/sessions-context/side/).

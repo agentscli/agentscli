@@ -1,0 +1,75 @@
+---
+title: Ship your first reviewed change with Codex
+description: "Hand Codex the CSV date bug in plain English, watch the loop close, then read the diff yourself before you commit — because it's your name on the change and your money in the database."
+sidebar:
+  label: "First change · fix, review, commit"
+---
+
+Now the actual ticket. `budgetcli` imports transactions from bank CSV exports, and you've already seen the symptom: a statement row that plainly reads one day lands in the database as another. From the last lesson you know the parsing lives in `app/importers/csv.py` and that it assumes one fixed date format — which is exactly why a bank that writes dates differently gets silently misread. You don't need to feed the agent any of that. You describe the outcome you want in the same words you'd use with a teammate, and let the loop you just learned do the legwork.
+
+## Describe the outcome, not the steps
+
+```text
+> the CSV importer is parsing some statement dates into the wrong day —
+  it looks like it assumes one date format. Make it handle the common
+  bank date formats correctly, and add a test that pins down the case
+  that's currently broken.
+```
+
+Notice what you didn't say. You didn't name the function, didn't paste the parsing code, didn't spell out the test framework. You stated the *what* and left the *how* to the agent — and it works the problem the same way you would:
+
+```text
+  • Read app/importers/csv.py, tests/test_csv_import.py            (2 files)
+
+  The importer parses every row's date with a single hardcoded format,
+  so a statement using a different one is silently parsed wrong. I'll
+  make it try the common formats in order and fail loudly if none match,
+  and add a test covering the format that's currently broken.
+
+  ⏵ Edit app/importers/csv.py
+    - txn_date = datetime.strptime(row["date"], "%m/%d/%Y").date()
+    + txn_date = parse_statement_date(row["date"])
+
+  Apply this change? › Yes / Edit / No
+```
+
+It **read** the relevant files first — including the existing test, so its new test would match the house style instead of inventing one. It **proposed** a plan in two sentences before touching anything. Then it **stopped and asked**. That pause is the leash: by default Codex proposes an edit and waits for your approval before it writes to disk, so there's a checkpoint between the agent's intent and your filesystem on every change. You approve the importer edit, it moves to the test, asks again, and then does the thing that actually closes the ticket — it runs the test itself:
+
+```text
+  ⏵ Edit tests/test_csv_import.py          → approved
+
+  ⏵ Run  pytest tests/test_csv_import.py
+    • 9 passed
+
+  Done. The importer now tries the common statement date formats and
+  raises if a row matches none; the new test covers the date that was
+  previously parsed into the wrong day.
+```
+
+There's the full loop, closed on a real bug: read, propose, approve, apply — with the apply beat ending in the agent checking its own work.
+
+## Read the diff before you believe the summary
+
+The agent's closing summary is a *claim* about what it did. The diff is the evidence — and on code you inherited, holding your own money, the gap between claim and evidence is exactly where you want your eyes. Always read it:
+
+```text
+> show me everything you changed
+```
+
+You're reading for two things: *does the change do what I asked,* and *did it do anything I didn't ask.* For a date-parsing fix this is a thirty-second read, but the point isn't the time — it's that you never skip it. Look closely at the kind of thing that bites in this domain: a test that passes because it asserts the wrong day, or a "fix" that quietly changes how an *amount* gets parsed while it's in there. (Money in `budgetcli` is stored as integer cents, and the original author wasn't consistent about it — so an edit drifting near the money path is exactly the thing to catch early. You'll make that rule explicit in a later chapter; for now, just *see* it in the diff.)
+
+If the review turns up something off, the clean move is to step the change back and re-ask rather than patching a fix on top of the agent's mistake — but a small inline correction is fine when the problem is trivial. The discipline that matters today is simply: read first, decide second.
+
+## Commit the moment it's right
+
+When the review passes, commit immediately — and you can have the agent do it:
+
+```text
+> commit this with a sensible message
+
+  ⏵ Run  git commit -am "Fix CSV importer to handle multiple bank date formats"   → approved
+```
+
+This is the single most valuable habit in the chapter. Everything the agent does is, until you commit, sitting in your working tree one bad next step away from being lost or tangled. **Git is the floor that doesn't vanish.** Every time the agent reaches a genuinely working, reviewed state, a commit locks it in — and then the next experiment, however badly it goes, can never cost you more than the work since your last commit. Commit at every green, reviewed checkpoint and you can let the agent take bigger swings, because the downside is always capped at "go back to the last commit." On a week-long build in someone else's codebase, that floor is what lets you move fast without fear.
+
+Your first change is described, proposed, approved, applied, reviewed, and committed — the whole loop, closed once by hand on a real bug. Now make it something you reach for without thinking, by putting it [where you already spend your day: next to your editor](/course/codex/getting-started/editor/).

@@ -1,0 +1,63 @@
+---
+title: The two-axis model — approval policy is orthogonal to the sandbox
+description: "Codex doesn't have one trust slider. It has two independent dials: how much the agent can do without asking (approval), and how far it can reach (sandbox). They combine."
+sidebar:
+  label: "Approvals × sandbox · the two axes"
+---
+
+You're about to start a refactor on `budgetcli`'s money handling — the original author stored some amounts as floats, and you want them converted to integer cents across half a dozen files. It's the kind of job where stopping to approve every single edit is friction you'll resent by the third file. So your instinct is to reach for some "let it run" setting. Before you do, you need to know what you're actually turning up, because in Codex that instinct splits into two separate questions — and conflating them is how people end up either babysitting work that's safe or walking away from work that isn't.
+
+## One slider is the wrong shape
+
+Think about what could go wrong when an agent works on your financial data, and you'll notice the risks aren't all the same kind:
+
+- It could **do something you didn't expect** — delete a file, run a destructive command, rewrite something it shouldn't have. The defence against that is *making it ask you first*.
+- It could **reach somewhere it shouldn't** — read your `.env`, write outside the project, phone home to some endpoint with your data. The defence against that is *fencing where it can go*, independent of whether it asks.
+
+A single trust slider can't separate these. "More autonomous" on a one-dial tool means *both* more-without-asking *and* more-reach, bolted together — so to stop being interrupted on a safe refactor, you'd also have to widen the blast radius. That's a bad trade, and it's the trade Codex refuses to make you. It gives you two dials.
+
+## Axis one — how much it can do without asking
+
+The **approval policy** controls when Codex pauses to get your `y/n` before it acts. You set it with `--ask-for-approval` (short form `-a`), and it takes three values:
+
+```text
+-a untrusted     pause for anything not on a known-safe list
+-a on-request    let the agent decide when to ask; it pauses for the riskier moves
+-a never         never pause — run end to end without interrupting you
+```
+
+That's the whole first axis: from "check with me constantly" to "don't interrupt me at all." Notice what it does *not* say anything about — where the agent is allowed to read, write, or connect. Approval is purely about the interruptions.
+
+## Axis two — how far it can reach
+
+The **sandbox** controls the agent's actual reach: what the operating system will *let* it touch, regardless of whether it asked. You set it with `--sandbox` (short form `-s`), and it also takes three values:
+
+```text
+-s read-only            can read files, cannot write anything or run commands that change state
+-s workspace-write      can read, and can write inside the project — but not outside it, and no network
+-s danger-full-access   no fence at all — whole filesystem, full network
+```
+
+This axis is enforced by the sandbox itself, not by the agent's good behaviour. In `read-only`, a write *can't* happen — there's nothing to approve, because the OS won't permit it. That's a stronger guarantee than "the agent agreed not to," and it's why the two axes aren't redundant: approval is a checkpoint the agent passes through; the sandbox is a wall it can't.
+
+## They combine
+
+Because the two are orthogonal, you pick one value from each, and the pair defines the session:
+
+```text
+                 read-only            workspace-write          danger-full-access
+  untrusted    look, ask to act     refactor, ask on risk     (rarely sensible)
+  on-request   read & propose       the daily driver          power use, asks on risk
+  never        silent read-only     hands-off in the fence    no guardrails at all
+```
+
+Read that grid as two questions answered separately. The cell that fits today's money refactor is **`on-request` × `workspace-write`**: let the agent edit freely inside the project and only stop you for the genuinely risky moves, while the sandbox guarantees it can't escape the directory or touch the network no matter how the approval dial is set. You get an uninterrupted refactor *and* a hard fence — which a single slider could never give you at once.
+
+A couple of things worth nailing down now, because they trip people up:
+
+- **There are no named "modes."** You may have seen references to `suggest`, `auto-edit`, or `full-auto` presets — those aren't a thing in Codex. There's only the two-axis pairing. (There's a deprecated `--full-auto` flag floating around; it just sets `workspace-write` and prints a warning telling you to use `-s workspace-write` directly. Ignore it.)
+- **The default is deliberately cautious.** Launch Codex with neither flag and it picks a safe pairing for you — closer to the top-left of that grid than the bottom-right. You loosen on purpose, per task, not by accident.
+
+You'll often set both dials persistently rather than typing flags every time — the config keys are `approval_policy` and `sandbox_mode` in `config.toml`, and they take the same values. We'll bundle them into a named profile in the [last lesson](/course/codex/approvals-sandbox/profiles-for-trust/). The authoritative list of values and their precise behaviour lives in the [Codex config reference](https://developers.openai.com/codex/config-reference); pin to that rather than trusting a fixed memory, since the granular options grow over time.
+
+Now take each axis one at a time. Start with the wall, because it's the one protecting your money — [the three sandbox levels in depth](/course/codex/approvals-sandbox/sandbox-modes/).

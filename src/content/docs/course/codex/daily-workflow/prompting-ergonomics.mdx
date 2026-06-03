@@ -1,0 +1,54 @@
+---
+title: "Briefing the agent well and smoothing the editing surface on budgetcli"
+description: "Vagueness is cheap in chat and expensive in an agent — a loose prompt buys you minutes of compute and a pile of unwanted edits. Give the agent the four things a good brief carries, learn to stop-and-rewrite instead of nudging a bad run, and shave the small input friction off the surface you touch most."
+sidebar:
+  label: "Prompting · brief well, edit fast"
+---
+
+The last lesson fixed the posture you work *in*. This one is about the words you hand the agent once you're in it — because on `budgetcli` the prompt is the steering, and a vague one steers you somewhere you didn't want to go.
+
+Here's the difference that catches people. When you're chatting with a model, a vague question is cheap: you read the half-useful answer and ask again, and you've lost a few seconds. With an agent, a single prompt can trigger a chain of work — read the categorisation rules, run the tests, edit four files, run them again — that grinds for minutes before it surfaces anything you can review. By the time an ambiguous instruction comes back to bite you, the agent has already touched files on the strength of a guess. Vagueness didn't cost you a re-ask; it cost you a run and a diff you now have to unpick. The whole skill is **reducing the ambiguity before execution starts**, not correcting it after.
+
+## The four things a good brief carries
+
+A prompt the agent can't misread on `budgetcli` has the same four parts every time. You don't need a template or a heading for each — just don't leave one out.
+
+1. **Goal** — what *done* looks like, in one concrete sentence, with an outcome verb. Not "look at the CSV importer," but "add support for the Monzo statement format to the CSV importer."
+2. **Context** — the framework, and an analogous bit of the codebase to copy. "It's the same FastAPI service; follow the pattern in `importers/barclays.py`." A pointer to existing code is worth a paragraph of description — the agent reads the reference and matches it.
+3. **Constraints** — what *not* to do. "Don't add new dependencies, don't touch the accounts schema, money stays integer cents." The off-limits list is where most wrong-but-reasonable runs come from: the agent will confidently make a technically-fine choice that's wrong *for this project* if you never told it where the edges are.
+4. **Completion criteria** — a check it can actually run. "A Monzo export imports without errors and `pytest tests/importers/` exits clean." Now the agent knows when it's finished instead of when it's tired.
+
+A useful gut-check for scope: the sweet spot is a task a colleague could finish in an afternoon, with a clear before-and-after. Bigger than that and you want to break it into ordered steps, each with its own little verification gate — import parses, then categorises, then tests pass — so a wrong turn surfaces at the next gate instead of three changes downstream.
+
+Most of this only needs saying once, though. The durable stuff — money is integer cents, the category taxonomy, the test command, the files that are off-limits — already lives in [your AGENTS.md](/course/codex/rules/) and the agent reads it at session start. That's the point of having written it down: your per-task prompt carries only what's *specific to this task*, and the rules file carries everything that's true every time. If you catch yourself re-typing a convention into every prompt, it belongs in the rules file, not the prompt.
+
+## Stop and rewrite — don't nudge a bad run
+
+When a run starts heading somewhere wrong, the instinct is to nudge it back: "no, not like that, do it this way instead." Sometimes that works. But when the run went wrong because your prompt had *two valid readings* — the agent picked the one you didn't mean — nudging is the slow road. You're now correcting on top of a foundation built from the wrong interpretation, and each correction inherits the original ambiguity.
+
+The faster move is to **stop, throw the run away, and rewrite the brief** so the reading you wanted is the only one left. Interrupt immediately — the longer a misread run goes, the more diff you're discarding. Then write a fresh prompt with the same four parts, the ambiguous one nailed down: "the running balance is per-account, not the sum across accounts" stated up front rather than discovered three corrections in. Reframing is usually cheaper than continuing to patch, because the ambiguity was a bug in the prompt, not a failing of the agent. A clean restart from a sharper brief beats five rounds of "no, the other thing."
+
+This is also why the [read-only profile](/course/codex/daily-workflow/profiles-habit/) earns its place. When you're still figuring out *what* to ask for, explore with the agent unable to write — then the cost of a misread is zero, because nothing was changed. You only switch to the building profile once the brief is sharp enough to commit to.
+
+## Smooth the editing surface
+
+The brief is the big lever. The small one is the friction in actually typing it — and because you do it dozens of times a day, the small friction adds up to more than it looks.
+
+The two ergonomics worth building into reflex:
+
+- **Point at files by reference instead of describing them.** When you mean a specific file, mention it directly rather than spending a sentence telling the agent where to look — `importers/barclays.py` lands faster and more precisely than "the Barclays importer, it's in the importers folder." Letting the agent resolve a path you typed is cheaper than letting it guess one from prose.
+- **Let your shell carry your defaults.** If you almost always want the same profile or posture, you shouldn't be re-typing it. A `default_profile` (from the last lesson) or a small wrapper function so a bare `codex` lands in the posture you want most means the common case costs zero keystrokes and you spend the explicit flags only on the exception.
+
+None of these is a feature you learn once; they're habits that shave a second off the action you repeat most. Over a week on `budgetcli` that's the difference between the tool feeling like a chore and feeling like an extension of your hands. The current set of input affordances is worth a skim in the [Codex CLI reference](https://developers.openai.com/codex/cli/reference) so you adopt the ones that fit how you work.
+
+## The fast tier for quick turns
+
+Not every prompt deserves your full attention budget. Reformatting a docstring, renaming a field, regenerating a fixture — these are low-stakes, well-specified, and you mostly want the answer *quickly* rather than carefully.
+
+Codex exposes a **priority service tier** for exactly this: a way to ask for a faster turnaround on a given run without changing how the agent thinks about the problem. It's a speed lever, not a quality one — same intelligence, prioritised infrastructure — so reach for it on the quick, obvious turns where latency is the only thing you care about, and leave it alone for the categorisation-engine work where you'd rather wait and get it right. Whether the quick-turn tier is available to you depends on your [auth method](/course/codex/models-effort/) and the model you're on, the same way model availability did back in the models chapter; the [speed guide](https://developers.openai.com/codex/speed) has the current way to turn it on.
+
+Pair it with the light end of the [reasoning-effort dial](/course/codex/models-effort/) and you've got a genuinely fast loop for the trivial stuff — a tight brief, low effort, priority turnaround — which frees your patience for the prompts that actually deserve it.
+
+---
+
+That's the last of the friction. You've got profiles you switch by instinct, briefs sharp enough that runs go where you meant, the discipline to restart rather than nudge, and the small ergonomics that make the common case free. [Close the course](/course/codex/daily-workflow/finale/) — look back at the whole week on `budgetcli` and where to go from here.

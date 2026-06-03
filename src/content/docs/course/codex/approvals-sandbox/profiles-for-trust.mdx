@@ -1,0 +1,79 @@
+---
+title: Profiles — bundle an approval × sandbox pairing and summon it with one flag
+description: "Stop re-typing -a and -s every launch. Bundle a trust posture into a [profiles.<name>] block in config.toml and invoke it with --profile. Plus: why --yolo is never the move on a finance repo."
+sidebar:
+  label: "Profiles · trust as one flag"
+---
+
+By now you've set both dials by hand more than once — `-a on-request -s workspace-write` for the refactor, the same plus `network_access` for the rate ticket, plus `--add-dir ~/budget-data` for the importer. You've also edited `config.toml` for a task that the *next* task shouldn't inherit. Both of those are friction the last lesson left hanging: typing the same pairing repeatedly, and a single global config that can't say "tight for this kind of work, looser for that kind." Profiles fix both. A profile is a whole trust posture — approval policy, sandbox, and the workspace-write details — written down once under a name, and pulled in with one flag.
+
+## A pairing, named
+
+You already know the persistent keys: `approval_policy` and `sandbox_mode` at the top level of `config.toml`, plus the `[sandbox_workspace_write]` block for network and writable roots. A profile is the same keys, grouped under `[profiles.<name>]` instead of sitting loose at the top level. That grouping is what lets you keep *several* postures side by side and choose between them per launch:
+
+```toml
+# ~/.codex/config.toml  or  .codex/config.toml
+
+[profiles.budget-build]
+approval_policy = "on-request"
+sandbox_mode    = "workspace-write"
+
+[profiles.budget-build.sandbox_workspace_write]
+network_access = true
+writable_roots = ["~/budget-data"]
+```
+
+That block is the entire posture you arrived at over the last three lessons, captured as one thing called `budget-build`: edit freely inside the project, ask only on the risky moves, reach the rate API, write the statements directory — and *nothing else*. Summon it with `--profile` (short form `-p`):
+
+```text
+codex --profile budget-build
+codex -p budget-build          # same thing
+```
+
+No `-a`, no `-s`, no `--add-dir` — the name carries all of it. The values are exactly the ones you'd otherwise type, so a profile changes nothing about the two-axis model; it just stops you re-deriving the pairing every morning.
+
+## Keep more than one
+
+The reason profiles beat a single top-level config is that real work isn't one posture. Auditing the repo for float-money bugs wants full autonomy and zero reach; building wants the comfortable daily cell. Write both, switch with the flag:
+
+```toml
+[profiles.budget-audit]
+approval_policy = "never"
+sandbox_mode    = "read-only"
+
+[profiles.budget-build]
+approval_policy = "on-request"
+sandbox_mode    = "workspace-write"
+
+[profiles.budget-build.sandbox_workspace_write]
+network_access = true
+writable_roots = ["~/budget-data"]
+```
+
+```text
+codex -p budget-audit     # runs end to end, can't change a byte
+codex -p budget-build     # the daily driver, fenced to project + data dir
+```
+
+`budget-audit` is the safe-autonomy corner from the approvals lesson — `never × read-only`, full speed, no risk, because the reach is nil. `budget-build` is the cell you live in. Two names, two reflexes; you stop *thinking* about the dials and start thinking about the *job*, which is the point. (You'll lean on exactly this habit in the [daily-workflow chapter](/course/codex/daily-workflow/), where these two profiles become muscle memory.) A profile can also carry model and reasoning settings, not just trust — that's a [later chapter's](/course/codex/models-effort/) concern; here it's purely the two axes plus the workspace-write block. The full list of what a profile can hold is in the [config reference](https://developers.openai.com/codex/config-reference).
+
+## The one flag you never reach for here
+
+There is a single flag that throws *both* dials to their loosest at once: `--dangerously-bypass-approvals-and-sandbox`, which also answers to the alias `--yolo`.
+
+```text
+codex --dangerously-bypass-approvals-and-sandbox
+codex --yolo          # the same thing, and the name is honest
+```
+
+It is `never × danger-full-access` in one switch — no approval checkpoint and no sandbox wall. The agent runs every action without asking, with read and write access to your whole filesystem and the network wide open. It is the genuinely hazardous corner of the grid from the approvals lesson, packaged as a convenience.
+
+On `budgetcli`, this is never the right call, and it's worth being blunt about why. This repo — and the `~/budget-data` directory beside it — holds your real accounts, your real transaction history pulled from your own bank statements. `--yolo` simultaneously removes the only OS-level guarantee protecting that data *and* the only checkpoint where you'd catch a bad move before it lands. Every protection this whole chapter built, gone in one flag. The damage an agent could do with no fence and no network restriction — overwrite the ledger, exfiltrate the statements, run something pulled off a URL with your data in scope — is exactly the damage you reached for a sandbox to prevent. There is no version of "I just need it to go a bit faster" on a finance repo that justifies trading away both walls at once.
+
+The flag exists for environments that are *already* isolated — a throwaway container, a CI runner with nothing of yours in it, where the machine itself is the fence and Codex's sandbox is redundant. Your laptop, with your money in the repo, is the opposite of that. When a task feels like it needs `--yolo`, the move you actually want is the one the last lesson taught: narrow the ask. Open `network_access`, or add the one directory with `--add-dir` or `writable_roots`. Widen the fence by the exact amount the task needs — never tear it down. The bypass flag's own name is the warning; take it at its word. The precise behaviour and the platforms it applies to are in the [Codex sandbox docs](https://developers.openai.com/codex/sandbox).
+
+## Where this leaves you
+
+The agent is now properly fenced. You can hand it a whole task without watching every step, because you've decided — deliberately, per kind of work — how much it can do and how far it can reach, and bundled each decision into a name you summon with one flag. That's the chapter's whole arc: a single fused trust slider was the wrong shape, two orthogonal dials are the right one, and a profile is how you stop paying for the second time you set them.
+
+But a safely-fenced agent that keeps making the *same mistakes* is still a problem. Through this chapter, Codex has more than once reached for floats where `budgetcli` demands integer cents, and reached for the wrong category names — because nobody has told it the repo's conventions. The sandbox stops it from doing damage; it doesn't stop it from being wrong. The next chapter closes that gap: now that the agent is fenced, teach it the rules of the house so it stops repeating the same corrections. [Write the repo's conventions down where the agent reads them](/course/codex/rules/).

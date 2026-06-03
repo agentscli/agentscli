@@ -1,0 +1,48 @@
+---
+title: The three sandbox levels — read-only, workspace-write, danger-full-access
+description: "The sandbox is the wall the agent can't climb. Read-only can't change anything, workspace-write can edit inside the project but not escape it, danger-full-access removes the fence entirely."
+sidebar:
+  label: "Sandbox levels · the wall"
+---
+
+The last lesson set up two dials; this one zooms in on the one that actually protects your money — the **sandbox**, the `-s` axis. It matters more than the approval dial because it's enforced by the operating system, not by the agent's judgment. An approval prompt is a request the agent makes; the sandbox is a wall the agent runs into. On a repo holding your financial data, you want at least one guarantee that doesn't depend on the agent behaving, and this is it.
+
+There are three levels. Walk up them from tightest to loosest.
+
+## read-only — it can look, it cannot change
+
+```text
+codex -s read-only
+```
+
+The agent can read any file in the project and reason about it, but the sandbox refuses every attempt to write a file, delete one, or run a command that changes state. This isn't the agent *choosing* not to — the write call fails at the OS level. There's nothing to approve, because there's nothing it could do that needs approving.
+
+This is the right level whenever you want analysis without consequences. On `budgetcli`, that's: "audit the codebase and tell me everywhere money is stored as a float" — you want the findings, you don't want a single byte changed while it looks. It's also the safest way to point Codex at unfamiliar code for the first time. Reads can't damage a repo, so a read-only session is free to be as autonomous as you like on the approval axis without any reach worth fencing.
+
+## workspace-write — it can edit the project, but not escape it
+
+```text
+codex -s workspace-write
+```
+
+This is the level you'll spend most of your week in. The agent can now read *and write* — but only inside the workspace: your project directory (and a couple of conventional scratch locations like the system temp dir). Step outside that boundary and the wall is back. It can't write to your home directory, can't touch a sibling repo, can't modify system files. And — this is the part that catches everyone, so it gets its [own lesson](/course/codex/approvals-sandbox/network-and-dirs/) — **outbound network is off by default here too.** Writing inside the project does not imply reaching the internet.
+
+For the money-handling refactor, this is exactly the fence you want. The agent rewrites float amounts to integer cents across `budgetcli`'s source and tests, runs the test suite, fixes what breaks — all inside the project, all without your home directory or your real ledger database file (if it lives elsewhere) ever being in reach. The blast radius is the project, and the project is in git, so the worst case is a `git restore` away.
+
+Two boundaries of `workspace-write` are configurable, and you'll meet both next lesson: which directories beyond the project count as writable (`writable_roots` / `--add-dir`), and whether network is allowed (`network_access`). Out of the box, neither is widened — the fence is the project, and only the project.
+
+## danger-full-access — no fence at all
+
+```text
+codex -s danger-full-access
+```
+
+The name is the documentation. There is no sandbox: the agent can read and write anywhere on the filesystem your user account can, and the network is wide open. Nothing is enforced, so nothing protects you but the agent's behaviour and whatever the approval dial is set to.
+
+There are legitimate uses — a throwaway container, a CI runner that's already isolated, a genuinely-needs-the-whole-machine operation you're supervising closely. But on `budgetcli`, on your actual laptop, with your actual financial data sitting in the repo, this is the wrong answer almost by definition. The whole reason you reached for Codex on a finance project is that the stakes are real; `danger-full-access` is precisely the setting that throws away the protection those stakes demand. When you think you need it, the right move is usually to *narrow the ask* instead — add the one extra directory the agent needs rather than unlocking the whole disk. That narrowing is the next lesson's job.
+
+## The wall vs. the checkpoint
+
+Hold the distinction one more time, because it's the mental model the rest of the chapter rests on. The sandbox is a property of the environment — set it to `read-only` and a destructive command is *impossible*, not *disallowed-but-askable*. The approval policy, which the next lesson covers, is a property of the workflow — it decides which possible actions pause for your sign-off. You combine a wall with a checkpoint: the wall says where the agent can go at all, the checkpoint says which of the moves inside that space it makes on its own. The precise enforcement details per platform are in the [Codex sandbox docs](https://developers.openai.com/codex/sandbox).
+
+You've got the wall picked — `workspace-write` for the refactor. Now choose the checkpoint: [the three approval policies, and which fits this work](/course/codex/approvals-sandbox/approval-modes/).

@@ -1,0 +1,52 @@
+---
+title: Generate the monthly report headless with codex exec
+description: "The whole of automation starts here: one subcommand that turns the interactive agent into a command-line tool you can pipe into, script around, and read the result back from. We use it to produce budgetcli's month-end report without opening a session."
+sidebar:
+  label: "Headless · codex exec, input/output"
+---
+
+Before any CI plumbing, you need the one move everything else is built on: running Codex without the chat. The first time you reach for it on `budgetcli`, the goal is small — get the month-end report to run from a script instead of from your keyboard. That single capability is what makes a scheduled job or a CI check even possible, because both are just this command fired by something other than you.
+
+## The headless entry point: `codex exec`
+
+`codex exec` (alias `codex e`) runs the agent **non-interactively**: it takes a prompt, runs to completion, prints the result, and exits. No TUI, no back-and-forth, just a command that returns. The docs describe it as the path for [scripted or CI-style runs that should finish without human interaction](https://developers.openai.com/codex/cli/reference) — exactly what a month-end report is.
+
+```text
+codex exec "Run the categoriser over last month's transactions, then write a budget report: spend by category, budget vs actual, and every category that went over."
+```
+
+That runs the whole report to completion and writes its answer to stdout. Because it's an ordinary command-line program, it composes with everything else a shell can do — redirect it to a file, drop it in a cron entry, hand it off to a CI step. That composability is the entire point of the subcommand.
+
+## Feeding it input
+
+`codex exec` reads **stdin**, so you can pipe data in the way you'd feed any Unix tool. This is the cleanest way to hand the agent exactly the slice of data you want it to look at and nothing more:
+
+```text
+cat statements/2026-04.csv | codex exec "These are last month's transactions. Categorise them, then total spend per category against the budgets in budgets.toml."
+```
+
+Piping the CSV in has a quiet benefit that matters more once the sandbox tightens in CI: the agent doesn't have to *find and read* the file itself, because you already handed it the contents. The less an unattended run has to reach for, the smaller its blast radius — a theme that runs straight into the [next lesson](/course/codex/automation/ci/). For inputs too large to pipe comfortably, write them to a file and point the prompt at the path instead.
+
+## Reading the result back
+
+A script that can't read the answer is useless. By default `codex exec` writes the agent's final reply to stdout as plain text — fine for a human skimming a log, and the simplest thing to redirect into the report file:
+
+```text
+codex exec "Generate April's budget report from the categorised transactions." > reports/2026-04.md
+```
+
+When a *script* needs to act on the result rather than just store it — pull out a single number, branch on whether anything overspent — reach for structured output instead of parsing prose. `codex exec` can emit a [machine-readable event stream and constrain its final answer to a schema](https://developers.openai.com/codex/cli/reference); that turns the agent into a typed step in a pipeline rather than a thing you read by eye. For the month-end report, plain stdout redirected to a file is all you need; we'll lean on structured output when CI has to *decide* something in the [CI lesson](/course/codex/automation/ci/).
+
+## Exit behaviour: the run either finishes or it doesn't
+
+This is the part that makes `codex exec` safe to script around. The command runs the agent to completion and **exits with a status code** — zero when it finished the task, non-zero when it couldn't. A calling script reads that exit code the same way it reads any other command's:
+
+```text
+codex exec "Generate April's budget report." > reports/2026-04.md \
+  && echo "report written" \
+  || echo "report failed — check the log"
+```
+
+Why this matters now rather than later: headless, there is no human to answer an approval prompt. If the run reaches for something its sandbox and approval policy don't allow, it can't pause and wait for a `y/n` that will never come — it fails. That's the *safe* outcome. A dead job that exited non-zero is better than a job that quietly waved itself through or hung forever waiting for a keystroke. The whole discipline of the next two lessons is making sure the run finishes for the right reason: that it has exactly the sandbox and approvals the report needs, and nothing broader.
+
+You can now produce budgetcli's report from a single command and tell, from the exit code alone, whether it worked. But notice the thing we've quietly skipped in every example here: *what is this run allowed to do?* On your own machine it inherits your config and runs under whatever sandbox you've defaulted to. The moment something other than you fires the command — a CI runner with your data checked out and no one watching — that pre-grant becomes the only thing deciding what the agent can touch. That's [the next lesson](/course/codex/automation/ci/).

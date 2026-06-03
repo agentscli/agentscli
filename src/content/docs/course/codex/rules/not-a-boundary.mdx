@@ -1,0 +1,47 @@
+---
+title: "The size cap, fallback filenames, and why AGENTS.md is not a boundary"
+description: "AGENTS.md has a size limit that truncates silently past 32 KiB, fallback filenames it will accept instead, and one hard limit you must internalise: it's guidance the model interprets, never a security boundary. Enforcement is the sandbox's job."
+sidebar:
+  label: "Not a boundary · limits & the hard line"
+---
+
+You can write rules now, layer them, and phrase them so Codex follows. This last lesson is about the file's *limits* — two practical ones that will quietly bite if you don't know them, and one conceptual one that matters more than the rest of the chapter combined.
+
+## The size cap truncates silently
+
+The combined `AGENTS.md` brief — every file Codex concatenated on its discovery walk — has a ceiling. It's set by `project_doc_max_bytes` in `config.toml`, and the default is **32 KiB** (32768 bytes). Here's the part that bites: once the concatenated size reaches that limit, Codex **stops adding content** and gives you **no warning** that it did. Rules past the cap simply aren't in context, and nothing on screen tells you a rule went missing.
+
+For `budgetcli` this is comfortable headroom — your money, category, and date rules are a few hundred bytes. But the cap is on the *combined* brief across the whole hierarchy. If you've got a long global `~/.codex/AGENTS.md`, a fat project file, and several subdirectory files, they sum toward one budget, and the rule you care about might be the one that falls off the end. The fix is the same discipline as the [good-rules lesson](/course/codex/rules/good-rules/): keep each file lean so you never approach the limit. If you genuinely need more room, you can raise `project_doc_max_bytes`, but the better instinct is to prune. A rule Codex never reads is worse than no rule, because you *think* it's covered.
+
+```toml title="~/.codex/config.toml"
+# Default is 32 KiB. Raising it is a last resort — prune first.
+project_doc_max_bytes = 32768
+```
+
+## Fallback filenames
+
+Codex looks for `AGENTS.md` by name. If a project doesn't have one, you can tell Codex to accept other filenames instead via `project_doc_fallback_filenames` — an array of additional names it tries when `AGENTS.md` is missing:
+
+```toml title="~/.codex/config.toml"
+project_doc_fallback_filenames = ["CONTEXT.md", "CONVENTIONS.md"]
+```
+
+This is useful when a repo already carries its standing context under a different name and you'd rather not duplicate it. Note the order from the discovery walk still holds: at each level Codex checks `AGENTS.override.md`, then `AGENTS.md`, then your fallback names. The fallbacks are a safety net for the base file, not a replacement for the override. Both knobs are documented in the [config reference](https://developers.openai.com/codex/config-reference).
+
+## The hard line: guidance is not a boundary
+
+Now the part to internalise. Everything in this chapter — the money rule, "never write to `ledger.db` directly," the whole file — is **guidance the model interprets, not a constraint the system enforces.** `AGENTS.md` shapes what Codex *tends* to do. It does not *prevent* anything.
+
+This matters most on `budgetcli` precisely because it's your own financial data. Suppose you write "never touch the production ledger database" in `AGENTS.md`. That's a good rule and Codex will usually honor it. But "usually" is not "cannot." The model could misread the situation, a rule could fall past the silent size cap, or a confusing prompt could lead it somewhere the rule said not to go. If the only thing standing between Codex and your real ledger is a sentence in a Markdown file, you have a wish, not a guardrail.
+
+The actual guardrail is the sandbox. That's the entire reason [the approvals-and-sandbox chapter](/course/codex/approvals-sandbox/) came *before* this one. `workspace-write` with the network off, `writable_roots` scoped to a copy of the data, approvals gating anything destructive — those are mechanisms the system *enforces* regardless of what the model decides to do. `AGENTS.md` tells Codex the right thing to do; the sandbox makes the wrong thing impossible. You need both, and you must never let a rule stand in for a boundary.
+
+:::caution[Two jobs, two tools]
+Use `AGENTS.md` to make Codex *correct* — integer cents, the right categories, the conventions it would otherwise miss. Use the sandbox and approvals to make Codex *safe* — unable to reach what it shouldn't, even if a rule fails. A rule that's load-bearing for safety belongs in the sandbox config, not in prose.
+:::
+
+## Where this leaves you
+
+`budgetcli` now explains itself to Codex. The float-money bug, the invented categories, the day-first dates — written down once, read automatically every run, layered across scopes, and phrased so Codex follows. You open each session past the basics instead of re-arguing them. And you know the file's edges: the silent size cap, the fallback names, and the hard line that guidance never substitutes for the sandbox.
+
+Codex now knows *what* `budgetcli` is and *how* to work on it correctly. The next question is how *hard* it should think per task — minimal effort for a boilerplate CRUD endpoint, far more for designing the categorisation rules engine. [That's the next chapter: tuning reasoning effort to fit the work.](/course/codex/models-effort/)
