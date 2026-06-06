@@ -28,7 +28,14 @@ export default function ReactCodeSnippet({ title = 'style.css', code, children }
       <div className="code-container">
         {/* If raw code string is provided use the requested textarea, else use standard children rendering */}
         {code ? (
-          <textarea className="area" id="code" name="code" readOnly value={code} />
+          <textarea
+            className="area"
+            id="code"
+            name="code"
+            readOnly
+            value={code}
+            aria-label={title ? `Code: ${title}` : 'Code snippet'}
+          />
         ) : (
           <div className="area" id="code-override">
             {children}
