@@ -100,6 +100,8 @@ export default defineConfig({
 								{ label: 'Claude Code', link: '/course/claude-code/' },
 								{ label: 'Codex', link: '/course/codex/' },
 								{ label: 'GitHub Copilot', link: '/course/copilot/' },
+								{ label: 'Cursor', link: '/course/cursor/' },
+								{ label: 'opencode', link: '/course/opencode/' },
 							],
 						},
 						{
@@ -447,6 +449,139 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/copilot/daily-workflow' },
 										{ label: 'A day · careful lib, fast app', slug: 'course/copilot/daily-workflow/a-day' },
 										{ label: 'The arc · and where to go next', slug: 'course/copilot/daily-workflow/the-arc' },
+									],
+								},
+							],
+						},
+						{
+							label: 'Cursor',
+							link: '/course/cursor/',
+							icon: 'open-book',
+							items: [
+								{ label: 'Cursor overview', slug: 'course/cursor' },
+								{
+									label: 'Getting started',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/getting-started' },
+										{ label: 'Install · migrate your VS Code setup', slug: 'course/cursor/getting-started/install' },
+										{ label: 'Sign in · choose a plan', slug: 'course/cursor/getting-started/sign-in' },
+										{ label: 'Two surfaces · Agent vs Tab', slug: 'course/cursor/getting-started/two-surfaces' },
+										{ label: 'The loop · one turn', slug: 'course/cursor/getting-started/the-loop' },
+										{ label: 'First change · ship a reviewed edit', slug: 'course/cursor/getting-started/first-change' },
+									],
+								},
+								{ label: 'The daily edit loop', slug: 'course/cursor/daily-edit-loop' },
+								{ label: 'Modes · Ask, Plan, Agent, Debug', slug: 'course/cursor/modes' },
+								{ label: 'Context · @-tag & self-gathering', slug: 'course/cursor/context' },
+								{ label: 'Models · Auto, Composer, MAX', slug: 'course/cursor/models' },
+								{ label: 'Rules · .mdc & AGENTS.md', slug: 'course/cursor/rules' },
+								{ label: 'Permissions · auto-run & sandbox', slug: 'course/cursor/permissions' },
+								{ label: 'Parallel & remote agents', slug: 'course/cursor/composer-multi-agent' },
+								{ label: 'Extending · MCP, skills, commands, hooks', slug: 'course/cursor/extending' },
+								{ label: 'The CLI, headless & CI', slug: 'course/cursor/cli-headless-ci' },
+								{ label: 'Daily workflow', slug: 'course/cursor/daily-workflow' },
+							],
+						},
+						{
+							label: 'opencode',
+							link: '/course/opencode/',
+							icon: 'open-book',
+							items: [
+								{ label: 'opencode overview', slug: 'course/opencode' },
+								{
+									label: 'Getting started',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/getting-started' },
+										{ label: 'Install · meet the TUI', slug: 'course/opencode/getting-started/install' },
+										{ label: 'The loop · one turn', slug: 'course/opencode/getting-started/the-loop' },
+										{ label: 'First change · fix, review, commit', slug: 'course/opencode/getting-started/first-change' },
+										{ label: 'Editor · next to your editor', slug: 'course/opencode/getting-started/editor' },
+										{ label: 'Bring your own model', slug: 'course/opencode/getting-started/bring-your-own-model' },
+									],
+								},
+								{
+									label: 'Providers & models',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/providers-models' },
+										{ label: 'Switch models · in-session', slug: 'course/opencode/providers-models/switch-models' },
+										{ label: 'Wire up multiple providers', slug: 'course/opencode/providers-models/multi-provider-setup' },
+										{ label: 'Run two side by side', slug: 'course/opencode/providers-models/side-by-side' },
+										{ label: 'Per-agent model', slug: 'course/opencode/providers-models/per-agent-model' },
+										{ label: 'Local & custom models', slug: 'course/opencode/providers-models/local-and-custom' },
+									],
+								},
+								{
+									label: 'Living in the TUI',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/the-tui' },
+										{ label: 'Leader key & command palette', slug: 'course/opencode/the-tui/leader-and-palette' },
+										{ label: 'Plan / build toggle', slug: 'course/opencode/the-tui/plan-build-toggle' },
+										{ label: 'Sessions · juggle & resume', slug: 'course/opencode/the-tui/sessions' },
+										{ label: 'Undo, redo & compact', slug: 'course/opencode/the-tui/undo-redo-compact' },
+										{ label: 'Keybinds & themes', slug: 'course/opencode/the-tui/keybinds-and-themes' },
+									],
+								},
+								{
+									label: 'Rules (AGENTS.md)',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/rules-agents-md' },
+										{ label: 'Write your first AGENTS.md', slug: 'course/opencode/rules-agents-md/first-agents-md' },
+										{ label: 'Discovery & the nesting walk', slug: 'course/opencode/rules-agents-md/discovery-and-nesting' },
+										{ label: 'Point at more instruction files', slug: 'course/opencode/rules-agents-md/extra-instructions' },
+									],
+								},
+								{
+									label: 'Skills',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/skills' },
+										{ label: 'Package your first skill', slug: 'course/opencode/skills/first-skill' },
+										{ label: 'Gate which agents run it', slug: 'course/opencode/skills/gating-skills' },
+										{ label: 'Reuse a portable skill', slug: 'course/opencode/skills/portable-skills' },
+									],
+								},
+								{
+									label: 'Subagents',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/subagents' },
+										{ label: 'The three built-in subagents', slug: 'course/opencode/subagents/built-in-subagents' },
+										{ label: 'Fan out across adapters', slug: 'course/opencode/subagents/fan-out' },
+										{ label: 'Write a custom subagent', slug: 'course/opencode/subagents/custom-subagent' },
+									],
+								},
+								{
+									label: 'Permissions & isolation',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/permissions' },
+										{ label: 'Per-tool, per-agent', slug: 'course/opencode/permissions/per-tool-per-agent' },
+										{ label: 'Switch agents to switch policy', slug: 'course/opencode/permissions/agent-as-policy' },
+										{ label: 'Isolate in a container', slug: 'course/opencode/permissions/container-isolation' },
+									],
+								},
+								{
+									label: 'Extending opencode',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/extending' },
+										{ label: 'MCP servers', slug: 'course/opencode/extending/mcp-servers' },
+										{ label: 'The LSP channel', slug: 'course/opencode/extending/lsp-diagnostics' },
+										{ label: 'Plugin hooks', slug: 'course/opencode/extending/plugins-hooks' },
+									],
+								},
+								{
+									label: 'Sharing & headless',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/share-and-headless' },
+										{ label: 'Share a session', slug: 'course/opencode/share-and-headless/share-links' },
+										{ label: 'Run headless', slug: 'course/opencode/share-and-headless/headless-run' },
+										{ label: 'Server, CI & GitHub', slug: 'course/opencode/share-and-headless/server-and-ci' },
+									],
+								},
+								{
+									label: 'Daily workflow',
+									items: [
+										{ label: 'Module intro', slug: 'course/opencode/daily-workflow' },
+										{ label: 'Codify the chore', slug: 'course/opencode/daily-workflow/custom-commands' },
+										{ label: 'Prompt well & move fast', slug: 'course/opencode/daily-workflow/prompting-and-reflexes' },
+										{ label: 'The week back', slug: 'course/opencode/daily-workflow/the-week-back' },
 									],
 								},
 							],

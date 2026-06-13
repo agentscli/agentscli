@@ -1,0 +1,149 @@
+---
+title: Gate moves with plugin hooks
+description: "You want feedmill's linter to run on every edit and a write to the protected sync path to be impossible. opencode's hooks aren't a settings list — they're a JS/TS plugin that subscribes to lifecycle events through an injected shell, and can register custom tools while it's there."
+sidebar:
+  label: "Plugins · hooks & custom tools"
+---
+
+Two things keep biting you on `feedmill`. First: the agent edits a parser, reports done, and you only find out at the next `go vet` that it left the package un-`gofmt`'d — the lint should have run the moment the file changed, not whenever you remembered to ask. Second, and sharper: there's a path you never want the agent to touch. `internal/sync/state.go` holds the cursor the cron sync server reads at 3am to know where each feed left off; an edit there doesn't break a test, it silently re-downloads or skips a week of items in production. You've told the agent in `AGENTS.md` to leave it alone, and mostly it does — but "mostly" is the wrong guarantee for the one file that quietly corrupts your reading queue.
+
+Both wants are the same shape: *something deterministic should happen on a lifecycle event, regardless of what the model decided in the moment.* If you came from Claude Code or Codex you'll reach for a hooks block in a settings file — a declarative list of "on this event, run this command." opencode doesn't have one. Its hook model is **plugin-based**: you write a JS/TS module that subscribes to events in code, and the same module can register custom tools. It's more setup than a config line, and more power — the gate is real code with the full shell in hand, not a string template.
+
+## A plugin is a function that returns hooks
+
+A plugin is a JS/TS module exporting a function. opencode calls it once at startup with a context object and keeps whatever it returns. The context is the useful part:
+
+```ts
+// .opencode/plugins/feedmill-guard.ts
+import type { Plugin } from "@opencode-ai/plugin"
+
+export const FeedmillGuard: Plugin = async ({ project, client, $, directory, worktree }) => {
+  // project   — the current project
+  // client    — the opencode SDK client (talk back to the session)
+  // $         — Bun's shell, so you can run commands from inside a hook
+  // directory — the working directory
+  // worktree  — the git worktree path
+  // (the context is richer than this — it also carries serverUrl and an
+  //  experimental_workspace field — but these five are what you'll reach for)
+  return {
+    // hooks and tools go here
+  }
+}
+```
+
+The `$` is the one to notice — it's [Bun's shell API](https://bun.sh/docs/runtime/shell), injected so your hook can shell out without importing anything. That's how a hook *runs your linter*: `await $\`gofmt -w ...\`` from inside the handler. Plugins are live code, closer to a VS Code extension than to a static config block — which is exactly why they can do things a declarative list can't.
+
+A quick note on *where this file lives*, because the docs and the community drift on it: the canonical directory is `.opencode/plugins/` (plural) for project plugins and `~/.config/opencode/plugins/` (plural) for global ones — that's what the [official plugins page](https://opencode.ai/docs/plugins/) documents and what the loader treats as the primary path. The singular `.opencode/plugin/` you'll see in older gists and bug reports (e.g. `#10574`, "Plugin loader fails to resolve npm deps from `.opencode/plugin/` subdirectory") still loads too, but only as a backwards-compatibility fallback — the loader's `Bun.Glob` scan matches both singular and plural forms, the same way it does for `agents/`/`agent/` and `skills/`/`skill/`. Prefer the plural; treat the singular as legacy. Either way, the other path is the top-level `plugin` array in `opencode.json`, which takes npm package names and installs them with Bun at startup (cached under `~/.cache/opencode/node_modules/`):
+
+```jsonc
+// opencode.json
+{
+  "plugin": ["opencode-helicone-session", "@my-org/feedmill-guard"]
+}
+```
+
+Local file for the thing you're writing today; the array for something you want to share or pull from npm.
+
+One thing to keep straight as you wire these up: opencode distinguishes *event-bus event names* from *subscribable hook keys*, and they don't line up one-to-one. `file.edited` is an event **type** delivered through a generic `event` handler, not a top-level hook key you subscribe to directly. The keys you actually return are things like `tool.execute.before`, `tool.execute.after`, the `event` handler (where `file.edited` and friends arrive), the permission hook (`permission.ask`), the command hook (`command.execute.before`), `config`, `shell.env`, and a set of `experimental.*` transforms — plus session and server activity, which arrives as event *types* through that same `event` handler rather than as their own keys. The next two sections show both shapes.
+
+## Lint on every edit with the `event` handler
+
+The first want is the easy one. `file.edited` arrives as an event type through the generic `event` handler — match on `event.type`, then run `gofmt` against whatever just changed:
+
+```ts
+export const FeedmillGuard: Plugin = async ({ $, directory }) => {
+  return {
+    event: async ({ event }) => {
+      if (event.type !== "file.edited") return
+      const file = event.properties.file
+      // fire only for Go files under the repo
+      if (!file.endsWith(".go")) return
+      await $`gofmt -w ${file}`
+      await $`go vet ./...`.cwd(directory).nothrow()
+    },
+  }
+}
+```
+
+The path lives at `event.properties.file` — not at a top-level `event.file`. That's the whole payload: in this release the `file.edited` event carries `properties: { file: string }` and nothing else, so don't reach for edit ranges or a diff off this event — if you need the changed content, read the file yourself.
+
+Now the lint isn't a thing you remember — it's a thing that happens. Edit a parser from any agent, on any turn, and the file is `gofmt`'d the instant it's written; `go vet` runs right after and its output is available to the loop, so a formatting or vet problem surfaces in the same exchange that caused it instead of three turns later. The hook doesn't care *which* agent edited the file or whether the model thought to format — it fires on the event, which is the whole point.
+
+This is genuinely different from asking the model to "remember to run the linter." That instruction lives in the prompt, competes with everything else in context, and degrades over a long session. The hook lives in code and fires on a system event. One is a hope; the other is a guarantee.
+
+## Block the protected path with `tool.execute.before`
+
+The second want is the one that matters. You want a write to `internal/sync/state.go` to be *impossible*, not discouraged. The hook for that is `tool.execute.before` — it runs before any tool executes, sees the call, and can **block it by throwing**:
+
+```ts
+export const FeedmillGuard: Plugin = async ({ $ }) => {
+  const PROTECTED = "internal/sync/state.go"
+  return {
+    "tool.execute.before": async (input, output) => {
+      // input:  { tool, sessionID, callID }  — note: no args here
+      // output: { args }  — mutable, so a hook can also rewrite a call
+      const path = output.args.filePath ?? output.args.path
+      if ((input.tool === "write" || input.tool === "edit") && path?.includes(PROTECTED)) {
+        throw new Error(`${PROTECTED} is protected — sync cursor, do not edit from the agent`)
+      }
+    },
+  }
+}
+```
+
+The handler receives `input` (the `tool` name, the `sessionID`, and the `callID` — but *not* the args) and `output` (a mutable `args`, so a hook can rewrite a call instead of just refusing it). The args you inspect live on `output.args`, never on `input`. Throwing from inside the handler aborts the tool call before it touches disk. From the TUI it looks like this — the agent reaches for the file the way it always would, and the wall is just there:
+
+```text
+> the cursor logic looks off — fix the resume offset in internal/sync/state.go
+
+  ⏺ read internal/sync/state.go
+
+  | Edit  internal/sync/state.go
+    error: internal/sync/state.go is protected — sync cursor, do not edit from the agent
+
+  I can't edit internal/sync/state.go — a plugin hook blocks writes to it.
+  The offset math looks wrong in resumeFrom(); want me to write the fix as
+  a patch you apply by hand, or move the logic into a file I can touch?
+```
+
+The model didn't decide to respect the rule — it *couldn't* violate it. That's the difference between `AGENTS.md` and a hook. `AGENTS.md` is an instruction the model usually follows; `tool.execute.before` is a gate the model runs into. For "leave this file alone" you want the gate, because the cost of the one time the instruction slips is a corrupted production sync.
+
+One caveat worth knowing before you trust this as a security boundary rather than a guardrail: there's a reported gap (`#5894`) where `tool.execute.before` did **not** intercept tool calls made by *subagents* spawned via the `task` tool, only the primary agent's — a policy bypass. The issue is now **closed**, but treat subagent coverage as something to verify on your own release rather than assume: I couldn't confirm from the changelog that a propagation fix actually shipped, and a related gap in subagent policy enforcement (`#11324`, "Task tool ignores per-target deny") is still open. {/* VERIFY: #5894 (subagent bypass of tool.execute.before) is CLOSED but ship status is unconfirmed — the issue page exposes no linked fix PR/commit, and related #11324 (task tool ignores per-target deny) is still OPEN as of this writing. Re-check the changelog for the reader's pinned release before presenting the hook as airtight for subagents; if you can reproduce, spawn a subagent that targets the protected path and confirm the throw fires. Honest framing kept: guardrail for the main loop, verify subagent coverage. */} Either way, the defense-in-depth move is the same: treat the hook as a strong guardrail on the main loop and lean on the per-agent permission model from the permissions chapter for anything a subagent could reach — the hook *and* a `permission.edit` deny, not the hook alone.
+
+## While you're in there: register a custom tool
+
+A plugin isn't only hooks. The same module can hand the model a **new tool** — a capability that didn't exist before, scoped exactly to your project. feedmill has a natural one: "given a feed URL, fetch it once and tell me which parser would claim it," the question you ask every time you onboard a source. Rather than have the agent improvise that with shell each time, register it as a tool:
+
+```ts
+import { type Plugin, tool } from "@opencode-ai/plugin"
+
+export const FeedmillGuard: Plugin = async ({ $, directory }) => {
+  return {
+    event: async ({ event }) => { /* lint on file.edited, as above */ },
+    "tool.execute.before": async (input, output) => { /* gate, as above */ },
+
+    tool: {
+      "feedmill-classify": tool({
+        description: "Fetch a feed URL once and report which feedmill parser handles it",
+        args: {
+          url: tool.schema.string().describe("the feed URL to classify"),
+        },
+        async execute(args) {
+          const out = await $`go run ./cmd/feedmill classify ${args.url}`.cwd(directory).text()
+          return out
+        },
+      }),
+    },
+  }
+}
+```
+
+Now `feedmill-classify` shows up in the model's toolbox alongside `read`, `edit`, and `bash`, and it's gated by the same per-tool permission system as everything else — you can `allow` it for `build` and `deny` it for a read-only auditor exactly as you gated skills. The shape above matches the package: a top-level `tool` key maps each name to a `tool()` definition of `{ description, args, execute }`, where `execute`'s second `context` argument is optional, so `execute(args)` alone is fine.
+
+The line between a custom tool and a skill is worth holding: a [skill](/course/opencode/skills/) is a procedure written in Markdown that the *model* reads and follows step by step; a custom tool is code *you* wrote that the model calls and gets a result from. Reach for a tool when the work is deterministic and you'd rather run it than describe it — fetch-and-classify is exactly that.
+
+## Which surface, again
+
+You've now seen all three extension surfaces close on `feedmill`, and the plugin is the one that does what neither MCP nor LSP can: it acts on opencode's *own* lifecycle. MCP reaches *out* to systems beyond the repo; LSP reads *in* from your code's type system; a plugin sits *inside the loop itself*, firing on edits and tool calls and registering tools the loop can use. When the need is "something must happen every time the agent does X, no matter what it decided" — lint on edit, wall off a path, expose a project-specific verb — that's a plugin, and only a plugin.
+
+That's the chapter: reach, intelligence, and a gate that can't be argued with, all wired into the running project rather than bolted on as demos. Next we leave the repo behind entirely — turning a `feedmill` debugging session into a link a teammate can read, then driving the same fix headless against its own sync server. [Next: sharing & headless](/course/opencode/share-and-headless/).

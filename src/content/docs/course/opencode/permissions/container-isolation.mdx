@@ -1,0 +1,63 @@
+---
+title: Isolate by running opencode in a container
+description: "Permissions gate opencode's tools, not your OS — there's no built-in sandbox to wall the agent off from your machine. When you want to leave feedmill running unattended, wrap the whole CLI in a container; the same move is what makes it trivial to run in CI later."
+sidebar:
+  label: "Isolation · the container wrapper"
+---
+
+You've spent this chapter making the leash fit the job — `edit` set to ask, `bash` narrowed to the commands you trust, an `audit` agent that can read everything and write nothing. That's real control, and for interactive work it's enough: you're at the keyboard, every `ask` lands in front of you, and a wrong move stops at the prompt. But now you want something different. `feedmill` is meant to run unattended — it pulls dozens of feeds on a cron — and you'd like to point opencode at a backlog of parser fixes and let it grind through them while you're away. The moment you do that, every protection you built this chapter rests on one assumption that no longer holds: that *you* are there to answer the prompts.
+
+So you reach for the obvious thing — a sandbox that confines what the agent can touch on the machine, the way Codex's `workspace-write` walls off everything outside the repo. And you hit the wall this lesson is about: opencode doesn't have one.
+
+## The honest limit: permissions are not a sandbox
+
+opencode ships **no built-in OS-level sandbox.** Its permission model gates the agent's *tools* — `edit`, `bash`, `read`, and the rest — not your operating system. That distinction is the whole lesson. When you set `bash: "ask"`, you're saying "stop and ask before invoking the bash tool"; you are *not* telling the OS to deny the resulting process access to your home directory, your SSH keys, or the network. Once a bash command is approved and runs, it runs with your full user privileges, like any command you'd type yourself.
+
+This matters more than it sounds, because the gate is coarser than it looks. A `bash: "ask"` rule can stop the agent from running an obviously-scary command — but `bash` is a shell, and a shell can reach anything your user can. The working-directory scoping you might expect to contain things is not airtight: it can be worked around through bash. The `external_directory` permission gates the `edit`/`write` tools, but a bash command can still create or touch files outside the permitted directory as a side effect — an open, acknowledged gap in the permission layer rather than OS-level containment. For that reason, the safe assumption is that the per-tool permission map is not a substitute for real isolation. {/* VERIFY: the bash-bypasses-external_directory gap is documented in anomalyco/opencode#18396 (open as of mid-2026), and #21733/#2242 request a true filesystem sandbox separate from permission prompts. The stronger claim that maintainers "treat sandboxing as out of scope for the CLI" is an inference, not a verbatim maintainer statement — no maintainer response was found on those threads (#24429 notes the permission threads have no developer comments). Keep the softened "safe assumption" framing; do not attribute an official position. */}
+
+There is also no Codex-style two-axis model here — no "approval policy" crossed with a "sandbox level," no `workspace-write` vs `danger-full-access` dial. opencode has one axis: the per-tool permission map you've been writing all chapter. Isolation is deliberately *not* part of that axis. It's an external concern, handled one layer out.
+
+That sounds like a gap, and for unattended work it is. But it's a gap with a clean answer — and the answer falls out of the single fact that makes opencode different from the IDE-bound tools: it's just a CLI.
+
+## Because it's just a CLI, you can put a box around the whole thing
+
+opencode is a terminal program. It has no editor it has to live inside, no host process it depends on. That means the unit you isolate isn't some internal sandbox setting — it's the *process*, and you contain a process the way you contain any process you don't fully trust: you run it inside a container.
+
+The container is the sandbox opencode doesn't ship. Docker (or Incus, or any OCI runtime) gives you the OS-level isolation the permission map can't: a filesystem that's only the mount you grant, a network you can cut off entirely, and a blast radius that ends at the container boundary. Mount `feedmill` in, leave everything else out, and now "the agent can run anything" is a true statement you can live with — because "anything" means anything *inside a box that holds one repo and nothing else.*
+
+The shape is ordinary Docker. A minimal image that has opencode and Go on it, your repo bind-mounted, your model credentials passed in as an environment variable, and the working directory set to the mount:
+
+```text
+$ docker run --rm -it \
+    -v "$PWD":/work -w /work \
+    -e ANTHROPIC_API_KEY \
+    feedmill-agent \
+    opencode run "work through the failing parser tests in parser/ one at a time, committing each green fix"
+```
+
+```text
+  | Read  parser/atom_test.go, parser/atom.go            (2 files)
+  | Bash  go test ./parser/ -run TestAtom
+    --- FAIL: TestAtom_DublinCoreDate
+  | Edit  parser/atom.go
+  | Bash  go test ./parser/ -run TestAtom
+    ok   feedmill/parser   0.180s
+  | Bash  git commit -am "Parse Dublin Core date element in Atom feeds"
+  ...
+```
+
+Notice the flags doing the isolation work — they're container flags, not opencode flags, and that's the point. `-v "$PWD":/work` is the *only* path the agent can see; the host's `$HOME`, your real SSH keys, the rest of your disk — none of it is mounted, so none of it exists as far as the process is concerned. Add `--network none` and the agent can't reach the internet at all (you'd only do that for a task that doesn't need to fetch feeds or pull dependencies). The permission map you wrote this chapter can ride *inside* the container too, as a second, finer layer — but the container is the one that actually contains.
+
+This is also why you can finally relax the leash. The reason you kept `bash` on `ask` all chapter was that an approved command runs against your real machine. Inside a container mounting one repo, that fear mostly evaporates — the worst a runaway `bash` can do is wreck a checkout you can throw away with `--rm`. So a sensible unattended posture is: tight permissions on the host for interactive work, looser permissions *inside the box* for unattended runs, because the box is now the thing holding the line.
+
+If you'd rather not hand-roll the image, Docker ships an official sandbox path for coding agents that lists opencode as a built-in agent — `sbx run opencode` (equivalently `docker sandbox run opencode`) drops the CLI into a managed sandbox with its own filesystem and network, mounts the current directory as the workspace, and handles credential injection for the model providers. It pulls the `docker/sandbox-templates:opencode` image, so it's the same idea as the `docker run` above, packaged. Reach for it if you want the isolation without writing a Dockerfile; reach for plain `docker run` when you want to see and control exactly what's mounted. One thing to keep in mind: launched this way opencode comes up in its default TUI mode, so the headless `opencode run` used in the CI section below isn't automatic — you get it by passing the run command explicitly, not by default.
+
+## The same box is your CI runner
+
+Here's the payoff that makes this more than a safety chore. The thing you just built — opencode in a container, a repo mounted, a single `opencode run "..."` headless invocation, no TUI, no human at a prompt — *is a CI job.* You didn't build an isolation hack and a CI setup separately; isolating the agent and making it CI-runnable are the same move, because both require the exact same property: opencode running headless inside a container that nobody is babysitting.
+
+That's why opencode's container story directly simplifies running it in CI. A GitHub Actions or GitLab step that does "check out the repo, run opencode against it in a container, open a PR with the result" is the unattended posture from this lesson with a trigger bolted on instead of you typing the command. The headless `opencode run` you'll lean on there is the same one in the transcript above. You'll wire up that full automation in a later chapter — but the foundation is here: the day you containerized the agent so you could trust it unattended on your own machine, you also made it something a CI runner can pick up and execute with no changes.
+
+The mental model to carry out of this chapter holds all the way through: **the unit of trust in opencode is the agent — and the unit of *isolation* is the container around it.** Permissions decide what the agent's tools may do; the container decides what the machine will let those tools reach. You tune the first with the per-tool map you've been writing all chapter, and you supply the second yourself, because opencode deliberately leaves it to the layer that does it best.
+
+That closes the permissions chapter. Next you'll take this same agent and start handing pieces of work to *other* agents — running noisy, parallel jobs in their own isolated context. [Next chapter: Subagents](/course/opencode/subagents/).

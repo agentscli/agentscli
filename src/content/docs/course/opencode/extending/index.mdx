@@ -1,0 +1,26 @@
+---
+title: "Extending opencode"
+description: "feedmill's truth lives outside the repo — in a Postgres table, in an issue tracker, in the type system itself. This chapter wires opencode to all three: MCP for reach, LSP for in-tree code intelligence, plugin hooks for a gate that can't be talked around."
+---
+
+Everything opencode has done to `feedmill` so far has stayed inside the repo — read a parser, run the Go test suite, edit a struct, swap a model for the cheap feed-classification job. But the repo isn't where `feedmill` actually keeps its truth. The list of feeds it pulls lives in a Postgres `feeds` table, not in a config file the agent can read. The bugs you want triaged belong in an issue tracker, not in your scrollback. And the typed Go codebase you're editing — full of per-source parsers that each cast a differently-shaped payload into the same `Item` — knows when you've broken something long before the tests do.
+
+opencode can't reach any of that on its own. Reading a file is one thing; querying a live database, posting to an issue API, or noticing that the JSON-feed parser you just edited no longer compiles are three different problems, and opencode solves each through a different extension surface. This chapter is about those surfaces — what each one is *for*, so you stop reaching for the wrong one.
+
+The three are easy to blur, so pin the distinction before we start:
+
+- **Reach** — an *MCP server*, declared in the `mcp` field of `opencode.json`, is a bridge to a system opencode otherwise can't touch. A `type: "local"` server runs a command (in its `command` array) on your machine; a `type: "remote"` server points at a `url`. Either way it hands the model new tools — query the `feeds` table, file an issue — that didn't exist before.
+- **In-tree intelligence** — an *LSP server*, configured in the separate `lsp` field, is the channel opencode has into your *own* code. LSP is off by default, so you turn it on (`"lsp": true` for the built-in servers, or a per-server block); once it's enabled the agent receives LSP **diagnostics** as it works, no MCP wrapper required. In a typed Go repo that's the difference between editing blind and editing with the compiler whispering over its shoulder.
+- **Gate** — a *plugin* is live JS/TS that subscribes to opencode's event taxonomy (`file.edited`, `tool.execute.before`, and more) and can register custom tools of its own. It runs regardless of what the model decided in the moment — which is how you enforce a rule the agent can't argue its way around.
+
+## What you'll do this chapter
+
+- [Reach external systems over MCP](/course/opencode/extending/mcp-servers/) — declare the Postgres `feeds` table and the issue tracker as `mcp` servers, local and remote, and let opencode query the source of truth and post a digest instead of guessing from the repo.
+- [The LSP channel the agent already has](/course/opencode/extending/lsp-diagnostics/) — wire up the `lsp` field so opencode reads Go diagnostics directly while it edits a parser, catching the broken cast before a test run ever does.
+- [Gate moves with plugin hooks](/course/opencode/extending/plugins-hooks/) — write a plugin that lints on every `file.edited` and blocks the move you never want to happen, so the guardrail fires whether or not the model remembered it.
+
+The lessons build in that order because it's the order the need shows up in real work: first you widen what the agent can reach beyond the repo, then you tighten the feedback it gets *inside* the repo, then you put a wall around the moves that must never go wrong. Each lesson ends where the next begins.
+
+Doing it as one continuous task on `feedmill` matters for the same reason every earlier chapter did: an extension you bolt on in isolation is a demo, but an extension you add *because the running project hit a wall* is a habit. By the end you'll know not just how to declare an MCP server or author a plugin, but which surface a given problem actually calls for — the question that trips people up far more often than the syntax does.
+
+Start by [reaching the `feeds` table over MCP](/course/opencode/extending/mcp-servers/).

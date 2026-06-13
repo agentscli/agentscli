@@ -1,0 +1,82 @@
+---
+title: Undo a bad run and outlast the context window
+description: "A run edited three feedmill files you didn't want touched, and the thread is creeping toward the context limit. Step the changes back with /undo, walk them forward with /redo, and let opencode's automatic compaction summarize a long thread before it overflows — turning it off only when you need the raw history."
+sidebar:
+  label: "In-session state · undo / compact"
+---
+
+Two things go wrong on a long day inside the TUI, and they go wrong in opposite directions. The first is too much change: you hand the agent a loose instruction — "tidy up the JSON feed parser" — and it takes you at your word, editing three files when you only wanted one touched, the other two now carrying changes you never asked for. The second is too much *thread*: you've been driving the same session for hours across half a dozen feed parsers, and the context window is filling up under you, the model about to start forgetting the early decisions that still matter. Both are recoverable without leaving the session. This lesson is the two moves that recover them.
+
+## Step a run back with `/undo`
+
+You asked for a tidy-up and got a sprawl. Before you do anything else, see the damage:
+
+```text
+> show me everything you changed in that last run
+
+  | Edit  parser/json.go        (the change you wanted)
+  | Edit  parser/atom.go        (you did not ask for this)
+  | Edit  parser/dedupe.go      (or this)
+```
+
+The wrong move here is to start patching: "okay, revert the atom.go change, leave json.go." That stacks a correction on top of a mistake and gives the agent two confusing edits to reason about instead of one clean slate. The right move is to throw the whole run away and re-ask. That's what `/undo` is for:
+
+```text
+> /undo
+
+  ⏺ reverted 3 file changes from the last message
+  ⏺ parser/json.go, parser/atom.go, parser/dedupe.go restored
+```
+
+`/undo` removes the most recent user message and everything that followed it — the agent's responses *and* the file changes it made on disk. It does this through Git: opencode tracks the edits from each exchange and rolls them back as a unit, which is why `/undo` only works in a project that's a Git repository. `feedmill` is one, which is the whole reason this is safe. The default keybind is `<leader>u` (the leader is `Ctrl+X` out of the box, so `Ctrl+X` then `u`), or you can type the command.
+
+Now you're back where you stood before the bad run, all three files clean, and you re-describe the work more tightly — name the file, scope it down:
+
+```text
+> just the JSON feed parser in parser/json.go — only the date-coercion
+  block. don't touch the other parsers.
+```
+
+If you undo one step too far — you reverted the sprawl but realize the json.go edit was actually the one you wanted to keep — `/redo` walks it forward again, restoring both the message and the file changes you just undid. Its default keybind is `<leader>r`. Think of `/undo` and `/redo` as a single cursor you slide back and forth over the recent history of the session.
+
+:::caution[`/undo` reaches back one exchange, not across the session]
+`/undo` steps back over recent messages, not a whole afternoon of tangled work. For anything you've already proven good, the real floor is a Git commit — `/undo` is the shallow safety net, `git commit` is the deep one. There have also been reliability reports where `/undo` rolled back the *message* without reverting the *file changes* on certain releases — and a worse one where it reverted files to an incorrect old state and deleted committed code. Treat it as your fast first reach, but verify the files actually reverted (`git status`, or re-run "show me everything you changed") before you trust it on a destructive run.
+:::
+
+{/* VERIFY (kept — OPEN, recurring class of bug, not version-pinned): /undo file-revert reliability is an ongoing problem class in anomalyco/opencode, not a single fixed bug. Confirmed reports: #5474 (message rolled back but file changes left in place, v1.0.152), #10287 (files reverted to an incorrect old state, ~1300 lines of committed code deleted, Jan 2026). Still-open reports persist into the v1.16 era: #27664 (/undo does not restore code, /redo then commits all changes), #27873 (file watcher fights an intentional undo), #4704 (/undo + /timeline undo don't revert edits). No changelog entry confirms a blanket fix as of v1.16.2, so keep the caution box and the "verify the files actually reverted" guidance regardless of installed version. Re-check the open undo issues before publishing. */}
+
+## Let the thread compact itself
+
+The other failure mode is quieter. You don't hit a wall with a bang; the session just gets long. Six parsers deep, the agent has read dozens of files, run the test suite a handful of times, and all of that tool output is still sitting in the context window taking up room. Left alone, you'd eventually overflow the model's context and the run would break mid-task.
+
+opencode handles this for you. It watches the token count, and when the conversation is about to overflow the model's context window it makes a summarization call — replacing the detailed history with a concise summary and pruning the old tool output to reclaim space. Your messages are replayed after the summary so the thread keeps flowing; from where you sit, the session just keeps going, lighter than it was.
+
+```text
+  ⏺ context window near limit — compacting…
+  ⏺ summarized 142 messages; pruned tool output; continuing
+```
+
+What's worth understanding is *what* the summary keeps, because that's the contract you're trusting your multi-day refactor to. opencode compacts onto a **fixed structured template** — goal, constraints, progress, key decisions, next steps, critical context. You don't steer it with per-call instructions the way you might nudge a summary in another tool; the structure is the deal. The practical upshot for `feedmill`: a decision you made early — "we standardized all feed timestamps to UTC before dedupe" — survives compaction *if it reads as a key decision or a constraint*. So the way you make compaction safe isn't to fight it; it's to state the load-bearing decisions clearly as you go, so they land in the slots the template keeps rather than getting buried in tool noise that gets pruned.
+
+## Turn it off when you need the raw thread
+
+Automatic compaction is the right default, but it's a default, and sometimes you want the unsummarized history. The case where this bites in `feedmill`: you're debugging *why* one Atom feed's dedupe is dropping legitimate items, and the answer is in the exact sequence of what the agent tried three steps back — the specific timestamps, the raw tool output, the dead ends. A summary that compresses "investigated dedupe, ruled out timestamp collision" is exactly the detail you can't afford to lose. For that session you want the raw thread, and you'd rather hit the context ceiling and deal with it deliberately than have it silently summarized out from under you.
+
+Disable it for a single run with the environment variable:
+
+```bash
+OPENCODE_DISABLE_AUTOCOMPACT=1 opencode
+```
+
+Or turn it off persistently in config:
+
+```json
+// opencode.json
+{
+  "compaction": { "auto": false }
+}
+```
+
+With auto-compaction off you keep every message verbatim — and you also own the consequence: a long enough thread *will* overflow, and you'll need to start a fresh session or compact it yourself before it does. When you want to compress on your own terms, the manual `/compact` command (alias `/summarize`, default keybind `<leader>c` — so `Ctrl+X` then `c`) runs the same summarization on demand. That's the trade. Leave auto on for the long building sessions where continuity matters more than any single detail; turn it off for the short, forensic ones where the raw history *is* the work, and reach for `/compact` when you decide it's time.
+
+Between these two moves you can run a session hard without fear in either direction: `/undo` and `/redo` slide a bad run back and forth a step at a time, and automatic compaction keeps a multi-day thread alive past the point a raw transcript would have broken. That's the in-session state under control. Next, a different way to split a session's *intent* — outlining read-only before you let it write: [Tab between plan and build](/course/opencode/the-tui/plan-build-toggle/).

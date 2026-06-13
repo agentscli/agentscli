@@ -1,0 +1,81 @@
+---
+title: Switch models without leaving the session
+description: "A cheap model is flailing on feedmill's timezone logic. Open /models, jump to a stronger reasoner for that one hard stretch — same thread, same context — and toggle a thinking variant where the model supports it."
+sidebar:
+  label: "Switch · model per task"
+---
+
+You've been chasing the suspect-feed bug from the last chapter on a cheap, fast model, and for the easy parts that was the right call — it read the parsers, mapped the dedup path, and proposed sane edits without burning much. But you've hit the part of `feedmill` that always bites: the timezone normalization. Feeds publish timestamps in a dozen shapes — `Z`, `+05:30`, naive local, an Atom feed that lies about its offset — and the cheap model is now on its third wrong proposal, each one fixing one source and quietly breaking another. This isn't a prompting problem. It's a *reasoning* problem, and you reached for the wrong tool for this one stretch.
+
+The move is not to quit, re-launch with a bigger model, and re-explain everything. It's to swap the model under the live session and keep going.
+
+## Open the switcher mid-thread
+
+opencode's defining trait is that the session isn't welded to one model. Every provider you've connected is selectable at any prompt, and switching doesn't reset the thread — the model that picks up your next turn inherits the entire conversation so far: the files already read, the failed proposals, the constraints you've stated. Type the slash command at the prompt:
+
+```text
+> /models
+```
+
+That opens the in-session model switcher — a filterable list of every model across every connected provider. You're not picking from one vendor's menu; you're picking from the whole set you wired up in [the last lesson](/course/opencode/providers-models/multi-provider-setup/). Type to filter, and select the model you want for the hard part:
+
+```text
+  Select model
+
+  > claude-opus                                    ◂ filter
+
+    anthropic/claude-opus-4-...      reasoning · vision
+    anthropic/claude-sonnet-4-...    reasoning · vision
+    openai/gpt-5...                   reasoning
+    google/gemini-2.5-pro            reasoning · vision
+    openrouter/deepseek-...          reasoning
+
+  ↑↓ move   enter select   esc cancel
+```
+
+Models are addressed in `provider/model` form — `anthropic/claude-opus-4-...`, `openai/gpt-5...`, `google/gemini-2.5-pro` — so the same identifier you'd put in a config file is what you pick here. Hit enter, and the next thing the strong model sees is everything the cheap one already gathered:
+
+```text
+  ✓ model → anthropic/claude-opus-4-...
+
+> the previous attempts each fixed one feed's timezone and broke another.
+  step back and find the rule that holds for all of them at once before
+  you touch any code.
+
+  ⏵ Read internal/normalize/time.go, internal/feed/atom.go      (2 files)
+
+  The breakage is that each fix special-cased one input shape. The
+  invariant that actually holds: every feed timestamp must be resolved to
+  a single UTC instant at the parse boundary, and a feed that declares no
+  offset is untrusted — it gets the feed's configured fallback zone, never
+  the server's local zone. I'll centralize that in one resolver and route
+  all four parsers through it.
+```
+
+Notice what you didn't pay for: re-reading the repo, re-stating the bug, re-listing the four feeds that broke. The expensive model spent its first turn *reasoning about the accumulated context*, not rebuilding it. That's the whole point of switching in place — you're buying smarter thinking exactly where the task got hard, and only there. One caveat to be honest about: switching in place isn't free on that first turn. The new model has a cold prompt cache, so opencode re-sends the whole thread to it as uncached input tokens — you skip the *work* of re-gathering context, but you do pay to re-ingest the transcript once. That's a deliberate trade: a single uncached turn to put a stronger reasoner on the hard part, not a session restart that throws the context away.
+
+## Turn on thinking for the hard stretch
+
+A stronger base model is one lever; how hard it *thinks* is another. For reasoning-capable models, opencode exposes thinking variants — preset reasoning-effort levels you can change at runtime without picking a different model. The keybind is `variant_cycle`, bound to `ctrl+t` by default, and it steps through the variants the current model supports:
+
+```text
+  ⌃t  variant → max     (anthropic: high → max)
+```
+
+The variants are provider-shaped, so what `ctrl+t` cycles through depends on who you're talking to. Anthropic models toggle between `high` and `max`; OpenAI reasoning models step across a wider band — `none`, `minimal`, `low`, `medium`, `high`, up to `xhigh`; Google models offer `low` and `high`. You don't change the model to think harder — you bump the variant. For this timezone resolver, a notch up buys the model room to actually hold all four feed shapes in mind at once instead of patching them one at a time.
+
+Spend it deliberately. The reason you started cheap and only switched here is that the expensive combination — strong model, high variant — is exactly that, expensive, and most of `feedmill`'s work doesn't need it. Reading parsers, wiring a new source, writing a test: a cheap model on a low variant clears all of it. Reserve the heavy reasoner for the stretch that defeated the cheap one, then switch back down.
+
+## Drop back when the hard part is done
+
+Once the resolver lands and the tests go green, you're back to ordinary edits — and you don't want to keep paying reasoner rates to wire up the next feed. Open `/models` again and drop to the cheap model for the rest of the session, same thread intact:
+
+```text
+> /models               # back down to the fast model for the cleanup
+
+  ✓ model → anthropic/claude-haiku-...
+```
+
+If you're bouncing between two models repeatedly, the faster path is the recent-model cycle on `f2`, which flips between the models you've used this session without opening the picker. Either way, the session never restarted: one continuous thread, the model dialed up for the hard ten minutes and back down for the rest. That's the unit of control opencode gives you that a single-model agent can't — not "which model did I launch with," but "which model should answer *this* turn."
+
+You've now switched models by hand, mid-thread, for one stretch of work. The next question is what to do when a *part* of the work is permanently better suited to a different model — not a one-off switch you drive, but a standing assignment. [Next: give each agent its own model](/course/opencode/providers-models/per-agent-model/).

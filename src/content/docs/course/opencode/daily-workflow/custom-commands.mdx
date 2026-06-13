@@ -1,0 +1,94 @@
+---
+title: Codify the chore you keep typing
+description: "Every morning you re-narrate the same 'check every feed for staleness and open an issue' chore to opencode. Write it once as a markdown command in .opencode/commands/, pass the threshold in as an argument, and from then on it's one /staleness-sweep — the user-triggered slash surface that's a different primitive from skills."
+sidebar:
+  label: "Commands · your own slash verbs"
+---
+
+There's a chore you've done by hand most mornings this week. You open `feedmill`, and before anything else you have opencode walk every registered feed, find the ones that haven't published in a while, and open a tracking issue for each dead one so a flaky source doesn't quietly rot the reading queue. It's the same five sentences every day — "check every feed's last-published timestamp, flag anything stale past N days, open an issue per stale feed with the source name and last-seen date." Only the threshold changes: seven days on a Monday, fourteen when you've been away.
+
+Re-typing that paragraph is the waste. The instructions are stable; you are just being the thing that remembers them. opencode has a primitive built exactly for this: a **command** — a markdown file you write once and then trigger as `/staleness-sweep` from the prompt, with the changing bit passed in as an argument. This lesson turns your morning paragraph into one slash verb.
+
+## Where the file lives, and what it is
+
+A project command is a markdown file under `.opencode/commands/`, and the filename *is* the command name — `staleness-sweep.md` becomes `/staleness-sweep`. Drop it in the repo and it travels with `feedmill`: anyone who clones the project gets your chore for free. If you wanted the command on every repo you touch instead of just this one, the global path is `~/.config/opencode/commands/` — but this chore is `feedmill`-specific, so it goes in the project.
+
+The body of the file is just the prompt you'd have typed. When you run `/staleness-sweep`, opencode reads the file, substitutes any arguments, and feeds the result to the agent as if you'd written it yourself. That's the whole mechanism — a command is a saved prompt with a name and argument slots, not a new kind of execution.
+
+Have opencode write the first version, describing the chore the same way you've been narrating it each morning:
+
+```text
+> create .opencode/commands/staleness-sweep.md — it's the morning chore I keep
+  doing by hand. Walk every feed registered in feedmill, find the ones whose
+  last-published date is older than a threshold I pass in, and open one tracking
+  issue per stale feed with the source name and its last-seen date.
+
+  | Bash  mkdir -p .opencode/commands/   → approved
+
+  | Edit  .opencode/commands/staleness-sweep.md
+
+    ---
+    description: Flag feeds with no new items past a day threshold and open an issue per stale source
+    ---
+
+    Check every feed registered in feedmill for staleness.
+
+    For each registered source, find the most recent item's published
+    timestamp. Treat a feed as STALE if nothing has published in the last
+    $ARGUMENTS days. For each stale feed, open a tracking issue titled
+    "Stale feed: <source name>" whose body names the source and its
+    last-seen date. List the stale feeds you found at the end.
+
+  Apply this change?
+    Yes   No   Always
+```
+
+Read it before you approve, the same as any edit. Two things are worth noticing. The frontmatter `description` is what shows up next to `/staleness-sweep` in the slash menu, so write it as a reminder-to-future-you, not a title. And the body says `$ARGUMENTS` where the threshold goes — which is the part that makes this reusable instead of frozen at one number.
+
+## Pass the changing bit in as an argument
+
+`$ARGUMENTS` is a placeholder. Whatever you type after the command name gets substituted in before the prompt reaches the agent. So the Monday seven-day sweep is:
+
+```text
+> /staleness-sweep 7
+
+  | Read  parser/registry.go, sync/poll.go            (2 files)
+
+  Reading the source registry and the last-poll state, then I'll flag
+  anything with no item newer than 7 days and open an issue per source.
+
+  | Bash  go run ./cmd/feedmill feeds --json   → approved
+
+  Three feeds are stale past 7 days: "Linux Weekly News" (last item
+  18d ago), "Old Photoblog" (41d), "Defunct Podcast" (96d). Opening
+  one tracking issue each.
+
+  | Bash  gh issue create --title "Stale feed: Linux Weekly News" ...   → approved
+  | Bash  gh issue create --title "Stale feed: Old Photoblog" ...       → approved
+  | Bash  gh issue create --title "Stale feed: Defunct Podcast" ...     → approved
+
+  Opened 3 issues. The reading queue's dead sources are now tracked.
+```
+
+The `7` landed wherever `$ARGUMENTS` sat in the file. Come back after two weeks away and you run `/staleness-sweep 14` — same command, different threshold, no editing the file.
+
+`$ARGUMENTS` is the whole argument string. When a chore takes *several* distinct inputs you can split them positionally: `$1`, `$2`, `$3` substitute the individual tokens. If you later grew this into "sweep feeds older than N days but only in category C," the body would reference `$1` for the days and `$2` for the category, and you'd call `/staleness-sweep 14 tech`. For one input, `$ARGUMENTS` is the simpler reach; for several, positional tokens keep them straight.
+
+The same approval model still applies inside a command. The body is a prompt, not a bypass — every `bash` call and every edit it drives still goes through whatever permission the current agent has. A command saves you the *typing*; it doesn't make the agent *trusted* to run unwatched. If you want this chore to run without a human at the keyboard — say, on a cron before you wake up — that's the headless story in a later chapter, and it's a deliberate choice you make there, not something a command grants on its own.
+
+## Commands are not skills
+
+It's worth being precise about this, because opencode has a neighboring primitive that's easy to confuse. You met **skills** earlier: a `SKILL.md` whose *description* opencode is always watching, so the agent reaches for it *on its own* when your request matches. A command is the opposite trigger. Nothing fires a command until *you* type its slash name. That's the distinction in one line:
+
+- A **skill** is model-triggered — opencode decides to invoke it from its description.
+- A **command** is user-triggered — it's the slash surface *you* drive deliberately.
+
+So the test for which one to write is: do you want the agent to reach for this routine when it spots the need, or do you want to pull the trigger yourself? "Onboard a new feed format" suits a skill — it fires whenever a new source shows up mid-conversation. "Run my morning staleness sweep" suits a command — it's a thing *you* decide to do, at a moment you choose, with a threshold you name. Same repo, two routines, two different primitives because they have two different triggers.
+
+## Notice where the time went
+
+Once a chore is one keystroke, you'll run it more — and a few commands like this become a real slice of your week's model spend. opencode can show you exactly where that spend lands: `opencode stats` reports token usage and cost across your sessions, and flags like `--days`, `--models`, and `--project` slice that down so you can see which work actually cost what.
+
+That's not a tangent from codifying chores — it's the feedback loop that tells you *which* chores are worth codifying. A command you run daily that quietly burns a premium model on a job a cheap one would nail is exactly the kind of thing `stats` surfaces, and exactly the kind of thing you'd then pin to a cheaper model in the command's frontmatter. Codify the chore, then look at what it costs.
+
+Your morning paragraph is now `/staleness-sweep 7`, living in the repo, owned by the tool. The next reflex to build isn't a file at all — it's how you *talk* to the agent and move around the TUI fast enough that even the un-codified work flows. [Next: prompting and keyboard reflexes](/course/opencode/daily-workflow/prompting-and-reflexes/).
