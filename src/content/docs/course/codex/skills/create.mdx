@@ -1,0 +1,90 @@
+---
+title: Author a bank-import procedure as a SKILL.md Codex can run
+description: "A Skill is a directory with a SKILL.md inside — YAML frontmatter saying when to use it, a markdown body saying what to do. Build the bank-CSV import Skill in .agents/skills/ end to end."
+sidebar:
+  label: "Create · SKILL.md"
+---
+
+You've decided that onboarding a new bank's CSV is worth writing down. Good instinct — the test for "this should be a Skill" is exactly the one you just applied: *you keep re-typing the same multi-step procedure into the chat.* That's the signal. Let's turn it into a directory Codex can follow without you in the loop.
+
+## A Skill is a directory, not a line of config
+
+A Skill isn't a setting you toggle. It's a folder on disk with one required file inside it: `SKILL.md`. The folder's name *is* the Skill's name, and the `SKILL.md` is the entrypoint Codex reads. For a Skill you want available in *this* project, it lives in the repo under `.agents/skills/`:
+
+```text
+budgetcli/
+└── .agents/
+    └── skills/
+        └── import-bank-csv/
+            └── SKILL.md
+```
+
+That path matters and it is easy to get wrong: Codex reads Skills from **`.agents/skills/`**, not from inside `.codex/`. The `.agents/` directory is the cross-tool convention — the same place other agents following the Agent Skills standard look — which is what lets one `SKILL.md` be reused across tools. Where the directory lives decides who gets the Skill: `.agents/skills/` in the repo means everyone who clones `budgetcli` has it; `~/.agents/skills/` in your home directory would make it personal, available across all your projects but yours alone. Since the import procedure references `budgetcli`'s own fields and conventions, it belongs in the repo, committed and shared like any other project file. Codex scans several locations in priority order — project, repo root, home, admin — and the full list is on the [Codex Skills page](https://developers.openai.com/codex/skills).
+
+```text
+> mkdir -p .agents/skills/import-bank-csv
+```
+
+## The two halves of SKILL.md
+
+Every `SKILL.md` has two parts: YAML frontmatter between `---` markers, and a markdown body below it. They do completely different jobs, and keeping that distinction straight is the whole skill of writing Skills:
+
+- **Frontmatter** is the *label on the outside of the box.* Codex reads it to decide *whether* to open the Skill at all. Two fields are required — `name` and `description` — and the `description` is what your request gets matched against.
+- **Body** is *what's inside the box.* It only loads once the Skill actually fires. This is where the procedure lives: the actual steps.
+
+That split is deliberate. At the start of a session Codex loads only the frontmatter of every Skill it can see — cheap, just names and descriptions. The body stays on disk until the Skill is judged relevant, and any extra files stay unread until the body points at them. You pay for a Skill's full instructions only when it's actually in use.
+
+Here's the whole thing for our import procedure:
+
+```text
+// .agents/skills/import-bank-csv/SKILL.md
+---
+name: import-bank-csv
+description: >-
+  Import a new bank or credit-card CSV export into budgetcli when the
+  file's column layout isn't one budgetcli already handles. Use when the
+  user wants to onboard a new bank, add support for a statement export,
+  or import transactions from an unfamiliar CSV shape.
+---
+
+Follow these steps to onboard a new bank's CSV export. Stop and ask the
+user if a sample file isn't available — do not guess a layout.
+
+1. Read the first few rows of the sample export. Identify which column
+   holds the transaction date, which holds the amount, and which holds
+   the description/merchant.
+2. Note the date format in the file (for example MM/DD/YYYY or
+   YYYY-MM-DD) and the amount format — a single signed column, or
+   separate debit and credit columns.
+3. Map those columns onto budgetcli's transaction fields. Normalise
+   every date to budgetcli's stored format.
+4. Convert each amount to integer cents. Parse the decimal string and
+   multiply to cents — never store money as a float. Round half-up at
+   the cent. A value of "42.50" becomes 4250, not 42.5.
+5. Write a small importer for this bank's layout under the importers
+   directory, following the structure of the existing bank importers.
+6. Run it against the sample and report a few parsed rows back, showing
+   the raw line and the resulting integer-cents transaction, so the user
+   can confirm the mapping before a full import.
+```
+
+The `description` is doing the heavy lifting: it names the *situation* ("onboard a new bank… import transactions from an unfamiliar CSV shape") rather than just the action. That phrasing is what Codex pattern-matches against when you say "I've got a statement from a new card to load in" — we'll tune it deliberately in the [next lesson](/course/codex/skills/trigger/). For now, notice that `name` and `description` are the *only* required fields; everything else about a Skill is optional. The `name` must match the directory exactly — `import-bank-csv` here — and the `description` is the field Codex uses to decide when to apply the Skill, so a vague one is the single most common reason a Skill never fires.
+
+## Keep the body a procedure, not an essay
+
+The body is a set of standing instructions, and once a Skill fires its content stays in the conversation for the rest of the turn — so every line is a recurring cost. Write it the way you'd write `AGENTS.md`: *state what to do, skip the why.* Numbered steps, concrete checks, clear failure behaviour. No narration about why cents matter or how a particular bank historically formatted its dates — just the moves, in order, with the rules that matter stated once.
+
+Two details in that body are worth seeing for what they are:
+
+- **The "stop and ask if a sample isn't available" line.** A procedure run by a human has an implicit "obviously don't invent a column layout I can't see." Codex has no such instinct unless you write it. Bake the guardrails into the body; a Skill is only as safe as its instructions.
+- **The cents-not-float step, restated.** This rule already lives in your `AGENTS.md` — but the import path is exactly where Codex keeps slipping, so the Skill repeats it at the precise moment it bites. A Skill can carry the judgment a procedure needs, not just the commands. (We'll come back to *when* a fact belongs in the Skill body versus the rules file in the [last lesson](/course/codex/skills/vs/).)
+
+## Putting heavier material in subdirectories
+
+The procedure above is self-contained, which is the right place to start. But Skills aren't limited to a single file — a Skill directory can hold supporting material that loads only when the body points at it. A `scripts/` folder for a helper the steps tell Codex to run, a `references/` folder for a long-form note (say, a table of every bank layout you've onboarded so far), an `assets/` folder for a template importer to copy. None of it loads at session start; none of it loads when the Skill fires; it loads only at the moment an instruction reaches for it. That three-tier loading — frontmatter always, body on activation, extra files on demand — is what keeps a rich Skill cheap until it's actually working. For our import procedure a single `SKILL.md` is plenty; reach for subdirectories only when the body genuinely outgrows itself.
+
+## Aligning with the standard
+
+One reason to write this in `.agents/skills/` rather than somewhere Codex-specific: the `SKILL.md` you just wrote — `name` + `description` frontmatter, a markdown procedure below — is the **Agent Skills** standard, the same shape other agents read. The procedure for turning a bank export into integer-cents transactions isn't a Codex secret; it's `budgetcli` knowledge, and the standard is what lets it travel. Codex layers its own optional config on top for invocation policy and tool dependencies — that's the [next lesson's](/course/codex/skills/trigger/) territory — but the core file is portable by design.
+
+With the Skill written, the real question is whether Codex reaches for it on its own when you load a new bank. That recognition lives entirely in the `description` — so [let's make it fire at the right time, and only the right time](/course/codex/skills/trigger/).

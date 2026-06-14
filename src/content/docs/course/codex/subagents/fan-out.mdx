@@ -1,0 +1,48 @@
+---
+title: Fan out the recategorisation across parallel subagents
+description: "When a job splits into parts that don't depend on each other, spawn several subagents at once. Each works its slice in isolation; the parent synthesises the results. Plus the two tests for when parallelism is real leverage versus showing off."
+sidebar:
+  label: "Fan out · parallel slices"
+---
+
+The last lesson handed the whole recategorisation to one subagent, which ground through three years of history in sequence. That works, but it's slow for no good reason: the 2023 transactions don't depend on the 2024 transactions, the checking account doesn't depend on the savings account, one import batch doesn't depend on the next. The job is *embarrassingly parallel* — independent items, the same stable rule applied to each, a discrete result per slice. When work has that shape, running it serially is leaving speed on the table.
+
+## The two tests before you split anything
+
+Before you fan out, two questions decide whether parallelism is leverage or theatre.
+
+**The independence test.** *If two workers finished in a different order, would the final result change?* For the recategorisation, no — each row's category depends only on that row and the taxonomy, never on what another worker decided. That's your licence to parallelise. The moment the answer is yes — a slice needs another slice's output — you don't have independent work, you have a hidden dependency, and you should make it explicit and chain those parts in sequence instead of guessing.
+
+**Write the aggregation first.** Before you spawn anything, you should be able to say in one sentence how the slices come back together: *"concatenate the per-slice change-logs and sum the per-category counts."* If you can't describe the merge that simply, your decomposition is wrong, not your tooling. Fan-out is an aggregation problem wearing a spawning costume — decide how the answers reduce *before* you scatter the questions.
+
+The recategorisation passes both. So we split it.
+
+## Spawning workers on the slices
+
+The natural split is one worker per year, or per account, or per import file. You describe the slices and ask for parallel subagents; the parent dispatches them, each on its own slice, each in its own isolated context:
+
+```text
+> Recategorise the history in parallel — one subagent per year (2023,
+  2024, 2025). Each works only its year's transactions against the category
+  list in AGENTS.md, leaves amounts untouched, and returns a change-log plus
+  per-category before/after counts. Don't fan out wider than the concurrency
+  limit; queue the rest.
+```
+
+Each worker reads, classifies, and dumps in *its own* window — and crucially that noise stays there. The thousand rows the 2023 worker reasons over never mix with the 2024 worker's rows, and none of them enter your thread. When the slices finish, the parent reads back the handful of summaries and reduces them with the aggregation you defined up front: one combined change-log, one set of before/after totals.
+
+Codex enforces a ceiling on how many subagents run concurrently, and queues the overflow rather than failing — reaching the cap just means later workers wait their turn. The practical default is to **start narrow** — three or four workers shows real speedup with rate-limit headroom — and widen only if the lower tier's ceiling is the thing slowing you down. Every worker counts against your account's rate budget, so concurrency is a design constraint, not free throughput. The exact concurrency knob and its default live in the [Codex configuration reference](https://developers.openai.com/codex/); *Unverified:* the specific key name and number — confirm against the live docs.
+
+## When parallel is just overkill
+
+Once the fan-out works, the temptation is to reach for it everywhere. Resist that. It's overkill, or worse, when:
+
+- **The slices depend on each other.** If classifying this year needs a rule the previous year's run inferred, they can't run at once — you'd be guessing. Chain them: one worker's result feeds the next.
+- **The work is light.** Spinning up several fresh workers that each re-gather context can be slower than one thread that already knows the codebase. Fan-out has a fixed startup cost; tiny jobs don't earn it back.
+- **You fan out wider than you can aggregate.** This is the sharp edge. When subagents finish, their results return to the parent — and many workers each handing back a *detailed* report is its own flood, arriving all at once. The fix is the same as in the last lesson: brief each one to come back terse. "Return the counts and the rows you couldn't classify," not "return everything you found." Twenty workers each writing you an essay is a different mess than the one you were avoiding, but a mess all the same.
+
+A second guardrail belongs to bulk fan-out specifically: **partial failure is data, not a crash.** If three of twenty workers hit a rate limit, the parent keeps the seventeen good results and retries only the three — and it retries them a *capped* number of times, never indefinitely. A fan-out that loops forever on a stuck worker is a worse outcome than one that returns seventeen-of-twenty and tells you which three to look at.
+
+So the shape that works: fan out across a *handful* of independent, heavy slices; tell each worker to come back terse; define the merge before you spawn; cap the retries. That's leverage.
+
+The recategorisation fanned out cleanly because the workers only *read* shared files and wrote isolated outputs. The money-handling refactor is different — there, several workers need to *edit* the repo at the same time, and the moment two agents write to the same working tree they start reading each other's half-finished files. [Next we give each worker its own git worktree](/course/codex/subagents/worktrees/).

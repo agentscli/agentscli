@@ -1,0 +1,43 @@
+---
+title: Make CI runs reproducible with --ignore-user-config and --ignore-rules
+description: "An unattended run that loads your personal config and the project's rules behaves differently on every machine and every month. Two flags strip that drift away, so the same commit and prompt produce the same behaviour anywhere."
+sidebar:
+  label: "Reproducible · ignore-user-config, ignore-rules"
+---
+
+The CI job from the [last lesson](/course/codex/automation/ci/) works, but it carries a hidden dependency. Every `codex exec` run — local or in CI — loads two layers of context automatically: your **personal config** from `~/.codex/`, and the **project's rules**, the `AGENTS.md` chain Codex walks from the git root down to the working directory. That's the right default when *you* run it; it's the reason the agent already knows that budgetcli stores money as integer cents. But it's a liability the moment the run is supposed to be identical everywhere.
+
+## Why the defaults drift
+
+Think about what's actually loading into that CI run. Your `~/.codex/config.toml` holds *your* preferences — your default sandbox, your model effort, your personal `~/.codex/AGENTS.md`. None of that exists on the runner; if it did (say a teammate triggers the job from their own setup, or you mount a home dir), it would be *their* preferences, not yours. And the project `AGENTS.md` chain changes whenever anyone edits a rules file. So the same commit and the same prompt can produce different behaviour on your laptop versus the runner, and different behaviour this month versus next — not because the code changed, but because the *context* did.
+
+For an interactive session that drift is invisible and harmless. For an unattended check you want to trust as a gate, it's exactly the thing to kill. Reproducibility here is the same context-engineering idea the whole course turns on, pointed at CI: pin the context that goes in, and you can rely on the behaviour that comes out.
+
+## The two flags
+
+`codex exec` takes two flags that strip those layers away ([CLI reference](https://developers.openai.com/codex/cli/reference)):
+
+- **`--ignore-user-config`** prevents Codex from loading `~/.codex/config.toml`. The run no longer inherits whatever personal defaults happen to be on the box — it uses only the flags and config you pass explicitly. This is what keeps a runner's stray home directory, or your own machine-specific tweaks, from leaking into the result.
+- **`--ignore-rules`** skips loading the project rule files — the `AGENTS.md` chain and any execpolicy rules. The run sees only the prompt you give it, with no implicit instructions riding along from files that might have changed since you last looked.
+
+Layer them onto the CI command from the last lesson and you get a run that depends on nothing but the commit, the prompt, and the flags right there in front of you:
+
+```text
+codex exec "Recategorise new transactions, then run the suite. Money is integer cents — never float." \
+  --ignore-user-config \
+  --ignore-rules \
+  --ask-for-approval never \
+  --sandbox workspace-write
+```
+
+## Mind what `--ignore-rules` takes with it
+
+There's a deliberate trade in that second flag worth pausing on. `AGENTS.md` is how budgetcli told Codex its non-negotiables — money is integer cents, here's the category taxonomy, here's how dates are handled. `--ignore-rules` throws all of that away for the sake of determinism. So if those rules genuinely matter to the job — and for a transaction categoriser, the cents rule absolutely does — you have to **fold them back into the prompt explicitly**, the way the example above restates the cents rule inline. The point of stripping the rules file isn't to run without rules; it's to make the rules *visible and pinned* in the command instead of inherited from a file that can drift underneath you. What the run depends on should be staring at you in the workflow, not hiding in a file three directories up.
+
+Whether you reach for both flags or just one is a judgement call. `--ignore-user-config` is almost always right in CI — personal config has no business deciding a shared gate. `--ignore-rules` you reach for when you want full determinism and are willing to make every instruction explicit; if your `AGENTS.md` is stable and you *want* the run to honour it, you might keep it. The honest default for a gate you'll trust unattended is to strip both and pin what matters into the prompt.
+
+## When the org owns the policy
+
+One layer above all of this, for teams on the plans that support it: Codex has a **managed-configuration** layer an administrator can enforce across the CLI, app, and IDE, and a [`requirements.toml`](https://developers.openai.com/codex/enterprise/managed-configuration) org-policy file that constrains the security-sensitive settings — approval mode, sandbox, web-search and MCP allowlists. Where that's in force, an admin can guarantee the floor: no unattended run, however it was launched, gets to set itself a looser sandbox or a more permissive approval mode than policy allows. If a setting conflicts with the requirements, Codex falls back to a compatible value and tells you. You don't have to set any of this up to ship budgetcli's check — but it's worth knowing the lever exists, because it's how an organisation makes the safe posture you've been building by hand a *default*, not a thing every engineer has to remember.
+
+Your CI run is now reproducible: it depends on the commit, the prompt, and the flags in front of you, and nothing that can quietly drift between machines or months. That covers the whole span of jobs a single `codex exec` call can carry — one prompt, one result, one exit code. The last lesson looks at what happens when a job outgrows that shape: when you need several stages, conditional handoffs, and typed gates between them, and a shell script around `exec` starts buckling. That's [the Agents SDK](/course/codex/automation/sdk/).

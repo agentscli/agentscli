@@ -1,0 +1,37 @@
+---
+title: Scope a server to one agent
+description: "A workspace-level server is open to every conversation. A custom agent can carry its own MCP instead — so the library-reviewer gets the registry it needs, and nothing else does."
+sidebar:
+  label: "Scope · per-agent servers"
+---
+
+The registry server you connected is wired at the workspace level. That means every conversation in `shared-lib` can reach it — a quick Ask, a throwaway Edit, any agent you spin up. For a low-stakes tool that's fine. But this is a high-blast-radius repo, and a registry that can enumerate twelve services' worth of internal dependencies is exactly the kind of reach you'd rather *grant on purpose* than leave open by default.
+
+There's a tighter way to wire it. Cast your mind back to Act 1, when you built the **`library-reviewer`** — the custom agent that holds `shared-lib`'s compatibility rules so you don't re-brief them every session. That reviewer is *precisely* the consumer of the registry. When it's checking whether a change breaks anyone, it needs to know who imports the library. No other conversation does.
+
+## Give the agent its own MCP
+
+A custom agent can declare its own servers through an **`mcp-servers`** property in its `.agent.md`. Instead of the registry being ambient across the whole workspace, it becomes part of *who the reviewer is* — bundled into the same file that already carries its job description and its scoped tools:
+
+```yaml
+---
+name: library-reviewer
+description: Reviews changes to shared-lib for breakage across its consumers.
+mcp-servers:
+  - service-registry
+---
+```
+
+Now the reach and the persona travel together. The `library-reviewer` can ask the registry "who depends on `shared-lib`?" the moment it needs to — which is the exact thing you did by hand in Act 1 when you assembled the consumer list before fanning subagents out. With the server scoped to the agent, you don't assemble that list anymore. The reviewer pulls it itself, then delegates the breakage check across whatever consumers the registry names.
+
+## Why scope it at all
+
+Scoping isn't bureaucracy — it's the same judgment that's run through this whole act. Every capability you hand an agent is reach it can use *without asking you each time*. On `shared-lib`, where a wrong move ripples to a dozen apps, you want each grant to be deliberate: this agent, this server, for this reason. Workspace-level MCP says "anyone here can reach the registry." Agent-level MCP says "the reviewer can, because that's its job, and the rest of your conversations stay narrow." For the careful half of the course, the narrower default is the right one.
+
+It also makes the reviewer *portable in the right way*. The agent file now carries everything it needs — its rules, its tools, and the one external system it depends on. Hand that file to a teammate and they get a reviewer that already knows who imports the library, with no separate "and also wire up the registry" step.
+
+## Where Act 1 stands
+
+Step back and look at what you've assembled for the careful work. A `library-reviewer` that knows the compatibility rules. Subagents that fan a breakage check across every consumer. A Skill that carries the audit-event convention. And now a registry the reviewer can query itself, scoped so the reach is contained to the work that needs it. The machinery for changing a twelve-consumer library safely is in place.
+
+There's one question all of it has been circling and never quite answered: when this agent actually runs — calls the registry, edits a file in `shared-lib`, executes a command — **how much do you let it do before you look?** That's the climax of Act 1, where every safeguard you've built gets put under one control. [Next chapter: Permissions & autonomy](/course/copilot/permissions/).

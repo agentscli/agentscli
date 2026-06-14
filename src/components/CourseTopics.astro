@@ -1,0 +1,170 @@
+---
+// Custom topic switcher for starlight-sidebar-topics.
+//
+// The plugin renders topics as a flat list. We want the two course topics
+// (Claude Code, Codex) to read as children nested under the "Courses" parent,
+// while every other topic (Foundations, …) stays a top-level row. Grouping is
+// data-driven: a topic whose link sits *below* the Courses hub link
+// (`/course/…`) is treated as a child; the hub itself (`/course/`) is the
+// parent; anything else is a standalone top-level topic.
+//
+// Reads the documented `Astro.locals.starlightSidebarTopics` data, so it stays
+// in sync with the config-defined topics. See the plugin's custom-topic-list
+// guide.
+import { Badge, Icon } from '@astrojs/starlight/components';
+
+const { topics } = Astro.locals.starlightSidebarTopics;
+
+const COURSE_HUB = '/course/';
+
+const normalize = (link) => (link.endsWith('/') ? link : `${link}/`);
+
+const isHub = (t) => normalize(t.link) === COURSE_HUB;
+const isCourseChild = (t) => normalize(t.link).startsWith(COURSE_HUB) && !isHub(t);
+
+const hub = topics.find(isHub);
+const courseChildren = topics.filter(isCourseChild);
+const topLevel = topics.filter((t) => !isCourseChild(t));
+---
+
+<ul class="starlight-sidebar-topics">
+	{
+		topLevel.map((topic) => (
+			<li>
+				<a
+					href={topic.link}
+					class:list={{ 'starlight-sidebar-topics-current': topic.isCurrent }}
+				>
+					{topic.icon && (
+						<div class="starlight-sidebar-topics-icon">
+							<Icon name={topic.icon} />
+						</div>
+					)}
+					<div>
+						{topic.label}
+						{topic.badge && (
+							<Badge
+								class="starlight-sidebar-topics-badge"
+								text={topic.badge.text}
+								variant={topic.badge.variant}
+							/>
+						)}
+					</div>
+				</a>
+
+				{isHub(topic) && courseChildren.length > 0 && (
+					<ul class="starlight-sidebar-topics-children">
+						{courseChildren.map((child) => (
+							<li>
+								<a
+									href={child.link}
+									class:list={{
+										'starlight-sidebar-topics-current': child.isCurrent,
+									}}
+								>
+									<div>
+										{child.label}
+										{child.badge && (
+											<Badge
+												class="starlight-sidebar-topics-badge"
+												text={child.badge.text}
+												variant={child.badge.variant}
+											/>
+										)}
+									</div>
+								</a>
+							</li>
+						))}
+					</ul>
+				)}
+			</li>
+		))
+	}
+</ul>
+
+<style>
+	ul {
+		list-style: none;
+		padding: 0;
+	}
+
+	.starlight-sidebar-topics::after {
+		content: '';
+		display: block;
+		margin-top: 1rem;
+		height: 1px;
+		border-top: 1px solid var(--sl-color-hairline-light);
+	}
+
+	li {
+		overflow-wrap: anywhere;
+	}
+
+	.starlight-sidebar-topics > li + li {
+		margin-top: 0.25rem;
+	}
+
+	a {
+		align-items: center;
+		color: var(--sl-color-white);
+		display: flex;
+		font-size: var(--sl-text-base);
+		font-weight: 600;
+		gap: 0.5rem;
+		line-height: 1.5;
+		padding: 0.3em 0.5rem;
+		text-decoration: none;
+	}
+
+	a:is(.starlight-sidebar-topics-current, :hover, :focus-visible) {
+		color: var(--sl-color-accent-high);
+	}
+
+	:global([data-theme='light']) a.starlight-sidebar-topics-current {
+		color: var(--sl-color-accent);
+	}
+
+	.starlight-sidebar-topics-icon {
+		align-items: center;
+		border-radius: 0.25rem;
+		border: 1px solid var(--sl-color-gray-4);
+		display: flex;
+		justify-content: center;
+		padding: 0.25rem;
+	}
+
+	a:is(.starlight-sidebar-topics-current, :hover, :focus-visible)
+		.starlight-sidebar-topics-icon {
+		background-color: var(--sl-color-text-accent);
+		border-color: var(--sl-color-text-accent);
+		color: var(--sl-color-text-invert);
+	}
+
+	.starlight-sidebar-topics-badge {
+		margin-inline-start: 0.25em;
+	}
+
+	/* Nested course topics: indented under the Courses parent, lighter weight. */
+	.starlight-sidebar-topics-children {
+		margin-top: 0.25rem;
+		/* align children under the parent label, past the icon box */
+		margin-inline-start: 0.85rem;
+		padding-inline-start: 0.6rem;
+		border-inline-start: 1px solid var(--sl-color-hairline-light);
+	}
+
+	.starlight-sidebar-topics-children li + li {
+		margin-top: 0.125rem;
+	}
+
+	.starlight-sidebar-topics-children a {
+		font-weight: 500;
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-1);
+	}
+
+	.starlight-sidebar-topics-children
+		a:is(.starlight-sidebar-topics-current, :hover, :focus-visible) {
+		color: var(--sl-color-accent-high);
+	}
+</style>
