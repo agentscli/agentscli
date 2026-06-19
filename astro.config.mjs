@@ -79,6 +79,10 @@ export default defineConfig({
 			// switcher so each course opens in isolation.
 			plugins: [
 				starlightBlog({
+						// 'none' keeps starlight-blog from registering its own ThemeSelect override,
+						// which would collide with our custom ThemeSelect and emit a build warning.
+						// Matches current rendered behavior (no blog nav link).
+						navigation: 'none',
 					authors: {
 						sourabh: {
 							name: 'Sourabh Kushwah',
