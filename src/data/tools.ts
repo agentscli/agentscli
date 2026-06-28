@@ -6,7 +6,7 @@ export type Tool = {
 export const tools: Tool[] = [
   { slug: 'claude-code', label: 'Claude Code' },
   { slug: 'codex', label: 'Codex' },
-  { slug: 'opencode', label: 'opencode' },
+  { slug: 'opencode', label: 'OpenCode' },
   { slug: 'cursor', label: 'Cursor' },
   { slug: 'copilot', label: 'Copilot' },
 ];

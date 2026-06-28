@@ -114,7 +114,7 @@ export default defineConfig({
 								{ label: 'Codex', link: '/course/codex/' },
 								{ label: 'GitHub Copilot', link: '/course/copilot/' },
 								{ label: 'Cursor', link: '/course/cursor/' },
-								{ label: 'opencode', link: '/course/opencode/' },
+								{ label: 'OpenCode', link: '/course/opencode/' },
 							],
 						},
 						{
@@ -496,11 +496,11 @@ export default defineConfig({
 							],
 						},
 						{
-							label: 'opencode',
+							label: 'OpenCode',
 							link: '/course/opencode/',
 							icon: 'open-book',
 							items: [
-								{ label: 'opencode overview', slug: 'course/opencode' },
+								{ label: 'OpenCode overview', slug: 'course/opencode' },
 								{
 									label: 'Getting started',
 									items: [
@@ -571,7 +571,7 @@ export default defineConfig({
 									],
 								},
 								{
-									label: 'Extending opencode',
+									label: 'Extending OpenCode',
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/extending' },
 										{ label: 'MCP servers', slug: 'course/opencode/extending/mcp-servers' },

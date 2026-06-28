@@ -1,17 +1,17 @@
 ---
 title: Gate moves with plugin hooks
-description: "You want feedmill's linter to run on every edit and a write to the protected sync path to be impossible. opencode's hooks aren't a settings list — they're a JS/TS plugin that subscribes to lifecycle events through an injected shell, and can register custom tools while it's there."
+description: "You want feedmill's linter to run on every edit and a write to the protected sync path to be impossible. OpenCode's hooks aren't a settings list — they're a JS/TS plugin that subscribes to lifecycle events through an injected shell, and can register custom tools while it's there."
 sidebar:
   label: "Plugins · hooks & custom tools"
 ---
 
 Two things keep biting you on `feedmill`. First: the agent edits a parser, reports done, and you only find out at the next `go vet` that it left the package un-`gofmt`'d — the lint should have run the moment the file changed, not whenever you remembered to ask. Second, and sharper: there's a path you never want the agent to touch. `internal/sync/state.go` holds the cursor the cron sync server reads at 3am to know where each feed left off; an edit there doesn't break a test, it silently re-downloads or skips a week of items in production. You've told the agent in `AGENTS.md` to leave it alone, and mostly it does — but "mostly" is the wrong guarantee for the one file that quietly corrupts your reading queue.
 
-Both wants are the same shape: *something deterministic should happen on a lifecycle event, regardless of what the model decided in the moment.* If you came from Claude Code or Codex you'll reach for a hooks block in a settings file — a declarative list of "on this event, run this command." opencode doesn't have one. Its hook model is **plugin-based**: you write a JS/TS module that subscribes to events in code, and the same module can register custom tools. It's more setup than a config line, and more power — the gate is real code with the full shell in hand, not a string template.
+Both wants are the same shape: *something deterministic should happen on a lifecycle event, regardless of what the model decided in the moment.* If you came from Claude Code or Codex you'll reach for a hooks block in a settings file — a declarative list of "on this event, run this command." OpenCode doesn't have one. Its hook model is **plugin-based**: you write a JS/TS module that subscribes to events in code, and the same module can register custom tools. It's more setup than a config line, and more power — the gate is real code with the full shell in hand, not a string template.
 
 ## A plugin is a function that returns hooks
 
-A plugin is a JS/TS module exporting a function. opencode calls it once at startup with a context object and keeps whatever it returns. The context is the useful part:
+A plugin is a JS/TS module exporting a function. OpenCode calls it once at startup with a context object and keeps whatever it returns. The context is the useful part:
 
 ```ts
 // .opencode/plugins/feedmill-guard.ts
@@ -44,7 +44,7 @@ A quick note on *where this file lives*, because the docs and the community drif
 
 Local file for the thing you're writing today; the array for something you want to share or pull from npm.
 
-One thing to keep straight as you wire these up: opencode distinguishes *event-bus event names* from *subscribable hook keys*, and they don't line up one-to-one. `file.edited` is an event **type** delivered through a generic `event` handler, not a top-level hook key you subscribe to directly. The keys you actually return are things like `tool.execute.before`, `tool.execute.after`, the `event` handler (where `file.edited` and friends arrive), the permission hook (`permission.ask`), the command hook (`command.execute.before`), `config`, `shell.env`, and a set of `experimental.*` transforms — plus session and server activity, which arrives as event *types* through that same `event` handler rather than as their own keys. The next two sections show both shapes.
+One thing to keep straight as you wire these up: OpenCode distinguishes *event-bus event names* from *subscribable hook keys*, and they don't line up one-to-one. `file.edited` is an event **type** delivered through a generic `event` handler, not a top-level hook key you subscribe to directly. The keys you actually return are things like `tool.execute.before`, `tool.execute.after`, the `event` handler (where `file.edited` and friends arrive), the permission hook (`permission.ask`), the command hook (`command.execute.before`), `config`, `shell.env`, and a set of `experimental.*` transforms — plus session and server activity, which arrives as event *types* through that same `event` handler rather than as their own keys. The next two sections show both shapes.
 
 ## Lint on every edit with the `event` handler
 
@@ -144,6 +144,6 @@ The line between a custom tool and a skill is worth holding: a [skill](/course/o
 
 ## Which surface, again
 
-You've now seen all three extension surfaces close on `feedmill`, and the plugin is the one that does what neither MCP nor LSP can: it acts on opencode's *own* lifecycle. MCP reaches *out* to systems beyond the repo; LSP reads *in* from your code's type system; a plugin sits *inside the loop itself*, firing on edits and tool calls and registering tools the loop can use. When the need is "something must happen every time the agent does X, no matter what it decided" — lint on edit, wall off a path, expose a project-specific verb — that's a plugin, and only a plugin.
+You've now seen all three extension surfaces close on `feedmill`, and the plugin is the one that does what neither MCP nor LSP can: it acts on OpenCode's *own* lifecycle. MCP reaches *out* to systems beyond the repo; LSP reads *in* from your code's type system; a plugin sits *inside the loop itself*, firing on edits and tool calls and registering tools the loop can use. When the need is "something must happen every time the agent does X, no matter what it decided" — lint on edit, wall off a path, expose a project-specific verb — that's a plugin, and only a plugin.
 
 That's the chapter: reach, intelligence, and a gate that can't be argued with, all wired into the running project rather than bolted on as demos. Next we leave the repo behind entirely — turning a `feedmill` debugging session into a link a teammate can read, then driving the same fix headless against its own sync server. [Next: sharing & headless](/course/opencode/share-and-headless/).
