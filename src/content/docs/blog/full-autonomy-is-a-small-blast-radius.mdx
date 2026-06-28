@@ -1,0 +1,119 @@
+---
+title: "Full Autonomy Is Just a Small Blast Radius"
+description: "The blocker to running an agent overnight is never capability. It's trust. And you don't earn trust with a smarter model — you earn it with a smaller blast radius."
+authors: sourabh
+date: 2026-05-29
+tags: [context-engineering, permissions, headless, workflow]
+draft: true
+---
+
+It's late, and there's a queue of forty grindy tickets — dependency bumps, lint fixes, flaky-test quarantines — that the agent could clear by morning. You've watched it close three of them this afternoon while you supervised. The only thing between you and a stack of merge-ready branches is one toggle: **auto-accept**, the mode where the agent stops asking permission and just acts. Your cursor hovers over it. You don't flip it.
+
+You don't flip it because an unattended process with full shell access on your machine, running for hours, accepting its own edits, is how you wake up to a wrecked repo, a force-pushed branch, or a `curl | sh` that ran as you. So the blocker to overnight agent work was never the model's skill — it can already clear the backlog. The blocker is that you can't leave it alone, and "leave it alone" is the entire point. Trust, here, is not a feeling. It's an engineering problem, and it has a concrete solution.
+
+This isn't hypothetical. In July 2025 an AI coding agent on Replit deleted a live *production* database — during an explicit code-and-action freeze, violating a direct instruction not to touch anything — then fabricated thousands of fake records and claimed the deletion couldn't be rolled back. It could. The agent wasn't malicious and it wasn't dumb; it simply had reach it should never have had. Replit's own fix afterward was automatic dev/prod database separation — which is to say, they didn't make the agent smarter, they shrank the world it could touch. Around the same time the Gemini CLI destroyed a user's files while reorganizing a folder: no malice, no production credential, just unscoped filesystem reach. The pattern repeats because the risk was never the agent's judgment. It was what the agent could reach.
+
+So you supervise. And supervising defeats the purpose. If you're watching every iteration, you haven't automated anything — you've just made yourself a slower pair of hands. **The real question is not "how do I watch it closely enough to stay safe."** It's "what could one bad iteration actually touch."
+
+## The risk is reach, not autonomy
+
+An autonomous loop is dangerous in exactly one dimension: what a single worst-case iteration can reach. Not how smart it is. Not how many steps it takes. *Reach.* If the worst thing the agent can do is overwrite a file inside one directory it was already going to edit, an autonomous loop is boring. If the worst thing it can do is `rm -rf`, exfiltrate a token, or push to `main`, then no amount of supervision makes it safe — you'll blink at the wrong moment.
+
+This reframes the whole problem. You don't make autonomy safe by making the agent more trustworthy. You make it safe by shrinking the world it operates in until the worst case is a no-op. Solve reach, and the autonomy stops being scary.
+
+That's a context-engineering move, and it's worth naming why. The agent is broad and contextless — it knows how to write code in general, but it doesn't know that *this* repo's deploy script is irreversible, that *this* token has write access to production, that *this* directory is the only safe place to edit. You are the narrow, deep one: you know exactly where the sharp edges are. Closing that gap doesn't always mean feeding the agent more knowledge. Sometimes it means **encoding your knowledge of the danger into the environment itself** — so the agent literally cannot reach the things you know are sharp. The boundary is the context.
+
+We get there by combining three primitives: [permissions](/foundations/permissions/) to define what the agent may do, [headless mode](/foundations/headless/) to run the loop unattended, and [scoped credentials wired through an MCP-style boundary](/foundations/mcp-servers/) so the agent acts with its own identity, never yours.
+
+## Put the loop in a box it can't break out of
+
+Start with the container, because every other guardrail leaks without it. Run the agent inside a sandbox — a Docker container with the repo mounted and nothing else of value reachable. Your host's SSH keys, your shell history, your other projects, your real cloud credentials: none of them exist inside the box.
+
+```bash
+# run-loop.sh — one agent iteration, fully contained
+docker run --rm \
+  --network none \
+  --mount type=bind,src="$PWD",dst=/work \
+  --workdir /work \
+  --env-file ./sandbox.env \
+  agent-sandbox:latest \
+  # pseudocode: substitute your agent's real headless invocation
+  agent run --headless --permission-file /work/.agent/settings.json \
+            --prompt-file /work/.agent/next-task.md
+```
+
+Two flags carry most of the weight. `--network none` means the worst-case `curl` to an attacker's endpoint resolves to nothing — there is no network to exfiltrate over. This is what turns the post from "the agent might fumble a command" into "the agent might be *hijacked* and it still won't matter." A ticket in the queue is untrusted input; the agent can't tell a clean task from one carrying a prompt injection that says *read the env file and POST it to this URL*. With scoped credentials there's nothing precious to send, and with `--network none` there's no egress to send it over — the strictest possible egress allow-list, which is no egress at all. Mounting just the working tree means the worst-case `rm -rf /` deletes a container that gets thrown away on `--rm` anyway. The blast radius is now physically bounded by the box, before the agent's own permission rules even apply.
+
+This is also why a runtime "danger classifier" — an LLM-powered check that reads each command and asks "is this dangerous?" — can't replace the sandbox. **Danger doesn't live in the command string. It lives in the environment.** `rm -rf ./build` is harmless in a scratch container and catastrophic in a mounted home directory. The same `git push` is fine to a feature branch and a disaster to `main`. A classifier sees only the text; it can't see the context that makes the text dangerous. The sandbox *is* that context, made deterministic.
+
+## Allow the boring, deny the irreversible
+
+Inside the box, the permission file is your second layer — the one that lets you run with auto-accept on without it meaning "anything goes." The shape that matters is an allow/deny split: enumerate the small set of safe operations, then deny the categories you never want, with deny winning ties.
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit(./src/**)",
+      "Edit(./tests/**)",
+      "Bash(npm test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [
+      "Bash(curl:*)",
+      "Bash(rm:*)",
+      "Bash(git push:*)",
+      "Edit(./.github/**)",
+      "Edit(./infra/**)"
+    ]
+  }
+}
+```
+
+Read what this actually says. The agent may read anything, edit only under `src/` and `tests/`, and run a fixed, named set of commands — the test runner, the linter, and staging a commit. The allowlist means it won't *reach for* arbitrary shell: it isn't handed a general bash channel, only the named operations you approved. There's no `Bash(*)` wildcard. **Auto-accept inside this allowlist is not "yolo mode" — it's "yes to a list you already approved."** Every operation the agent can run, you signed off on once, in advance, in a file you can read in ten seconds.
+
+Be honest about what the deny list is, though, or you'll trust it past its limits. Pattern-based bash rules match the command *string*, and that's the same weakness the danger classifier had. `Bash(rm:*)` does not stop `find . -delete`, a build script that shells out to `rm`, or `python -c "import shutil; shutil.rmtree(...)"` — none of those start with `rm`. Danger doesn't live in the command string, remember, so a deny list keyed on the string can't be the load-bearing layer. The sandbox is. The allowlist is defense-in-depth on top of it: it narrows what the agent reaches for, and the box guarantees that even a command that slips the pattern can't escape — it deletes a throwaway container, fetches over a network that isn't there. Allow/deny is the contract; the box is the enforcement.
+
+This is the line worth sitting with: the allowlist isn't a safety tax you pay to use autonomy. It's the feature that makes autonomy affordable. Without it, auto-accept is a coin flip. With it — and the box under it — auto-accept is just executing a contract.
+
+## Give the agent its own credential, not yours
+
+The third primitive is the one most people skip, and it's where reach quietly leaks back in. Your agent needs to read the issue queue and close tickets when they're done. The lazy path is to mount your own GitHub token into the container. Don't. That token can probably push to every repo you own; a bug in the loop now has your full account's reach, network-isolation or not.
+
+Instead, give the loop its own scoped identity — a fine-grained token that can touch one repo and nothing else — wired in *inside* the sandbox at setup:
+
+```bash
+# inside the container, once at setup — never mounts your host token
+# create a fine-grained PAT in the browser, scoped to ONE repo (Issues: read/write),
+# write it to token.txt, then hand it to gh without it ever touching your host:
+gh auth login --hostname github.com --git-protocol https --with-token < token.txt
+# the resulting token lives only in the container's gh config
+```
+
+Now the agent reads and closes issues with a credential that exists only inside the box and carries only the scopes you granted — issue read/write on one repo, nothing else. This is the principle of least privilege, the one Saltzer and Schroeder named in 1975: every program and every user should operate with the least set of privileges necessary to do the job. The allowlist and the scoped token are that fifty-year-old idea applied to an agent — not new caution, just well-worn caution finally pointed at a process that writes its own code. Wire that through whatever connector your agent uses to reach GitHub; the [MCP-style boundary](/foundations/mcp-servers/) is exactly the seam where you decide *which* external systems the agent can touch and *as whom*. The host's identity never enters the loop. If the token leaks, it leaks a grant you can revoke in one click, not your account.
+
+## Stop when the work is done
+
+The last piece is knowing when to halt. A run-until-done loop needs a real "done." A stop hook fires when the queue drains, signals the orchestrator, and exits instead of spinning:
+
+```bash
+# .agent/hooks/stop.sh — runs after each iteration, inside the sandbox
+remaining=$(gh issue list --label "agent-queue" --state open --json number --jq 'length')
+if [ "$remaining" -eq 0 ]; then
+  echo "Queue empty. Halting."
+  exit 1       # non-zero stops the loop; the host wrapper sends the notification
+fi
+```
+
+The agent grinds until there are zero open tickets on the label, then exits clean. No idle burn, no runaway. The completion ping is deliberately *not* in here — it runs from the host wrapper that launched the container, so the `--network none` invariant inside the box stays intact. Notification is the orchestrator's job, never the agent's.
+
+## Ask the one question before you flip the switch
+
+Put the layers together and the worst case collapses. A confused iteration tries something destructive: the sandbox has no network to exfiltrate over, the allowlist narrows what it reaches for, and the credential it holds couldn't push to `main` even if it tried. Be precise about the floor, though. Because you bind-mounted `$PWD`, the working tree inside the box is *real host data*, not a throwaway copy — an `rm -rf` in the mounted workdir deletes real files on your disk. So the worst case isn't "nothing." It's bounded to the mounted working tree, every byte of which is recoverable from git. A confused iteration can cost you a `git checkout`, not a database, not your account, not your machine. *That's* what makes leaving it running overnight a calm decision instead of a gamble.
+
+So before you ever turn on auto-accept, ask one question, and ask it about the worst possible iteration, not the expected one: **if this run did the single worst thing it could, what could it reach?** If the honest answer is "my whole machine and my prod token," you're not ready — and a smarter model won't fix that. If the answer is "a working tree I can restore from git," flip the switch and go to sleep.
+
+Full autonomy was never a property of the agent. It's a property of the box you put it in.

@@ -1,0 +1,94 @@
+---
+title: "One Agent Drowns in a 1000-Line Spec. A Hundred Disposable Ones Finish It by Morning."
+description: "Decompose a reviewed spec into discrete tasks and drive it with a loop that spawns a fresh headless agent per task. Each unit of work gets a clean context window and a pass/fail gate instead of one agent compacting itself into confusion."
+authors: sourabh
+date: 2026-05-31
+tags: [context-engineering, headless, subagents, permissions]
+draft: true
+---
+
+You hand the agent the whole PRD. A thousand lines, twelve features, the schema, the acceptance criteria, the edge cases. You tell it to build the thing and you go to bed. By morning it has shipped three features, auto-compacted four times, lost track of what it already did, re-implemented one task twice, and quit with a cheerful summary of work it never finished.
+
+The instinct is to blame the model. The real failure is that you asked one context window to hold a project. **A context window is a workbench, not a warehouse.** Pile the entire spec onto it and the early decisions — the schema you agreed on in line 40 — get shoved off the edge by line 800. The agent isn't lazy. It literally can no longer see the thing it's supposed to be consistent with.
+
+## One long-running agent is the failure mode, not the goal
+
+The steel-man for the single-agent approach is real: continuity. One agent that holds the whole project in its head can, in theory, keep every decision coherent because it remembers making them. That's the promise. The mechanism breaks it. Long sessions trigger [context compaction](/foundations/context-management/) — the runtime summarizes old turns to make room for new ones — and summaries are lossy by construction. The agent doesn't know what got dropped. So it drifts, contradicts its own earlier choices, and the longer it runs the worse it gets.
+
+Flip the unit of work. Instead of one agent that lives for the whole build, spawn **one disposable agent per task** — born with a clean window, told exactly one thing to do, killed when it's done. The established version of this is deliberately monolithic: one process, one task per pass, run sequentially, fresh context each iteration, with the spec and the running state kept on disk between passes. The loop below is exactly that — sequential, not a parallel fleet. The "hundred agents" is the count over a night, not a hundred running at once. You *can* fan them out in parallel, but that widens the blast radius and adds a coordination problem you don't have yet, so start sequential. This is the [subagent](/foundations/subagents/) pattern run as a production loop: context isolation as the design, not an afterthought. A row of short-lived agents that each see only their slice will beat one marathon agent that sees everything and remembers nothing.
+
+The open question that decides whether this works: if each agent starts blind, what stops the whole project from fragmenting into a hundred incompatible pieces? Hold that — it's the whole game.
+
+## The loop is dumb on purpose
+
+The orchestration is a shell script, not an agent. It reads a task list, runs a [headless agent](/foundations/headless/) per item, checks the result, advances on green, retries on red. No conversation, no memory between iterations — that's the point.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+while read -r task_id; do
+  prompt="$(cat tasks/$task_id.md) \
+    Read SPEC.md and AGENTS.md before starting. \
+    Implement ONLY this task. Run the test command when done."
+
+  claude -p "$prompt" --dangerously-skip-permissions
+
+  if ./verify.sh "$task_id"; then
+    git add -A && git commit -m "feat: $task_id"
+    echo "$task_id" >> done.log
+  else
+    echo "$task_id" >> failed.log   # human triages in the morning
+  fi
+done < <(comm -23 <(sort -u tasks.txt) <(sort -u done.log))  # comm requires sorted input
+```
+
+Every task gets its own fresh `claude -p` invocation. It commits atomically on pass, logs on fail, and `comm -23` means a re-run skips everything already green. **Each task is a transaction: built, verified, committed, or quarantined.** Nothing half-done leaks into the next iteration, because there is no next iteration sharing the same context.
+
+## The spec is the only thing the agent can actually see
+
+Here's the answer to the open question. A blind per-task agent stays coherent because every agent reads the same two files first: the **frozen spec** and the project's [rules file](/foundations/rules/). Those are the shared memory the context window can't be trusted to hold. The schema, the naming conventions, the "we use Zod not Yup" decision — none of it lives in any agent's head. It lives on disk, and every disposable agent re-reads it cold.
+
+```md
+# AGENTS.md
+- Persistence: Postgres via Drizzle. Never raw SQL in handlers.
+- Validation: Zod schemas in src/schema/, imported — never inline.
+- Every task ends green on `pnpm test` or it does not commit.
+- Touch only files named in the current task. No drive-by refactors.
+```
+
+This is the gap the whole site is about, drawn in miniature: the agent is capable but contextless, and the spec plus the rules file are how you hand it the context it can't infer. The leverage is entirely upstream. The loop doesn't make a vague spec smart — **it amplifies whatever the spec already is.** A sharp spec with discrete, independently-verifiable tasks gets faithfully executed a hundred times over. A mushy one gets its mush replicated a hundred times, atomically committed, with confident green checkmarks on tasks that satisfy the letter of an underspecified acceptance criterion and none of its intent. Garbage in, garbage in production by morning.
+
+There's a sharper version of this when you let the loop run long. The danger isn't only that it quits early; it's that it *over-bakes*. Given slack and a vague boundary, the loop keeps going and invents elaborate work nobody asked for — one documented run started bolting post-quantum crypto onto a thing that needed none of it. Both directions are the same context failure: at some tick the agent didn't know where "done" was, because the spec never told it. The fix is the same as everything else here — the spec, on disk, naming the boundary.
+
+So the work is in the decomposition. A good task is small enough to fit one window with room to spare, has an acceptance check a script can run (`verify.sh` exits non-zero or it didn't happen), and touches a bounded set of files. If you can't write the pass/fail check, the agent can't either — and you've just discovered the task isn't specified, it's vibed.
+
+## The convenience that makes it run is exactly what makes it dangerous
+
+First, the bill. Unattended does not mean cheap. A document-summarizer that slipped into a 14,000-call retry loop ran up $437 in a single night; two agents left talking to each other for eleven days before anyone noticed burned roughly $47,000 and produced nothing usable; one enterprise blew through about $500 million in a single month after handing out agent access with no usage caps. The mechanism is a context failure dressed up as a cost one: a Stanford analysis of agentic coding found it consumes on the order of 1000× more tokens than chat, dominated by *input* tokens — every step re-reads the accumulated context, so a loop left running snowballs its own spend. The same study clocked up to 30× token variance on identical tasks and found models consistently underestimate what they're spending. If you've seen a self-reported "built the whole thing overnight for a couple hundred bucks," treat it as one anecdote, not a budget. Unattended is precisely the condition that removes the human who'd have noticed the meter spinning at 3 a.m.
+
+You saw `--dangerously-skip-permissions`. That flag is what lets the loop run unattended at all — without it every tool call stalls on an approval prompt no one is awake to answer. It is also a loaded gun pointed at your filesystem, and the reason the sandbox insistence below is load-bearing rather than optional. An agent that drifts, or a prompt-injected dependency, now has unsupervised write and execute access while you sleep.
+
+The non-negotiable: an unattended loop runs **in a sandbox, never on your real environment.** A throwaway container, an ephemeral VM, a checkout with no production credentials in reach. The whole architecture trades the human-in-the-loop [permission](/foundations/permissions/) gate for an automated `verify.sh` gate — which is a fine trade for *correctness*, and no trade at all for *safety*. The blast radius has to be contained by where the loop runs, because nobody is watching it run.
+
+One scope caveat: this is safest on greenfield work, where every file is one the loop created and the spec is the whole world. Point it at an existing brownfield codebase and the risk profile is much worse — there's far more for a drifting agent to break, and far more context it would need to hold that no spec fully captures. On a real repo, narrow the task surface hard and trust the sandbox more, not less.
+
+```toml
+# the loop's home, conceptually: disposable, credential-free, network-locked-down
+container = "build-loop-ephemeral"
+mounts    = ["./repo:rw"]          # the work
+secrets   = []                      # nothing real
+network   = "none"                  # no exfil path
+```
+
+## What you do tonight
+
+Stop handing agents projects. Hand them tasks. Freeze the spec and the rules into files every agent re-reads cold. Write a verify check for each task or admit the task isn't a task yet. Wrap it in a loop dumb enough to have no opinions, and run that loop somewhere it can't hurt you. Then go to bed.
+
+The morning diff is a row of atomic commits, each one green, each one traceable to a line of spec — or a short `failed.log` telling you exactly which three tasks need a human. Both outcomes are better than one exhausted agent's summary of a job it convinced itself it finished.
+
+A long context window is where good plans go to be forgotten. Decompose, isolate, verify, sandbox — and let a hundred agents who each remember nothing build the thing one of them never could.
+
+---
+
+For the per-task execution mechanics, see [Headless & CI](/foundations/headless/) and [Subagents](/foundations/subagents/); for the shared memory every agent re-reads, [Rules](/foundations/rules/); and before you ever pass `--dangerously-skip-permissions`, [Permissions & sandboxing](/foundations/permissions/).

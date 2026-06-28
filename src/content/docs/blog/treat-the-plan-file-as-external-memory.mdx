@@ -1,0 +1,110 @@
+---
+title: "An Agent Gets Worse Long Before Its Context Window Fills Up"
+description: "Stop fighting the context limit with a bigger window. Write an exhaustive plan to a file, then run a relay of fresh sessions that each tick off items — so a migration too big for any single context still ships coherently."
+authors: sourabh
+date: 2026-05-31
+tags: [context-engineering, plan-mode, model-selection, headless]
+draft: true
+---
+
+The 200k-token job is sitting in front of you: migrate 340 files off a deprecated ORM, touch the test suite, update the docs. So you point the agent at the repo, give it the goal, and let it run. Three hundred tool calls later it's editing files it already edited, contradicting decisions it made an hour ago, and quietly skipping modules it forgot existed. It hasn't crashed. It hasn't hit a limit. It's just gotten dumb.
+
+The reflex is to reach for a model with a bigger window. **More room, fewer problems** — that's the steel-man, and it's wrong. An agent's reasoning degrades long before the window is full, and that's not a hunch — 2025 context-rot work found degradation sets in well before a window fills, and the long-standing "lost in the middle" result clocked accuracy dropping more than 30% when the relevant fact sat mid-context instead of at the ends. Recall sags, early decisions get buried under tool output, and the thing starts treating its own scrollback as noise. The window isn't a memory bank you fill to the brim. It's a working surface that smears the more you write on it.
+
+So if the context can't hold the whole job, where does the job live?
+
+## The plan file is memory; the context is just a workbench
+
+Write the entire job to a file first. Not a vibe, not a goal — an exhaustive, line-item checklist, produced in one dedicated session whose only output is the plan. Use [plan mode](/foundations/plan-mode/) to *generate* it: you spend a whole context window doing nothing but enumerating the work in a read-only planning pass. But plan mode's output is a proposed plan in the terminal, not a durable artifact — so the second half of the move is to *persist* that checklist to a file the agent re-reads at the start of every step. The plan survives only because you wrote it down; the planning phase doesn't hand you a file by itself.
+
+```markdown
+# MIGRATION: legacy-orm → query-builder
+
+## Invariants (do not violate)
+- No raw SQL in app code; all queries go through QueryBuilder
+- Every migrated file keeps its existing test passing
+- Touch one module per commit; never mix modules
+
+## Checklist
+- [ ] src/users/repository.ts  — 4 queries, has txn block
+- [ ] src/users/service.ts      — depends on repository.ts
+- [ ] src/billing/invoices.ts   — RAW SQL on line 88, flag for review
+- [ ] src/billing/ledger.ts     — joins across 3 tables
+- [ ] ... (336 more)
+
+## Decisions log (append-only)
+- 2026-05-31: pagination uses cursor, not offset — billing relies on stable order
+```
+
+The context window is now a workbench, not a filing cabinet. The agent doesn't need to remember the whole migration. It needs to remember the next unchecked item — and that's cheap. This is cognitive offloading, the same trick the "Google effect" names in people: you stop holding the information and start holding a pointer to *where it lives*. The agent remembers where the migration is written down, not the migration.
+
+## Each session reloads only the unfinished items
+
+Here's the move that breaks the job loose from the window. **You don't run one long session; you run a relay of short ones.** Each fresh session opens with an empty context, reads the plan file, finds the first unchecked box, does exactly that item, ticks it off, appends any decision to the log, and exits.
+
+This isn't a hack you have to invent. Anthropic has published almost exactly this blueprint for tasks that span many context windows: an initializer pass lays down a progress-notes file (a literal `claude-progress.txt`), a feature list with each item marked done or not, and an initial commit — then every later session begins by reading the progress notes and the git log to reconstruct state, completes one feature, verifies it, and exits. They call the general technique *structured note-taking*: the agent writes notes outside the context window that get pulled back in later. The relay below is that pattern with the bookkeeping pushed into a Markdown checklist.
+
+```bash
+# one leg of the relay — fresh context every loop
+codex exec --skip-git-repo-check \
+  "Read MIGRATION.md. Do the FIRST unchecked item only. \
+   Honor every invariant. Update the checkbox and the decisions log. \
+   Then stop — do not start the next item."
+```
+
+The agent that handles `src/billing/ledger.ts` never saw the 200 files migrated before it. It doesn't need to. It inherits the *decisions* — cursor pagination, one module per commit — through the file, not through scrollback it would have half-forgotten anyway. Every session runs at peak sharpness because every session is short. The handoff isn't the cost of this approach. **The handoff is the feature.** Each leg starts clean.
+
+This is also where the relay stops being a clever trick and becomes plumbing. A single shell loop driving an agent in [headless mode](/foundations/headless/) turns "340-file migration" into "run until no boxes are unchecked":
+
+```bash
+while grep -q '\[ \]' MIGRATION.md; do
+  codex exec --skip-git-repo-check \
+    "Read MIGRATION.md, do the first unchecked item, tick it, commit, stop."
+done
+```
+
+The durable state lives on disk. The loop is dumb on purpose. Nothing important is trusted to the part of the system that decays.
+
+## Pin the invariants where no session can forget them
+
+A relay has a failure mode: drift. Session 50 invents offset pagination because it never saw the decision session 3 made. This isn't a quirk of one model — goal-drift work has measured every model drifting to *some* degree as context grows, and the same study found that strong goal elicitation in the system prompt significantly reduces it. The decisions log catches some of this, but the load-bearing rules shouldn't depend on an agent choosing to re-read a log. Put them in [rules](/foundations/rules/) — your `AGENTS.md` — so they reload into *every* session automatically, no checklist discipline required. That's the goal elicitation made permanent: the invariants ride into every session's prompt, where they measurably curb drift.
+
+```markdown
+# AGENTS.md
+- All DB access goes through QueryBuilder. Never write raw SQL.
+- Pagination is cursor-based. Offset pagination is a bug.
+- One module per commit. Run that module's tests before committing.
+```
+
+The plan file carries what's *left to do*; the rules file carries what must *never change*. Splitting those two is the whole discipline. Mutable progress in one place, immutable constraints in another, and the volatile context window holding neither.
+
+## Let a second model audit what the first one ticked
+
+The relay's other weakness: an agent that marks an item done has every incentive to believe its own work. Self-grading is generous grading. So separate the doing from the checking — and separate the *model*, too.
+
+This is a deliberate use of [model selection](/foundations/model-selection/). Run the migration legs on a fast, cheap model; run the audit pass with a different prompt: *read the diff for each ticked item, confirm the invariants hold, and uncheck anything that lied.* The part that's actually supported is the prompt — a skeptical, invariant-checking instruction is doing the real work, the same way strong goal elicitation curbs drift. Whether a *different, stronger model* catches more than the same model re-prompted is a reasonable bet I'd make, but treat it as opinion, not settled fact; the cheap, robust win is the adversarial prompt.
+
+```bash
+# auditor — different model, adversarial prompt, no stake in the answer
+claude -p "For each [x] item in MIGRATION.md, read its commit diff. \
+  If it violates an invariant or the item isn't truly done, \
+  flip it back to [ ] and note why in the decisions log."
+```
+
+The doer optimizes for closing boxes. The auditor optimizes for reopening them. Two models with opposing incentives, mediated by one file, produce a result neither would reach alone — and the file is the only thing they share.
+
+## The relay only works if the job actually slices
+
+This whole move assumes one thing: the work decomposes into items a fresh session can finish without the context the earlier sessions had. That holds for a mechanical migration — 340 files, the same transform, mostly independent. It breaks the moment item N's correct implementation depends on something item N-1 *discovered* and never wrote down. If migrating `ledger.ts` is what taught you to use cursor pagination, that lesson has to land in the decisions log, or the next session re-derives it wrong. The log isn't bookkeeping; it's the only channel through which one leg's learning reaches the next. A checklist with no decisions log is a relay with no baton.
+
+That same dependency sets the cost ceiling. For a job that fits in one window with room to spare — a twelve-file refactor, a single feature — the relay is pure overhead: you're paying a planning session and per-leg startup to solve a problem you don't have. Reach for it when the work is genuinely larger than the window, repetitive enough to checklist, and sliceable into items that don't need to see each other. A tightly coupled rewrite, where every file's shape depends on every other file's, is the opposite case. There the coupling *is* the hard part of the job, and splitting it into checkboxes doesn't externalize the difficulty — it just hides it.
+
+Granularity is where this is won or lost. Items too coarse — "migrate the billing module" — drop a whole subsystem back into one fragile session, and you've reinvented the failure you were escaping. Too fine — "change line 88" — and the per-leg tax of spinning up a clean context, re-reading the plan, and re-orienting swamps the actual work. The target is an item a fresh session can complete at peak sharpness and verify before it exits. Pick that size deliberately in the planning pass; it's the single decision the whole relay rides on.
+
+A migration far larger than any context window ships coherently not because some model finally got a window big enough to hold it, but because nothing ever tried to hold it. The work lived in a file. The agents were interchangeable. The window was scratch paper.
+
+This is context engineering at its most literal: the agent is contextless by design, and you close the gap not by stuffing the window but by putting the codebase's decisions, constraints, and progress where any fresh session can pick them up. Stop sizing the window to the job. Externalize the state and run the relay — the agent you can swap out mid-task is the one you can trust to finish.
+
+---
+
+For the mechanics: see [Plan mode](/foundations/plan-mode/) for producing the checklist, [Headless](/foundations/headless/) for driving the relay loop, [Rules](/foundations/rules/) for pinning invariants across sessions, and [Model selection](/foundations/model-selection/) for splitting the doer from the auditor.

@@ -1,0 +1,132 @@
+---
+title: "The Value of the Planning Step Isn't the Document. It's the Interrogation."
+description: "Your judgment — which tradeoff, which edge cases, which empty states — lives only in your head until something extracts it. A saved procedure that explores the repo, then grills you one branch at a time, turns a vague idea into a codebase-aware spec the agent can build against."
+authors: sanjay
+date: 2026-05-29
+tags: [context-engineering, skills, plan-mode]
+draft: true
+---
+
+You type "build me a dashboard." The agent thinks for a second and asks: "Should returning visitors who already submitted their email skip the gate?"
+
+You hadn't thought about that. Now you have to. And that question — not the plan, not the spec, not the tidy markdown that comes after — is the entire point of the planning step.
+
+Most teams optimize the wrong end of this. They polish the output: the perfect spec template, the right headings, the Notion doc with the acceptance-criteria table. The leverage is upstream. The valuable thing a planning step produces is not a document. It's the **interrogation** that drags the requirements out of your head before any code exists.
+
+## The agent is eager, and that's the problem
+
+Ask any coding agent to build a feature and it will happily build it. That eagerness is a trap. The model has read more code than you ever will, but it knows nothing about *your* intent. So when you hand it a vague request, it doesn't stop — it fills the gap with the statistically most likely interpretation. Reasonable. Plausible. Frequently wrong.
+
+This is the gap this whole site is about: the agent is **broad and shallow**, you are **narrow and deep**. The agent can scaffold a dashboard in five languages. Only you know that the email gate has to remember returning visitors, that the empty state for a brand-new account can't look like an error, that "active user" means something specific to your billing model. That knowledge is real, expensive, and currently **trapped in your head**. The agent can't read it. Until something pulls it out, it doesn't exist as far as the build is concerned.
+
+A vague prompt and an eager agent produce a confident plan for the wrong thing. You only discover *which* wrong thing after it's built. This isn't a hunch. A February 2026 benchmark, ClarEval, put a number on it: feed GPT-4o the same coding tasks but strip the instructions of detail, and its first-try pass rate cratered from about 89% to under 9%. The fix was cheap — agents that asked a clarifying question first got measurably more right. Most just never thought to ask. Other peer-reviewed work finds the same reflex: when an instruction is ambiguous, LLMs assume rather than ask. Eagerness, quantified.
+
+## A plan written from a vague prompt is a guess in a nicer font
+
+Here's the failure most people have lived through. You write three sentences. The agent produces a beautiful plan — phases, file lists, a sequence. It looks like alignment. It isn't. It's the agent's *best guess* at what you meant, formatted to look like a shared decision.
+
+You skim it, it reads plausibly, you say go. Two hours later the dashboard exists and the email gate blocks everyone every time, because you never said it shouldn't, because the agent never asked, because the plan was generated from a prompt that never contained the answer. The wrongness compounds the further downstream it surfaces — Boehm's *Software Engineering Economics* made that directional point back in 1981, and it didn't get less true when the one writing the code stopped being human. A misunderstanding caught in the interview costs a sentence; caught after the build, it costs the build.
+
+The doc was fine. The doc was always fine. The doc was just a guess in a nicer font.
+
+## Encode the interview, not the template
+
+The fix is to stop treating planning as a document-generation task and start treating it as an **extraction** task. You want a repeatable procedure that does three things, in order, before it writes a single line of spec:
+
+1. **Explore the repo first.** Half the questions worth asking are already answered in the code. Don't ask me where auth lives — go read `services/auth` and tell me what you found.
+2. **Interview me relentlessly, one question at a time, down every branch of the design.** Not a questionnaire dump. One question, my answer, then the *next* question that my answer unlocked.
+3. **Only then write the spec** — with each decision's rationale attached.
+
+This is a job for two foundations primitives working together. A [skill](/foundations/skills/) is an invokable procedure — a saved set of instructions the agent loads on demand. A [slash command](/foundations/slash-commands/) is how you trigger it by name. Wrap your requirements process as a skill, bind it to a command like `/spec`, and you've turned "be thorough this time" (which you'll forget) into a button (which you won't).
+
+Here's the core of such a skill. The exact file format differs by tool — Claude Code keeps skills under `.claude/skills/`, others have their own conventions — but the *content* is universal:
+
+```markdown
+# Skill: spec
+
+You produce a build-ready spec by interrogating the author, not by guessing.
+
+## Procedure
+
+1. Ask the author for a long, messy problem description. Tell them
+   to over-explain. You will do the structuring.
+
+2. Explore the repository before asking anything you could answer
+   yourself. Read the relevant modules, configs, existing patterns,
+   and data models. Report what you found in 3–5 lines.
+
+3. Interrogate. Walk every branch of the design tree. Resolve
+   dependencies one at a time — never open a new branch while a
+   prior decision is still unresolved.
+
+   RULES for the interview:
+   - Ask exactly ONE question at a time. Wait for the answer.
+   - With every question, propose a recommended answer and say why.
+     The author corrects faster than they specify from scratch.
+   - If a question can be answered by reading the codebase, READ IT
+     instead of asking. Asking me what I could have read is a defect.
+   - Cover at minimum: empty states, error states, returning vs.
+     first-time users, permissions, and the one tradeoff you'd most
+     regret getting wrong.
+   - Do not stop until no branch has an open question.
+
+4. Only now, write the spec to ./SPEC.md using the template below.
+```
+
+The one-question-at-a-time rule is doing more work than it looks. A list of ten questions gets a list of ten half-answers, because you answer them in a batch, shallowly. A single question with a recommended answer gets a *real* decision, because you either accept the recommendation in one second or you push back — and the pushback is where your judgment actually surfaces. Research on clarifying questions points the same way: ranking questions by expected utility and asking the highest-value one first beats dumping every question at once. A proposed answer you can correct is higher-signal than an open prompt you have to fill from scratch. "No, returning visitors skip the gate, because we already have their email and re-gating them tanks our reactivation funnel." That sentence is the deliverable. The model could never have generated it. It lives only in you.
+
+## The template is the transcript, not the artifact
+
+Now the document. It matters far less than the conversation that produced it — but it still has a shape, because the agent has to build against it. Embed the template directly in the skill so every spec comes out identical:
+
+```markdown
+## Spec template
+
+# <Feature name>
+
+## Problem
+One paragraph. What's broken or missing, for whom, why now.
+
+## Solution
+One paragraph. The shape of the fix at a high level.
+
+## User stories
+1. As a <role>, I can <action>, so that <outcome>.
+2. ...
+(Numbered. Each one independently checkable.)
+
+## Technical decisions
+- <Decision>: <what we chose> — because <rationale>.
+  (The rationale is mandatory. A decision without a reason is a
+   guess we'll re-litigate in three weeks.)
+
+## Out of scope
+- <Thing we explicitly are NOT building, and why.>
+
+## Notes
+- Open questions, assumptions, things to revisit.
+```
+
+Notice the **technical decisions** section carries the *why*, not just the *what*. That's the residue of the interrogation. Six weeks later, when someone asks "why does the gate skip returning visitors," the answer is in the doc — not because someone documented it, but because the question was asked and answered out loud before the code existed.
+
+This is also why a seasoned operator barely re-reads the spec. They were *in* the interview. They already share the mental model with the agent; the document is just the written confirmation. The doc is the transcript of an alignment, not the alignment itself.
+
+## Keep the grilling invokable on its own
+
+One refinement that pays off constantly: factor the interrogation out so you can run it *without* forcing a document. Sometimes you don't want a spec — you want to think. You have a half-formed idea and you want something to poke holes in it, one branch at a time.
+
+So keep a standalone `/grill` command that runs only steps 1–3 — explore, then interrogate down every branch — and stops. No file. Just the conversation that surfaces the edge cases you hadn't considered. When the idea has firmed up, `/spec` runs the same interview and then writes it down.
+
+If this sounds like a movement, it is one. Spec-driven development (SDD) has been formalizing the same instinct, and GitHub's Spec Kit ships a `/clarify` step — a structured pass that hunts ambiguities and asks you questions *before* the plan is written. Same shape: interrogate, then plan. Where this draft plants its flag is the emphasis. SDD treats clarification as a phase in service of a better document; the artifact is still the spec. Here the artifact is incidental. The **interrogation is the deliverable** — the spec is just its transcript. That inversion is what `/grill` makes literal: it's the clarify step with the document deleted.
+
+This is where it overlaps with [plan mode](/foundations/plan-mode/) — the built-in state where the agent investigates and proposes before it's allowed to touch anything. Plan mode gives you the *guardrail* (no edits until you approve). Your skill gives plan mode something it lacks out of the box: an opinionated, relentless **interview protocol** to run inside that read-only window. Plan mode says "don't build yet." The skill says "and here's exactly how to find out what to build."
+
+## The interrogation is the context engineering
+
+Strip it all back and here's what happened. The deepest, most expensive context in any build — which tradeoff you'd pick, which edge case will bite, what "done" actually means — started the day locked in one human head, invisible to a model that had already read a million dashboards and still didn't know yours.
+
+A saved procedure walked down every branch of the design and pulled that context into the open, one question at a time, recommending answers so you could correct instead of compose, reading the codebase instead of asking when it could. By the time the first line of code is written, you and the agent are looking at the same picture.
+
+That's the move. Not a better template. A procedure that refuses to build until it has interviewed the only person who knows what to build.
+
+The document was never the deliverable. You were.
