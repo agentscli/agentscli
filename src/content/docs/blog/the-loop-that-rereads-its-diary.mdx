@@ -1,0 +1,173 @@
+---
+title: "The Loop That Re-Reads Its Diary"
+description: "An autonomous agent isn't a bigger context window. It's a tiny window run many times, where the git log — not the chat history — carries the decisions between passes."
+authors: sanjay
+date: 2026-05-29
+tags: [context-engineering, headless, rules, workflow]
+draft: true
+---
+
+At 3am the loop re-implements the retry logic it already wrote at 1am — same function, subtly different — because the status file it left itself said `step 4: in progress`, not *tried exponential backoff, the test still flakes, leave it alone*. The work had been done. The reason it was done had evaporated.
+
+The git log is where an autonomous agent's *decision* memory belongs. Not the chat history — and not a scratchpad. The commit log.
+
+A session that runs for hours fills with its own exhaust, and the signal drowns. So a long-running agent has to throw away its conversation between passes and reconstruct state from durable artifacts — and once you accept that, the question stops being *how do I keep the window alive* and becomes *where does the running memory live instead*. That memory splits in two. The task queue — what's left to do — stays in a plan file the loop reads each pass; this is the standard pattern and the recipe below leans on it. But the *rationale* memory — what was tried, what passed, why a path was abandoned — most setups stuff into a scratchpad or status JSON the agent rewrites each pass. Don't. You already have a durable, ordered, append-only record of what changed and why, written at exactly the moment a decision is made: the commit log. Use it for the decisions; let the file carry the to-do list.
+
+This post is about that one mechanic — turning the commit log into the agent's working memory and enforcing it as a contract — built into a runnable recipe from three primitives: [headless mode](/foundations/headless/), [rules](/foundations/rules/), and [permissions](/foundations/permissions/). The result is a loop that forgets on purpose every pass and re-orients by reading its own commits, like a worker who keeps a diary and re-reads it each morning because they know they won't remember.
+
+## Why the commit log, specifically
+
+A coding agent is broad and contextless — it knows the language, not your decisions. You, the SME, are narrow and deep — you know *why* the auth module can't import from billing, why that migration runs in two steps, what the last attempt got wrong. Context engineering is the work of handing that depth to the breadth. In an interactive session you do it by talking. In an autonomous loop there's nobody talking, so the context has to be written down somewhere the next iteration will read it.
+
+You could write it anywhere. The commit log earns the job for reasons no scratchpad has. It is *append-only and ordered* — the next iteration sees exactly the sequence of decisions that led to now, not a flattened snapshot that lost its history. It is *atomically tied to the work* — a message is written in the same act as the change it describes, so it can't drift out of sync the way a hand-maintained status file does. It *survives everything* — the window reset, the process dying, the machine rebooting at 3am. The idea that a commit message is itself a structured, machine-readable artifact — a typed subject line plus a body and footers carrying metadata a later reader parses — isn't new; it's the bones of the Conventional Commits convention, which already treats the message as a contract tooling reads, not just a note for humans. What's different here is who the reader is and what the fields carry.
+
+What this costs is honest: the *act* of committing is free, but the value isn't. A default commit — "fix tests," "wip" — carries none of what the next pass needs. The payoff comes entirely from the discipline you impose on the message: the decision made, the files touched, the dead end to avoid. That structure is the work. You're not adding a memory system; you're adding a contract to the one you already have.
+
+## The recipe
+
+Three moving parts: a shell loop, a commit-message contract, and a single hard rule. Plus permissions drawn tight, so the thing you've set loose can't wander.
+
+### 1. The loop that re-injects memory
+
+Run your agent in [headless mode](/foundations/headless/) — the non-interactive flag every serious CLI agent ships (Claude Code's `-p`/`--print`, Codex's `exec`, opencode's `run`). Headless means one prompt in, one result out, then the process exits. No session to bloat. That exit is the whole point: each pass dies with a clean slate.
+
+The loop's job is to hand the agent exactly three things on every pass, then get out of the way:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+MAX_PASSES=50   # hard cap: a stuck pass must not loop forever.
+
+for ((i=1; i<=MAX_PASSES; i++)); do
+  # The agent's only memory of itself: the last few commits.
+  RECENT=$(git log -5 --format='%h %s%n%b' --no-merges)
+  BEFORE=$(git rev-parse HEAD)
+
+  PROMPT=$(cat <<EOF
+$(cat ./prompt.md)
+
+## The plan
+Read ./PLAN.md for the full task list. Work the FIRST unchecked item only.
+
+## What previous iterations did (your only memory — read it)
+$RECENT
+EOF
+)
+
+  # Headless: fresh window, single shot, then exit.
+  claude -p "$PROMPT" --allowedTools "Edit,Bash(git:*),Bash(npm test:*)"
+
+  # Stop when the plan is fully checked off.
+  if ! grep -q '^- \[ \]' ./PLAN.md; then
+    echo "Plan complete after $i passes."
+    exit 0
+  fi
+
+  # Detect a stuck pass: no commit and no progress means bail, don't spin.
+  if [[ "$(git rev-parse HEAD)" == "$BEFORE" ]]; then
+    echo "Pass $i made no commit — stopping for a human." >&2
+    exit 1
+  fi
+done
+
+echo "Hit MAX_PASSES ($MAX_PASSES) without finishing the plan." >&2
+exit 1
+```
+
+Look at what crosses the boundary into each iteration. A fixed `prompt.md` — the unchanging instructions, the role, the contract. A *reference* to `PLAN.md`, not its contents dumped inline, so the plan stays a file the agent reads deliberately. And `git log -5` — the last five commits, decisions and all. That's the diary. Every pass, the agent opens it and re-reads what it was doing before it forgot.
+
+Nothing else carries over. No chat history, no scrollback, no half-finished reasoning. The window starts empty and fills only with what the log tells it. That's the design intent: because the input each pass is a fixed-size briefing rather than an ever-growing transcript, a late pass starts from roughly the same footing as an early one. The loop isn't fighting context growth, because there is none to fight.
+
+Two guards keep an unattended run honest. `MAX_PASSES` caps the loop so a misbehaving agent can't spin forever. And the `HEAD`-comparison check bails the moment a pass produces no commit — because a pass that didn't commit also didn't update the diary, which means the *next* pass would wake up with no record of what just happened. No commit, no memory, no point continuing: stop and get a human.
+
+This is also why the loop survives its own death. Because every increment of state lands as a commit, a run that crashes, gets killed, or loses the machine at 3am doesn't lose its place — restart the loop and it resumes from the last commit, reading the same diary the next clean pass would have read. There's nothing in-flight to recover, no half-written status file to reconcile. The commit boundary *is* the checkpoint: each one a safe restart point, the whole history a deterministic replay of how the work got here. An ordinary long session has no such property — kill it and the reasoning evaporates with the window.
+
+### 2. The commit-message contract
+
+A loop that re-reads the log only works if the log is worth reading. Default commit messages are written for a human reviewer skimming a PR weeks later: terse, past-tense, assuming context the reader already has. That's exactly wrong here. The reader is a fresh agent with *no* context, and the message is its entire briefing.
+
+So change who the commit message is for. This is a [rule](/foundations/rules/) — persistent, human-authored context that loads on every pass. Put it in your `AGENTS.md` (or `CLAUDE.md`), and make it a contract, not a suggestion:
+
+```markdown
+## Commit contract — YOU ARE WRITING FOR THE NEXT ITERATION, NOT A HUMAN
+
+Every commit message MUST contain, in the body:
+
+- **Decided:** the key choice you made and the reason (e.g. "kept the old
+  endpoint as a shim — three callers still hit it, see clients/").
+- **Files:** what you touched and why each one.
+- **Blocked / next:** the single most important thing the next iteration
+  needs to know. Dead ends count — name them so nobody retries them.
+
+The next iteration starts with an empty memory and reads ONLY the last few
+commits. If it isn't in the commit body, it did not happen.
+```
+
+That last line is load-bearing. *If it isn't in the commit body, it did not happen.* It reframes the commit from bookkeeping into the agent's sole act of remembering. A good message reads like a handoff note to a colleague who just walked in: here's what I decided and why, here's the wall I hit, don't go down that path again.
+
+This is the SME's depth, serialized. You can't sit beside the loop for three hours narrating constraints. So you front-load them as a rule, and the rule forces every iteration to leave the *next* one a trail of decisions instead of a pile of diffs.
+
+Make it concrete. Here's the commit a default agent writes:
+
+```
+fix auth tests
+```
+
+The next pass reads that, learns nothing, opens the auth module, and re-derives from scratch what the last pass already knew — including, quite possibly, the dead end the last pass already ruled out. Now the same change under contract:
+
+```
+fix(auth): stop token refresh from racing the logout handler
+
+Decided: serialized refresh and logout behind one mutex rather than
+debouncing. Debounce hid the race in the test run but it still fired
+under load — the mutex is uglier and correct.
+Files: auth/session.ts (the mutex), auth/session.test.ts (added the
+concurrent-logout case that was passing falsely before).
+Blocked / next: the same race almost certainly lives in the billing
+webhook handler — it shares the refresh path. Do NOT re-introduce the
+debounce; that path is closed.
+```
+
+The next pass wakes up knowing the decision, the reasoning, the approach that *looked* right and wasn't, and where the same bug probably hides next — none of which it could recover by reading the diff alone, because the diff shows the mutex but not the debounce that isn't there anymore. The first message is a receipt. The second is a mind.
+
+### 3. One task per pass
+
+The single most effective rule in the whole setup, and the one people skip:
+
+```markdown
+## ONE TASK PER PASS — NON-NEGOTIABLE
+
+Do exactly ONE item from PLAN.md, then commit and STOP.
+Do not "while you're in there" fix anything else.
+Do not start the next item. Smaller commits = a memory the next pass can
+actually read.
+```
+
+The instinct — yours and the agent's — is to do more per pass, because each pass costs a startup. Resist it. A pass that does five things produces a commit that explains none of them well, and the next iteration inherits a fog. A pass that does one thing produces a clean, legible entry in the diary. The loop runs more iterations; each iteration is sharper. Throughput comes from clarity, not from cramming.
+
+### 4. Permissions: scope the reach before you walk away
+
+One guardrail the recipe depends on but won't belabor here: [permissions](/foundations/permissions/). The `--allowedTools "Edit,Bash(git:*),Bash(npm test:*)"` in the loop above is doing real work — it lets the agent edit files, run git, and run tests, and nothing else. That matters because the diary mechanic *requires* git access on every pass; you're handing the agent the exact tools its memory loop runs on, and no more.
+
+The full case for why an unattended loop needs a small blast radius — and how to draw that boundary — is its own subject. See [Full autonomy is a small blast radius](/blog/full-autonomy-is-a-small-blast-radius/). Here the rule is narrow: grant the loop the tools the diary needs, deny the rest.
+
+## Where the diary lies, and where to skip it
+
+The mechanic has sharp edges, and pretending it doesn't is how you wake up to a confidently broken branch.
+
+The first edge is **history rewriting**. The diary depends on a linear, append-only log — that's the whole reason it beats a scratchpad. A loop that squashes commits, or an agent allowed to `rebase` or amend, is erasing its own memory. The per-decision entries collapse into one summary that lost the sequence, and the next pass reads a flattened snapshot — exactly the failure you switched away from. If you run cleanup, run it *after* the loop finishes, never inside it.
+
+The second is the **convincing-but-empty commit**. The contract forces a body; it cannot force the body to be true. An agent will happily write a crisp `Decided / Files / Blocked` over a change that doesn't compile, and the next pass will trust it — the diary is read as fact, not re-verified. The loop's `HEAD` check catches a pass that committed *nothing*; it says nothing about a pass that committed *garbage*. That's why the test command is inside the allowed tools and not optional: a pass that claims a fix should have run the test that proves it. The diary records decisions; the test gate is what keeps those decisions honest.
+
+The third is the **window edge**. `git log -5` shows five commits. A thread of reasoning that runs six commits deep loses its oldest link every pass — the decision that started it scrolls off the diary right when a later pass needs it. For longer-horizon work, widen the window, or have the contract reference the founding commit by hash so the trail stays anchored.
+
+And know when to not reach for this at all. An **interactive session** doesn't need a diary — you're the memory, the window hasn't decayed, and the contract is pure overhead. A **single-pass task** has nothing to hand off; don't impose a handoff protocol on a five-minute fix. And work whose unit of progress *isn't* a commit — exploratory spikes, generated artifacts, anything where "one decision, one commit" is a polite fiction — fights the mechanic instead of riding it. The commit log is the right memory only when the commit is the real unit of work.
+
+## Why this closes the gap
+
+Step back and see the shape. The broad agent supplies capability — it can read code, write diffs, run tests in any stack you point it at. You supply the context it lacks, but you supply it *as durable artifacts* instead of *as conversation*: the plan is a file, the constraints are a rule, the running memory is the commit log, the boundaries are permissions. None of it lives in a window that decays.
+
+The move that makes it work — and it's an established move, not an invention; durable-state loops over headless agents are a known pattern — is separating memory from working space. In a single long session those are the same thing, so as the work piles up the memory gets buried in it. Here they're split: the working space — the window — resets to empty every pass, while the memory — the log — only grows more useful, because each entry was written under contract to inform the next reader. The agent gets amnesia by design and a legible diary by discipline. The commit log becomes the durable context that survives the forgetful model between ticks — it's what turns fifty independent passes into one coherent project instead of fifty unrelated edits.
+
+So the one habit to take from this: **write your commit messages for the next iteration, not for a human reviewer.** Decisions, files, blockers, what not to retry. In an autonomous loop, that message isn't documentation — it's the entire mind of the next pass. Give it something worth waking up to.

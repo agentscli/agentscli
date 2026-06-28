@@ -1,0 +1,94 @@
+---
+title: "Your Reasoning Model Should Never Read Grep Output"
+description: "Subagents are sold as parallelism. The real win is context hygiene plus model arbitrage: delegate read-heavy investigation to cheap explorers so your expensive model only ever sees distilled findings."
+authors: sanjay
+date: 2026-05-31
+tags: [context-engineering, subagents, model-selection, plan-mode]
+draft: true
+---
+
+You ask the agent a simple question: where does this app validate a webhook signature? It answers correctly in ninety seconds. It also dumped 14,000 tokens of `grep` hits, three full file reads, and a directory listing into the exact context window you were about to use for the hard part — designing the fix. The answer was cheap. The **mess it left behind** was not.
+
+This is the quiet tax on every "just find it in the codebase" task. The agent has to read a lot to know a little, and all that reading lands in the one window you most wanted to keep clean. By the time you start reasoning, your expensive model is reasoning *around* a transcript full of search noise.
+
+## The investigation pollutes the window you need for thinking
+
+Picture the workflow everyone starts with. One agent, one context, one model — usually the strongest one you've got, because you want good answers. You point it at a question that requires spelunking: trace this auth flow, find every caller of this function, figure out why the build config touches three packages.
+
+To answer, it greps. It reads files top to bottom. It lists directories. Each step is a tool call whose **full output gets pasted into the conversation** — that's how the agent "sees" it on the next turn. A single find-it task can run tens of thousands of tokens through the main window, and only a sliver of that is signal. The rest is scaffolding the model needed to *arrive at* the signal.
+
+Now you ask it to plan the change. It's reasoning on top of a window stuffed with stale `grep` output. The relevant fact — "validation lives in `middleware/webhook.ts`, line 42, and two routes bypass it" — is buried somewhere up there, competing for attention with every directory listing it ever printed. **Long contexts don't just cost money; they cost focus.** A model attends worse to a needle in a haystack than to a needle on a clean table. This isn't intuition. The 2023 "Lost in the Middle" finding measured it: models recall facts best at the very start and end of a long context and worst in the middle — and in the harder multi-document setups, accuracy on a middle-buried fact dropped *below* the no-context baseline of around 56%. Read that twice. The retrieved context made the model **worse than if you'd given it nothing at all.**
+
+And before you wave that off as a quirk of 2023-era models with cramped windows — it isn't. A 2025 study stress-tested eighteen current frontier models on inputs of growing length and found every single one degrades as the input gets longer, *even when the context window is nowhere near full*. A million-token window doesn't buy you immunity; it just lets you bury the needle deeper and feel safe doing it. The careful curation of what the model sees, that study concluded, matters more than the raw volume you can cram in. So why are we doing the haystack and the needlework in the same window, on the same model?
+
+## Subagents are mis-sold as a speed feature
+
+The pitch for [subagents](/foundations/subagents/) is almost always parallelism: fan out five workers, get your answer five times faster. True, and a nice bonus. But it buries the actual mechanism.
+
+A subagent runs in its **own isolated context**. It greps, reads, and thrashes in *that* window — and when it's done, only its final message returns to the parent. The search noise stays quarantined in the child and gets discarded. Your main window receives the two-paragraph distillation: the file, the line, the two routes that bypass it. This is exactly how Anthropic's own multi-agent research system is built. There, the whole point of a subagent is compression — each one burns its own context window exploring the corpus in parallel, then condenses the most important findings back up to the lead agent, which never has to read the raw search at all. They describe the essence of the task as exactly that: distilling insights from a vast pile of source material. The synthesis step sees the conclusion, not the haystack.
+
+```
+parent context (your reasoning window)
+  └─ Task: "find where webhook signatures are validated,
+            list every code path that skips it"
+       └─ explorer subagent  ← burns the search tokens here
+            grep, read, list, read, grep...
+       ← returns the answer only, no scaffolding
+```
+
+That's not a speed trick. That's **context hygiene** — the reading happens somewhere it can't pollute the thinking. The parallel-five-workers framing is the least interesting thing subagents do.
+
+## And it lets you arbitrage the model
+
+Here's the move that compounds it. The explorer doesn't need your best model. Reading files and matching patterns is **broad-but-shallow work** — exactly what a smaller, faster model is good at. Save the expensive reasoning model for the one thing it's uniquely good at: deciding what the fix should be.
+
+So the [model selection](/foundations/model-selection/) follows the task shape. The subagent definition pins a cheap, fast model for the read-many phase; the parent stays on the heavyweight for the plan:
+
+```yaml
+# .claude/agents/explorer.md
+---
+name: explorer
+description: Read-only codebase investigation. Returns findings only.
+model: haiku          # cheap and fast — built for read-many work
+tools: Read, Grep, Glob   # no write, no edit — investigation only
+---
+You are a read-only explorer. Search the codebase to answer the
+question. Return ONLY: relevant file paths, line numbers, and a
+3-5 sentence summary. Do not paste large file contents back.
+```
+
+That's the shape of a Claude Code agent file — check your version's docs for the current field set; the same pattern works in other agents with their own model names and config syntax. Two things to notice. The tool list has **no write access** — this agent can't touch anything, which makes delegating it safe by construction (see [permissions](/foundations/permissions/) for why read-only-by-default is the right posture for fan-out work). And the prompt forbids pasting raw file dumps — you want the *conclusion*, not the evidence trail.
+
+Think of it as mechanism, not benchmark. The find-it task burns most of its tokens on search noise. Delegate it, and those tokens get spent *inside the child*, on the cheap model — then discarded when it returns. Your reasoning model sees only the distillate. Be honest about what this does and doesn't buy you: a fan-out setup usually spends *more* total tokens, not fewer. Anthropic's own measurements put single agents at roughly four times the tokens of a chat and multi-agent systems at around fifteen times — the parallelism is not free, and it is not subtle. The win isn't a smaller bill. It's that the **expensive model's attention stays free** for the part that needed it, with the bulk shifted onto cheap-model spend. You're not saving money; you're buying clean attention and paying for it in commodity tokens. The speed — a faster model, possibly several explorers at once — is the part you'll notice first and value least.
+
+Why does the read-many phase tolerate a cheaper model at all? The instinct is to reach for your strongest model everywhere, so it's worth being precise. Investigation is mostly recall and pattern-matching: does this string appear, what calls this function, which file owns this config. That's breadth-first work with a low reasoning ceiling — the kind of task where a smaller model is nearly as accurate and several times faster. Synthesis is the opposite: it's depth-first, it holds competing constraints in mind at once, and a small accuracy gap there changes whether the fix is right. The model split isn't a cost hack bolted onto subagents; it's the task shape finally getting the model it deserves. Anthropic runs the same split deliberately — a heavyweight lead directing lighter subagents — and reports that the arrangement beat a single instance of the heavyweight working alone by a wide margin. The lead spent its tokens thinking; the subagents spent theirs looking.
+
+## A second case: the multi-package wild goose chase
+
+The webhook example is small. The payoff scales with how much spelunking the question demands, so take a worse one: *"Why does the production build pull in two versions of the same date library?"* This is the kind of question that has no single answer location. The agent has to read lockfiles, walk the dependency tree, open three or four `package.json` files across a monorepo, and maybe `grep` for the offending import. Done in your main window, that's a guaranteed several thousand tokens of lockfile diff and tree output — almost none of which you will ever reason about — wedged in front of the one sentence you wanted: *"`pkg/api` pins `date-fns@2`, `pkg/web` floats `^3`, and the bundler can't dedupe across the major."*
+
+Run it before-and-after and the difference is stark. Before: your transcript is now a graveyard of `pnpm why` output, and when you ask "okay, how do we converge them," the model is composing a plan while a thousand lines of dependency tree sit between your question and its answer. After delegating to an explorer: the parent transcript gains exactly one paragraph — the diagnosis and the three files involved — and the plan gets composed over a clean desk. Same answer, same correctness. The only thing that changed is what your reasoning model had to wade through to think, and that turns out to be the thing that mattered.
+
+## When the distillation lies — and when not to delegate
+
+This isn't free, and pretending it is will burn you. The whole mechanism rests on the subagent deciding what's worth returning, which means it also decides what to throw away — and you cannot interrogate what it threw away, because that context died with the child. If the explorer's three-sentence summary quietly omits the one edge case that breaks your plan, you'll reason confidently over a hole and never see it. A polluted window at least *contains* the truth somewhere; a bad distillation replaces the truth with a confident summary of it. That's a sharper failure, not a softer one.
+
+Two guards make it survivable. Have the explorer return **exact file paths and line numbers**, not just prose — so the parent can cheaply pull the three lines that actually matter back into the clean window if the plan hinges on them. And keep the explorer's brief tight and *decidable*: "list every code path that skips validation" is verifiable; "tell me about the auth system" invites a vague summary that hides exactly the kind of omission you can't audit.
+
+So don't reach for this on every task. If the question is small enough that the search *is* the answer — "what's the type of this one field" — the round-trip to a subagent costs more latency than the pollution it saves. If you'll need the raw material yourself in the next step — you're about to hand-edit the very files being investigated — pulling them into your window was never waste; it was the work. And if the task is genuinely ambiguous, where you'd want to *see* the search unfold and redirect it mid-stream, a black-box explorer that hands you a finished verdict is the wrong tool. Delegation pays when the reading is voluminous, the conclusion is compact, and you trust the brief to be complete. When any of those three fails, do it in the open.
+
+## What this looks like when you actually work
+
+The discipline is a single rule: **the window where you think is not the window where you search.**
+
+- When a task is "go find / trace / map," delegate it to a read-only explorer on a cheap model. Get back findings, not transcripts.
+- Keep your main, expensive context for reasoning, deciding, and planning the change — ideally in [plan mode](/foundations/plan-mode/), where the agent proposes before it touches anything, and the only context it's proposing *over* is the clean distillate the explorers handed up.
+- Treat raw `grep` and file dumps as a code smell in your main transcript. If they're there, the investigation leaked into the thinking window.
+
+The mental shift is small and total. Subagents stop being "a way to go faster" and become a way to **decide where reading is allowed to happen**. Parallelism is a side effect. Cost savings are a side effect. The real product is a reasoning window that only ever contained things worth reasoning about.
+
+This is the whole game of context engineering in miniature: a capable model is contextless until you feed it the right context, and the worst thing you can do is bury the right context under the noise it took to find it. Your best model is expensive because it's good at thinking. Stop making it read.
+
+---
+
+For the per-tool mechanics, see [Subagents](/foundations/subagents/) and [Model selection](/foundations/model-selection/); for keeping the clean window clean while the agent proposes a change, [Plan mode](/foundations/plan-mode/).

@@ -1,0 +1,111 @@
+---
+title: Write a custom subagent
+description: "The built-in three cover scan, fetch, and full-access work — but none of them enforces feedmill's UTC-timestamp rule on every adapter and can never edit. Hand-write a markdown subagent with mode: subagent, a pinned model, and a permission map that denies edit, and you get a worker scoped to exactly one job."
+sidebar:
+  label: "Custom · your own worker"
+---
+
+The three built-in subagents get you a long way, but they're general by design. `explore` and `scout` are read-only and fast, `general` can do anything — and none of them knows the one rule you keep having to enforce by hand. `feedmill` parses dozens of differently-shaped feeds, and every adapter has to normalize its source's date into UTC before it hands a timestamp upward; a parser that stores the feed's local time is the timezone bug you've been chasing all chapter. What you want is a worker whose entire job is to walk every adapter and check that rule — and which *cannot edit a file even if it wanted to*, because an auditor that can quietly "fix" what it finds is no longer an auditor. That's a custom subagent, and opencode lets you define one in a single markdown file.
+
+## Two ways to make one
+
+There's a command for it and there's the file it writes. The command is the gentle on-ramp:
+
+```text
+> opencode agent create
+```
+
+It runs interactively — asks whether the agent is global or project-scoped, what it's for, an identifier, and a starting permission posture — then writes a markdown file for you and you're done. That's the right move the first time, because it shows you the shape. But the file *is* the agent, and once you've seen it you'll usually just write the file directly, the same way you'd hand-edit `opencode.json` rather than re-run a wizard.
+
+The file lives in one of two places, and the choice is the same allow-it-everywhere-or-just-here decision you've made all course:
+
+- `.opencode/agents/auditor.md` — checked into the `feedmill` repo, so the auditor ships with the project and every clone gets it.
+- `~/.config/opencode/agents/auditor.md` — on your machine only, available in every project you open.
+
+For a rule that's specific to `feedmill`'s codebase, the project directory is the right home — the agent travels with the code it audits. The filename becomes the agent's name: `auditor.md` gives you `@auditor`. (The plural `agents/` is the standard directory; opencode also resolves the singular `agent/` for backward compatibility, so older configs keep working.)
+
+## The file: frontmatter is the whole contract
+
+An opencode agent is YAML frontmatter plus a body. The frontmatter declares *what the agent is and what it's allowed to do*; the body becomes its system prompt — the standing instructions it carries into every invocation. Here's the auditor, complete:
+
+```markdown
+---
+description: >
+  Read-only auditor. Walks every feed adapter and verifies each one
+  normalizes its source timestamp to UTC before returning it. Reports
+  violations; never fixes them.
+mode: subagent
+model: anthropic/claude-sonnet-4-6
+temperature: 0.1
+permission:
+  edit: deny
+  bash:
+    "git *": allow
+    "*": deny
+  webfetch: deny
+---
+
+You audit feedmill's feed adapters for one rule and one rule only: every
+adapter must convert its source's date into UTC (time.Time in UTC, or an
+explicit `.UTC()` / location-aware parse) before it returns a timestamp.
+
+For each adapter under internal/adapters/, report:
+- the file and the line where the timestamp is produced
+- whether it normalizes to UTC, and if not, exactly what it does instead
+
+Do not edit, suggest patches, or run anything that writes. List findings
+as a table and stop. Finding zero violations is a valid, good result.
+```
+
+Read that frontmatter field by field, because every line is doing a specific job:
+
+- **`description`** is not decoration — it's how a primary agent decides whether to delegate to this worker automatically, and it's what shows next to `@auditor` in autocomplete. Write it as a precise statement of the job, including the *never fixes them* clause, so neither you nor a primary agent ever reaches for this worker expecting it to change code.
+- **`mode: subagent`** is the line that makes this a worker rather than a top-level driver. The three values are `primary` (a top-level agent you Tab to, like `build` and `plan`), `subagent` (a worker you `@mention` or that gets delegated to, never driven directly), and `all` (eligible for both). An auditor is something you call *into* a session, so `subagent` is correct.
+- **`model`** pins this agent to its own model regardless of what your main session is running — the same per-agent override you set on `explore` two chapters back. Audit work is read-and-judge, so a solid mid-tier reasoner is the right fit; you don't need your most expensive model to check a rule, but you do need one that won't miss a sneaky `time.Parse` without a location.
+- **`temperature: 0.1`** keeps it boring on purpose. An auditor that gets creative is an auditor inventing violations.
+- **`permission`** is the part that makes this safe, and it's worth its own beat.
+
+## The permission map is the whole point
+
+The promise of this agent is *it can never edit*. opencode lets you make that structurally true rather than a hope, through the per-tool `permission` map. Each key names a tool class and takes `allow`, `deny`, or `ask`:
+
+```yaml
+permission:
+  edit: deny
+  bash:
+    "git *": allow
+    "*": deny
+  webfetch: deny
+```
+
+`edit: deny` is the load-bearing line. It revokes the write/edit/patch tools entirely for this agent — there is no approval prompt to fat-finger past, because the capability isn't there. That's a real difference from the leash you've used everywhere else: `ask` means *the agent can do it once you say yes*; `deny` means *the agent cannot do it at all*. For an auditor you want the second, harder guarantee.
+
+The `bash` key shows opencode's glob handling. Rather than a flat allow/deny, you give it a map of command patterns: `"git *"` lets the auditor run read-style git for context, while the catch-all `"*": deny` blocks every other shell command — so it can't `sed -i` its way around the edit ban or run a build that writes generated files. Matching is last-match-wins, so the specific `git *` rule sits *above* the broad `"*"` catch-all here and wins for git commands; widen or tighten by reordering. (`webfetch: deny` just keeps the auditor's nose in the local codebase — it has no reason to hit the network to check a date-handling rule.)
+
+The result is a worker that is read-only by construction, not by good behavior. You can hand it the codebase with no supervision because the worst it can do is report.
+
+## Run it
+
+With the file saved, the new worker is live — no restart, just `@mention` it like any built-in:
+
+```text
+> @auditor check every feed adapter for the UTC normalization rule
+
+  @auditor  (subagent · anthropic/claude-sonnet-4-6)
+  • Read internal/adapters/ (28 files), internal/feed/timestamp.go
+
+  | adapter            | timestamp site             | normalizes to UTC?       |
+  |--------------------|----------------------------|--------------------------|
+  | atom.go            | atom.go:84  time.Parse RFC3339 | yes — RFC3339 carries offset |
+  | rss.go             | rss.go:71   time.Parse RFC1123Z | yes                      |
+  | json_feed.go       | json_feed.go:59  parsed as RFC3339 | yes                  |
+  | reddit.go          | reddit.go:46  time.Unix(ts, 0) | NO — returns server-local time, not .UTC() |
+
+  3 of 4 adapters normalize to UTC. reddit.go produces a local-zone
+  time.Time at line 46 and never converts it. That is the rule
+  violation. I have not modified anything.
+```
+
+There's the worker doing exactly its job and nothing else: it spawned in its own isolated context, read the adapter tree without polluting your main session, found the one parser that stores local time instead of UTC, and stopped. It didn't offer a patch, because it can't write one — and that constraint is *why* you can trust the report. A worker that could also fix things has an incentive to call a borderline case a violation so it has something to do; a pure auditor just tells you what's true.
+
+Now you have the bug pinned to `reddit.go:46`, found by a worker you can re-run on every PR without a second thought. But one auditor walking 28 adapters in sequence is still one worker doing serial work. Next, turn that into parallelism: [Fan out across feed adapters](/course/opencode/subagents/fan-out/).

@@ -1,0 +1,138 @@
+---
+title: "An Agent Watching Its Own Context Fill Up Will Rush the Ending. Take the Wheel."
+description: "When the window fills, agents cut corners and auto-compaction throws away the wrong things. Author a handoff file, eyeball it, and restart in a clean session you control."
+authors: sanjay
+date: 2026-05-31
+tags: [context-engineering, slash-commands, configuration, subagents]
+draft: true
+---
+
+There's a tell, late in a long session, when the agent stops writing the careful version. It starts collapsing three steps into one. It skips the test it was going to write. It declares the task "essentially complete" and offers a commit that papers over a TODO. Nothing failed. The agent didn't crash. It just quietly downshifted — because it can see its own [context window](/foundations/context-management/) filling, and it's now optimizing for *finishing* over *finishing well*.
+
+That downshift is the moment to intervene. Most people don't, because the tool offers a convenient alternative: auto-compaction. **It's the wrong tool for serious work.**
+
+## The window fills, and the agent degrades
+
+Here's the part that's easy to miss. You don't need the agent to be "watching its own gauge" for this to happen — the degradation tracks input *length*, not self-awareness. It's called context rot: a 2025 study fed the same task to eighteen different models at growing context lengths, and all eighteen degraded as the input got longer. An agent at 65% context isn't behaving like the same agent at 15%. It behaves *as if* it's triaging — dropping the audit it promised, inlining a half-justified assumption, closing the loop early — not because it knows the window is filling, but because a longer transcript is simply harder for it to reason over cleanly.
+
+You've seen the artifact of this: a commit at the end of a marathon session that *looks* finished and isn't. A function stubbed where the plan said implement. An error swallowed because handling it properly would have cost tokens the agent didn't think it had. **The degradation is invisible because the agent narrates confidence the whole way down.**
+
+So what do you do when the window is two-thirds full and the work isn't done? That's the open question. The default answer is the wrong one.
+
+## Auto-compaction is a black box that commits the scraps it kept
+
+The mainstream move is to let the tool handle it. Auto-compaction is genuinely convenient: when context crosses a threshold near the top of the window — Claude Code's default fires around 95% full, and other agents land near 90% — the tool summarizes the conversation so far, drops the raw history, and lets the agent keep going. No interruption. No decision on your part.
+
+Steel-manned, that's a real feature — it keeps a long session *alive* without you babysitting the token count. But "alive" is not the bar for serious work. The bar is *correct*, and auto-compaction fails it three ways:
+
+- **It fires at the worst possible moment.** By default it waits until the window is nearly exhausted, then summarizes — and the summary itself costs tokens, so the agent resumes with very little room to actually work. The trigger also has no idea whether you're mid-refactor or between clean tasks. It cuts where the token budget runs out, not where the work has a seam. (You can move the trigger earlier — Claude Code exposes `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` — but an earlier *automatic* cut is still an automatic one.)
+- **You can't fully control what it keeps.** It's fairer than it used to be — you can steer the summary (`/compact "focus on the API changes"`), and some tools now let you pause to read the summary before continuing. But steering a summarizer is not the same as authoring the snapshot. You're nudging a process you don't own, not deciding line by line what survives.
+- **It keeps the poison.** A summarizer optimizing for completeness preserves the dead ends, the abandoned approach, the bad early guess — right alongside the good context. Worse than keeping a rejected approach *intact* is keeping it *ambiguously*: flattened into a neutral mention the next session might read as a live option and helpfully reconsider.
+
+A summary you can nudge but not edit is still not context engineering. A handoff file you author, eyeball, and delete from by hand beats merely steering a process you don't control.
+
+## Write the handoff yourself, then restart clean
+
+The fix inverts the control. Instead of letting an opaque compactor decide what survives, you author a **handoff file** — a deliberate, eyeballed snapshot of the *surviving* context — and carry it into a fresh session that starts near empty.
+
+This isn't hypothetical. In October 2025 the Amp coding agent retired compaction entirely in favor of a `handoff` command: instead of summarizing in place, it analyzed the thread, drafted a prompt and a file list for a fresh thread, and let you review what carried forward before you committed to it — the same inversion, shipped to production. (Amp later reversed course, and that reversal is the strongest argument against this whole approach. I'll come back to it — it doesn't hold up the way it sounds.) The mechanism is simple enough to build yourself. Make it a [slash command](/foundations/slash-commands/) so it's one keystroke at the moment of the downshift. Something like `/handoff`:
+
+```markdown
+---
+description: Write a clean handoff file for a fresh session
+---
+
+Write `HANDOFF.md` capturing ONLY what the next session needs:
+
+1. **Goal** — the one task, in one sentence.
+2. **Done** — what's actually finished and verified (not "started").
+3. **Next** — the precise next step, with file paths.
+4. **Constraints** — decisions already locked in.
+5. **Dead ends** — approaches we tried and REJECTED, so we don't retry them.
+
+Do NOT summarize the whole conversation. Do NOT include
+reasoning we've already discharged. Be ruthless. If it
+won't change what the next session does, cut it.
+```
+
+The output is a small file you actually read. Here's the shape:
+
+```markdown
+# Handoff — add idempotency keys to /orders
+
+## Goal
+Make POST /orders safe to retry without double-charging.
+
+## Done
+- Migration adds `idempotency_key` column (unique). Applied + verified.
+- Middleware extracts the key from the `Idempotency-Key` header.
+
+## Next
+- In `src/orders/create.ts`, wrap the insert: on duplicate key,
+  return the stored response instead of re-running the charge.
+
+## Constraints
+- Keys expire after 24h. Don't add a separate cache; use the column.
+
+## Dead ends
+- Tried a Redis lock first — rejected. Race on lock release.
+  Do NOT reintroduce Redis here.
+```
+
+That last section is the part auto-compaction can never give you. **You get to delete the poison.** The rejected Redis approach is gone from the next session's context — not flattened into a neutral summary that the fresh agent might helpfully "reconsider," but excised. You decide what the next session is allowed to know.
+
+Then you restart. Open a fresh session, point it at `HANDOFF.md`, and the agent resumes near empty instead of two-thirds full. It's the same model, but now it's the *clean-window version* — the one that writes the careful implementation and the test, because it has room to.
+
+## The poison problem is worst exactly where you'd reach for compaction
+
+The feature example above is the easy case. The handoff earns its keep in the hard one: a long debugging or research session, where the *bulk* of the transcript is approaches that didn't work. You've spent forty messages ruling out five hypotheses for an intermittent failure. Only the sixth was right. The signal — the one real cause and the fix — is a few lines; the noise is everything else.
+
+This is the situation auto-compaction handles worst, because a faithful summarizer is *supposed* to preserve the investigation. It dutifully records "we examined the connection pool, the retry logic, the clock skew, the serializer, and the cache TTL" — and now the fresh agent, handed that summary, treats five dead hypotheses as live leads and starts re-examining them. The better the summarizer, the more completely it reproduces the maze you just escaped. A handoff inverts it:
+
+```markdown
+# Handoff — intermittent 500s on /sync
+
+## Root cause (confirmed)
+Clock skew between workers: tokens minted on one node fail
+`exp` validation on another. Reproduced by skewing node clocks.
+
+## Next
+- In `src/auth/verify.ts`, widen the `exp` leeway to 30s and
+  pin all workers to NTP. Add a test that skews the clock.
+
+## Dead ends — do NOT reinvestigate
+- Connection pool, retry logic, serializer, cache TTL. All ruled
+  out with evidence. Reopening these is wasted budget.
+```
+
+The "dead ends" section stops being bookkeeping and becomes the most valuable thing in the file. You're not compressing the investigation — you're throwing away the 90% that was wrong on purpose, and keeping only the 10% that was true. No summarizer will do that for you, because to a summarizer the wrong paths *are* part of the record.
+
+## "But the models are getting good at compaction"
+
+Here's the reversal I promised. Amp didn't just drop handoff — in 2026 it brought automatic compaction back and retired handoff, on an explicit bet: frontier models are now good enough at compaction that the manual ritual isn't worth the friction. Stop watching the percentage; let the agent summarize and continue. That's a serious argument from people who shipped both designs, and for a lot of work it's right.
+
+But notice what "good at compaction" actually improves: *fidelity*. A better model writes a summary that more accurately reflects the conversation. That's the wrong axis. The handoff isn't solving for fidelity — a perfectly faithful summary of a session full of dead ends is exactly the problem, because it faithfully carries the dead ends. The handoff is solving for *editorial judgment*: which true things are still relevant, and which true things should be forgotten. A summarizer optimizing for faithfulness can't make that call, because the call requires knowing your intent, not the transcript's contents. Improving the summarizer doesn't close that gap; it sharpens the wrong tool.
+
+So the honest boundary is this: **for routine, linear work, auto-compaction is fine** — let it run, don't add ceremony. Reserve the manual handoff for sessions where a wrong carry-forward is expensive: the long debug, the architecture spike, the refactor with three abandoned approaches behind it. That's the [when-to-reach-for-it](/foundations/context-management/) line. The technique is a scalpel, not a default.
+
+It's also fallible in the other direction. A handoff is only as good as your editing, and a too-aggressive cut is its own failure mode: delete a constraint that mattered and the fresh session cheerfully rediscovers the bug you'd already fixed around. The mitigation is to keep durable facts out of the handoff entirely — which is the next section.
+
+## This is a workflow you configure, not a habit you remember
+
+The reason people don't do this is friction: at the exact moment the agent is rushing, you're also tired and just want it done. So remove the willpower from the loop. Put the `/handoff` command in your project so it's shared and versioned. Add a line to your [configuration](/foundations/configuration/) — your `AGENTS.md` or rules file — that tells the agent to *propose* a handoff when it notices its own context crossing a threshold, instead of silently downshifting:
+
+```markdown
+## Context discipline
+When your context usage passes ~60% mid-task, stop and propose
+a handoff: summarize surviving context per the /handoff format
+and recommend a fresh session. Do not quietly compress the
+remaining work to fit.
+```
+
+Now you've turned the failure mode against itself: instead of letting length quietly degrade the work, the agent flags the cliff at a budget you set — a commonly recommended manual threshold is around 60% full — and hands off before sliding off it. Anything durable you want to outlast the seam — locked-in conventions, the project's hard rules — belongs in that `AGENTS.md`/`CLAUDE.md`-style file, where it survives compaction regardless of which path you take.
+
+There's a structural cousin worth naming: a [subagent](/foundations/subagents/) is the same trick at smaller scale. You spin one up precisely so a noisy, token-heavy task (reading twelve files, running a flaky test suite) burns *its* window and hands back only the distilled result — keeping your main thread clean. The handoff file is that discipline applied to the whole session: isolate the work, return only what matters, protect the next window from the last one's mess.
+
+This is context engineering in one move. The agent is capable but contextless; left alone, it will guess at what to forget. The handoff is where you, the one who actually knows what the work needs, decide what survives the seam — and you cut that seam on purpose, while you can still read what's on both sides of it.
+
+A black box decided what to forget, or you did. Only one of those is context engineering.

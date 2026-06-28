@@ -1,0 +1,105 @@
+---
+title: Prompt well and move at the speed of the keyboard
+description: "Stop typing more than you think. Describe outcomes, pull files in with @ and shell output with !, and make plan→build toggling and per-task model choice reflexes instead of setup steps — grounded in what opencode stats tells you."
+sidebar:
+  label: "Reflexes · prompt well, move fast"
+---
+
+By now `feedmill` runs the way you want and the loop holds no surprises. What's left to fix is *you*. Watch yourself drive for an hour and you'll catch the same friction over and over: you paste a file path the agent could have found, you tab away to a terminal to run `git log` and paste the result back, you write three sentences of procedure when one sentence of outcome would have done it, and you ship a parser tweak on whatever model the session happened to open with. None of that is the tool fighting you — it's missing reflexes. This lesson is about closing the gap between the thing you want and the keys you press to ask for it.
+
+## Describe the outcome, then get out of the way
+
+The single most common way to slow yourself down is to do the agent's thinking out loud. `feedmill`'s dedupe is letting near-identical items through — the same article syndicated to two feeds with slightly different titles shows up twice in your reading queue. The slow way to ask is to narrate the fix:
+
+```text
+> open internal/dedupe/dedupe.go, find the function that compares items,
+  change it so it normalizes the title before hashing, lowercase it and
+  strip punctuation, then update the test...
+```
+
+You've just written the patch in prose. If you knew the fix that precisely you'd have typed it yourself. The reflex to build is the opposite — state the *what* and let the agent work the *how*, the same way you'd hand it to a teammate:
+
+```text
+> near-duplicate items are getting through dedupe — the same article from
+  two feeds with slightly different titles shows up twice in the queue.
+  Tighten the matching so those collapse to one, and add a test that pins
+  the case that's leaking through now.
+```
+
+You didn't name the file, the function, or the hashing strategy. You described the symptom and the outcome, and the agent does what it's good at — reads the relevant code, proposes an approach, and shows it to you before touching disk. Outcome-first prompting isn't just less typing; it lets the agent surface the *right* fix instead of faithfully implementing the half-formed one in your head.
+
+## Keep your hands on the keyboard: `@` and `!`
+
+The second reflex kills the tab-away habit. Two characters do almost all the work.
+
+`@` is a fuzzy file reference. Type `@` and start typing a filename and opencode searches the working tree as you go; pick a match and that file's contents go into the prompt. You don't paste paths and you don't make the agent guess which `parser.go` you meant when there are five of them:
+
+```text
+> the JSON-feed parser in @internal/feed/json.go is dropping items with a
+  missing `published` field instead of falling back to `updated`. Fix the
+  fallback and cover it in @internal/feed/json_test.go.
+```
+
+`!` runs a shell command inline and feeds the output straight into the conversation as context. This is the one that ends the alt-tab dance — instead of switching to a terminal, running a command, and pasting the result back, you stay in the prompt:
+
+```text
+> !git log --oneline -10
+> something in the last few commits broke the sync server's feed-refresh
+  schedule. Look at those commits and find the regression.
+```
+
+The agent now sees the actual recent history, not your paraphrase of it. The same move works for `!go test ./...` to drop a failing-test wall in front of the agent, or `!feedmill sync --dry-run` to show it the live behavior you're complaining about. Both are entered directly in the TUI prompt — no slash command — per opencode.ai/docs/tui. Files in with `@`, reality in with `!`, both without your hands leaving the prompt — that's the flow you're protecting.
+
+## Plan, then build — Tab is the reflex, not a menu
+
+You already know `plan` and `build` are separate primary agents and that `plan` is read-only. The reflex worth drilling is that switching between them is a **Tab keypress mid-session**, not a thing you set up before you start. So the natural rhythm for anything bigger than a one-liner is: open in `plan`, ask for an approach, read it, then Tab into `build` and turn it loose — same session, so the plan it just wrote is the context it builds against.
+
+```text
+[plan]  > the feed scheduler runs everything on one global interval. I want
+          per-feed intervals so a fast news feed and a daily digest don't
+          poll at the same cadence. Outline the change — don't edit yet.
+
+        ⏷ read internal/sync/scheduler.go, internal/feed/feed.go (2 files)
+
+        Plan: add an `Interval` field to the feed config, default it to the
+        current global value for back-compat, and have the scheduler key
+        each feed's next-run off its own interval. Three files, one new
+        config field, one migration of existing configs.
+
+[Tab → build]
+        > good — do it.
+```
+
+The point isn't that planning is mandatory. It's that the cost of planning first dropped to one keystroke, so there's no longer a reason to skip it on a change that touches three files. When the plan reads wrong, you Tab nowhere — you just correct it in `plan` where it can't write anything you'll have to undo.
+
+## Pick the model for the task, not for the session
+
+The last reflex is treating model choice as a per-task decision instead of a session default you forget about. opencode is provider-agnostic on purpose — `/model` switches the active model mid-session (or hit `<leader>m` to pop the same picker without typing), and that's a routine move, not a settings trip. The matching rhythm:
+
+- A wide refactor across `feedmill`'s parsers, or a gnarly concurrency bug in the sync server — reach for a stronger reasoning model and pay for it knowingly.
+- A rote chore — renaming a field across the tree, writing the obvious test, regenerating fixtures — drop to something cheap and fast. You don't need a frontier model to rename a struct field.
+
+```text
+> /model
+  (pick the cheap fast model)
+> add table-driven tests for the three feed parsers covering the
+  empty-feed and malformed-date cases.
+```
+
+What turns this from a guess into a decision is having the numbers. `opencode stats` reports token usage and cost across your sessions, so "the heavy model is where my spend goes" stops being a feeling and becomes something you can read:
+
+```text
+$ opencode stats
+  Sessions    42      Tokens    8.1M      Cost   $14.20
+  By model
+    <stronger reasoning model>   6.2M   $12.80
+    <cheap fast model>           1.9M    $1.40
+```
+
+{/* VERIFY: `opencode stats` is a confirmed built-in command reporting "token usage and cost statistics for your sessions", with --days / --tools / --models / --project filters (opencode.ai/docs/cli, v1.16.2). But the docs publish NO sample output, so the exact column layout/wording above is illustrative reconstruction, not a copied transcript — kept OPEN because the real columns aren't documented and can drift between releases. */}
+
+Glance at that once a week and the model reflex calibrates itself: you'll see that the expensive model earned its keep on the real refactors and was pure waste on the rename you ran it on out of habit. Cheap-by-default, expensive-on-purpose, checked against the numbers — that's the whole discipline.
+
+---
+
+Four reflexes, and none of them is a feature you didn't already have — they're the difference between knowing opencode and *driving* it: outcomes over steps, `@` and `!` to stay on the keyboard, Tab to plan-then-build, `/model` to spend where it pays. With the daily loop tight, the last lesson steps back from the keys to look at the week these habits add up to — [a look back across the week](/course/opencode/daily-workflow/the-week-back/).

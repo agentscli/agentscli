@@ -1,0 +1,59 @@
+---
+title: Discovery and the nesting walk
+description: "You drop an AGENTS.md inside feedmill's server/ to add a rule, and you assume the root rules vanish for every file under it — the way they would in a tool that only reads the nearest file. opencode does the opposite: it walks up from your working directory to the worktree root and loads every AGENTS.md it finds, combining them. Learn the walk, what 'first match wins' actually means, and where the per-subtree fix really lives."
+sidebar:
+  label: "Discovery · walk-up combine"
+---
+
+The root `AGENTS.md` from the last lesson is working. UTC at ingest, fetches through the limiter — opencode names both rules back to you on every relevant task, and you've stopped reviewing the same two mistakes. So you reach for the obvious next step. `feedmill`'s HTTP sync server lives under `server/` and has a convention of its own: every handler must wrap its response in the standard error envelope. Rather than bloat the root file with a server-only rule, you do the tidy thing and drop a second `AGENTS.md` inside `server/` with just that one rule in it.
+
+Then you stop, because you've been bitten by exactly this before — in a different tool. There, a rules file only ever came from the *nearest* directory: the moment you nested one, it took over and the root rules silently stopped applying to that subtree. You've learned to distrust nesting. So before you trust the server task, you ask opencode what it's actually reading.
+
+It turns out opencode does not work the way that other tool does.
+
+## opencode walks up, and combines what it finds
+
+Here's the mechanism, and it's worth holding precisely because most people arrive expecting the opposite. When opencode builds its context for a turn, it doesn't read only the rule file in your current directory. It **walks up** from the current working directory toward the worktree root, and at every level it collects the `AGENTS.md` it finds there. Every one of those files is loaded and **combined** into the rules layer — the nested file does not replace the root, it stacks on top of it. {/* VERIFY (OPEN — upper-boundary edge case only; walk-up-combine itself is CONFIRMED): the walk is bounded by `ctx.worktree`. Inside a git repo that resolves to the repository root, so the climb stops there (anomalyco/opencode v1.16.2 `instruction.ts` `systemPaths` → `fs.findUp(file, ctx.directory, ctx.worktree)`; `util/filesystem.ts` `findUp` accumulates every match up to the stop dir; CLOSED #4479 confirms the search halts at the git root and that the `break` only ends the filename-variant loop). With NO `.git` boundary the worktree resolves higher and opencode can pull an AGENTS.md from a parent/home directory you did not intend — #6479 (OPEN as of v1.16.2). So "stops at the worktree root" is exact only inside a git repo; outside one the upper bound is unsettled. Keep the prose's "feedmill is a git repo, so the climb stops at feedmill/" scoping. */}
+
+So when you're working from inside `server/`, the walk starts there, picks up `server/AGENTS.md`, keeps climbing to the repo root (`feedmill` is a git repo, so the climb stops at `feedmill/`), picks up the root `feedmill/AGENTS.md` too, and hands the agent both. Your UTC and rate-limit rules from the root file are still in force under `server/`, and the server-only error-envelope rule is added alongside them. You didn't replace your rule set. You extended it for that subtree — which is exactly what you wanted.
+
+The line in opencode's own docs that people misread is this one:
+
+```text
+The first matching file wins in each category.
+```
+
+It is tempting to read "first matching file wins" as "the nearest directory's file replaces the rest." It does not mean that. The docs' own example pins it down: *if you have both `AGENTS.md` and `CLAUDE.md`, only `AGENTS.md` is used.* The "category" is the set of **filename variants** opencode recognizes — `AGENTS.md` beats `CLAUDE.md` beats the deprecated `CONTEXT.md` — not the set of directory levels. The loop runs over filename variants, and `findUp` returns *every* matching copy of the winning filename from your cwd up to the worktree root before the loop breaks. So the walk picks one filename and keeps all of that filename's copies across levels; it only stops considering `CLAUDE.md` and `CONTEXT.md` once any `AGENTS.md` has matched somewhere on the path.
+
+So "first match wins" is real, and so is "all the files combine." They're answers to two different questions: *which name do I pick in this directory* versus *how many directories do I read*.
+
+## Why people expect the opposite
+
+If you've come from a tool that only reads the **nearest** rules file — or only the root one — then dropping a file in `server/` *feels* dangerous, because there it would override rather than add. {/* VERIFY (OPEN — third-party behavior, version-dependent): the directional claim ("some tools don't combine a nested hierarchy") is safe and is the only thing the prose now relies on. A named example was removed because the exact current behavior of other vendors drifts: GitHub Copilot historically read root-level instructions and ignored nested AGENTS.md (microsoft/vscode #271489; github/copilot-cli #3051, #1655 request recursive discovery), and Cursor's .cursor/rules layers files by glob / alwaysApply. If you re-add a named comparison, re-verify that vendor's current behavior at publish time rather than trusting these issue numbers. */}
+
+opencode removes that danger, but it introduces a milder one in its place: because nested files *add*, a rule you bury three directories deep is silently in force everywhere below it, and a contradiction between a nested file and the root won't error — it just hands the model two rules and lets it reconcile them. The failure mode isn't "my root rules vanished." It's "I forgot this subtree also inherits everything above it." Different trap, opposite direction.
+
+You can confirm what opencode loaded for a given turn rather than guessing — but don't take the model's word for it. Ask opencode to *self-report* which files it read and it may confabulate. Look at a deterministic source instead: opencode prepends each loaded rules file to the system prompt under an `Instructions from: <path>` header, and when a nested file is pulled in by a read it arrives inside a `<system-reminder>` block naming the same path — so the loaded set is observable, not inferred. {/* VERIFY (OPEN — no single documented flag): in anomalyco/opencode v1.16.2 the system-prompt rules files are emitted with the literal prefix `Instructions from: <path>` (instruction.ts `system()`), and read-triggered nested files are injected as `<system-reminder>` blocks (tool/read.ts ll. 358-359, content prefixed `Instructions from:`). There is NO dedicated `opencode debug instructions` subcommand in v1.16.2 (debug subcommands are: agent, config, file, lsp, ripgrep, skill, snapshot, startup, v2). If you want a copy-paste deterministic check for the lesson, confirm whether the JSON/headless output or a debug command exposes the resolved instruction path list before asserting one exists. */}
+
+The point of looking is the same either way: confirm the rules layer is what you think it is, before a wrong answer tells you it wasn't.
+
+## When you do want per-subtree files
+
+Walk-up combining covers most of what a project `feedmill`'s size needs — a root file, optionally a nested file or two, all stacking. But the once-per-turn walk-up has two limits worth naming. First, it only reaches files *above* your working directory: a rule in `parsers/json/` won't be in the turn's base context when you're working from `server/`, because the walk goes up, not sideways (the read tool can still surface it later, but only once the agent actually reads a file in that subtree). Second, the set of files the walk-up loads depends on where you happen to be, which is implicit and easy to misjudge.
+
+When you want an **explicit, location-independent** set of rule files — load *these* every turn, no matter which directory the task touches — the tool isn't directory nesting at all. It's the `instructions` field in `opencode.json`, which takes explicit file paths and glob patterns and loads every match additively:
+
+```text
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md", "packages/*/AGENTS.md"]
+}
+```
+
+Every matched file is loaded and combined with your `AGENTS.md` files — the docs are explicit that *all instruction files are combined with your `AGENTS.md` files.* The difference from the walk-up isn't combine-versus-replace (both combine); it's **implicit-by-location versus explicit-by-config.** The walk-up gathers whatever sits above your cwd; the `instructions` glob gathers exactly the set you name, from anywhere in the tree, every turn. Entries can be relative paths, globs, `~/`-rooted paths, or even remote `https://` URLs (fetched with a short timeout).
+
+That's the next lesson, in full. You've seen how discovery actually behaves — the walk climbs to the worktree root and combines every `AGENTS.md` on the way, and "first match wins" only chooses among filename variants at a single level — and where the explicit alternative lives. Now wire it up on purpose: split `feedmill`'s long-lived conventions into their own files and load them by name. [Next: point at more instruction files](/course/opencode/rules-agents-md/extra-instructions/).
+
+## One more way nested files load: when you read into the subtree
+
+There's a second path that loads a *below-cwd* `AGENTS.md`, and it's worth knowing because it closes the "the walk only goes up" gap. The walk-up above runs once per turn and only sees files above your cwd. But opencode's **read tool** does its own thing: when the agent reads a file that lives under a directory containing an `AGENTS.md` (one you'd never have picked up walking up from your cwd), opencode walks up *from that file* to the project root and injects any instruction files it finds as a `<system-reminder>` attached to the read result — once per file, deduped against what the turn already loaded. So a rule in `parsers/json/AGENTS.md` that the cwd walk-up missed still reaches the agent the moment it reads a file in `parsers/json/`. This is real in the pinned release, not a roadmap item: `instruction.resolve()` walks up from the read file to the instance root, and `tool/read.ts` emits the results as a `<system-reminder>` (anomalyco/opencode v1.16.2 `packages/opencode/src/session/instruction.ts`, `packages/opencode/src/tool/read.ts` ll. 303 + 358-359). The standing feature requests #6316 ("Load AGENTS.md from Directories When Accessing Files") and #7576 ("Auto-selection of nested AGENTS.md") are both CLOSED, consistent with this having shipped.

@@ -1,0 +1,72 @@
+---
+title: Write feedmill's AGENTS.md
+description: "Two facts about feedmill — UTC timestamps and the rate-limit delay — keep walking out of the agent's memory between sessions. Write them once into a project-root AGENTS.md, or let /init draft it, so the rule travels with the repo instead of with you."
+sidebar:
+  label: "AGENTS.md · the rules layer"
+---
+
+You've now run opencode against `feedmill` enough times to notice a tax. Every session starts the same way: you remind it that timestamps are stored in UTC, and that any new fetch path has to respect the per-source rate-limit delay or the upstream feeds start returning 429s. You say it, the agent honors it for that session, the session ends, and the knowledge goes with it. The next morning you're typing the same two sentences again before you can ask for anything real.
+
+That's not a prompting problem you fix by prompting harder. It's a missing file. The two rules belong to the repo, not to your memory — so they should live *in* the repo, where opencode reads them on every turn without being told.
+
+## opencode has no Rules file — AGENTS.md is it
+
+If you've come from Claude Code you may be looking for a dedicated behavioral-rules file. There isn't one. opencode does not have a separate "Rules" file as its own primitive — **`AGENTS.md` is the rules layer.** That's the whole mechanism, and it's deliberately the same `AGENTS.md` that Codex reads: opencode is the other implementation of the [agents.md spec](https://agents.md/), so a file you write here is portable to Codex with no changes. One file, two tools, and anyone who clones `feedmill` inherits the same standing instructions you do.
+
+opencode reads it from two places:
+
+- `./AGENTS.md` — at the project root, committed to the repo. This is where `feedmill`'s rules go: they're true for everyone who touches the code.
+- `~/.config/opencode/AGENTS.md` — user-wide, applied across every project on your machine. This is for *your* personal preferences (how you like commits worded, say), not facts about a specific codebase.
+
+The UTC-and-rate-limit rules are facts about `feedmill`, so they go in the project-root file. Keep the distinction sharp — a feedmill truth in your user-wide file would silently stop traveling the moment a teammate clones the repo, which is exactly the failure you're trying to kill. The two files don't compete: opencode loads the global file and the project file and **combines** them, so your personal preferences and the repo's rules both apply at once.
+
+## Let /init draft it from the code
+
+You could open an editor and write the file by hand. But opencode can read the repo and draft it for you, which on inherited code is the better first move — it'll surface conventions you haven't noticed yet. Run `/init` at the prompt:
+
+```text
+> /init
+
+  • Scanning feedmill…
+    Read README.md, go.mod, cmd/feedmill/main.go, internal/fetch/, internal/store/   (12 files)
+
+  I've generated AGENTS.md from the codebase. It covers the build/test
+  commands, the CLI-plus-sync-server layout, and the storage and
+  fetch conventions I could infer from the code.
+
+  ⏵ Write AGENTS.md
+```
+
+`/init` scans the important files in the repo, asks a couple of targeted questions when the code can't answer them, and then **creates or updates `AGENTS.md`** with concise project-specific guidance — build commands, architecture, the conventions it can read off the source. It's a draft, not gospel. The agent can infer that `feedmill` is a Go CLI with a sync server, but it can't always infer a rule that only exists in the original author's head — like "fetches respect the rate-limit delay," which is a contract with upstream servers, not something written plainly in one function. So you read what it wrote, then add the rules it couldn't know.
+
+## Write the two rules in plain language
+
+Open `AGENTS.md` and add the standing facts that kept walking out of memory. Keep it terse and imperative — this is instruction, not documentation:
+
+```text
+## Conventions
+
+- All timestamps are stored and compared in UTC. Parse incoming feed
+  dates to UTC at ingest; never store a feed's local time.
+- Every fetch must respect the per-source rate-limit delay. Route new
+  fetch code through internal/fetch/limiter.go — do not call the HTTP
+  client directly, or upstreams start returning 429s.
+```
+
+Two rules, the two you were hand-repeating. Commit the file and the tax is gone — opencode now reads `AGENTS.md` on every turn in this repo, so the rules are in force from the first message of every session without you saying a word. Watch it land on the very next task:
+
+```text
+> add a JSON-feed parser under internal/fetch and wire it into the poller
+
+  • Read AGENTS.md, internal/fetch/limiter.go, internal/fetch/atom.go   (3 files)
+
+  Following the repo conventions: I'll parse the feed's published
+  timestamps to UTC at ingest, and route the new fetcher through the
+  shared limiter rather than calling the HTTP client directly.
+
+  ⏵ Edit internal/fetch/json.go
+```
+
+It read `AGENTS.md` before it read anything else, and the proposal already names both rules back to you — UTC at ingest, fetch through the limiter — on a task where you never mentioned either. That's the payoff: the rule now lives with the code, enforced on every clone of the repo and portable to Codex unchanged, instead of living in a sentence you have to remember to type.
+
+One file at the project root is the simple case. Real repos have subdirectories, and opencode's discovery behaves in a way that surprises people coming from tools that read only the nearest file: when you work from a subdirectory, opencode walks *up* to the repo root and **combines** every `AGENTS.md` on the way — a nested file stacks on top of the root, it doesn't replace it. It's a sharp edge worth knowing before it bites. [Next: discovery and the nesting walk](/course/opencode/rules-agents-md/discovery-and-nesting/).

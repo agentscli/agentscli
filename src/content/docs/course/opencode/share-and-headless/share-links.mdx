@@ -1,0 +1,74 @@
+---
+title: Share a session, and govern what leaves
+description: "Hand a coworker the whole stuck session as a public URL with /share, revoke it with /unshare — then, because feedmill is proprietary, make an accidental share impossible by checking { share: disabled } into opencode.json."
+sidebar:
+  label: "Share · /share, /unshare, disable"
+---
+
+You've been on the same `feedmill` session for forty minutes. One source — a German news Atom feed — keeps landing its entries an hour off, and you're now fairly sure it's a timezone bug somewhere between the parser and the dedupe key, but you can't see it. A coworker has fixed exactly this class of bug before. They're not at your terminal, they don't have your branch checked out, and pasting a wall of scrollback into chat would lose the half of the story that matters — which files opencode read, which fixes it tried, where each one fell down.
+
+This is the spot opencode does something the closed agents won't. The session you're standing in — the prompts, the model's reasoning, the diffs, the dead ends — can become a single URL your coworker opens in a browser, no opencode install required. But you also work somewhere that forbids proprietary code on third-party servers, and a public link to a session full of internal feed URLs and parser source is *exactly* the thing your security team means by that. So this lesson is two moves that belong together: how to share, and how to make sure you can never share by accident.
+
+## Share the session you're stuck in
+
+From the session, run the slash command:
+
+```text
+> /share
+
+  ✓ Session shared
+    https://opncd.ai/s/a1b9f2c4
+    (copied to clipboard)
+```
+
+That's it. `/share` syncs this conversation to opencode's servers and mints a public link at `opncd.ai/s/<id>`, and it drops the URL straight onto your clipboard so the next thing you do is paste it to your coworker. They open it in a browser and see the *whole* session as a readable page — your prompt, opencode reading `internal/parse/atom.go` and `internal/dedupe/key.go`, the two fixes it tried, the test that still fails an hour off. They don't need a login or the repo. They reply: "your dedupe key is built from the parsed time *after* you normalize to UTC, but the Atom parser is reading the offset as local — fix the parse, the key follows." Thirty seconds, because they saw the actual session instead of your summary of it.
+
+The link is live for as long as you leave it live. When the conversation has served its purpose, take it back down:
+
+```text
+> /unshare
+
+  ✓ Share link removed
+    Synced conversation data deleted
+```
+
+`/unshare` removes the public link *and* deletes the conversation data that was synced to make it work — so revoking is a real takedown, not just hiding the URL. Make `/unshare` the reflex that closes every share: the moment your coworker has what they need, revoke it, and the feedmill session stops existing on anyone's server but your own.
+
+## Sharing is manual by default — know the three modes
+
+Before you trust this on a proprietary repo, know what the *default* posture is, because it's the one you're relying on every session you *don't* run `/share` in. Sharing is governed by the `share` key in `opencode.json`, and it has three settings:
+
+- **`"manual"`** — the default. Nothing is shared unless you explicitly run `/share`. Every session you don't share stays entirely on your machine.
+- **`"auto"`** — every new session is shared automatically and a link is generated the moment it starts. Convenient for an open-source project where the whole point is public sessions; a quiet disaster for proprietary work.
+- **`"disabled"`** — sharing is turned off entirely. `/share` won't mint a link, and nothing syncs anywhere.
+
+The default being `manual` is the right default for most people: opt-in, one deliberate command, nothing leaves without you typing `/share`. But "nothing leaves *unless someone types a command*" is not a guarantee a security team accepts, because the thing they're worried about is precisely someone — you, a teammate, a pairing guest — typing that command on the wrong repo. For `feedmill`, manual isn't enough. You want the move to be impossible, not merely deliberate.
+
+## Make an accidental share impossible
+
+The fix is one line, checked into the repo:
+
+```json
+// opencode.json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "share": "disabled"
+}
+```
+
+Commit that to `feedmill`'s root. Now `/share` is dead for anyone working in this repo — yours, your coworker's, a contractor's, a laptop you've never seen. They don't have to know the policy, remember a setting, or resist a habit; the repo itself refuses to share. Because project config in opencode layers *above* the user's global config, this checked-in `disabled` overrides whatever a teammate has in their own `~/.config/opencode/opencode.json` — even someone who set `"share": "auto"` globally gets sharing turned off the moment they're working inside `feedmill`. The policy travels with the code, which is the only place a code-disclosure policy is actually enforceable.
+
+```text
+> /share
+
+  ✗ Sharing is disabled for this project
+    (set in opencode.json)
+```
+
+That's the difference between a rule and a guardrail. "Don't share proprietary sessions" is a rule someone can forget at 6pm on a Friday. `{ "share": "disabled" }` in version control is a guardrail that forgets nothing and applies to everyone who clones the repo.
+
+One layer up exists for when a rule must hold across *every* repo, not just this one. opencode loads a managed/system config layer at the highest priority tier — admin-placed files under `/Library/Application Support/opencode/` (macOS), `/etc/opencode/` (Linux), or `%ProgramData%\opencode` (Windows), plus macOS MDM `.mobileconfig` preferences — and these settings "cannot be overridden by user or project configuration." That's where an organization enforces `"share": "disabled"` org-wide, so no individual project's `opencode.json` can re-enable it. For feedmill, the checked-in project setting is the right altitude: it's the unit you actually ship, and the policy belongs with it.
+
+So the shape of it: share is a genuine collaboration superpower — turn a stuck timezone session into a link a coworker fixes in thirty seconds — and it's safe to wield precisely *because* you can also nail it shut. Manual by default, one command to share, one to revoke and delete, and a single checked-in line that takes the whole question off the table for proprietary code.
+
+Now take that same stuck session and drive it the other way — not opened up for a human to read, but handed to a machine to run. [Next: run opencode headless](/course/opencode/share-and-headless/headless-run/).

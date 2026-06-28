@@ -1,0 +1,31 @@
+---
+title: "Subagents"
+description: "Some feedmill work is noisy, some is genuinely parallel, and neither belongs in your main thread. Push the noise into an isolated context and fan the parallel work across workers — each on its own model, with its own leash."
+---
+
+The last chapter packaged a repeatable procedure as a skill the agent invokes itself. This one is about *where* the work happens — and how many places at once. Because two jobs on `feedmill` are about to make your main session miserable for the same underlying reason: they generate far more reading than thinking. The move that fixes both is the subagent — a separate session with its own context window that does a scoped job off to the side and hands back only the conclusion.
+
+opencode is the most opinionated of the tools here about this. Where the others give you a single delegation primitive, opencode ships **three built-in subagents** you invoke by `@mention` mid-prompt, and lets you author your own — each with its own model, its own permissions, its own tools. That last part is the lever, and it's a custom-agent lever: a worker you author whose only job is to scan and report doesn't need write access or your most expensive model, so you set a cheaper `model` in its frontmatter, lock down its permissions, and let it churn. (The built-ins are a different story — see the note below before you try to repoint *their* model.)
+{/* VERIFY: Per-agent `model` override is documented to work for CUSTOM agents (opencode.ai/docs/agents — "If you don't specify a model … subagents will use the model of the primary agent that invoked the subagent", implying an explicit per-agent model is honored). For the BUILT-IN subagents (general/explore/scout) it's version-dependent: issue anomalyco/opencode#21952 ("agent.model override does not apply to built-in subagents") was closed 2026-04-10 but no v1.16.2 changelog entry confirms the fix, and #22130 (subagents in opencode.json mis-classified as primary) is still open as of v1.16.2. Treat the lever as solid for custom agents; verify built-in model overrides on your build before relying on them. */}
+
+## The two jobs in front of you
+
+`feedmill` ingests dozens of differently-shaped feeds through a directory of adapters — one per source type — and two things now need doing across all of them. Neither fits comfortably in a single thread, and they're noisy in two different ways:
+
+> Find every place across the feed adapters that touches the dedupe hash — and separately, audit each adapter for the timezone bug you found in the RSS one.
+
+The first is a **search**, not a change: a hundred-odd adapter files to scan for every call site that feeds into the dedupe hash. You don't want the hundred file reads it takes to answer that — you want the answer. Run it inline and your context fills with grep output and file dumps you'll never reread, crowding out the actual work.
+
+The second is **genuinely parallel**: the same timezone bug, checked against every adapter independently. The RSS adapter mishandled it; the question is which of the others do too. That's not one big job — it's the same small job repeated across many files that don't depend on each other, which is exactly the shape that splits cleanly across workers.
+
+Do both inline and you bury the decisions under a landfill of output the agent has to keep carrying. So we'll do it the other way. Over the next few lessons:
+
+- [Meet the three built-in subagents](/course/opencode/subagents/built-in-subagents/) — `general`, `explore`, and `scout` — and push the dedupe-hash scan into `explore` with a single `@mention`, so the hundred reads land in *its* context and only the call-site map comes back to yours.
+- [Write a custom subagent](/course/opencode/subagents/custom-subagent/) when the built-ins don't fit — your own markdown file with `mode: subagent`, a per-agent model, and a permission set scoped to exactly what the job needs and nothing more. The lessons use the plural `.opencode/agents/` path, which is canonical; the singular `.opencode/agent/` is also loaded for backwards compatibility, so an older layout keeps working.
+- [Fan out across the feed adapters](/course/opencode/subagents/fan-out/) when the work is the same job repeated — dispatch a worker per adapter to check the timezone bug in parallel, and learn when that's real leverage versus when it's just showing off.
+
+## Why one continuous task
+
+You could read these three lessons as three disconnected tricks. Don't. They're one decision learned in three passes — *should this happen in my thread, or somewhere else?* — and they build in order. The built-ins teach you the `@mention` reflex and the read-only worker that answers without polluting your context. The custom subagent teaches you to shape a worker when the built-ins are the wrong fit — the cheaper model, the tighter leash. The fan-out then puts several of those workers to work at once on the parallel job.
+
+By the end, that question — isolate, or stay inline? — is one you'll ask before every noisy or parallel task on `feedmill`, and you'll know which of the three answers fits. Start by [meeting the three built-in subagents](/course/opencode/subagents/built-in-subagents/).

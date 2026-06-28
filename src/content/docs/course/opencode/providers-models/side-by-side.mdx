@@ -1,0 +1,121 @@
+---
+title: Run two providers side by side
+description: "Two providers give you opposite answers on whether feedmill's dedupe hash is collision-safe and you can't tell who's right. Point two agents at two providers, hand them the same prompt, and diff the outputs — turning a vendor argument into an A/B you can read, and the one comparison a single-vendor tool can't run because it has no second provider to compare against."
+sidebar:
+  label: "Compare · diff two models"
+---
+
+You hit this the moment you start trusting opencode with a real judgement call. `feedmill` dedupes items across dozens of feeds by hashing each one, and you've been quietly nervous about it: the same story syndicated through three feeds should collapse to one row in the reading queue, and once in a while it doesn't. So you ask. And because you've got two providers wired up from earlier in this chapter, you ask twice — once on a model from each — and they tell you opposite things.
+
+```text
+> is the dedupe hash in internal/dedupe collision-safe for our feed volume?
+
+  [anthropic/claude-opus-4-5]
+  It's fine. The hash keys on a normalized (title, link, published) tuple
+  with FNV-64a; at a few hundred thousand items the collision probability
+  is negligible. No change needed.
+```
+
+```text
+> is the dedupe hash in internal/dedupe collision-safe for our feed volume?
+
+  [openai/gpt-5.2]
+  This is risky. FNV-64a is not collision-resistant, and you're keying on
+  fields a feed controls — two different items with a crafted or coincident
+  title/link pair can hash equal and one silently vanishes from the queue.
+  Move to SHA-256 over the canonical item bytes.
+```
+{/* VERIFY (OPEN — version-dependent): `anthropic/claude-opus-4-5` and `openai/gpt-5.2` are valid `provider/model` slugs but not the newest as of June 2026 — opencode Zen already lists `opencode/claude-opus-4-8` and `opencode/gpt-5.5` (opencode.ai/docs/zen). They're fine as illustrative slugs, but model lineups churn; confirm the current direct-provider slugs before publishing (run `/models` in the TUI, or check the provider's docs). */}
+
+One says ship it, the other says you have a latent data-loss bug. You can't tell who's right by re-reading the answers — they're both fluent and confident, and confidence is the one signal an LLM gives you for free regardless of whether it's correct. What you *can* do is the thing a single-vendor tool can't: stop treating this as a debate and turn it into an A/B across two providers.
+
+## Why this is opencode's move
+
+Claude Code can only ask Claude. Codex can only ask OpenAI. When either one hands you a confident answer, your only second opinion comes from the same vendor's lineup — there's no *other provider* in the room to disagree with it. opencode is provider-agnostic, and provider choice is **per-agent**: every agent carries its own `model` field, so two agents pointed at two different providers can run the identical prompt and you read the difference.
+
+Be precise about what's the differentiator here, because it's narrower than "only opencode can run agents in parallel." It isn't parallel multi-agent work itself — opencode ships agent teams (a lead agent spawning teammate subagents, each with its own context), and Claude Code shipped that concept first. The thing a single-vendor tool genuinely can't do is put **two different providers** behind the same question. That's the lever: not that opencode can run two agents, but that the two agents can be backed by Anthropic and OpenAI at once. The disagreement above isn't a problem to resolve by gut feel; it's two data points you can lay side by side because the tool let you summon both — from two vendors.
+
+That's the whole technique. You're not looking for the model that agrees with you. You're looking at *where two strong models diverge*, because the divergence is a map of exactly the claim that needs checking — here, "is FNV-64a collision-resistant, and does it matter at our scale and threat model."
+
+## Set up two agents, one per provider
+
+The clean way to make this repeatable is two thin subagents that differ only in their `model`. Drop two files in `.opencode/agents/` (the runtime reads the plural directory; the singular `.opencode/agent/` is only accepted for backwards compatibility):
+
+```yaml
+---
+description: Second opinion, Anthropic side
+mode: subagent
+model: anthropic/claude-opus-4-5
+permission:
+  edit: deny
+---
+You are a reviewer. Answer the question directly and justify your
+reasoning. Do not edit files.
+```
+
+```yaml
+---
+description: Second opinion, OpenAI side
+mode: subagent
+model: openai/gpt-5.2
+permission:
+  edit: deny
+---
+You are a reviewer. Answer the question directly and justify your
+reasoning. Do not edit files.
+```
+
+Same prompt body, same read-only permission, different `model` — and because every provider is referenced in the one universal `provider/model` format, the only line that changes between the two files is the slug after `model:`. Call them `review-a` and `review-b`. Both are `edit: deny`, because a second opinion has no business touching the parsers; you want analysis, not action. (`mode: subagent`, the `model` field, and the nested `permission` block are all documented frontmatter — `permission` takes `ask`/`allow`/`deny` per tool.)
+
+You invoke a subagent the way opencode invokes any subagent — by `@mention`. The transcript below shows both summoned from one prompt; if your build doesn't fan a dual mention out cleanly, run them as two turns (or the two headless `opencode run` invocations shown below) and you get the same A/B:
+
+```text
+> @review-a @review-b is the dedupe hash in internal/dedupe collision-safe
+  for our feed volume? Read the code before answering, and be specific
+  about the hash function and what we key on.
+
+  ⏺ review-a (anthropic/claude-opus-4-5)
+    read internal/dedupe/hash.go
+    → FNV-64a over normalized (title, link, published). At your volume the
+      birthday-bound collision risk is ~1e-9. Safe as a dedupe key. The
+      real exposure isn't math — it's that the inputs are feed-controlled.
+
+  ⏺ review-b (openai/gpt-5.2)
+    read internal/dedupe/hash.go
+    → FNV is a non-cryptographic hash; collisions are cheap to engineer
+      and the keyed fields come straight from untrusted feeds. For a
+      dedupe key fed by sources you don't control, use SHA-256.
+```
+{/* VERIFY (OPEN — undocumented behavior): @mention invocation of a subagent IS documented (opencode.ai/docs/agents), but mentioning TWO subagents in one prompt as a single *parallel* turn is NOT documented in core opencode — the docs only show single-mention examples. Prose is hedged to not assert parallel execution; the two-turn / two-`opencode run` fallback below is the guaranteed path. Recheck the dual-mention behavior against the pinned release before presenting it as parallel. */}
+
+Read those two carefully and the "disagreement" has already half-collapsed. Both agents now agree on the *facts* — FNV-64a, keyed on feed-controlled fields. They diverge only on the *judgement*: is feed-controlled input a real threat for `feedmill` or a theoretical one? That's no longer a question about hashing. It's a question about your threat model, and now it's the only thing you have to decide. The A/B didn't pick a winner for you — it stripped away everything the models agreed on so the actual decision stands alone.
+
+## Diff the outputs, don't just read them
+
+Two short answers you can eyeball. But the comparison gets sharper the longer the outputs get, and eyeballing a pair of three-paragraph analyses is exactly where you miss the one sentence that matters. So make the comparison literal: run each side headless, capture its output, and diff the files. Running them as two separate `opencode run` invocations also sidesteps any question of whether two subagents truly run in parallel in one turn — each invocation is its own clean, non-interactive process.
+
+```text
+$ opencode run --agent review-a --format json \
+    "is the dedupe hash in internal/dedupe collision-safe for our feed \
+     volume? read the code first." > a.json
+
+$ opencode run --agent review-b --format json \
+    "is the dedupe hash in internal/dedupe collision-safe for our feed \
+     volume? read the code first." > b.json
+
+$ git diff --no-index a.json b.json
+```
+
+`opencode run` is the same non-interactive entry point you met earlier — `--agent` selects which agent answers, and because each agent pins its own provider, the two runs hit two different vendors with one identical prompt. There's no `--quiet`/`--print` flag to reach for; instead `run` takes `--format` with either `default` (formatted output) or `json` (raw JSON events), so for a clean, machine-diffable capture use `--format json` and diff that — or extract the final message from each and diff those. Either way the divergence is no longer something you're holding in your head — it's red and green on the screen, the agreed-on facts collapsing to unchanged lines and the genuine disagreement standing out as the only hunk that differs.
+
+This is the part single-vendor tools can't give you — not because they lack a compare button, but because they have no *second provider* to compare against. The A/B only exists because opencode holds credentials for both providers at once and lets a per-agent `model` field send the same question down two paths to two vendors.
+
+## When you don't want to pick the providers yourself
+
+You don't have to know which two models to pit against each other. If you'd rather trust a vetted shortlist than reason about every provider's strengths, opencode's **Zen** is one way to get there — a curated, paid AI gateway that serves models the opencode team tested and tuned for the agent loop, behind a single key. Reference a Zen model the way you reference any other, as a `provider/model` slug where the provider is literally `opencode` — e.g. `opencode/gpt-5.5`. Pull your `review-a` / `review-b` pair from Zen and you've skipped the homework of figuring out which models are even worth comparing; you're charged per request through the gateway, which is the trade for not benchmarking the catalog yourself.
+
+## What you actually decided
+
+You started with a vendor argument you couldn't adjudicate and ended with a decision that was yours to make: both models agree the dedupe keys on feed-controlled fields, so whether to move from FNV-64a to SHA-256 comes down to whether a malicious or coincident feed dropping an item from your queue is a risk you'll accept. The two providers didn't settle it — they're not supposed to. They surfaced the exact claim worth checking and left the call where it belongs. That's the whole value of running two side by side: not a referee, but a sharper question.
+
+Next you'll handle the case the cloud can't: a feed whose contents you're not allowed to send to any provider at all. [Drive it with a local or custom model](/course/opencode/providers-models/local-and-custom/).
