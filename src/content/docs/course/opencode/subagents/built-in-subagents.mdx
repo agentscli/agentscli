@@ -7,7 +7,7 @@ sidebar:
 
 You have the dedupe-hash question in front of you: *which adapters across `feedmill` feed into the dedupe hash, and where?* It's a real question — you're about to touch that hash and you need the call sites before you do — but answering it means reading the better part of a hundred adapter files. Ask it in your main thread and every one of those reads lands in your context window: grep output, file dumps, the whole noisy trawl, sitting there for the rest of the session crowding out the actual work. And you will never reread a line of it. You want the *map*, not the trawl that produced it.
 
-That gap — between the reading a job takes and the reading you actually need back — is exactly what a subagent closes. It's a separate session with its own context window that does the scoped job off to the side and reports back, so the noisy intermediate reads stay in the child rather than landing in your thread.{/* VERIFY: opencode docs (opencode.ai/docs/agents) confirm the isolated child-session model — the subagent runs in its own context and the parent gets its result — but do not spell out whether the parent receives a summary-only payload or the full child transcript. Prose hedged to "reports back" rather than asserting "hands back only the conclusion." */} opencode ships three of them ready to use, no setup, invoked by `@mention` right in your prompt.
+That gap — between the reading a job takes and the reading you actually need back — is exactly what a subagent closes. It's a separate session with its own context window that does the scoped job off to the side and reports back, so the noisy intermediate reads stay in the child rather than landing in your thread.{/* VERIFY: opencode docs (opencode.ai/docs/agents) confirm the isolated child-session model — the subagent runs in its own context and the parent gets its result — but do not spell out whether the parent receives a summary-only payload or the full child transcript. Prose hedged to "reports back" rather than asserting "hands back only the conclusion." */} OpenCode ships three of them ready to use, no setup, invoked by `@mention` right in your prompt.
 
 ## The three, and what separates them
 
@@ -21,7 +21,7 @@ The line that matters is **what each can touch**:
 
 - **`@general`** is a full-access worker. It has the same tools your `build` agent does — read, edit, bash — so it can actually *change* things. Reach for it when the side job is real work that needs to write, not just look: a self-contained fix you want done in its own context so it doesn't clutter the main thread.
 - **`@explore`** is read-only by construction, tuned for one thing: scanning *your* codebase fast. The docs describe it as "a fast, read-only agent for exploring codebases" that "cannot modify files" — you reach for it to find files by pattern, search code for a keyword, or answer a question about the repo. It reads; it can't edit. That's not a setting you trust the agent to respect; it's the agent's permission profile. You can hand it a hundred-file scan and know with certainty the worst it can do is tell you something wrong, never write something wrong.
-- **`@scout`** is also read-only, but its job points *outward* — external docs and dependency research. Where `explore` knows your repo, `scout` goes and looks at the libraries you depend on: it can clone a dependency's source into opencode's managed cache and read it, so you can cross-check your code against what upstream actually does.
+- **`@scout`** is also read-only, but its job points *outward* — external docs and dependency research. Where `explore` knows your repo, `scout` goes and looks at the libraries you depend on: it can clone a dependency's source into OpenCode's managed cache and read it, so you can cross-check your code against what upstream actually does.
 
 Three workers, two of them read-only, one full-access. Most of the time on `feedmill` you'll want one of the read-only two — because most of the noise you want out of your thread is *reading*, not writing.
 
@@ -35,7 +35,7 @@ The dedupe-hash question is a pure read job, so it goes to `@explore`. You don't
   Don't change anything.
 ```
 
-opencode spins the work off into a **child session**. The trawl happens *there*, in the subagent's own context window, not yours:
+OpenCode spins the work off into a **child session**. The trawl happens *there*, in the subagent's own context window, not yours:
 
 ```text
   ⏺ @explore  running…
@@ -72,7 +72,7 @@ That's what makes this a habit worth building rather than a party trick. Every t
 
 ## Run the read-only scouts cheap
 
-There's a second lever, and it's the one that makes a read-only worker genuinely cheap to lean on. Because opencode is provider-agnostic, every agent can carry its own `model` — so a worker whose only job is to grep and report doesn't need to run on your most expensive reasoning model. The cleanest place to pull that lever is a *custom* subagent (the next lesson), where you define the agent and pin its model in one block:
+There's a second lever, and it's the one that makes a read-only worker genuinely cheap to lean on. Because OpenCode is provider-agnostic, every agent can carry its own `model` — so a worker whose only job is to grep and report doesn't need to run on your most expensive reasoning model. The cleanest place to pull that lever is a *custom* subagent (the next lesson), where you define the agent and pin its model in one block:
 
 ```json
 // opencode.json
@@ -98,4 +98,4 @@ The built-ins cover three clean cases, and naming them is most of knowing which 
 - A **docs or dependency question** — what does this version of the library actually do, does upstream handle this case — goes to `@scout`. Read-only, but pointed outward.
 - A **self-contained piece of work that needs to write** — a fix you want done in its own context, off your main thread — goes to `@general`. Full access, so the same review discipline from chapter one applies to what it hands back.
 
-That covers the common shapes. But the dedupe scan exposed the limit too: `@explore` is read-only and cheap, which is right, but its leash and its model are whatever opencode shipped — you don't get to scope it to *exactly* the job. When the built-in is close but not quite the worker you want, you write your own. [Next: write a custom subagent](/course/opencode/subagents/custom-subagent/).
+That covers the common shapes. But the dedupe scan exposed the limit too: `@explore` is read-only and cheap, which is right, but its leash and its model are whatever OpenCode shipped — you don't get to scope it to *exactly* the job. When the built-in is close but not quite the worker you want, you write your own. [Next: write a custom subagent](/course/opencode/subagents/custom-subagent/).
