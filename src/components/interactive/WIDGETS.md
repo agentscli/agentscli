@@ -13,6 +13,9 @@ Conventions (all widgets follow these):
 - `WidgetName.tsx` + `widget-name-data.ts` (facts + sync header) + `widget-name.css` (prefixed classes)
 - Embedded with `client:visible`; root div has `not-content`
 - Theme-aware via Starlight tokens + `--ac-*` site tokens; verified light and dark
+- Placement (foundations): the widget is the hook — it sits at the end of the
+  first framing section, after one or two sentences of setup, not below the
+  ToolTabs. Course placement stays at the story beat (see course rule below).
 
 ## Fact-bound — drift when tool docs change; review monthly
 
@@ -38,6 +41,7 @@ Conventions (all widgets follow these):
 | `ContextSimulator` | `foundations/context-management.mdx`, `course/claude-code/sessions-context/inspect.mdx` | a long session against a 200k window; illustrative token magnitudes |
 | `McpCostMeter` | `foundations/mcp-servers.mdx` | context cost of mounted servers; order-of-magnitude schema sizes |
 | `SubagentFanout` | `foundations/subagents.mdx`, `course/claude-code/subagents/fan-out.mdx` | inline vs delegated fan-out; window/overhead consistent with `context-sim-data.ts` |
+| `RuleEconomy` | `course/claude-code/rules-memory/good-rules.mdx`, `course/codex/rules/good-rules.mdx`, `course/copilot/rules/good-rules.mdx`, `course/opencode/rules-agents-md/first-agents-md.mdx`, `course/cursor/rules/index.mdx` | a rule is context paid once vs re-taught every session; toggle candidate lines, ledger decides which earn their slot |
 
 Course rule: only **evergreen** widgets embed in course lessons — the five-tool
 comparative widgets would break the single-tool book narrative. Embed at the
