@@ -27,6 +27,8 @@ Conventions (all widgets follow these):
 | `SkillAnatomy` | `foundations/skills.mdx` | `tool-instructions/<tool>/skills.mdx` + cross-tool table in `foundations/skills.mdx` | 2026-07-02 |
 | `PrimitivePicker` | `foundations/index.mdx` | the "Why this and not…" tables across foundations chapters | 2026-07-02 |
 | `ModelMatcher` | `foundations/model-selection.mdx` | `tool-instructions/<tool>/model-selection.mdx` | 2026-07-02 |
+| `CommandExpander` | `foundations/slash-commands.mdx` | `tool-instructions/<tool>/slash-commands.mdx` | 2026-07-02 |
+| `PluginPacker` | `foundations/plugins.mdx` | `tool-instructions/<tool>/plugins.mdx` | 2026-07-02 |
 
 ## Evergreen — concept-only, no vendor facts
 
