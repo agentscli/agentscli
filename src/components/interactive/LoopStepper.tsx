@@ -3,6 +3,7 @@ import type { LoopPhase } from './loop-stepper-data';
 import { LOOP_PHASE_LABEL, loopSteps } from './loop-stepper-data';
 import { withCode } from './with-code';
 import './loop-stepper.css';
+import { useWidgetFrame } from './widget-frame';
 
 const RING: LoopPhase[] = ['gather', 'act', 'verify'];
 
@@ -11,7 +12,7 @@ export default function LoopStepper() {
   const step = loopSteps[stepIdx];
 
   return (
-    <div className="lps-root not-content">
+    <div className={useWidgetFrame('lps-root')}>
       <div className="lps-header">
         <div className="lps-step-meta">
           <span className="lps-step-count">

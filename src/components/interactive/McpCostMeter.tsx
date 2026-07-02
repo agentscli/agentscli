@@ -6,6 +6,7 @@ import {
   mcpServers,
 } from './mcp-cost-data';
 import './mcp-cost-meter.css';
+import { useWidgetFrame } from './widget-frame';
 
 export default function McpCostMeter() {
   const [enabled, setEnabled] = useState<Set<string>>(
@@ -31,7 +32,7 @@ export default function McpCostMeter() {
   const fmt = (n: number) => (n < 1 ? n.toFixed(1) : Math.round(n).toString());
 
   return (
-    <div className="mcm-root not-content">
+    <div className={useWidgetFrame('mcm-root')}>
       <div className="mcm-gauge-row">
         <span className={pct >= 25 ? 'mcm-gauge mcm-gauge-hot' : 'mcm-gauge'}>
           {fmt(total)}k of {MCM_WINDOW_TOKENS}k ({pct}%) spent before your first

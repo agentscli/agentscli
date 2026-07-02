@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { hookTools } from './hook-timeline-data';
 import { withCode } from './with-code';
 import './hook-timeline.css';
+import { useWidgetFrame } from './widget-frame';
 
 export default function HookTimeline() {
   const [toolIdx, setToolIdx] = useState(0);
@@ -15,7 +16,7 @@ export default function HookTimeline() {
   };
 
   return (
-    <div className="hkt-root not-content">
+    <div className={useWidgetFrame('hkt-root')}>
       <div className="hkt-tabs" role="tablist" aria-label="Tool">
         {hookTools.map((t, i) => (
           <button

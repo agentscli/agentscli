@@ -3,6 +3,7 @@ import type { CxpSeg, CxpToolId } from './command-expander-data';
 import { cxpTools } from './command-expander-data';
 import { withCode } from './with-code';
 import './command-expander.css';
+import { useWidgetFrame } from './widget-frame';
 
 function Segs({ segs, markClass }: { segs: CxpSeg[]; markClass: string }) {
   return (
@@ -25,7 +26,7 @@ export default function CommandExpander() {
   const tool = cxpTools.find((t) => t.id === toolId)!;
 
   return (
-    <div className="cxp-root not-content">
+    <div className={useWidgetFrame('cxp-root')}>
       <div className="cxp-tools" role="tablist" aria-label="Tool">
         {cxpTools.map((t) => (
           <button

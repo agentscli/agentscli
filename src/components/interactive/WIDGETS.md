@@ -11,7 +11,11 @@ only when the underlying mental model changes (window sizes, loop shape).
 Conventions (all widgets follow these):
 
 - `WidgetName.tsx` + `widget-name-data.ts` (facts + sync header) + `widget-name.css` (prefixed classes)
-- Embedded with `client:visible`; root div has `not-content`
+- Embedded with `client:visible`; root div gets its classes from
+  `useWidgetFrame('xxx-root')` (adds `not-content` plus the shared "agent
+  trace" affordance — an accent comet around the border on first
+  scroll-into-view, repeating every 10s, faint accent border tint / on hover; see
+  `widget-frame.tsx` / `widget-frame.css`)
 - Theme-aware via Starlight tokens + `--ac-*` site tokens; verified light and dark
 - Placement (foundations): the widget is the hook — it sits at the end of the
   first framing section, after one or two sentences of setup, not below the

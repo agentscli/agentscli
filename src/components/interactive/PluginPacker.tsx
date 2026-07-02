@@ -3,6 +3,7 @@ import type { PpkToolId } from './plugin-packer-data';
 import { ppkPieces, ppkTools } from './plugin-packer-data';
 import { withCode } from './with-code';
 import './plugin-packer.css';
+import { useWidgetFrame } from './widget-frame';
 
 const STATUS_LABEL = { bundle: 'in the plugin', loose: 'ships separately' } as const;
 const STATUS_GLYPH = { bundle: '✓', loose: '~' } as const;
@@ -12,7 +13,7 @@ export default function PluginPacker() {
   const tool = ppkTools.find((t) => t.id === toolId)!;
 
   return (
-    <div className="ppk-root not-content">
+    <div className={useWidgetFrame('ppk-root')}>
       <div className="ppk-tools" role="tablist" aria-label="Tool">
         {ppkTools.map((t) => (
           <button

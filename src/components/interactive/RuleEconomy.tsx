@@ -6,6 +6,7 @@ import {
 } from './rule-economy-data';
 import { withCode } from './with-code';
 import './rule-economy.css';
+import { useWidgetFrame } from './widget-frame';
 
 const fmt = (n: number) =>
   n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
@@ -50,7 +51,7 @@ export default function RuleEconomy() {
   }
 
   return (
-    <div className="rle-root not-content">
+    <div className={useWidgetFrame('rle-root')}>
       <p className="rle-lead">
         Seven candidate lines for your rules file. Toggle each one in and see
         whether it earns its slot over a week of sessions.

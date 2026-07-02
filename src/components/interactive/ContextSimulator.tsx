@@ -8,6 +8,7 @@ import {
 } from './context-sim-data';
 import { withCode } from './with-code';
 import './context-simulator.css';
+import { useWidgetFrame } from './widget-frame';
 
 /** Replay steps 0..idx to get the window contents at that point. */
 function stateAt(idx: number): SimSegment[] {
@@ -45,7 +46,7 @@ export default function ContextSimulator() {
   }, [segments]);
 
   return (
-    <div className="cxs-root not-content">
+    <div className={useWidgetFrame('cxs-root')}>
       <div className="cxs-header">
         <div className="cxs-step-meta">
           <span className="cxs-step-count">

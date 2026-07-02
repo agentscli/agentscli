@@ -3,6 +3,7 @@ import type { SkaToolId } from './skill-anatomy-data';
 import { skaParts, skaToolLabel } from './skill-anatomy-data';
 import { withCode } from './with-code';
 import './skill-anatomy.css';
+import { useWidgetFrame } from './widget-frame';
 
 const TOOL_ORDER: SkaToolId[] = ['claude-code', 'codex', 'opencode', 'cursor', 'copilot'];
 
@@ -41,7 +42,7 @@ export default function SkillAnatomy() {
   const is = (id: string) => partId === id;
 
   return (
-    <div className="ska-root not-content">
+    <div className={useWidgetFrame('ska-root')}>
       <div className="ska-cols">
         <div className="ska-file" role="group" aria-label="Example skill — click a part to inspect it">
           <Region id="folder" active={is('folder')} onPick={pick} className="ska-line ska-folder">

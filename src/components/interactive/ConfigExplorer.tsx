@@ -3,6 +3,7 @@ import type { ExplorerNode, ToolData } from './config-explorer-types';
 import { configExplorerTools } from './config-explorer-data';
 import { withCode } from './with-code';
 import './config-explorer.css';
+import { useWidgetFrame } from './widget-frame';
 
 const BADGE_LABEL: Record<string, string> = {
   committed: 'committed',
@@ -111,7 +112,7 @@ export default function ConfigExplorer() {
   };
 
   return (
-    <div className="cx-root not-content">
+    <div className={useWidgetFrame('cx-root')}>
       <div className="cx-tabs" role="tablist" aria-label="Tool">
         {tools.map((t, i) => (
           <button
