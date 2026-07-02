@@ -5,6 +5,8 @@ sidebar:
   label: "Fan-out · parallel workers"
 ---
 
+import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
+
 The timezone bug you confirmed in the RSS adapter has a nastier implication: it might be in the others too. `feedmill` carries dozens of adapters — one per source shape — and each one parses timestamps its own way, which is exactly how a bug like this hides in some and not others. So the job isn't "fix the RSS adapter," it's "audit every adapter for the same UTC-normalisation mistake and tell me which ones have it."
 
 Hand that to one thread and it grinds through the adapters in sequence — read, reason, move on, read the next — and two things go wrong at once. It's slow for no reason, because the Atom adapter's timestamps have nothing to do with the JSON adapter's. And worse, every file it reads and every line it reasons over piles up in the *same* context window, so by adapter fifteen the thread is dragging a landfill of earlier parsing code it no longer needs. The job has a shape that wants to be split: independent slices, the same check applied to each, one verdict per slice.
@@ -50,6 +52,10 @@ Each worker OpenCode spins up gets its **own session** — a fresh context windo
 {/* VERIFY [OPEN]: the transcript above is illustrative, not copied from a real run. opencode v1.16.2 ships a hierarchical multi-level TUI session tree for navigating concurrent subagents (clickable delegation boxes + keybinds — anomalyco/opencode PR #7756), but the exact line format it prints while parallel Task-tool workers stream is not a documented, stable surface. Keep the block as a schematic of what comes back, not a literal capture. */}
 
 When the workers finish, their results return to the parent session, and the parent does the merge you defined up front — here, the three-column table. The reduction is trivial *because* you wrote it before you spawned. Notice what you have now and what you don't: a precise list of which adapters are broken and where, without a single one of the file reads that produced it sitting in your context. The workers ate the journey; you got the map.
+
+That trade sticks better once you've counted it. Toggle this fan-out between inline and delegated and watch what actually lands in your thread in each mode — the slices are three code sweeps instead of six adapters, but the arithmetic is the audit's exactly:
+
+<SubagentFanout client:visible />
 
 ## Cap each worker with `steps`
 

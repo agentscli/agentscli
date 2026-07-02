@@ -41,11 +41,12 @@ Conventions (all widgets follow these):
 
 | Widget | Pages | Encodes |
 |---|---|---|
-| `LoopStepper` | `foundations/how-agents-work.mdx`, `course/claude-code/getting-started/first-change.mdx` | the agentic loop (decide → tool → result), illustrative bug-fix trace |
-| `ContextSimulator` | `foundations/context-management.mdx`, `course/claude-code/sessions-context/inspect.mdx` | a long session against a 200k window; illustrative token magnitudes |
+| `LoopStepper` | `foundations/how-agents-work.mdx`, `course/claude-code/getting-started/first-change.mdx`, `course/codex/getting-started/the-loop.mdx`, `course/opencode/getting-started/the-loop.mdx`, `course/cursor/getting-started/the-loop/index.mdx` | the agentic loop (decide → tool → result), illustrative bug-fix trace |
+| `ContextSimulator` | `foundations/context-management.mdx`, `course/claude-code/sessions-context/inspect.mdx`, `course/codex/sessions-context/status.mdx` | a long session against a 200k window; illustrative token magnitudes |
 | `McpCostMeter` | `foundations/mcp-servers.mdx` | context cost of mounted servers; order-of-magnitude schema sizes |
-| `SubagentFanout` | `foundations/subagents.mdx`, `course/claude-code/subagents/fan-out.mdx` | inline vs delegated fan-out; window/overhead consistent with `context-sim-data.ts` |
+| `SubagentFanout` | `foundations/subagents.mdx`, `course/claude-code/subagents/fan-out.mdx`, `course/codex/subagents/fan-out.mdx`, `course/opencode/subagents/fan-out.mdx` | inline vs delegated fan-out; window/overhead consistent with `context-sim-data.ts` |
 | `RuleEconomy` | `course/claude-code/rules-memory/good-rules.mdx`, `course/codex/rules/good-rules.mdx`, `course/copilot/rules/good-rules.mdx`, `course/opencode/rules-agents-md/first-agents-md.mdx`, `course/cursor/rules/index.mdx` | a rule is context paid once vs re-taught every session; toggle candidate lines, ledger decides which earn their slot |
+| `AutonomyDial` | `course/claude-code/permissions-modes/modes-ladder.mdx`, `course/codex/approvals-sandbox/two-axis.mdx`, `course/copilot/permissions/match-to-stakes.mdx`, `course/opencode/permissions/agent-as-policy.mdx`, `course/cursor/permissions/index.mdx` | match autonomy to stakes: reversibility × blast radius picks a rung on a generic trust ladder; each lesson's prose maps rungs to the tool's modes |
 
 Course rule: only **evergreen** widgets embed in course lessons — the five-tool
 comparative widgets would break the single-tool book narrative. Embed at the
