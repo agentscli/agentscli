@@ -3,6 +3,7 @@ import type { MmtScopeId, MmtToolId } from './model-matcher-data';
 import { mmtScopes, mmtTasks, mmtTools } from './model-matcher-data';
 import { withCode } from './with-code';
 import './model-matcher.css';
+import { useWidgetFrame } from './widget-frame';
 
 function ChoiceRow<T extends string>({
   label,
@@ -46,7 +47,7 @@ export default function ModelMatcher() {
   const code = scope.code?.replace('{model}', tier.model);
 
   return (
-    <div className="mmt-root not-content">
+    <div className={useWidgetFrame('mmt-root')}>
       <div className="mmt-tools" role="tablist" aria-label="Tool">
         {mmtTools.map((t) => (
           <button

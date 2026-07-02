@@ -3,6 +3,7 @@ import type { HlbOutputId, HlbPostureId, HlbToolId } from './headless-builder-da
 import { hlbAssemble, hlbOutputs, hlbPostures, hlbTasks, hlbTools } from './headless-builder-data';
 import { withCode } from './with-code';
 import './headless-builder.css';
+import { useWidgetFrame } from './widget-frame';
 
 function ChoiceRow<T extends string>({
   label,
@@ -47,7 +48,7 @@ export default function HeadlessBuilder() {
   const command = hlbAssemble(tool, task.prompt, outputId, postureId);
 
   return (
-    <div className="hlb-root not-content">
+    <div className={useWidgetFrame('hlb-root')}>
       <div className="hlb-tools" role="tablist" aria-label="Tool">
         {hlbTools.map((t) => (
           <button

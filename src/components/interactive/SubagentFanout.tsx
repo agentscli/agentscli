@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { withCode } from './with-code';
 import './subagent-fanout.css';
+import { useWidgetFrame } from './widget-frame';
 
 /**
  * Inline-vs-delegated comparison for a fan-out task. Token counts are
@@ -57,7 +58,7 @@ export default function SubagentFanout() {
   const pct = Math.round((total / WINDOW) * 100);
 
   return (
-    <div className="sbf-root not-content">
+    <div className={useWidgetFrame('sbf-root')}>
       <div className="sbf-modes" role="group" aria-label="Execution mode">
         <button
           className={!delegated ? 'sbf-mode sbf-mode-active' : 'sbf-mode'}

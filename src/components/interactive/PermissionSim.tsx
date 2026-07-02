@@ -13,6 +13,7 @@ import {
 } from './permission-sim-data';
 import { withCode } from './with-code';
 import './permission-sim.css';
+import { useWidgetFrame } from './widget-frame';
 
 const TABS = ['Claude Code', 'Codex', 'OpenCode'];
 
@@ -219,7 +220,7 @@ export default function PermissionSim() {
   const [tab, setTab] = useState(0);
 
   return (
-    <div className="psim-root not-content">
+    <div className={useWidgetFrame('psim-root')}>
       <div className="psim-tabs" role="tablist" aria-label="Tool">
         {TABS.map((label, i) => (
           <button

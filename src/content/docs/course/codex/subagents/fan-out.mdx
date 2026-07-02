@@ -5,6 +5,8 @@ sidebar:
   label: "Fan out · parallel slices"
 ---
 
+import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
+
 The last lesson handed the whole recategorisation to one subagent, which ground through three years of history in sequence. That works, but it's slow for no good reason: the 2023 transactions don't depend on the 2024 transactions, the checking account doesn't depend on the savings account, one import batch doesn't depend on the next. The job is *embarrassingly parallel* — independent items, the same stable rule applied to each, a discrete result per slice. When work has that shape, running it serially is leaving speed on the table.
 
 ## The two tests before you split anything
@@ -30,6 +32,10 @@ The natural split is one worker per year, or per account, or per import file. Yo
 ```
 
 Each worker reads, classifies, and dumps in *its own* window — and crucially that noise stays there. The thousand rows the 2023 worker reasons over never mix with the 2024 worker's rows, and none of them enter your thread. When the slices finish, the parent reads back the handful of summaries and reduces them with the aggregation you defined up front: one combined change-log, one set of before/after totals.
+
+That isolation is worth counting once, not just trusting. Toggle the same shape of job between running inline in your own window and fanning it out — the slices here are code sweeps rather than transaction years, but the arithmetic is the recategorisation's exactly:
+
+<SubagentFanout client:visible />
 
 Codex enforces a ceiling on how many subagents run concurrently, and queues the overflow rather than failing — reaching the cap just means later workers wait their turn. The practical default is to **start narrow** — three or four workers shows real speedup with rate-limit headroom — and widen only if the lower tier's ceiling is the thing slowing you down. Every worker counts against your account's rate budget, so concurrency is a design constraint, not free throughput. The exact concurrency knob and its default live in the [Codex configuration reference](https://developers.openai.com/codex/); *Unverified:* the specific key name and number — confirm against the live docs.
 

@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { primitiveEntries } from './primitive-picker-data';
 import { withCode } from './with-code';
 import './primitive-picker.css';
+import { useWidgetFrame } from './widget-frame';
 
 export default function PrimitivePicker() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = primitiveEntries.find((e) => e.id === selectedId);
 
   return (
-    <div className="ppk-root not-content">
+    <div className={useWidgetFrame('ppk-root')}>
       <div className="ppk-label">I want the agent to…</div>
       <div className="ppk-grid" role="group" aria-label="What do you want?">
         {primitiveEntries.map((entry) => (

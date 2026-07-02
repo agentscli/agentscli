@@ -3,6 +3,7 @@ import type { PmsToolId } from './plan-mode-stepper-data';
 import { pmsStages, pmsTools } from './plan-mode-stepper-data';
 import { withCode } from './with-code';
 import './plan-mode-stepper.css';
+import { useWidgetFrame } from './widget-frame';
 
 export default function PlanModeStepper() {
   const [toolId, setToolId] = useState<PmsToolId>('claude-code');
@@ -12,7 +13,7 @@ export default function PlanModeStepper() {
   const cell = stage.detail[toolId];
 
   return (
-    <div className="pms-root not-content">
+    <div className={useWidgetFrame('pms-root')}>
       <div className="pms-tools" role="tablist" aria-label="Tool">
         {pmsTools.map((t) => (
           <button

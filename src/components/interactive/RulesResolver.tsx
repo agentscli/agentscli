@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { rlrLocations, rlrTools } from './rules-resolver-data';
 import { withCode } from './with-code';
 import './rules-resolver.css';
+import { useWidgetFrame } from './widget-frame';
 
 const STATUS_LABEL: Record<string, string> = {
   loaded: 'loaded',
@@ -17,7 +18,7 @@ export default function RulesResolver() {
   const result = tool.results[locId];
 
   return (
-    <div className="rlr-root not-content">
+    <div className={useWidgetFrame('rlr-root')}>
       <div className="rlr-tabs" role="tablist" aria-label="Tool">
         {rlrTools.map((t, i) => (
           <button
