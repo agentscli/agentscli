@@ -32,12 +32,17 @@ Conventions (all widgets follow these):
 
 ## Evergreen — concept-only, no vendor facts
 
-| Widget | Page | Encodes |
+| Widget | Pages | Encodes |
 |---|---|---|
-| `LoopStepper` | `foundations/how-agents-work.mdx` | the agentic loop (decide → tool → result), illustrative bug-fix trace |
-| `ContextSimulator` | `foundations/context-management.mdx` | a long session against a 200k window; illustrative token magnitudes |
+| `LoopStepper` | `foundations/how-agents-work.mdx`, `course/claude-code/getting-started/first-change.mdx` | the agentic loop (decide → tool → result), illustrative bug-fix trace |
+| `ContextSimulator` | `foundations/context-management.mdx`, `course/claude-code/sessions-context/inspect.mdx` | a long session against a 200k window; illustrative token magnitudes |
 | `McpCostMeter` | `foundations/mcp-servers.mdx` | context cost of mounted servers; order-of-magnitude schema sizes |
-| `SubagentFanout` | `foundations/subagents.mdx` | inline vs delegated fan-out; window/overhead consistent with `context-sim-data.ts` |
+| `SubagentFanout` | `foundations/subagents.mdx`, `course/claude-code/subagents/fan-out.mdx` | inline vs delegated fan-out; window/overhead consistent with `context-sim-data.ts` |
+
+Course rule: only **evergreen** widgets embed in course lessons — the five-tool
+comparative widgets would break the single-tool book narrative. Embed at the
+story beat where the lesson hits the concept, with a prose bridge, never as a
+templated section.
 
 ## Adding a widget
 
