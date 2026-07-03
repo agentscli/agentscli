@@ -1,0 +1,399 @@
+---
+// Shared blog feed + pagination. Rendered by /blog (page 1) and /blog/[page] (pages 2+).
+import BlogLayout from "./BlogLayout.astro";
+import BlogSidebar from "./BlogSidebar.astro";
+import BlogPostCard from "./BlogPostCard.astro";
+import Head from "./Head.astro";
+import { getHero } from "../lib/cover";
+
+interface Props {
+  posts: any[];
+  allTags: string[];
+  currentPage: number;
+  totalPages: number;
+  prevUrl: string | null;
+  nextUrl: string | null;
+}
+
+const { posts, allTags, currentPage, totalPages, prevUrl, nextUrl } = Astro.props;
+
+// Author mapping for display
+const authorMap: Record<string, { name: string; initials: string }> = {
+  sourabh: { name: "Sourabh Kushwah", initials: "SO" },
+  sanjay: { name: "Sanjay Kushwah", initials: "SA" },
+};
+
+// Format date for display
+function formatDate(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Calculate read time (approx 200 words per minute)
+function calculateReadTime(content: string): string {
+  const wordCount = content.split(/\s+/).length;
+  const minutes = Math.ceil(wordCount / 200);
+  return `${minutes} MIN READ`;
+}
+
+// Get author from frontmatter or config
+function getAuthor(post: any): { name: string; initials: string } {
+  const data = post.data as any;
+  if (data.authors) {
+    if (typeof data.authors === 'string') {
+      return authorMap[data.authors] || { name: data.authors, initials: "??" };
+    }
+    if (typeof data.authors === 'object' && data.authors.name) {
+      return { name: data.authors.name, initials: data.authors.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() };
+    }
+  }
+  return { name: "Unknown", initials: "??" };
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Technical insights into multi-agent orchestration, local protocols, and developer-centric terminal workflows."
+    />
+    <title>Engineering Blog | agents.cli</title>
+    <Head />
+  </head>
+  <body>
+    <BlogLayout>
+      <div class="blog-page">
+        <section class="main-content">
+          <div class="content-wrapper">
+            <BlogSidebar tags={allTags} />
+            <div class="blog-feed">
+              <div class="blog-header">
+                <h1 class="blog-title">Engineering Blog</h1>
+                <p class="blog-description">
+                  Technical insights into multi-agent orchestration, local protocols, and<br />
+                  developer-centric terminal workflows.
+                </p>
+              </div>
+
+              <div class="tags-container">
+                <a
+                  href="/blog"
+                  class:list={["tag-pill", "active"]}
+                  data-track="tag-filter"
+                  data-tag="all"
+                >
+                  #all
+                </a>
+                {allTags.map((tag) => (
+                  <a
+                    href={`/blog/tag/${tag}/`}
+                    class="tag-pill"
+                    data-track="tag-filter"
+                    data-tag={tag}
+                  >
+                    #{tag}
+                  </a>
+                ))}
+              </div>
+
+              <div class="posts-list">
+                {posts.map((post, index) => {
+                  const data = post.data as any;
+                  const author = getAuthor(post);
+                  const heroImage = getHero(post.id);
+                  return (
+                    <>
+                      <BlogPostCard
+                        image={heroImage}
+                        category={data.category || "DISCOVERIES"}
+                        date={formatDate(new Date(data.date))}
+                        title={post.data.title}
+                        description={data.excerpt || data.description || ""}
+                        authorInitials={author.initials}
+                        authorName={author.name}
+                        readTime={calculateReadTime(post.body)}
+                        href={`/blog/${post.id.replace('blog/', '')}`}
+                        tags={data.tags}
+                      />
+                      {index < posts.length - 1 && <div class="post-separator" />}
+                    </>
+                  );
+                })}
+              </div>
+
+              {totalPages > 1 && (
+                <div class="pagination">
+                  {prevUrl ? (
+                    <a href={prevUrl} class="pagination-btn" aria-label="Previous page">
+                      <svg width="7.4" height="12" viewBox="0 0 8 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 1L1.5 6.5L7 12" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </a>
+                  ) : (
+                    <button class="pagination-btn" aria-label="Previous page" disabled>
+                      <svg width="7.4" height="12" viewBox="0 0 8 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 1L1.5 6.5L7 12" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  )}
+                  <span class="pagination-text">PAGE {pad(currentPage)} / {pad(totalPages)}</span>
+                  {nextUrl ? (
+                    <a href={nextUrl} class="pagination-btn" aria-label="Next page">
+                      <svg width="7.4" height="12" viewBox="0 0 8 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1 1L6.5 6.5L1 12" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </a>
+                  ) : (
+                    <button class="pagination-btn" aria-label="Next page" disabled>
+                      <svg width="7.4" height="12" viewBox="0 0 8 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1 1L6.5 6.5L1 12" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </BlogLayout>
+  </body>
+</html>
+
+<style is:global>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  body {
+    background-color: #0a0a0f;
+    color: #ffffff;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+</style>
+
+<style>
+  .blog-page {
+    position: relative;
+    z-index: 1;
+  }
+
+  .main-content {
+    display: flex;
+    justify-content: center;
+    padding: 48px 80px 48px;
+    min-height: calc(100vh - 82px);
+  }
+
+  .content-wrapper {
+    display: flex;
+    gap: 48px;
+    max-width: 1280px;
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .blog-feed {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+    min-width: 0;
+  }
+
+  .blog-header {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 8px;
+  }
+
+  .blog-title {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-size: 36px;
+    font-weight: 800;
+    font-style: normal;
+    color: #f1f5f9;
+    letter-spacing: -0.9px;
+    line-height: 40px;
+    margin: 0;
+  }
+
+  .blog-description {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-size: 18px;
+    font-weight: 400;
+    color: #94a3b8;
+    line-height: 29.25px;
+    margin: 0;
+    max-width: 672px;
+  }
+
+  .tags-container {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-bottom: 16px;
+  }
+
+  .tag-pill {
+    display: flex;
+    align-items: center;
+    padding: 5px 13px;
+    background: #111118;
+    border: 1px solid #1e1e26;
+    border-radius: 9999px;
+    font-family: 'Geist Mono', 'Fira Code', 'SF Mono', Monaco, monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .tag-pill:hover {
+    background: rgba(124, 105, 247, 0.1);
+    border-color: rgba(124, 105, 247, 0.2);
+    color: #7c69f7;
+  }
+
+  .tag-pill.active {
+    background: rgba(124, 105, 247, 0.15);
+    border-color: rgba(124, 105, 247, 0.3);
+    color: #7c69f7;
+  }
+
+  .tag-pill {
+    text-decoration: none;
+  }
+
+  .posts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+  }
+
+  .post-separator {
+    height: 1px;
+    background: #1e1e26;
+    width: 100%;
+  }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding-top: 32px;
+  }
+
+  .pagination-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: 1px solid #1e1e26;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .pagination-btn:hover {
+    background: rgba(124, 105, 247, 0.1);
+    border-color: rgba(124, 105, 247, 0.2);
+  }
+
+  .pagination-btn[disabled] {
+    cursor: default;
+    opacity: 0.4;
+  }
+
+  .pagination-btn[disabled]:hover {
+    background: transparent;
+    border-color: #1e1e26;
+  }
+
+  .pagination-btn svg {
+    width: 7.4px;
+    height: 12px;
+  }
+
+  .pagination-text {
+    font-family: 'Geist Mono', 'Fira Code', 'SF Mono', Monaco, monospace;
+    font-size: 14px;
+    font-weight: 400;
+    color: #f1f5f9;
+    padding: 0 16px;
+  }
+
+  @media (max-width: 1200px) {
+    .main-content {
+      padding: 48px 40px;
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .content-wrapper {
+      flex-direction: column;
+    }
+
+    .blog-feed {
+      width: 100%;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .main-content {
+      padding: 32px 24px;
+    }
+
+    .blog-title {
+      font-size: 28px;
+      letter-spacing: -0.7px;
+      line-height: 32px;
+    }
+
+    .blog-description {
+      font-size: 16px;
+      line-height: 24px;
+    }
+
+    .blog-description br {
+      display: none;
+    }
+
+    .tags-container {
+      gap: 6px;
+    }
+
+    .tag-pill {
+      font-size: 11px;
+      padding: 4px 10px;
+    }
+
+    .posts-list {
+      gap: 32px;
+    }
+
+    .pagination {
+      gap: 12px;
+    }
+
+    .pagination-text {
+      font-size: 12px;
+    }
+  }
+</style>

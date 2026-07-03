@@ -1,0 +1,137 @@
+---
+title: "Flat agent swarms demo beautifully and ship terribly."
+description: "Let peer agents talk freely and a query hot-potatoes between them, each disclaiming the task, while your bill climbs. Route everything through one orchestrator with explicit handoff rules and a turn cap, and the chaos becomes a system you can test."
+authors: sourabh
+date: 2026-05-29
+tags: [context-engineering, subagents, plan-mode]
+draft: false
+---
+
+Two specialist agents spent forty turns passing one customer refund back and forth. The billing agent said, "this is a policy question, routing to legal." The legal agent said, "this is a billing question, routing back." Neither was wrong. Neither resolved anything. The transcript reads like a Slack thread where everyone's been added and nobody owns the ticket — except this one cost eleven dollars in tokens and the customer is still waiting.
+
+That transcript is what a flat agent swarm looks like in production. In a demo it looks like emergent intelligence: autonomous specialists, negotiating, self-organizing, no central bottleneck. Ship it, and the emergence you get is emergent *cost*. The agents don't converge. They debate.
+
+**The seductive part is exactly the broken part.** A swarm of peers talking freely *looks* like the org chart we wish we had — flat, fast, no manager in the loop. But coordinating peers without a lead is hard for humans, and we have shared context, social pressure, and a calendar that forces a decision by Friday. Strip all of that away and hand the problem to language models, each of which only sees its own slice, and "who owns this?" becomes an unanswerable question they will cheerfully pass around forever.
+
+## The gap a swarm makes worse, not better
+
+This site has one recurring argument: an AI agent is **broad and shallow**, and the human SME is **narrow and deep**. The whole discipline of context engineering is closing that gap — giving the broad agent the narrow context it doesn't have.
+
+A flat swarm inverts the fix. Each peer agent has a slice of context: the refund agent knows refund rules, the legal agent knows policy, the discount agent knows promo logic. None of them holds the whole picture, and none of them is responsible for assembling it. So when a query lands that touches two slices, every agent looks at it, sees the part that isn't theirs, and disclaims. The context isn't getting closed. It's getting fragmented across negotiators who each see a different shadow of the same problem.
+
+You didn't reduce the gap. You distributed it and removed the one thing that could close it: a single point of view that sees the request, decides who handles it, and owns the outcome.
+
+## The fix is an org chart, not a group chat
+
+Organizations converged on hierarchy for a reason, and the reason transfers directly to agents: someone has to decide *who does what*, and someone has to own *what happens if no one does*. You get that by routing every request through one **orchestrator** — a [subagent](/foundations/subagents/) whose only job is to read the request, pick the right specialist, hand off cleanly, and enforce a stopping condition. Specialists never talk to each other. They talk to the orchestrator. The orchestrator talks to the user.
+
+There's a structural reason this scales and a swarm doesn't, and it's just counting. Let every agent talk to every other agent and the number of channels you have to reason about grows as the square of the headcount: four peers have six possible handoff paths, ten peers have forty-five. Every one of those paths is a place context can leak and a loop can form. Route everything through one orchestrator and the count collapses to linear — N specialists, N channels, each a single spoke to the hub and nothing else. You haven't just added a manager. You've deleted most of the graph, and with it most of the surface where things go wrong.
+
+This is the difference between a recipe and a runaway debate. We're going to combine three primitives — [subagents](/foundations/subagents/) for the split, [rules](/foundations/rules/) for the handoff contract, and [plan mode](/foundations/plan-mode/) for the routing decision — into one workflow that's predictable enough to test.
+
+### Split the work, but name a single router
+
+Start with the same specialists you'd put in a swarm. The structural change is small and total: nobody is a peer.
+
+```text
+                 ┌─────────────┐
+   user ───────▶ │ orchestrator│ ◀─────── only this node talks to the user
+                 └─────┬───────┘
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+     ┌─────────┐  ┌─────────┐  ┌──────────┐
+     │ refund  │  │ legal   │  │ discount │   specialists never talk
+     │ agent   │  │ agent   │  │ agent    │   to each other
+     └─────────┘  └─────────┘  └──────────┘
+```
+
+In a subagent-capable tool, you declare each specialist with a tight description and a restricted toolset. Here's the refund specialist as a Claude Code subagent definition — the shape is the same in Codex or opencode, only the file location differs:
+
+```markdown
+---
+name: refund-specialist
+description: Handles refund eligibility, amounts, and processing. Does NOT decide policy exceptions or apply promotional discounts.
+tools: Read, get_order, issue_refund
+---
+
+You process refunds. You receive a request from the orchestrator with the
+full customer context already attached. Decide the refund outcome and return
+it. You do not contact other specialists. If the request requires a policy
+exception you are not authorized to make, return `ESCALATE: <reason>` to the
+orchestrator. You never route directly to another agent.
+```
+
+Three things do the load-bearing work. The `description` tells the orchestrator exactly when to pick this agent — that's the routing signal. The instruction `You never route directly to another agent` states the contract. And the tight `tools` list is what actually enforces it: a modern Claude Code subagent can spawn its own subagents — nested up to five levels deep — whenever it's handed the agent-spawning tool, so the prose instruction alone is a request, not a guarantee. Withhold that tool, as the `tools: Read, get_order, issue_refund` line does, and sideways routing isn't merely discouraged — it's unavailable. A specialist has only two exits: resolve, or hand control back up. It can never hand sideways, not because the model is obedient, but because the door was never installed.
+
+### Write the handoff contract as rules, not vibes
+
+The reason swarms loop is that "hand off" is undefined. Each agent invents its own notion of when to pass and what to pass, so handoffs lose context and nobody owns the result. Pin it down in a [rules](/foundations/rules/) file — your `AGENTS.md` or `CLAUDE.md` — so every agent in the system reads the same contract on every session.
+
+```markdown
+## Multi-agent handoff contract
+
+- All requests enter through the `orchestrator`. Specialists are invoked
+  ONLY by the orchestrator, never by each other.
+- A specialist has exactly two terminal outputs:
+  - `RESOLVE: <result>` — the task is done.
+  - `ESCALATE: <reason>` — control returns to the orchestrator with a reason.
+- Every handoff carries full context: the original request, every prior
+  specialist's output, and the customer record. No agent re-fetches what an
+  earlier agent already has.
+- Turn cap: 6 specialist invocations per request. On the 6th with no
+  RESOLVE, the orchestrator stops and applies the default.
+- Default on no resolution: escalate to a human queue with the full
+  transcript attached. Never loop, never guess a refund amount.
+```
+
+Read that and notice what's now impossible. A specialist *can't* route to a peer — its toolset doesn't include the one that spawns other agents, so the only sideways door is bricked over. Handoffs *can't* drop context, because "carries full context" is the contract, not a hope. And the debate *can't* run to forty turns, because turn six is a hard wall with a defined exit. You've converted an open-ended negotiation into a state machine with named states and a guaranteed terminal.
+
+The turn cap is the cheapest insurance you'll ever write. Eleven dollars of circular argument becomes, at most, six bounded invocations and then a human. That's the line item that separates a system you can budget from one you discover on the invoice.
+
+### Make the routing decision in plan mode
+
+Here's the part most swarm designs skip: the orchestrator should *decide who does what before it spends a single specialist call*. That's what [plan mode](/foundations/plan-mode/) is for — it forces the agent to produce a plan you (or a gate) can inspect before any action runs.
+
+Give the orchestrator a plan-first instruction:
+
+```markdown
+---
+name: orchestrator
+description: Front door for all support requests. Routes to specialists, enforces the handoff contract, owns the outcome.
+---
+
+For every incoming request, FIRST produce a routing plan before invoking any
+specialist:
+
+1. Classify the request (refund / policy / discount / mixed).
+2. Name the ONE specialist to handle it first, and why.
+3. State the expected terminal output and the default if it escalates.
+
+Only after the plan is set do you invoke the named specialist. If a
+specialist returns ESCALATE, you re-plan — you do not blind-forward to
+another agent. Enforce the 6-invocation turn cap from AGENTS.md.
+```
+
+Now the refund-vs-legal standoff resolves before it starts. Faced with "customer wants a refund the policy might not allow," the orchestrator's plan reads: *mixed request; legal decides the exception first, then refund executes if approved; default is human escalation.* One decision, made once, by the node that can see the whole request. The specialists execute a sequence instead of negotiating an order. The plan is also the thing you trace later when you ask "who did what and why" — it's right there, written before the work.
+
+## When the group chat is actually fine
+
+Hierarchy earns its keep when work has to *converge* — one request, one owner, one answer. It's dead weight when work fans *out* and never has to agree. Spin up ten agents to summarize ten unrelated files and there's no ownership to settle, no handoff to drop, no order to negotiate. Parallel fan-out with a single join at the end is a perfectly good pattern; forcing each of those ten through a router would only add latency for a decision nobody needed. The rule isn't *always orchestrate*. It's narrower and more useful than that: orchestrate the moment two agents could disagree about who owns the result. Independent work doesn't need a boss. Contested work does.
+
+The honest objection to all of this: doesn't the orchestrator become the bottleneck the swarm was supposed to abolish? Yes — and that's the feature. A bottleneck is just a place where decisions serialize, and serialized decisions are the only kind you can cap, trace, and budget. The orchestrator stays cheap precisely because it doesn't do the work; it reads, routes, and stops. What the swarm was avoiding was never a manager's overhead. It was a single point of accountability — and that turned out to be the one thing you actually wanted.
+
+## What you can test now that you couldn't before
+
+A flat swarm has no testable surface. "Did the agents agree?" isn't an assertion. There's no defined path, so there's nothing to assert against. Every run is a new improvisation.
+
+The orchestrated version has seams you can pin:
+
+- **Routing is deterministic enough to assert.** Feed it a pure refund request and assert the plan names `refund-specialist` first. Feed it a mixed one and assert it sequences legal before refund. The classification step is now a unit with an expected output.
+- **The turn cap is a guarantee, not a hope.** You can write a test that hands the system a deliberately unresolvable request and assert it terminates at six invocations with a human escalation — not at forty with an empty wallet.
+- **Handoffs are inspectable.** Because context travels as a defined payload, you can assert the legal agent received the customer record the refund agent already fetched, instead of re-fetching it. No silent context loss.
+
+That's the whole trade. You give up the *appearance* of emergent intelligence — the demo where agents seem to think together — and you get a system with named states, a bounded cost, and a transcript that reads like an audit log instead of an argument.
+
+## The line that should survive this post
+
+A swarm of peers is the org structure we romanticize and the one that, even among humans, mostly produces meetings. Agents are worse at it than we are, because each one sees less and owns nothing. Put one of them in charge, write down how control moves and when it stops, and the chaos stops being emergent and starts being a system. Hierarchy isn't the boring choice. It's the only one you can trace, cap, and ship.

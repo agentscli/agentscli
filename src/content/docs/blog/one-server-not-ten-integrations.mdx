@@ -1,0 +1,136 @@
+---
+title: "Adding a system to your agent should be a config line, not a codebase."
+description: "Hand-writing an adapter for every external system is the contextless agent's biggest tax. An MCP server collapses the M×N integration blowup into one standard connection the agent discovers at runtime — scoped by permissions, configured once."
+authors: sourabh
+date: 2026-05-29
+tags: [context-engineering, mcp, permissions]
+draft: false
+---
+
+There's a ticket in your backlog that says "let the agent see our deploy state." It's been sitting there a sprint. Not because it's hard to understand — everyone agrees the agent would be more useful if it could read which build is live — but because *doing* it means writing yet another adapter. Auth handling, request shaping, response parsing, error retries, a thin tool surface, tests for all of it. Then you own that code forever.
+
+That ticket shouldn't exist. Adding a system to your agent should be a line in a config file, not a module in your codebase.
+
+## The integration layer is where agentic reach goes to die
+
+Here's the asymmetry this whole site is about. Your agent is broad and shallow: it has read more code than you ever will, but it knows nothing about *your* stack — your Jira, your Postgres, your deploy pipeline. You are narrow and deep: you know exactly where the deploy state lives, but you can only act on one thing at a time. **Context engineering is closing that gap**, and reaching external systems is one of its largest surfaces.
+
+The naive way to close it is to write glue. The agent needs to read a ticket, so you write a function that calls the Jira API and exposes it as a tool. It needs the live schema, so you write another against Postgres. It needs deploy state, so — back to that backlog ticket — you write a third. Each one is real code: you ship it, you test it, you patch it when the upstream API changes.
+
+Now multiply. You don't run one agent — your team uses Copilot in the IDE, somebody's piloting Cursor, the platform folks live in a terminal agent. Each wants tools wired its own way. **M systems times N agents is the integration blowup**, and it's where reach actually dies: not in a dramatic failure, but in a backlog of adapters nobody has time to write. The agent stays blind to half your stack, and the half it *can* see is held together by code you now maintain.
+
+## One protocol collapses M×N to M+N
+
+The fix is to stop writing the integration into your code at all. An **MCP server** — Model Context Protocol, the open standard the major agent tools have [converged on](/foundations/mcp-servers/) — is a standalone process that exposes typed tools (`postgres.query`, `jira.get_ticket`, `fs.read_file`) over a standard protocol. Your agent is the *client*. On connect, it asks the server "what can you do?" and the server hands back its tool list. The agent enumerates those tools at runtime and can call them immediately.
+
+This isn't an Anthropic-only bet anymore. OpenAI wired MCP into its Agents SDK and ChatGPT in early 2025; Google committed Gemini to it weeks later; by the end of the year the protocol had been handed to a Linux Foundation body with OpenAI, Microsoft, AWS, Google, and Cloudflare all signed on. That matters for one practical reason: the server you write — or install — outlives any single vendor's agent. You're not integrating against Claude Code or Cursor. You're integrating against a wire format all of them speak.
+
+The shape change is the whole point:
+
+```
+Bespoke adapters:        MCP servers:
+
+agent A ─┬─ adapter→ Jira      agent A ─┐
+agent B ─┼─ adapter→ Jira      agent B ─┼─→ jira-mcp ─→ Jira
+agent C ─┴─ adapter→ Jira      agent C ─┘
+
+M agents × N systems           M agents + N systems
+= code you write per pair      = one server per system, reused by all
+```
+
+You write Jira once, as a server (or, far more often, you install one someone already wrote). Every agent that speaks MCP connects to the same server. The integration surface moves *out of your codebase* and into a process boundary. Your config just points at it.
+
+## The recipe: two servers, one config, scoped at the door
+
+Here's the actual artifact. A client config wiring two MCP servers — a filesystem server and GitHub's official server — both standard, neither written by you:
+
+```jsonc
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y", "@modelcontextprotocol/server-filesystem",
+        "/Users/you/work/acme-api"   // the ONLY directory it can touch
+      ]
+    },
+    "github": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"  // pulled from your shell, never inline
+      }
+    }
+  }
+}
+```
+
+Two entries. No adapter code anywhere in your repo. When the agent connects, it reports the merged tool list it discovered:
+
+```text
+filesystem  →  read_file, write_file, list_directory, search_files, …
+github      →  list_workflow_runs, get_workflow_run, get_pull_request, …
+
+Every tool above discovered at connect — none written by you.
+```
+
+That deploy-state ticket? It was never an adapter. Your deploys run as GitHub Actions, and the GitHub server reads their run state with a token from the environment — a config entry, exactly as promised. To add the next system, you add another block. The agent's reach grows; your codebase doesn't.
+
+## The win is scope, not tool count
+
+Now the part most "add MCP and the agent gets superpowers" takes get wrong. **More tools is not the win.** A dozen servers wired in is a dozen ways for the agent to do the wrong thing fast, and wrapping an API in MCP does not magically make the model pick it correctly — that's still a job for [rules](/foundations/rules/) and a well-named tool surface.
+
+The real win is that the integration surface stops living in your code *and* every server's reach becomes a decision you make once, at the door. Look back at the config: the filesystem server is pinned to a single directory. That's not an afterthought — it's the security boundary. The agent literally cannot `read_file` outside that path, because the server it's talking to was never given a wider window.
+
+The GitHub server gives you the same dial in two more notches. Hand it `GITHUB_TOOLSETS=actions` and the only tools it exposes are the workflow ones — the agent never even *sees* `create_pull_request`, because the toolset that defines it was never enabled. Set `GITHUB_READ_ONLY=1` and every write tool vanishes; it's a strict filter that overrides everything downstream, so even a tool explicitly allowlisted at the client can't mutate state if the server refused to hand it over. Two environment variables, and that deploy-state use case is locked to exactly what it needs: read workflow runs, touch nothing else.
+
+That's a [permissions](/foundations/permissions/) decision, and MCP gives you two layers to make it at:
+
+```jsonc
+// 1. Scope at the server — what the server itself can reach.
+//    Filesystem server: one directory. GitHub server: one read-scoped PAT.
+
+// 2. Gate at the client — which discovered tools the agent may call,
+//    and which need your approval first.
+{
+  "permissions": {
+    "allow": ["mcp__filesystem__read_file", "mcp__github__list_workflow_runs"],
+    "ask":   ["mcp__filesystem__write_file", "mcp__github__create_pull_request"]
+  }
+}
+```
+
+Reads flow; writes and state changes stop for confirmation. The secret stays in `${GITHUB_PAT}` in your shell — never inline in the config, never in the repo, never in the model's context. Scope it once and every session inherits it. Compare that to bespoke adapters, where the blast radius is buried in whatever your code happened to do — and you only find out when it does something you didn't intend.
+
+This is the configured-once part of the thesis. The adapter approach makes reach a maintenance burden you carry forever; the MCP approach makes it a [configuration](/foundations/configuration/) entry plus a scoping decision you make deliberately at the boundary.
+
+## One more knob: where the server runs
+
+Each server also picks a transport, and the choice maps cleanly to the work:
+
+- **stdio** — the agent launches the server as a local subprocess and talks over stdin/stdout. Zero network, no service to host. This is what both servers above use — yes, even the Docker one; `docker run -i` is just a subprocess. Best for **local, stateless** tools: filesystem, a CLI wrapper, a one-shot fetch.
+- **Streamable HTTP** — the server is a long-running service the agent connects to over the network. Best for **stateful or shared** tools: a server that holds a session, or one a platform team hosts once for the whole org instead of every laptop spawning its own.
+
+GitHub ships both, and the contrast is the cleanest illustration there is. The Docker entry above runs the server on your laptop over stdio. Point an agent at `https://api.githubcopilot.com/mcp/` instead and you get the *identical* tool list from a server GitHub hosts, authenticated with OAuth rather than a personal access token you minted and now have to rotate. The same `actions`/read-only scoping is just expressed as `X-MCP-Toolsets` and `X-MCP-Readonly` headers instead of env vars. A platform team stands that up once for everyone; nobody else spawns a subprocess or manages a secret. Switching from one to the other is a one-line config change — the agent code, the tool names, the prompts that use them, none of it moves.
+
+Same protocol, same discovery, same tool list. The transport is an operational detail, not a rewrite — which is exactly the property you want when "add a system" is supposed to be a config line.
+
+## Where this stops being free
+
+MCP moves the integration surface out of your code; it doesn't make reach free. Two failure modes are worth naming before you wire in your tenth server.
+
+The first is context cost. Every tool a connected server exposes ships its name and description into the model's context on *every* turn. Ten servers with a dozen tools each is a hundred-plus tool definitions the model reads past to pick the right one — and selection accuracy drops as the list grows. A server you query once a week is often cheaper as a script the agent shells out to on demand than as a permanent fixture in its tool list. Wire in what the agent reaches for repeatedly; leave the long tail out. This is the other reason "more tools is not the win" — it's not just that extra reach is dangerous, it's that extra reach is *expensive*, paid in degraded judgment on the tools that matter.
+
+The second is the confused deputy. An MCP server acts with *its* credentials, not the agent's, and the agent decides when to call it based on text it was handed — including text from the very systems it can read. A server scoped to read issues and open PRs, driving a model that just ingested an attacker-authored issue, is one well-worded instruction away from being a write primitive someone else is steering. The agent isn't compromised; it's obediently doing what the issue told it to, with the server's permissions. This is exactly why the scope-at-the-door discipline isn't optional: read-only by default, writes gated behind a confirmation, and the narrowest toolset that does the job. The blast radius of a server is whatever you granted it — so grant assuming something will eventually try to use all of it.
+
+None of this is an argument against MCP. It's the argument for being deliberate about *which* reach you configure — which is the same [permissions](/foundations/permissions/) muscle the bespoke-adapter world let you skip, because each adapter only ever did the one thing you coded it to.
+
+## Reach you configure, not reach you maintain
+
+Go delete that backlog ticket. The work it described — teaching the agent to see your deploy state — was never a codebase. It was a process you point at, a directory you scope, a token you keep in the environment, and one block of config the agent reads on connect.
+
+The contextless agent's biggest tax was never that it couldn't reach your systems. It was that *you* were the integration layer, paying it one bespoke adapter at a time. Move that surface out of your code, and the question stops being "who's writing the next adapter" and becomes "what should this server be allowed to touch" — which is the only question worth your time anyway.

@@ -1,0 +1,136 @@
+---
+title: "Put the confirmation gate in the tool, not the UI."
+description: "A destructive-tool annotation plus a mid-call elicitation request gives you a deterministic human checkpoint that travels with the capability — so a confused or injected instruction can't quietly delete your data, no matter which client is driving."
+authors: sourabh
+date: 2026-05-31
+tags: [context-engineering, mcp-servers, permissions]
+draft: false
+---
+
+The agent calls `delete_customer(id="acct_9931")` and the row is gone before you blink. No prompt, no second look — the model decided, the tool fired, the record evaporated. That's the failure mode everyone designs around, and the usual fix is to bolt a confirmation dialog onto the chat window: "Are you sure?" with a red button.
+
+That fix is reasonable, and it's also the wrong layer. The dialog lives in *one* client. The moment the same MCP server gets wired into a different agent — a CI runner, a Slack bot, a headless cron job — the dialog is gone and the delete is silent again. **You guarded the door; you left the wall open.**
+
+## The gate belongs to the capability, not the surface
+
+Here's the tension worth sitting with: the thing that knows an action is dangerous is the **tool**, but the thing that traditionally asks permission is the **UI**. Those are different machines, often written by different people, and they drift. So the question to plant now and answer later: *how do you make "this is destructive, confirm first" an inseparable property of the operation itself — one that no client can forget to honor?*
+
+Two MCP primitives, used together, do exactly that. The first is the **destructive annotation** on a tool definition. The second is **elicitation** — the server's ability to pause mid-call and ask the connected client to collect a structured response from the human, then resume. Annotations describe intent; elicitation enforces it. Neither is sufficient alone.
+
+## Annotate the tool so every client knows what it's holding
+
+Start with the hint. An [MCP server](/foundations/mcp-servers/) can mark a tool with behavioral annotations, and `destructiveHint` is the one that matters here:
+
+```ts
+server.registerTool(
+  "delete_customer",
+  {
+    title: "Delete customer record",
+    description: "Permanently removes a customer and all linked invoices.",
+    inputSchema: { id: z.string() },
+    annotations: {
+      destructiveHint: true,
+      idempotentHint: false,
+      readOnlyHint: false,
+    },
+  },
+  deleteCustomer
+);
+```
+
+This is metadata, not a guard. Real clients do read it, and they read it hard. ChatGPT requires `readOnlyHint`, `destructiveHint`, and `openWorldHint` on every tool, and forces a confirmation prompt before any call marked destructive or open-world. Claude leans on the read/write distinction — `readOnlyHint` versus `destructiveHint` — to decide whether a tool is safe to auto-approve or needs a human nod; submit a connector to its directory with the annotations missing and you're in the bucket that accounts for roughly a third of rejections. The hints are not decorative. Clients build policy on them.
+
+But *policy* is the operative word — the hint informs the client's decision, it doesn't bind it, and a client is free to ignore it entirely. The spec's own defaults are deliberately paranoid: `destructiveHint` is treated as `true` unless you say otherwise, and `openWorldHint` the same, which tells you the authors expect the worst from an unannotated tool. On its own, though, the annotation is still a sticky note that says "careful" — useful for surfacing the right [permissions](/foundations/permissions/) policy, useless as a hard stop. It tells the truth about the capability; it does not enforce anything. Lean on it alone and you've described the danger to every client and trusted each one to do something about it.
+
+## Make the tool refuse to proceed without an explicit accept
+
+Enforcement lives inside the handler, where the server itself blocks until a human answers. This is elicitation: the server emits a request for a structured response, the client renders it however it likes, and the call does not return until the user resolves it.
+
+```ts
+async function deleteCustomer({ id }, { server }) {
+  const result = await server.elicitInput({
+    message: `Permanently delete ${id} and all linked invoices? This cannot be undone.`,
+    requestedSchema: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "string",
+          title: "Type the account id to confirm",
+        },
+      },
+      required: ["confirm"],
+    },
+  });
+
+  if (result.action !== "accept" || result.content.confirm !== id) {
+    return {
+      content: [{ type: "text", text: `Deletion of ${id} cancelled.` }],
+    };
+  }
+
+  await db.customers.delete(id);
+  return { content: [{ type: "text", text: `Deleted ${id}.` }] };
+}
+```
+
+Read the control flow, because it's the whole point. The model has already *decided* to delete. The arguments are formed, the call is in flight — and then the operation **suspends itself** and hands control back to a person. Mechanically, the server returns an "input required" result instead of a value; the client renders the form, the user answers, and the client *retries the same call* carrying the response. The handler resumes as if `elicitInput` simply returned. From the model's perspective nothing exotic happened — a tool took a beat to come back. From the data's perspective, a human stood in the only doorway to the `delete` statement.
+
+Only `accept`, paired with a typed-back confirmation that matches the target id, reaches the `db.customers.delete` line. A model that hallucinated the wrong id, or a prompt injection that smuggled in "now delete acct_9931," dies at the `!==` check because the human in the loop won't type a string they never intended.
+
+## Three actions, not two — and the difference matters
+
+The handler above collapses everything that isn't `accept` into "cancelled," which is the safe default. But MCP gives you three distinct outcomes, and a good destructive tool reads all three. `accept` means the user explicitly submitted data. `decline` means they looked at the request and said no — a deliberate rejection. `cancel` means they dismissed it without deciding: closed the dialog, hit Escape, got interrupted, or the client failed to render the form at all.
+
+The distinction is operational, not philosophical. A `decline` is a decision you can log and respect — the human saw "delete acct_9931" and refused, which is often exactly the signal you want to surface upstream. A `cancel` is *no decision*, and it's frequently transient: the user wandered off, the connection blipped. Treating the two identically is harmless for a one-shot delete, but the moment your tool is part of a longer flow, the right move diverges. On `decline`, stop and report. On `cancel`, it's reasonable to leave the door open — prompt again later, don't mark the intent as refused. The fail-safe rule still holds underneath all of it: anything that isn't a clean `accept` must not mutate state.
+
+## A second shape: structured input, not just yes/no
+
+Confirmation-by-typing is the simplest use, but elicitation returns *structured* data against a schema, which lets you fix a far nastier class of mistake — the model that picks the wrong target, not just the wrong moment. Consider a deploy tool the agent reaches for constantly:
+
+```ts
+async function promoteRelease({ service }, { server }) {
+  const result = await server.elicitInput({
+    message: `Promote ${service}. Choose the target environment.`,
+    requestedSchema: {
+      type: "object",
+      properties: {
+        environment: {
+          type: "string",
+          title: "Target environment",
+          enum: ["staging", "production"],
+        },
+        confirm: { type: "boolean", title: "I understand this ships live traffic" },
+      },
+      required: ["environment", "confirm"],
+    },
+  });
+
+  if (result.action !== "accept" || !result.content.confirm) {
+    return { content: [{ type: "text", text: "Promotion cancelled." }] };
+  }
+  await deploy(service, result.content.environment);
+  return { content: [{ type: "text", text: `Promoted ${service} to ${result.content.environment}.` }] };
+}
+```
+
+Notice what moved. The *environment is not a tool argument* — the model never names it. The human picks it from a constrained enum at the moment of action. So a model that read "ship it" and assumed production can't quietly assume production; the choice is wrested back to the person every time, and the schema guarantees the answer is one of two valid values, not a free-text guess. This is the underrated half of elicitation: it doesn't just gate the dangerous call, it lets you *relocate the dangerous decision* out of the model's hands and into a typed form the human fills.
+
+## Why this beats a UI dialog: it travels
+
+The dialog approach guards a single client. This approach guards the *operation*. Wire the same server into a terminal agent, a web playground, a [headless](/foundations/headless/) automation — each one inherits the gate, because the pause originates server-side and every compliant client must surface elicitation to fulfill the call. The confirmation is now a property of `delete_customer`, not of whatever happened to be on screen.
+
+That's the context-engineering move underneath the mechanic. The agent is fast and broad and will happily execute any well-formed call; what it lacks is your knowledge that *this specific operation is irreversible and worth a heartbeat of human attention.* You can't keep that knowledge in the chat UI, because the chat UI is one of many ways the agent reaches the capability. You encode it once, at the capability, and it becomes context that no client can lose in translation.
+
+## What this is not
+
+This is not a substitute for real authorization. Elicitation asks a human *who is already trusted*; it does not verify identity, scope a token, or replace [permissions](/foundations/permissions/) boundaries on the server. A headless runner with no human attached can only ever receive `cancel` — which is the correct, safe default, but it means destructive paths simply won't complete unattended. Decide deliberately whether that's a feature (no silent deletes in CI) or a blocker (you need a service path that bypasses the gate with audited credentials).
+
+It's also not a secret collector — and this is the one boundary the spec draws as a hard line, not a suggestion. Form-mode elicitation **MUST NOT** request passwords, API keys, access tokens, or payment credentials. The form data passes through the client and the model's context, so anything you collect that way is exposed to logging and to the LLM itself. The right tool for credentials is the newer **URL-mode** elicitation, where the server hands the client a URL, the user enters the secret on a trusted page out of band, and nothing sensitive ever crosses the model's path. The confirm-by-typing pattern is fine because an account id is not a credential — but the instinct to "just ask the user for the token mid-call" is exactly the misuse the spec forbids. If your gate needs a secret to proceed, it's an auth flow, not an elicitation.
+
+It's also not a deterministic [hook](/foundations/hooks/) in the harness sense — a hook fires on the *client's* tool lifecycle and can hard-block before a call ever leaves the agent. Elicitation is the server's complement: when you don't control every client's hooks, you push the checkpoint inward so it can't be skipped. Use both when you can. Use elicitation when you can't trust the client to bring its own.
+
+The cheapest delete is the one that never asked. Make your tools ask — from the inside, where no client can talk them out of it.
+
+---
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/); for how confirmation fits the broader guardrail model, [Permissions](/foundations/permissions/); and for client-side deterministic gates, [Hooks](/foundations/hooks/).

@@ -1,0 +1,167 @@
+---
+title: "A Second Opinion It Didn't Write"
+description: "An agent reviewing its own plan shares its own blind spots. Wire a different vendor's model in as a deterministic gate, and a fail verdict re-engages planning before a line of code exists."
+authors: sanjay
+date: 2026-05-29
+tags: [context-engineering, hooks, plan-mode, workflow]
+draft: false
+---
+
+The plan looked right. It always does.
+
+Your agent laid out seven numbered steps to add the feature. Migrate the schema, wire the endpoint, load the model, return the result. You read it, it tracked, you approved it. Then an hour into the build you hit the thing the plan never mentioned: it assumed a default would load when no weights were specified, and the default is the wrong size for production. Now you're unwinding three commits to thread a config value the plan should have flagged before you typed a character.
+
+Giving the agent a fresh context window to re-read its own plan catches some of these — the assumptions it talked itself into, the momentum of a loaded session. That's a real technique, and a separate critic in a clean context is the right tool for it. But it doesn't catch *this* failure. The default size felt obvious because every model of one lineage treats it as obvious — the same corpora taught them the same habit. A fresh window from that family re-reads the plan and nods along, because nothing in its training ever flagged the default as a question to begin with.
+
+This is a context-engineering problem wearing a code-review costume. The agent is broad and fast but contextless — it doesn't know your production weights matter, your team's deploy constraints, the failure you ate last quarter. You're the deep, narrow SME who does. The plan is the moment that gap gets encoded into a sequence of steps. Some of the blind spots in it are context artifacts a fresh window clears. Others are baked into the weights, and only a model with a *different* lineage can see them.
+
+## The blind spot a fresh window can't reach
+
+Name the two kinds of plan error and the fix for each falls out. The first is a context artifact — the agent committed to an approach mid-session and now reasons from that commitment. A clean context, even the same model, dissolves it; that's the generator-and-critic move, and it works. The second lives a layer down, in the training distribution itself: the library this model family always reaches for, the architecture it never questions, the default it treats as a non-event. No fresh window surfaces that one — the whole lineage shares the habit, so a new instance of it just inherits the blind spot.
+
+This isn't just a hunch — it's measured, and it cuts hard against letting a model grade its own work. Language models reliably score text they find *familiar* — lower-perplexity, closer to their own training distribution — as higher quality than human raters do, and they can recognize and prefer their own generations over other models' and humans'. A reviewer pulled from the same lineage finds the plan's defaults maximally familiar, which is exactly the wrong reflex for catching them. Familiarity reads as correctness. The thing that should raise a flag is the thing that raises none.
+
+The only context that closes *this* gap comes from a model with a different lineage — a different vendor, a different corpus, different defaults. And the cheapest place to spend that second opinion is before any code exists: at the exit of plan mode, where a wrong default costs one paragraph to fix instead of a stack of commits to unwind. That distinction — *different vendor, gated at the plan boundary* — is the whole recipe. Four foundations primitives combined into one workflow:
+
+- [Plan mode](/foundations/plan-mode/) is where the agent thinks before it acts — the natural place to insert a checkpoint.
+- [Hooks](/foundations/hooks/) turn "remember to review" into "always reviews," deterministically, on a tool call.
+- [Headless](/foundations/headless/) lets a second CLI run non-interactively over your plan and return a structured verdict.
+- [Model selection](/foundations/model-selection/) is the whole point: the reviewer must be a model that didn't write the plan.
+
+## The recipe: gate plan-mode exit on a cross-vendor review
+
+Plan mode ends with a specific tool call — the agent's way of saying "I'm done planning, approve me." That tool call is your trigger. Hook it.
+
+When the agent tries to exit plan mode, a hook intercepts the call, writes the proposed plan to a file, and hands it to one or two *other* coding CLIs running headless. Each returns a verdict. You combine them. A `fail` blocks the exit and drops the agent back into planning with the critique attached. A `warn` lets it through but injects the comments into context. A `pass` is silent — the agent proceeds and you never noticed it happened.
+
+If you live in Copilot or Cursor and have no literal `ExitPlanMode` hook, the portable idea still holds: gate the plan handoff to a different vendor's model. That can be a paste step into a second tool before you let the first one write code, a pre-commit check that diffs the work against an approved plan, or a CI job on the planning PR. The wiring below is the terminal-agent version; the principle — a different vendor signs off before execution — is tool-agnostic.
+
+Start with the hook wiring. In settings, match the exit-plan-mode tool and run a script:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.config/agent-hooks/plan-review.sh",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Two things matter here and both bite people. The matcher name is whatever your agent calls its plan-exit tool — confirm it in your tool logs rather than guessing. And the `timeout` is generous on purpose: 600 seconds. A headless model reading a plan and writing a critique can take a minute or two, and you'd rather wait than have the gate silently time out and wave a bad plan through.
+
+Now the script. The hook passes the tool call's payload — including the plan text — on stdin as JSON. Extract the plan, fan it out to your reviewers, collapse their verdicts into one. The field path that holds the plan text varies by tool just like the matcher name does — inspect a real payload before trusting the `jq` selector below.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+PAYLOAD="$(cat)"
+REVIEW_DIR="${PWD}/.plan-reviews"
+mkdir -p "$REVIEW_DIR"
+STAMP="$(date +%s)"
+PLAN_FILE="$REVIEW_DIR/plan-$STAMP.md"
+
+# Pull the proposed plan out of the tool-call payload.
+echo "$PAYLOAD" | jq -r '.tool_input.plan // .tool_input.text' > "$PLAN_FILE"
+
+PROMPT="You are an adversarial reviewer. You did NOT write this plan.
+Find the assumption that breaks it. Look for unspecified defaults,
+missing edge cases, and resource decisions made implicitly.
+Reply on the first line with exactly one of: PASS, WARN, or FAIL.
+Then list concrete comments. Plan:
+
+$(cat "$PLAN_FILE")"
+
+verdicts=()
+comments=""
+
+run_reviewer () {
+  local name="$1"; local cmd="$2"; local enabled="$3"
+  [ "$enabled" != "1" ] && return 0
+  local out
+  out="$(echo "$PROMPT" | eval "$cmd" 2>>"$REVIEW_DIR/errors.log" || true)"
+  echo "$out" > "$REVIEW_DIR/$name-$STAMP.md"
+  local v
+  v="$(echo "$out" | head -1 | grep -oE 'PASS|WARN|FAIL' || echo WARN)"
+  verdicts+=("$v")
+  comments+="### $name → $v"$'\n'"$out"$'\n\n'
+}
+
+# Each reviewer is a different vendor's CLI, run headless. Toggle via env.
+run_reviewer "codex"    "codex exec -"                  "${REVIEW_CODEX:-1}"
+run_reviewer "opencode" "opencode run --model anthropic/claude-haiku -" "${REVIEW_OPENCODE:-0}"
+
+# Combine in one pass: any FAIL fails; else any WARN warns; else pass.
+final="PASS"
+for v in "${verdicts[@]}"; do
+  case "$v" in
+    FAIL) final="FAIL"; break ;;
+    WARN) final="WARN" ;;
+  esac
+done
+
+case "$final" in
+  FAIL)
+    echo "Plan rejected by cross-vendor review. Re-engage planning and address:" >&2
+    echo "$comments" >&2
+    exit 2 ;;          # non-zero blocks the tool call; agent returns to planning
+  WARN)
+    echo "Plan passed with concerns. Fold these in before building:"
+    echo "$comments"
+    exit 0 ;;          # allowed through; comments land back in context
+  PASS)
+    exit 0 ;;          # silent; the agent proceeds
+esac
+```
+
+The exact invocation flags depend on which CLIs you run and will drift as those tools version — treat `codex exec -` and `opencode run` as shapes, not gospel, and check your own tool's headless docs. The structure is what's portable: read plan from stdin, prompt for a one-word verdict on line one, parse it, decide.
+
+Two design choices earn their keep. The env-var toggles (`REVIEW_CODEX`, `REVIEW_OPENCODE`) let you run one reviewer on a fast iteration and both on something load-bearing, without editing the script. And every run writes to `.plan-reviews/` — add it to `.gitignore`. You get an audit trail of what each model said about each plan, which is gold the first time a reviewer was right and you overrode it.
+
+## What a fail looks like
+
+Take a representative case — the shape of verdict that earns the setup, not a logged incident. A plan says "load the model and run inference." A cross-vendor reviewer is the kind of check that comes back with `FAIL` and one line:
+
+> You didn't specify model weights. With no explicit checkpoint, the framework loads its default — which is not the size you deploy. This plan will pass local tests and fail under production load.
+
+The asymmetry is the point: a one-paragraph verdict at the plan boundary against a stack of commits to unwind after the fact. The author's model wouldn't flag it because the author's model wrote it — the default felt obvious, so it stayed implicit. A model from a *different vendor* has no investment in that lineage's defaults. It just sees a hole.
+
+That's the context gap closing in real time. The reviewer doesn't know your production weights either — it's also a broad, contextless agent. But it comes from a different lineage, so it doesn't share *this* agent's baked-in defaults, and that's enough to force the implicit decision into the open where you, the SME, can rule on it — while it's still a sentence in a plan, not a branch you have to revert.
+
+### A duller, more common fail
+
+Weights are the vivid version. The everyday one is quieter and shows up far more often. Take a plan that says "add rate limiting to the API" and never names a strategy. The agent will reach for whatever its lineage reaches for — most likely a fixed-window counter in process memory, because that's the shape that dominates its training examples. It works in the demo and falls over the moment a second instance comes up behind a load balancer, because the counter isn't shared across processes. A same-lineage reviewer reads "add rate limiting," silently fills in the same default, and sees nothing missing. A different-lineage reviewer reads the identical sentence, fills in a *different* default — a token bucket in Redis, say — notices the plan committed to neither, and asks the question that was never on the page:
+
+> The plan says "rate limiting" but never says distributed or single-instance. An in-process counter passes local tests and breaks behind a load balancer. Decide which one before you build it.
+
+Neither model knows your deployment topology. One of them asks anyway, because the two of them don't share a reflex about what "rate limiting" quietly means.
+
+## Why not a smarter critic from the same lab?
+
+The obvious objection: if a weak reviewer is the problem, point a stronger one at the plan — the flagship from the same vendor that wrote it. It won't help, and the research on self-preference says why. The bias that makes a model overrate familiar text tracks its ability to *recognize* that text as its own kind. A more capable same-lineage reviewer recognizes the plan's defaults more confidently, not less — they're the defaults it would have reached for too. Capability sharpens the blind spot; it doesn't clear it.
+
+What clears it is orthogonality. A mediocre reviewer from a different lineage catches the shared-default error that a brilliant reviewer from the same one nods straight past. You're not buying a better grader — you're buying a second error distribution that doesn't correlate with the first, and the value is in the *un*correlated, not in the better. Spend your [model-selection](/foundations/model-selection/) budget on distance from the author, not on raw capability.
+
+## Where the gate earns its keep — and where it doesn't
+
+The reviewer is also a broad, contextless agent — which cuts both ways. It will sometimes flag a deliberate choice as a hole because it can't see the constraint that justified it. Left unchecked, that's how a gate cries wolf and gets switched off by Thursday. Two things keep it honest. Make `WARN` the default verdict for anything short of a flat contradiction, so concerns land in context without blocking — you stay the arbiter, not the script. And tune the prompt toward "find the assumption that breaks this plan," not "list everything you'd do differently"; the first finds holes, the second generates noise.
+
+There's a subtler failure that quietly defeats the whole setup: a reviewer that only *looks* like a different lineage. The mechanism rests on a genuinely different training distribution, not a different brand on the API. Models distilled from — or trained on the outputs of — a dominant model inherit its defaults wholesale. Wire up two CLIs that both wrap the same underlying family and you get the comforting feeling of a second opinion with none of the substance. Check what's actually under the hood, not the logo on it.
+
+And don't gate everything. A throwaway script, a one-file change, a plan you could verify by reading in ten seconds — the gate's minute or two of latency at every plan exit is a tax with no return. Reserve it for plans where a wrong default costs a stack of commits: schema migrations, anything touching production config, anything you'll build a week of work on top of. The toggle env vars earn their keep here — keep the gate off by default and flip it on for the plans that can actually hurt you.
+
+## One caveat that will waste your afternoon if you skip it
+
+Hooks aren't hot-reloaded. Edit your settings, and the running session keeps the old config in memory — your shiny new gate does nothing and you'll swear it's broken. Relaunch the agent after changing hook settings. Once it's loaded, the gate is invisible: you plan, you approve, and somewhere in that approval a model from a different lab quietly read your work and either let it through or sent it back. No extra keystrokes, no discipline required on the tired Friday.
+
+You already trust plan mode to make the agent think before it acts. This wires the exit to a different vendor's model — so the thinking clears a lineage that didn't write it, at the one boundary where a wrong default is still cheap to fix. Plan with one vendor. Gate the exit on another.

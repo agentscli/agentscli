@@ -1,0 +1,139 @@
+---
+title: "Your Backlog Is the Prompt"
+description: "Hand-passing one plan per run keeps you inside the loop doing task selection for the agent. Pipe your whole issue tracker in and let it pick the next ticket itself."
+authors: sanjay
+date: 2026-05-29
+tags: [context-engineering, mcp, headless, workflow]
+draft: false
+---
+
+Watch yourself work with an agent for an hour and count the keystrokes. Open the next plan. Paste it in. Wait. Review the diff. Approve. Open the *next* plan. Paste it in. You feel productive because the agent is writing the code. But look at what you actually contributed: you picked which thing to do next. You did the triage. The agent did the typing.
+
+You automated the cheap part and kept the expensive part for yourself.
+
+This is the trap of one-plan-at-a-time. It *feels* controlled — you hand the agent exactly one well-scoped task, it executes, you check, you move on. The control is real. So is the leash. As long as you're the one deciding what comes next, the agent can never run longer than your attention span, and your throughput is capped at the rate you can read tickets and paste prompts. You've built a faster typist, not a teammate.
+
+The leverage move is the one that feels like losing control: hand the agent the *whole* prioritized backlog and let it choose. Your job shrinks from feeding tasks to curating a queue.
+
+## The gap, stated plainly
+
+A modern coding agent is broad and contextless. It can write Go, refactor a React tree, or wire up a migration — but it doesn't know which of your forty open tickets matters most this sprint, what "done" means for ticket #214, or that the flaky CI job is blocking three other things. You know all of that. You are the narrow, deep SME. The agent is the wide, shallow generalist.
+
+Closing that gap is the entire job of context engineering. And task selection is *pure context*. "Do the critical bug before the polish" is not a coding skill — it's a priority judgment that lives in your head. The instinct is to keep that judgment manual because it feels too important to delegate. But a priority order you can *state out loud* is a priority order you can *write down once* and hand off. Once it's written, the agent can triage as well as you can, and you stop being the bottleneck for a decision you already made.
+
+This recipe combines three primitives to write that judgment down and let it run: an [MCP server](/foundations/mcp-servers/) that gives the agent live reach into your tracker, [rules](/foundations/rules/) that encode your priority order as persistent context, and a [headless loop](/foundations/headless/) that runs the whole thing unattended.
+
+## Step 1 — Give the agent eyes on the tracker (MCP)
+
+Your backlog lives in Linear, Jira, or GitHub Issues. The agent can't see it. An [MCP server](/foundations/mcp-servers/) is the bridge — it exposes your tracker's operations as tools the agent can call directly, so it reads real tickets instead of whatever stale summary you pasted.
+
+You want three capabilities exposed: fetch the open issues, read a single issue's full body and comments, and write a comment or close it. GitHub now runs an official hosted MCP server, so wiring it into a Claude Code project is a few lines in `.mcp.json` — present every session, no local install to babysit:
+
+```json
+// .mcp.json
+{
+  "mcpServers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+The point isn't GitHub specifically. Any tracker with a CLI or an MCP server works — Linear and Jira both have them. What matters is that the agent now reads the *real* acceptance criteria, not your lossy paraphrase of them. When ticket #214 says "must handle the empty-array case," the agent sees that line. That's context you no longer have to carry by hand.
+
+## Step 2 — Write down the priority order (rules)
+
+Here's the move that actually moves you out of the loop. Encode the judgment you've been making manually — *which ticket next* — as a persistent rule the agent reads on every run. This is the [rules](/foundations/rules/) primitive doing exactly its job: turning a decision you keep re-making into context the agent carries for free.
+
+Drop a triage block into your `AGENTS.md` (or `CLAUDE.md`):
+
+```markdown
+## Backlog triage
+
+On each run, fetch all open issues with their number, title, body, and
+comments. Choose the single highest-priority issue using this order:
+
+1. Critical bugs — anything labeled `bug` + `critical`, or breaking prod.
+2. Dev infra — broken CI, failing builds, blocked tooling. Unblock the team first.
+3. Tracer-bullet features — the thinnest end-to-end slice that proves a path works.
+4. Polish — UX, copy, edge cases on features that already ship.
+5. Refactors — only when nothing above is open.
+
+Ties break toward the issue with the most recent activity. If an issue's
+acceptance criteria are ambiguous, do NOT guess — comment asking for
+clarification and move to the next one.
+```
+
+Read that order back. It is not novel. It is the same prioritization you already do on instinct every morning. The difference is it now lives in a file instead of your head, which means the agent applies it instead of waiting for you to. That's the whole trick: you weren't keeping task selection because it was hard, you were keeping it because you never wrote it down.
+
+## Step 3 — Close the loop (headless) and the post-commit contract
+
+Now run it without a human in the chair. A [headless loop](/foundations/headless/) invokes the agent non-interactively, once per iteration, with the open-issues list injected at the top of context every time.
+
+```bash
+#!/usr/bin/env bash
+# backlog-loop.sh — run the agent against the top of the backlog, repeatedly.
+while :; do
+  issues="$(gh issue list --state open --json number,title,body,comments)"
+
+  claude -p "Here is the current open backlog as JSON:
+$issues
+
+Follow the backlog-triage rules in AGENTS.md. Pick ONE issue, implement it,
+commit, then honor the post-commit contract below." \
+    --allowedTools "Bash(gh issue comment:*)" "Bash(gh issue close:*)" "Edit" "Write"
+
+  sleep 30
+done
+```
+
+Fetching the issue list *fresh on every iteration* matters. The backlog the agent triages is the live one — tickets you closed by hand are gone, tickets a teammate filed five minutes ago are in. The agent always works the real top of the stack, not a snapshot from when you started the loop.
+
+Then the contract that makes each run accountable. Put this in your rules right under the triage block:
+
+```markdown
+## Post-commit contract
+
+After committing work for an issue, do exactly one of:
+
+- DONE — all acceptance criteria met: close the issue with a comment
+  summarizing what shipped and the commit SHA.
+- BLOCKED / PARTIAL — something stopped you: comment on the issue with
+  what you did, what's left, and what's blocking. Leave it open.
+
+Never close an issue you couldn't fully satisfy. Never leave a finished
+issue open.
+```
+
+This is what turns the tracker into a running work log. Each issue accumulates the agent's commentary — what shipped, what got stuck, which SHA. You scroll the issue and see the history of the work, not just its final state.
+
+## Step 4 — Allowlist the issue commands so the loop never stalls
+
+A headless loop dies the instant it hits an approval prompt no human is there to answer. The fix is a narrow [permissions](/foundations/permissions/) allowlist: pre-approve *exactly* the tracker commands the contract needs — comment and close — and nothing else. You saw it in the script above:
+
+```bash
+--allowedTools "Bash(gh issue comment:*)" "Bash(gh issue close:*)"
+```
+
+Scope it tight. The agent can comment on and close issues unattended; it still can't `gh repo delete` or push to `main` without the broader guardrails you've set. You're not handing over the keys — you're pre-approving the two low-stakes write operations the loop genuinely needs, so it runs through the night instead of freezing on iteration three.
+
+## The proof: PRDs and plans become issue bodies
+
+Once the tracker is the agent's source of truth, your planning artifacts move *into* it. That half-finished PRD in a Google Doc? Paste it as an issue body. The implementation plan you'd normally hand-feed plan-by-plan? It's the description of issue #220, cross-referencing #214 and #218.
+
+This is the part that compounds. Because there's no plan-mode back-and-forth — no human in the chair to clarify "wait, did you mean the v2 endpoint?" — the issue description *is* the prompt. It has to carry everything. So you start writing tickets the way you'd write a spec for someone you'll never get to answer a follow-up: unambiguous acceptance criteria, explicit edge cases, the empty-array case spelled out. Which is how you should have been writing tickets all along.
+
+And here's the quiet payoff: a tracker is somewhere non-engineers can write too. Your PM can file a ticket. Your designer can add acceptance criteria in a comment. The backlog becomes the shared interface between the people who know *what* needs to happen and the agent that knows *how* to type it — with you curating the queue in between, not transcribing it.
+
+## Curate the queue, not the keystrokes
+
+The one-plan-at-a-time workflow asks you to be present for every decision. It feels like control. It's a leash. You can only run the agent as long as you can sit there pasting, and your real contribution — the priority judgment — was something you'd already decided before you sat down.
+
+Write that judgment into rules. Give the agent live tracker access through MCP. Run it headless against the whole open list. Now the agent reads real acceptance criteria, triages by your stated order, ships, and closes the ticket — and your job becomes the genuinely human one: deciding what belongs in the backlog at all. That's the SME work. The triage and the typing were never the point.
+
+Your backlog is the prompt. Stop pasting it one line at a time.

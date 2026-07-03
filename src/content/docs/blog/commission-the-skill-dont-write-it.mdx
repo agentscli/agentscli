@@ -1,0 +1,148 @@
+---
+title: "Commission the Skill, Don't Write It"
+description: "You don't author a skill from a blank page. You send a subagent to research the problem once, and the research becomes the skill — a build artifact, not a document."
+authors: sourabh
+date: 2026-05-29
+tags: [context-engineering, skills, subagents, workflow]
+draft: false
+---
+
+You are reading the same migration guide for the second time this month.
+
+Last time it was a different repo — same library, new major version, fresh set of breaking changes you half-remember. You paste the upgrade notes into the chat. You grep around for the old call sites. You walk the agent through the first three replacements by hand, correct it twice, and then it finally settles into the pattern. By Friday it works. By next month, in the next service, every bit of that hard-won understanding is gone. The session ended, and the knowledge ended with it.
+
+The research was the expensive part. And you threw it away.
+
+## The thing you keep rebuilding
+
+Migrating to an unfamiliar API has two costs, and they are wildly different sizes.
+
+The cheap cost is the edits — find the old call, write the new one. Mechanical. A codemod handles most of it.
+
+The expensive cost is the reconciliation: holding the external library's docs in one hand and your repo's actual usage patterns in the other, and figuring out where they disagree. The vendor's "after" example assumes a clean slate. Your code has six years of accreted wrappers, a custom retry shim, and three call sites that pass options the new version renamed. Nobody's migration guide covers *your* code. You build that bridge in your head, live, every time — and your head doesn't commit to git.
+
+This is the gap the whole discipline of context engineering exists to close. The agent is broad: it has read the library's docs and a thousand migrations like yours. You are deep: you know your repo's particular sins. The migration only works in the overlap, and right now you reconstruct that overlap from scratch on every run.
+
+## Stop authoring. Start commissioning.
+
+Here is the reframe. You are not going to write a skill that performs this migration. Writing a skill from a blank page is the slow way — you'd be transcribing research you haven't done yet.
+
+Instead you commission the research, and you make the research emit the skill as its output.
+
+A [subagent](/foundations/subagents/) is the right tool because the research is exactly the kind of work you want to isolate: it's broad, noisy, and token-hungry, and you don't want its scratch work polluting your main session. Reading a migration guide means pulling in pages of prose, most of it irrelevant to you. Grepping every call site means dozens of file snippets. Do that in your main thread and the context you actually care about — the task at hand — gets buried under raw material. A subagent runs the dig in its own window and hands back only the conclusion.
+
+You dispatch one with two jobs to run in parallel — go read the target library's migration guide on the web, *and* grep this repo for every current usage of the old API. One half is the external truth. The other half is your local reality. The subagent's actual deliverable is the place where those two halves meet.
+
+```
+Task: Research the migration from <library>@3 to @4 for THIS repo.
+
+Run these two investigations together, then reconcile them:
+
+1. External: web-search the official @4 migration guide. Extract
+   the breaking changes, renamed exports, removed options, and the
+   recommended codemod (if any).
+
+2. Local: grep this repo for every import and call site of @3.
+   Note our wrappers, the custom retry shim in src/lib/http, and
+   any options we pass that @4 may have renamed.
+
+Deliver: a SKILL.md that an agent can later follow to perform this
+migration with no further research. Write it as a sequence of moves,
+not prose. Push deep detail into reference.md and examples.md.
+Do NOT perform the migration. Just produce the skill.
+```
+
+That last constraint matters. The subagent's job is to crystallize, not to act. You want a [skill](/foundations/skills/) — a committed, reusable procedure — not a one-time diff that vanishes when the context window clears.
+
+## What "a skill, not a document" means
+
+The output is not a wiki page. A skill is a build artifact with a specific shape, and the shape is what makes it cheap to run later.
+
+You want it written as a sequence of moves — the smallest set of steps that get the job done — with the deep material split out behind progressive disclosure. The agent loads the short top-level file every time and only pulls in the heavy reference when a step actually needs it.
+
+```
+.claude/skills/migrate-lib-v4/
+  SKILL.md        # the move sequence — always loaded
+  reference.md    # full mapping of every renamed/removed API
+  examples.md     # before/after for the gnarly cases
+```
+
+The `SKILL.md` stays lean:
+
+```markdown
+---
+name: migrate-lib-v4
+description: Migrate this repo from <library> v3 to v4.
+---
+
+# Moves
+
+1. Install the dep: bump <library> to ^4 and run the install.
+2. Run the codemod: `npx <library>-codemod v3-to-v4 src/`.
+3. Fix what the codemod missed. The renamed options and removed
+   exports it can't reach are in `reference.md` — load it now.
+4. Reconcile our wrappers: src/lib/http retry shim passes options
+   that v4 renamed. See `examples.md` for the corrected calls.
+5. Verify: run typecheck, then the full test suite. Do not stop
+   until both pass clean.
+```
+
+Notice what each move earns its place by doing. Step 1 and 2 are the cheap mechanical bulk — let the codemod do the boring 80%. Step 3 says *load `reference.md` now*, so the expensive detail enters context exactly when it's useful and not a moment before. Step 4 points at the one thing no external guide could know: your retry shim. That line is the entire reason this skill beats the vendor's. Step 5 closes the feedback loop — typecheck plus the full suite — so "done" means verified, not vibes.
+
+The detail lives one hop away:
+
+```markdown
+<!-- reference.md -->
+## Renamed options
+| v3                  | v4                |
+|---------------------|-------------------|
+| `retries`           | `maxAttempts`     |
+| `timeoutMs`         | `timeout`         |
+| `onFail` (callback) | removed — use the result's `.error` |
+
+## Removed exports
+- `createLegacyClient` — replace with `createClient({ compat: false })`
+```
+
+Now the migration runs without re-researching anything. The first run paid the full reconciliation cost once and froze it into files. Every run after that skips straight to applying it.
+
+## Why this actually holds up
+
+The proof that this isn't just tidy bookkeeping: a well-commissioned skill carries knowledge you couldn't reliably reproduce by hand.
+
+When the research subagent reconciled the external guide against the real call sites, it caught an options-renaming collision in the retry shim that a manual pass would have walked right past — the kind of edge case that compiles fine and fails in production at 2am. Because the skill ends with typecheck plus the full suite as a hard gate, that edge case surfaced as a red test instead of an incident. The expensive thinking happened once, under inspection, and got pinned down where it can't drift.
+
+And because the skill is just files in the repo, it ages like code, not like memory. When v5 ships next year you don't start from a blank page — you fork the v4 skill, point a subagent at the new guide, and have it diff the delta against work you've already pinned down. The reconciliation compounds across major versions instead of resetting to zero each time.
+
+(Worth stating plainly: the value here is structural, not magic. The skill is only as good as the research that produced it. Commission it on a sloppy afternoon and you've frozen sloppiness. Review the `SKILL.md` like you'd review a teammate's PR before you trust it.)
+
+## The same move, beyond migrations
+
+A migration is the cleanest example, but the shape generalizes to any task where external truth has to reconcile with your local reality — which is most of the work worth automating.
+
+Wiring a new observability vendor's SDK into your logging is the same move in a different costume. The vendor's quickstart assumes a greenfield app; you have a `logger` wrapper everyone imports and a hard rule that PII never hits the wire. Commission a subagent to read the SDK docs *and* grep your logging call sites, and have it emit a skill that adapts their setup to your wrapper rather than the toy example in their README.
+
+Adopting a stricter lint ruleset is the same move again. The ruleset's docs list every rule; your repo has two hundred existing violations and a dozen you'll never fix. The reconciliation — which rules to turn on now, which to ratchet over time, which to suppress with a documented reason — is precisely the part worth freezing. In every case the agent brings the broad external knowledge, your repo supplies the narrow local truth, and the skill is the contract written down where those two meet.
+
+## Two cautions that will bite you
+
+**Watch where it writes the file.** A skill can live in two places: your *personal* directory, `~/.claude/skills/`, which follows you across every project, or the repo's `.claude/skills/`, which ships with the code. Left to its own devices an agent will often reach for the personal one — it's the path of least resistance, and the skill works the instant it lands there. That's exactly why it's quietly corrosive: it works beautifully for you and is invisible to everyone else on the team. The whole point of context engineering is closing the gap between the broad agent and your *team's* deep knowledge — a skill siloed in your home directory closes it for exactly one person. Commit it to the project skills directory so the repo carries it and every teammate's agent inherits it. While you're there, pin the rule in your [rules file](/foundations/rules/) so the agent stops drifting back to the user dir:
+
+```markdown
+## Skills
+Author all new skills under `.claude/skills/` in this repo, never the
+user-level skills directory. Skills are team artifacts — they ship
+with the code.
+```
+
+**Don't let it migrate in one giant chunk.** The temptation, once the skill exists, is to point it at all two hundred call sites and walk away. Resist. When a single huge batch hits an error halfway through, the agent's context is now stuffed with two hundred files' worth of diff *and* a stack trace, right at the moment it most needs room to think — and that's exactly when it starts flailing. Run the feedback loop between smaller batches. Migrate a module, typecheck, test, commit; then the next. The skill already names the verify step — honor it as a checkpoint, not a finale.
+
+## When not to bother
+
+The reframe isn't free — it costs a subagent dispatch, a review pass on the output, and a file you now have to maintain in the repo. Pay it only when the knowledge will be reused. A one-off migration in a service you're about to decommission doesn't need a skill; do the work in-session and let it evaporate. A change small enough that the vendor's codemod does the whole job, with no local wrappers or renamed options to reconcile, doesn't need a skill either — the codemod *is* the skill. The commission earns its keep when two things are true at once: the reconciliation is genuinely expensive, and you will face it again — across a fleet of services, on the next vendor upgrade, in the onboarding steps every new repo repeats. If you'll only ever pay the cost once, paying it a second time to write it down is just a loss.
+
+## The takeaway
+
+The instinct to "write a skill" puts a blank page in front of you and asks you to be the expert. Flip it. You are not the expert on a library you've touched twice — the agent is broader than you here, and your repo's reality is the only thing it lacks. So commission the bridge: send a subagent to read the docs and read your code at once, and make the meeting point its deliverable.
+
+Do the research once. Ship the research.

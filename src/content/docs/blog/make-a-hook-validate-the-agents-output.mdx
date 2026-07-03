@@ -1,0 +1,127 @@
+---
+title: "You can't prompt your way out of a hallucinated output. You can validate your way out in three days."
+description: "A deterministic check on the agent's output, with one retry, kills a class of wrong answers that no prompt rewrite ever reaches — and gives you a number instead of a vibe."
+authors: sanjay
+date: 2026-05-31
+tags: [context-engineering, hooks, rules, headless]
+draft: false
+---
+
+The agent keeps inventing a column that isn't in the schema. You've rewritten the prompt four times. You've added "ONLY use columns that exist" in bold. You've pasted the schema into the system message twice for good measure. It still, once every dozen runs, reaches for `user.last_active` — a field that does not exist and never has.
+
+So you reach for the obvious lever: a smarter model, more autonomy, a longer prompt. **That lever is the wrong one, and it's the most expensive one.** A model that's right 95% of the time is still wrong on the run that ships to production, and no amount of prompt-tuning moves a stochastic process to deterministic zero. You can't argue a coin into landing heads.
+
+Here's the question worth sitting with: if the failure is *checkable in code* — and a hallucinated column name absolutely is — why are you spending your context budget asking the model to please not do it?
+
+## A probabilistic generator needs a deterministic gate
+
+The agent is broad and fast and contextless. It doesn't know that `last_active` was renamed to `last_seen_at` in a migration eighteen months ago, because that fact lives in your database, not in its weights. You, the SME, know it cold. **Context engineering is the work of moving that knowledge to where the agent acts** — and the cheapest place to put a hard fact is not in a prompt the model is free to ignore, but in a check the model cannot route around.
+
+A [hook](/foundations/hooks/) is that check. It fires deterministically on a tool call — after the agent writes a file, before it runs a command — and it can reject the action and hand back *why*. That last part is the whole game. The hook isn't a filter that silently drops bad output. It's a gate that returns the error to the agent as fresh context.
+
+```python
+# .agent/hooks/validate_sql.py — runs after the agent proposes a query
+import sys, json, sqlite3
+
+payload = json.load(sys.stdin)
+sql = payload["tool_input"]["query"]
+
+cols = {row[1] for row in sqlite3.connect("schema.db")
+        .execute("PRAGMA table_info(users)")}
+used = extract_columns(sql)        # your parser
+unknown = used - cols
+
+if unknown:
+    print(json.dumps({
+        "decision": "block",
+        "reason": f"Unknown column(s): {sorted(unknown)}. "
+                  f"Valid columns on users: {sorted(cols)}."
+    }))
+    sys.exit(0)
+```
+
+The model proposes `last_active`. The hook reads the *actual* schema, finds the column doesn't exist, blocks the call, and tells the agent the real column list. The agent reads that, corrects to `last_seen_at`, and re-issues. **One retry, driven by ground truth, not by a stricter adjective in the prompt.**
+
+One detail in that snippet is load-bearing: it prints JSON and exits `0`. That's the path where the `reason` gets handed back to the agent as fresh context to correct against. The other way to block — exiting with code 2 — also stops the call, but it's a blunter signal that can leave the agent halting instead of retrying. If you want the gate to *teach*, exit clean and put the truth in the JSON.
+
+## The pattern is bigger than SQL
+
+Nothing about this is specific to databases. A hallucinated column is just the most legible case of a larger family: any output where "wrong" is a property your machine can already decide. Swap the schema check for any oracle you already trust, and the loop is identical.
+
+The most relatable oracle is the one already sitting in your repo — the compiler. The agent edits a TypeScript file, imports a helper that was deleted three commits ago, and references a prop that the type no longer has. No prompt catches this; the model genuinely believes the helper exists. The typechecker knows it doesn't.
+
+```python
+# .agent/hooks/typecheck.py — runs after the agent edits a .ts file
+import sys, json, subprocess
+
+payload = json.load(sys.stdin)
+path = payload["tool_input"]["file_path"]
+if not path.endswith(".ts"):
+    sys.exit(0)
+
+result = subprocess.run(["npx", "tsc", "--noEmit"],
+                        capture_output=True, text=True)
+if result.returncode != 0:
+    print(json.dumps({
+        "decision": "block",
+        "reason": f"Type errors — fix before continuing:\n{result.stdout.strip()}"
+    }))
+sys.exit(0)
+```
+
+Same shape, different ground truth. The typechecker *is* the schema here — it holds the real signatures, the real prop shapes, the real import graph. The hook hands the agent the exact compiler error, the agent restores the import or fixes the call site, and re-edits. You didn't write a parser this time; you borrowed one that ships with the language. The cheapest validators are the ones you already own: linters, type checkers, JSON-schema validators, a dry-run flag, `--check` mode. Each is a deterministic oracle waiting to be wired to a gate.
+
+## The retry loop is the feature, not the failure
+
+The instinct is to treat a blocked call as a stumble — something to engineer away. Invert it. The validate-then-feed-back loop is the most reliable correction mechanism you have, because it replaces *hope* (the model will behave) with *physics* (the call cannot succeed until the output matches reality).
+
+This is why "more autonomy" makes the problem worse, not better. Autonomy widens the space of actions the agent takes without a gate. What you want for a checkable failure is the opposite: a narrow, hard boundary that the agent bounces off and corrects against. Pair the hook with tight [permissions](/foundations/permissions/) so the destructive version of the action — running the query against prod, writing the migration — simply isn't on the table until the validator passes. The gate runs first; the action runs second, or not at all.
+
+And the loop terminates. Cap it at one retry. If the corrected output still fails the check, that's not a prompt problem — it's a signal that the agent is missing context the validator alone can't supply, and you've now got a precise, reproducible failure to debug instead of a vibe.
+
+This matters most exactly where you can't watch. The instant you run an agent [headless](/foundations/headless/) — in CI, on a cron, fixing something at 3am with nobody at the keyboard — there's no human to catch the bad output before it ships. The gate is the only reviewer present. An unattended agent that bounces off a deterministic check will grind until it's green or genuinely stuck; an unattended agent without one will commit the ghost column and call it a night.
+
+## When the gate itself is wrong
+
+The gate has one failure mode, and it's worth naming because it's nasty: the validator can be wrong, and a wrong validator is worse than none. Your column parser doesn't understand a CTE alias, so it flags a perfectly valid column as unknown. Now the agent proposes correct SQL, gets blocked, "corrects" to something else, gets blocked again, burns its one retry, and halts — on output that was right the first time. You've converted a 5%-of-runs hallucination into a 100%-of-runs false block.
+
+The defense is to keep the validator dumb and let it read ground truth instead of reimplementing it. The SQL hook is trustworthy because it asks the live database what columns exist; the typecheck hook is trustworthy because it runs the real compiler. The moment you start hand-rolling clever logic *about* the rule — a regex that "parses" SQL, a heuristic that "knows" valid shapes — every line you add is a line that can be wrong, and its wrongness lands as a hard block. A validator earns the right to be a hard gate only in proportion to how little it has to be smart. When in doubt, lean on an oracle that already exists rather than encoding the rule yourself.
+
+## When not to reach for a hook
+
+A hook gates *facts*, not *taste*. It works because "this column doesn't exist" and "this file doesn't typecheck" are booleans a machine can settle without you. The instant the failure stops being checkable, the technique stops applying — and trying to force it makes things worse.
+
+The agent picked a clumsy abstraction. The summary it wrote is technically accurate but buries the lede. The function works but the naming is confusing. None of these has a `decision: block` you can write, because none of them is false — they're *worse*, and worse is a judgment. Try to encode taste into a hook and you get one of two bad outcomes: a check so loose it waves everything through, or one so strict it blocks good work for failing your pet heuristic. For judgment failures the right lever is the one this whole post argued against for *checkable* failures — better context. That's where [rules](/foundations/rules/), worked examples, and a human or LLM reviewer earn their keep. Spend the deterministic gate only where determinism is real; everywhere else it's a costume.
+
+## You can finally measure the thing you've been guessing at
+
+Here's the payoff the prompt-tuning road never reaches: the hook is a counter. Every block is a logged event. You can answer "how often does the agent hallucinate a column?" with a number, before and after — not "it feels better now."
+
+```
+$ grep validate_sql .agent/logs/hooks.jsonl | jq -r .decision | sort | uniq -c
+  41 block        # week one: the model really was reaching for ghost columns
+   3 block        # week three: after the schema fact landed in the rules
+```
+
+That drop from 41 to 3 isn't the model getting smarter. It's the corrected pattern propagating. Once you see *which* mistake the hook keeps catching, you write the fact down once — into your [rules](/foundations/rules/) file, the persistent context the agent reads on every run:
+
+```md
+# AGENTS.md
+## Schema facts (load-bearing)
+- The users table has no `last_active`. Recency lives in `last_seen_at` (UTC).
+- Never query `users` directly for activity; join `sessions`.
+```
+
+Now the rule prevents most of the mistake, and the hook catches the residue. **When the residue hits zero for a few weeks, the hook has done its job and can retire** — deleted, or downgraded to a sampled audit. A good deterministic validator is disposable by design. It's scaffolding that teaches the system the fact, then comes down.
+
+## What to do Monday
+
+Pick one wrong output you've been trying to prompt away — a fabricated field, an invalid enum, a malformed JSON shape, a path that doesn't exist. Write the dumbest possible code that returns true or false on it. Wire it as a hook that blocks and returns the reason. Cap the retry at one. Log every block.
+
+Three days of that beats three weeks of prompt archaeology, and at the end you have two things prompting never gives you: a class of error at zero, and a number proving it. Then, when the rule has absorbed the lesson, delete the check and move on to the next ghost column.
+
+Stop asking the model to be right. Make the wrong answer impossible to ship.
+
+---
+
+For the per-tool mechanics, see [Hooks](/foundations/hooks/); for the boundary that keeps the destructive action off the table until the gate passes, [Permissions](/foundations/permissions/); for where the corrected fact finally lives, [Rules](/foundations/rules/); and for why the gate earns its keep when no one is watching, [Headless & CI](/foundations/headless/).

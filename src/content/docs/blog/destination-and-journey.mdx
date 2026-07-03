@@ -1,0 +1,148 @@
+---
+title: "Destination and Journey"
+description: "Hand the agent two committed documents — a requirements doc that fixes the destination and a phased plan that fixes the journey — and a feature too big for one window ships correctly anyway."
+authors: sourabh
+date: 2026-05-29
+tags: [context-engineering, plan-mode, rules, workflow]
+draft: false
+---
+
+The feature was half-built before anyone noticed it was half-wrong. Forty files touched, three new modules, a migration, two days of agent time. Auth, billing, and the dashboard had all grown new code — faithfully, cleanly, on brand with the codebase. None of it connected. The agent had read the first sentence of the ask, decided what "the feature" meant, and built that thing across the whole repo with total conviction. It was never confused. It was wrong from the first sentence and consistent everywhere after.
+
+That is the specific failure of a big build in a single window. Not the agent giving up. The agent *committing* — to a destination it misunderstood — and then doing excellent work in the wrong direction until the context window fills and the quality quietly degrades.
+
+The instinct here is to give the agent more. A bigger model, a longer window, the whole spec dumped in at once so it "has everything." That instinct is exactly backwards. When researchers stress-tested the most capable models on the market — the frontier of GPT, Claude, and Gemini — every one of them got *less* accurate as the input grew, and not just on needle-in-a-haystack retrieval but across ordinary task types. A longer window doesn't buy you out of this; it gives the agent more room to bury the part that mattered. The skill on a large build is not handing over more context. It's splitting the work so every unit stays small enough to live in the part of the window where the agent is still sharp — and pinning the goal down so hard that a misread can't survive to file number forty.
+
+## Two artifacts, two different jobs
+
+A large feature has two things that can go wrong, and they are not the same thing.
+
+The first is the **destination**: what "correct" looks like when you're done. Which user can do what, and why. What is explicitly *not* in scope. Get this wrong and the agent builds the wrong product, beautifully.
+
+The second is the **journey**: the order you build it in. Schema before the service that reads it. The service before the endpoint that exposes it. The endpoint before the UI that calls it. Get this wrong and the agent builds layer three on top of a layer one that doesn't exist yet, then stubs it, then forgets the stub.
+
+Most people fuse these into one rambling prompt and lose both. The destination and the journey are different documents because they answer different questions and they fail in different ways. Write them as two files.
+
+## The requirements doc fixes the destination
+
+Before any code, you write a requirements doc. Not a novel — a contract. It has a fixed shape:
+
+```markdown
+# Requirements: Team Invitations
+
+## Problem
+Admins can't add teammates. Today the only way onto an account
+is a shared login. We need per-user accounts under one org.
+
+## Solution (one paragraph)
+An admin sends an email invite. The recipient clicks a link,
+sets a password, and lands in the org with a "member" role.
+
+## User stories
+1. As an admin, I want to invite a teammate by email,
+   so that they get their own login instead of sharing mine.
+2. As an admin, I want to see pending invites,
+   so that I know who hasn't accepted yet.
+3. As an invitee, I want a link that expires in 7 days,
+   so that a leaked old email can't grant access forever.
+
+## Technical decisions
+- Invites are rows in `invitations`, not a new service.
+- Token is a signed JWT, not a DB-stored secret.
+- Reuse existing `roles` enum; do not add new roles.
+
+## Out of scope
+- SSO / SAML. Not now.
+- Bulk CSV invite. Not now.
+- Editing a member's role after they join. Separate feature.
+- Email deliverability/retry logic. Assume the mailer works.
+```
+
+The user stories in role / want / why form are the destination stated as behavior, not implementation. They are testable. "As an admin, I want to see pending invites" either works at the end or it doesn't — there's no interpreting it into the wrong feature.
+
+The section that does the most work is the one most people skip. **Out of scope is negative space, and negative space is context.** When you write "SSO is not in this," you have spent maybe eight words to prevent the agent from spending two hours scaffolding an identity provider because it pattern-matched "invitations" to "enterprise auth." A broad model has seen ten thousand invitation systems. Left unconstrained, it will build the average of all of them. The out-of-scope list is how your narrow, specific knowledge of *what this actually needs* overrides that average. It is the cheapest, highest-leverage context in the whole document.
+
+This is a [Rules](/foundations/rules/)-shaped move: declarative, human-authored context that the agent reads instead of guessing. The difference is scope. Your `AGENTS.md` carries the standing context for the whole repo. The requirements doc carries the standing context for this one feature — and like a rules file, its value is that it survives. You commit it. It can't drift out of the agent's head, because it's a file, not a sentence in a chat that scrolled off the top an hour ago.
+
+## The plan fixes the journey
+
+With the destination committed, you ask the agent — in [plan mode](/foundations/plan-mode/), where it proposes before it touches anything — to turn the requirements into an ordered build. Plan mode matters because the journey is the cheapest thing to get wrong and the cheapest thing to fix: editing a line in a plan costs nothing, unwinding three days of misordered code costs the weekend.
+
+The output is a `plan.md`, split into phases, each phase a unit small enough to finish inside the reliable early zone of a fresh window:
+
+```markdown
+# Plan: Team Invitations
+
+## Phase 1 — Schema
+- Add `invitations` table: id, org_id, email, role, token,
+  status, expires_at, created_at.
+- Migration + rollback. No app code reads it yet.
+
+## Phase 2 — Service layer
+- `createInvite(orgId, email, role)` -> signed token.
+- `acceptInvite(token)` -> validates, creates user, returns session.
+- Pure functions over the Phase 1 schema. No HTTP.
+
+## Phase 3 — API
+- POST /invites (admin only) -> calls createInvite.
+- POST /invites/accept -> calls acceptInvite.
+- GET /invites (admin) -> pending list. Auth guards here.
+
+## Phase 4 — UI
+- Invite form + pending-invites table (admin).
+- Accept page: set password, redirect in.
+- Calls Phase 3 endpoints only. No business logic in the client.
+```
+
+Each phase names what it owns *and* implies what it doesn't. Phase 2 says "no HTTP." Phase 4 says "no business logic in the client." Those boundaries are the journey written down so a single phase can't quietly annex the work of another.
+
+## Run each phase fresh — the three-ingredient prompt
+
+This is the move the whole post is built around. You do not run the four phases in one long conversation. You run each in a cleared window, and you feed it exactly three things:
+
+```text
+Execute Phase 2.
+
+@requirements-team-invitations.md
+[paste the entire plan.md — all four phases]
+```
+
+Three ingredients: the instruction (`execute Phase 2`), the requirements doc (the destination), and the **entire** plan (the journey — all phases, not just the current one). Clear the window, do the next phase, clear again.
+
+Two of those choices are doing quiet, load-bearing work.
+
+**Why clear between phases.** An agent is most reliable in the early part of its context window and degrades as the window fills. And the decline isn't gentle: accuracy can hold steady and then fall off a cliff once the window crosses some threshold, with the harder, more reasoning-heavy tasks buckling at far smaller inputs than simple lookups do. A four-phase feature run in one window means Phase 4 executes through a haze of Phase 1, 2, and 3's noise — the migration SQL, the abandoned approaches, the back-and-forth. By Phase 4 the agent is operating in its worst zone on the hardest layer — exactly the combination the research says breaks first. Clear between phases and every phase runs in the *best* zone instead, reading only the two committed files plus the code the earlier phases left on disk. You're not asking the agent to hold the whole feature in its head. You're asking it to hold one phase and two documents. That's a load it can actually carry.
+
+This is the same logic as a [subagent](/foundations/subagents/): an isolated context doing one job, reporting back through an artifact instead of a swollen transcript. Here the committed code and the two markdown files *are* the artifact passed between isolated runs. Each cleared phase is a subagent in everything but name.
+
+**Why pass the whole plan, not just the current phase.** Because a phase needs to see what later phases own, so it doesn't poach their work. Run Phase 2 with only the Phase 2 text and the agent, being helpful, will notice there's no API yet and build you one — stepping on Phase 3, probably half-wrong, definitely unplanned. Show it the whole plan and it reads "Phase 3 — API" and understands: not mine. The full plan turns the agent's helpfulness from a liability into restraint. It builds its layer and stops at the line where the next layer begins.
+
+## Mark the boundary with a commit
+
+At the end of each phase: a single, scoped commit.
+
+```bash
+git add -A && git commit -m "feat(invites): phase 2 — service layer"
+```
+
+The commit is the phase saying *done* in a way the next fresh window can read. Open Phase 3's window, and the agent sees Phase 2's service layer as committed code on disk — solid ground, not a half-finished idea in a transcript it no longer has. Commits are the checkpoints of the journey. They're also your tripwire: if Phase 3 starts rewriting Phase 2's service, the diff makes the scope creep visible immediately, instead of forty files later.
+
+## When the plan meets the code
+
+The journey survives contact with reality only if you let it bend. Halfway through Phase 2, the agent builds `acceptInvite` and discovers the Phase 1 schema can't actually hold what an invite needs — the token has to encode the `org_id`, and the table never stored it. Now you have a fork. The tempting move is to push through: bolt a workaround into the service so Phase 2 "passes," and never mind that the committed schema and the committed plan now both quietly lie. Every later phase inherits the lie, and you're back to building faithfully in the wrong direction — the exact failure the two documents were supposed to prevent.
+
+The right move is to stop and go back to the files. Fix the schema phase, re-run it, amend the plan, re-commit the documents, *then* continue. The discipline was never "the plan is frozen." It's "deviate in the file first, then in the code" — so the destination and journey written on disk always match the destination and journey living in the repo. A plan you refuse to revise when the code teaches you something isn't rigor; it's just a tidier way to ship the wrong thing. The two documents are checkpoints, not commandments, and the moment they stop matching reality is the moment to rewrite them, not route around them.
+
+## When two documents are too much
+
+This is ceremony, and ceremony costs. For a one-file bugfix, a config tweak, or a rename, writing a requirements contract and a four-phase plan is theater — you'll spend longer on the documents than on the change, and the agent never needed them. The technique earns its weight at exactly one threshold: when the build is too big to finish inside a single reliable window. Below that line, describe the change and let the agent work. The window never fills, so there's nothing to clear and nothing to lose.
+
+The tell is window pressure, not importance. A small but business-critical fix doesn't need the scaffolding — it fits in one sharp window as it is. A sprawling, boring data migration does, even though no single part of it is hard. Reach for the two documents when you can feel the work won't fit in one sitting, and not a moment before. Pull them out for every small task and the overhead becomes the thing slowing you down — the same instinct, over-applied, that makes a process-heavy team slower than a careless one.
+
+## Why this closes the gap
+
+Step back. The whole reason a big build goes sideways in one window is the gap this site keeps returning to: the agent is broad, fast, and capable, but it does not know *your* destination or *your* preferred journey. Hand it a vague ask and it fills both blanks with the statistical average of every similar feature it has ever seen — then executes that average with full conviction across your codebase.
+
+The two documents are how you overwrite the average with your specifics. The requirements doc transfers your destination — including, crucially, the negative space of what to leave out. The phased plan transfers your journey — the order, and the boundaries between layers. Committing them makes that context survive the resets that keep each unit in the reliable zone. You are not hoping the agent infers what you meant. You've written it down, pinned it to disk, and made it impossible to lose.
+
+So before your next large feature, don't open the agent. Open a file and write the out-of-scope list first. List what this feature is *not* before you've written a word about what it is. It will feel premature. It's the cheapest context you will ever give the agent — and the line that keeps a feature too big for one window from getting faithfully, beautifully, half-built in the wrong direction.
