@@ -1,0 +1,125 @@
+---
+title: "Run your whole eval suite on every commit and you'll quietly stop running it."
+description: "The fix for slow, flaky agent evals isn't a faster suite — it's two loops. A cheap deterministic gate on every PR, and a slow judge suite headless on a schedule. One blocks regressions; the other discovers them."
+authors: sourabh
+date: 2026-05-31
+tags: [context-engineering, headless, hooks, subagents]
+draft: false
+---
+
+You wired up evals because you got burned: an agent shipped a prompt change that silently broke half your tool-calling, and nobody noticed for a week. So you did the responsible thing. You built a suite — forty cases, a judge model scoring each one, the works — and bolted it to CI. Every commit now runs the whole thing.
+
+For about three weeks, this is glorious. Then someone's PR sits for eleven minutes waiting on the eval job. Then the judge flakes on case 19 because the model phrased a correct answer slightly differently, and the build goes red on a docs typo fix. Then the bill arrives. By month two, the line `if: false` has appeared above the eval step, with a commit message that says "temporarily skip, too slow." It is never un-skipped.
+
+**The suite that runs on every commit is the suite that gets disabled.** This is the failure mode nobody designs for, because it looks like diligence right up until it collapses. The mainstream advice — "treat evals like tests, run them in CI" — is correct in spirit and ruinous in practice, because evals are not tests. Tests are fast, deterministic, and free. Agent evals are slow, probabilistic, and metered. Pretending otherwise is how good intentions become a disabled job.
+
+So here's the open question: if you can't afford to run the real evals on every commit, *when* do you run them — and what runs on every commit instead?
+
+## Split the eval into two loops with two different jobs
+
+The mistake is treating "evals" as one thing. It's two jobs, and they want opposite tradeoffs.
+
+The **inner loop** answers one question on every PR: *did this change break something we already know about?* It must be fast, deterministic, and cheap enough that nobody resents it. The **outer loop** answers a different question on a schedule: *what's broken that we don't know about yet?* It can be slow, judge-based, and expensive, because it runs while everyone's asleep.
+
+Conflating them is the original sin. You don't need the judge model to tell you that a regex extractor stopped parsing a date — a string comparison does that in 40 milliseconds. And you don't need to block a PR for nine minutes to discover semantic drift that's been creeping in for two weeks; that can wait until tonight.
+
+## The inner loop is a deterministic gate, not a judge
+
+Carve out the subset of your eval cases that have a *checkable* answer — exact match, schema validation, a tool got called with the right arguments, a number falls in range. No model in the loop. These are the regressions you've already seen and never want to see again. Run them as a [hook](/foundations/hooks/) so they fire before the change ever lands:
+
+```bash
+#!/usr/bin/env bash
+# .git-hooks/pre-push — the inner loop
+# Deterministic eval subset only. No judge, no API calls.
+set -euo pipefail
+
+npx vitest run evals/deterministic/ --reporter=dot
+
+# 14 cases, ~3s, $0. Fails closed: a broken extractor
+# or a malformed tool call blocks the push.
+```
+
+```ts
+// evals/deterministic/tool-calls.test.ts
+test("invoice agent calls fetch_invoice with a numeric id", async () => {
+  const trace = await runAgent("show me invoice 4471");
+  const call = trace.toolCalls.find(c => c.name === "fetch_invoice");
+  expect(call).toBeDefined();
+  expect(call!.args.invoice_id).toBe(4471);   // exact, not "looks plausible"
+});
+```
+
+Three seconds. Zero dollars. No flake, because there's no model deciding whether the answer is "good enough" — the answer is either `4471` or it isn't. **This is the gate you can leave on forever**, because it never costs enough to be worth disabling. The same logic belongs in [CI](/foundations/headless/) as a required check, so the gate survives the one developer who skips local hooks.
+
+## The outer loop runs the expensive suite headless, on a clock
+
+The judge-based cases — the ones scoring tone, completeness, whether the agent picked the right strategy — go in the outer loop. You run them [headless](/foundations/headless/) on a schedule, against `main`, where slow and pricey are fine because no human is waiting:
+
+```yaml
+# .github/workflows/nightly-eval.yml — the outer loop
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 07:00 UTC, nobody's blocked
+jobs:
+  full-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx tsx evals/run-full.ts --judge --all
+        # 40 cases, judge model scores each, writes scores.json
+      - run: npx tsx evals/diff-baseline.ts
+        # compares to yesterday; opens an issue if any score drops >5%
+```
+
+The outer loop's output isn't a pass/fail on a PR — it's a *trend*. Last night the "explain a refused action" case scored 0.91; tonight it's 0.78. Something drifted. That's not a build to turn red; it's an issue to file with the failing transcript attached.
+
+And here's where it compounds: **every new failure the outer loop finds becomes a new deterministic case in the inner loop.** The drift you caught last night gets distilled into a checkable assertion this morning. The slow loop is a discovery engine; the fast loop is a ratchet. Discoveries flow inward and become free, permanent guarantees.
+
+## Why the judge can't sit on the critical path
+
+It's worth being precise about *why* a judge model is the wrong thing to block a PR, because "it's slow and expensive" is only half of it. The deeper problem is that the judge is non-deterministic in a way your code isn't. Recent work on LLM-as-judge has a name for it — self-inconsistency, or "rating roulette": run the same transcript through the same judge twice and you can get 0.82, then 0.74, with nothing changed but the sampling. Judges also carry systematic biases — position effects, verbosity preference, a pull toward agreeing with whatever phrasing sounds confident — that shift a score without any real change in agent behavior.
+
+Put that on the critical path and you've built a gate that fails for reasons the author can't act on. The developer sees a red check, reruns it, watches it go green, and learns the lesson every flaky test teaches: *this signal is noise, ignore it.* That lesson generalizes. Once one eval check is known to flake, the whole suite loses authority, and you're back to `if: false`. A deterministic assertion can't teach that lesson, because rerunning it never changes the answer.
+
+This is also the edge case that bites the outer loop, so design for it. That "opens an issue if any score drops >5%" line is a trap if you haven't measured the judge's own variance first. If the judge's noise floor on a given case is ±6%, a 5% threshold will manufacture a phantom regression most nights — and a morning spent chasing drift that was never there is how you learn to ignore the nightly issue too. So before you trust a threshold, run each case a handful of times against an unchanged baseline and record the spread. Set the alarm above the noise floor, not below it, and treat a single bad night as a data point, not a verdict — only a drop that *reproduces* across runs is real. The whole point of moving the judge off the PR was to stop gating on a noisy signal; don't quietly re-import the noise as a hair-trigger threshold.
+
+## Hand the discovered failures to an agent to triage
+
+The outer loop produces transcripts, not verdicts, and reading forty transcripts every morning is its own quiet path to giving up. Hand that work to a [subagent](/foundations/subagents/) with one job: read last night's failing cases in an isolated context, cluster them, and propose which ones are worth promoting to the inner loop.
+
+```
+You are the eval triage agent. Input: scores.json + transcripts
+for every case that dropped >5% vs baseline.
+
+For each regression:
+1. One-line root cause (prompt drift / tool change / model update).
+2. Is the failure deterministically checkable? If yes, write the
+   assertion for evals/deterministic/.
+3. Rank by blast radius. Output a triage table only.
+```
+
+The subagent burns its own context window on noisy transcripts so your main session never sees them. You wake up to a ranked table and a few ready-to-paste assertions — the discovery-to-ratchet pipeline, automated.
+
+## "But caching and cheaper judges make the full suite affordable"
+
+The obvious objection: tooling has gotten good. Semantic caching means an unchanged case doesn't re-hit the judge; a small open-weight judge model running on your own hardware drops the per-case cost toward zero. So why not just make the one suite cheap enough to run on every commit and skip the whole split?
+
+Because cost was never the only problem — it was the most visible one. Caching attacks the bill and the clock, which is real, but it does nothing for the two failures that actually disable evals: variance and timing. A cached score is still a *judge's* score, with the same noise floor; you've made the roulette wheel cheaper to spin, not more deterministic. And a smaller, cheaper judge is usually a *noisier* judge — it agrees with human ratings less often and wobbles more between runs, which is exactly the wrong trade when the output is going to block a teammate's push. You'd be spending your savings to put a worse signal on the critical path. The split isn't a workaround for expensive evals that you can optimize away. It's an acknowledgement that "did I break a known thing" and "what unknown thing is drifting" are different questions with opposite latency budgets, and no amount of caching collapses them into one.
+
+## When one loop is still the right call
+
+Don't build this machinery before you've earned it. If your suite is a dozen cases and they're all deterministic — schema checks, exact matches, tool-call assertions — you don't have an outer loop yet, you have an inner loop and no judge. Run it on every commit and move on. The two-loop split is a response to a specific pain: a suite that has grown slow, flaky, and metered enough that someone is tempted to disable it. Before that pain exists, the split is just ceremony, and a second CI workflow you have to maintain for no gain.
+
+The signal that you've crossed the line is concrete: the moment your eval job adds judge calls, starts taking minutes instead of seconds, or goes red on a run where nothing changed. That's when "evals are tests" stops being a useful lie. Until then, one loop is honest. The skill is noticing the crossing in time — before the `if: false` commit, not after.
+
+## What you do Monday
+
+Stop asking your eval suite to be fast *and* thorough on every commit. It can't be, and the contradiction is exactly why teams abandon evals — not because they don't care, but because the one-loop design taxes the wrong moment. Split it. Put the cheap, deterministic, already-known regressions on the PR as a gate. Put the slow, judge-scored, still-unknown failures on a nightly clock. Wire the outer loop's discoveries back into the inner loop's gate, and let an agent do the triage.
+
+This is context engineering in its plainest form: the agent doesn't know which of your forty cases are load-bearing or which failures are old news — *you* do, and the two-loop split is how you encode that judgment into the system instead of re-litigating it on every push.
+
+A suite that's too expensive to run is a suite that doesn't exist. Make the fast one cheap enough to never turn off, and the slow one quiet enough to never get in the way.
+
+---
+
+For the per-tool mechanics, see [Headless & CI](/foundations/headless/) for running suites unattended, [Hooks](/foundations/hooks/) for the pre-push gate, and [Subagents](/foundations/subagents/) for isolating the triage pass.

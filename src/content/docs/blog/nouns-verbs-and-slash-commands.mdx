@@ -1,0 +1,136 @@
+---
+title: "Three control axes are sitting in the MCP spec. Most teams use one."
+description: "An MCP server exposes resources, tools, and prompts — context the app pulls, actions the model takes, workflows the user invokes. Wiring them to the right controller is how the agent reads your conventions instead of guessing them."
+authors: sourabh
+date: 2026-05-31
+tags: [context-engineering, mcp-servers, slash-commands, rules]
+draft: false
+---
+
+You wrap your internal deploy API in an [MCP server](/foundations/mcp-servers/). You expose three tools: `get_deploy_config`, `list_recent_deploys`, `trigger_deploy`. It works. The agent calls them, reads the JSON, makes a decision. Ship it.
+
+It's also the wrong shape. You just turned two reads and a write into three identical hammers, and handed the model the job of deciding when to swing each one. The protocol gave you a way to say "this is context, that is an action, and this third thing is a workflow my team already trusts" — and you flattened all three into `tool`.
+
+**The reflex to make everything a tool is understandable — tools are the only primitive the model can call on its own.** If you want the agent to *do* something, it must be a tool. So teams reason backwards: everything the agent touches becomes a tool, because tools are what the agent touches. Clean. Uniform. Easy to register.
+
+And quietly wasteful. The Model Context Protocol defines three primitives, and the spec separates them along a single axis: *who controls invocation*. In its own words, resources are **application-controlled**, tools are **model-controlled**, prompts are **user-controlled**. Not what they technically do — who pulls the trigger. Register everything as a tool and you've thrown away two-thirds of that control surface before the agent runs once.
+
+## Resources are context the application pulls, not actions the model chooses
+
+A **resource** is read-only data the host application fetches and injects — a file, a record, a config blob, a schema. The application decides when to pull it. The model never has to *choose* to read it; it's just there, in context, like an attachment.
+
+That distinction is the whole game. When your deploy config is a tool call, the model spends a turn deciding to call it, a turn reading the result, and budget reasoning about whether it needed it. When it's a resource, the host attaches it deterministically:
+
+```json
+{
+  "uri": "deploy://config/production",
+  "name": "Production deploy config",
+  "mimeType": "application/json",
+  "text": "{ \"region\": \"us-east-1\", \"strategy\": \"blue-green\", \"approvers\": [\"@platform\"], \"min_healthy\": 2 }"
+}
+```
+
+The agent now *knows* production is blue-green with a two-instance floor and a `@platform` approval gate — not because it called a tool and got lucky, but because the application handed it the spec. This is the gap-closing move in its purest form: **your deep, specific, slow-won context flows in as data, so the agent stops inventing the schema you already have.** No more guessed region. No more hallucinated `strategy: rolling` because rolling is the statistically common answer.
+
+Here's the open question to hold onto: if resources carry your context for free, what's left for tools to do? Less than you think.
+
+## Tools are for consequential, model-decided actions — and nothing else
+
+A **tool** is an action the *model* elects to invoke. The cost of a tool isn't the API call; it's the decision. Every tool you register is another branch the model evaluates on every turn, another entry in the "what should I do now" budget. Twelve read-only tools don't make the agent smarter — they make it slower and less decisive, because nine of them are just data wearing a verb.
+
+So the rule sharpens: **a tool should exist only when invoking it changes the world or commits the model to a path.** Reads become resources. Actions stay tools.
+
+```json
+{
+  "name": "trigger_deploy",
+  "description": "Deploy a build to an environment. Mutates infrastructure. Requires explicit confirmation.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "build_id": { "type": "string" },
+      "environment": { "enum": ["staging", "production"] }
+    },
+    "required": ["build_id", "environment"]
+  }
+}
+```
+
+That's a real tool. It mutates infrastructure; the model has to *decide* to call it; it belongs in the action budget. `get_deploy_config` does not — it's the resource above. Strip the reads out and the model's decision space collapses to the choices that actually matter. The narrower the tool surface, the sharper the agent on it.
+
+## Prompts are your team's known-good workflow, frozen as a slash command
+
+The third primitive is the one nobody wires up. A **prompt** is a templated workflow the *user* invokes — surfaced in the host as a [slash command](/foundations/slash-commands/). Not the model's choice, not the app's injection. A human reaches for it deliberately.
+
+This is where a team's hard-won procedure stops living in a senior engineer's head and becomes one click. Your deploy review checklist — the sequence everyone *should* run before production but half the team forgets — ships as a prompt:
+
+```json
+{
+  "name": "deploy_review",
+  "description": "Run the pre-production deploy checklist",
+  "arguments": [{ "name": "build_id", "required": true }],
+  "messages": [{
+    "role": "user",
+    "content": "Review build {{build_id}} for production. Confirm migrations are reversible, check the deploy://config/production resource for the approval gate, verify no open incidents, and summarize blockers before proposing trigger_deploy."
+  }]
+}
+```
+
+Now `/deploy_review 4821` runs the workflow your best engineer would run — pulling the resource, weighing the action, in the order your team agreed on. The procedure that used to be tribal knowledge is encoded in the protocol. That's the same instinct behind writing [rules](/foundations/rules/) into an `AGENTS.md`: capture the convention once, and every agent inherits it instead of rediscovering it.
+
+## A resource isn't a one-time dump — it's live, prioritized context
+
+The objection to moving reads out of the tool list is usually "but the config changes, and a resource is frozen at injection." It isn't. The protocol lets the client subscribe to a resource and the server push an update notification when it changes; the host re-reads and the agent's view of production stays current mid-session, with no tool call and no stale guess. A tool gives you a snapshot the moment the model decides to ask. A subscribed resource gives you a feed.
+
+Resources also aren't undifferentiated context you dump and pray fits the window. Each one can carry annotations — a `priority` from 0.0 to 1.0 and an `audience` of `user`, `assistant`, or both. Mark the production approval gate `priority: 1.0` and the host treats it as effectively required; mark a verbose changelog `0.2` and it's the first thing dropped when the budget tightens.
+
+```json
+{
+  "uri": "deploy://config/production",
+  "name": "Production deploy config",
+  "annotations": {
+    "audience": ["assistant"],
+    "priority": 1.0,
+    "lastModified": "2026-05-30T18:00:00Z"
+  }
+}
+```
+
+You're not just handing the model data — you're telling the host how much that data matters and how fresh it is. That's a control knob a wall of identical tools doesn't have.
+
+## When a read should still be a tool
+
+"Make every read a resource" is the right default, not an absolute. The honest counter-argument: sometimes the model genuinely needs to *choose* what to read, with a parameter it computes at runtime. You don't want a separate resource per environment, and you can't pre-list every build someone might inspect.
+
+The spec's first answer is a **resource template** — a parameterized URI the host fills in on demand:
+
+```json
+{
+  "uriTemplate": "deploy://config/{environment}",
+  "name": "Deploy config by environment",
+  "mimeType": "application/json"
+}
+```
+
+One template covers `staging`, `production`, and whatever environment you add next, without registering a tool per environment. Templates handle the parameterized-but-enumerable case while keeping the read on the application-controlled plane.
+
+The line worth drawing is open-endedness. If the read is *search* — "find the deploy that introduced this regression," where the query is reasoning rather than a lookup — that's a model decision, and a tool is the right primitive. The test was never read-versus-write. It's whether choosing what to read is itself the work. A config lookup isn't; a code search is. Keep the lookups as resources and templates; let the genuinely investigative reads stay tools, and keep that set small.
+
+## The control axis is a design constraint, so design against it
+
+Before you register anything, sort it by who pulls the trigger:
+
+- **The application** should pull it → **resource.** Records, configs, schemas, files. Read-only context, injected deterministically.
+- **The model** should decide it → **tool.** Mutations and commitments only. Keep this surface ruthlessly small.
+- **The user** should invoke it → **prompt.** Your team's trusted workflows, surfaced as slash commands.
+
+Run your draft server through that filter and most of what you reflexively called a tool falls out into resources, where it costs the model nothing and grounds it for free. The deploy server we started with had three tools. Sorted by trigger, it's one tool (`trigger_deploy`), two resources (`get_deploy_config`, `list_recent_deploys` — or a single `deploy://{environment}` template), and one prompt (`deploy_review`). The model's decision space went from "which of three things do I call" to "do I deploy, yes or no" — with the config already in context and the checklist a keystroke away. That ratio holds as servers grow: the realistic shape of a mature server is a handful of tools, a wall of resources, and a shelf of trusted prompts — not a flat list of forty verbs.
+
+What remains is a tight set of consequential actions and the workflows your team actually trusts.
+
+The deep context that makes a senior engineer valuable — the configs they've memorized, the checks they never skip, the order they do things in — isn't lost to the agent because the agent is dumb. It's lost because you encoded it as twelve indistinguishable tools instead of the three axes the spec already gave you.
+
+Map the surface to who controls it, and the agent reads your specifics instead of guessing at them.
+
+---
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/); for surfacing prompts as commands, [Slash commands](/foundations/slash-commands/); for the broader pattern of encoding convention once, [Rules](/foundations/rules/).

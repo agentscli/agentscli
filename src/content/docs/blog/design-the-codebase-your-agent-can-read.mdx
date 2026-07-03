@@ -1,0 +1,159 @@
+---
+title: "Design the Codebase Your Agent Can Read"
+description: "The highest-leverage thing you can do for your agent isn't a better prompt — it's a better interface. Deep modules are persistent context the agent reads at a glance."
+authors: sourabh
+date: 2026-05-29
+tags: [context-engineering, subagents, skills, workflow]
+draft: false
+---
+
+For the third time this afternoon, the agent edits the wrong file.
+
+You asked it to change how prices are rounded. It opened `formatPrice.ts`, looked confident, and wrote a clean little diff — in the display formatter, not the tax engine where rounding actually happens. You point it at the right file. Twenty minutes later, a new task, the same class of mistake: a change that should live in one place smeared across four.
+
+The easy story is that the model wasn't paying attention. The model was paying perfect attention. It read your code exactly as written, and your code does not say where rounding lives. To answer "where does this number get decided," the agent — and any new engineer — has to open `formatPrice.ts`, follow it to `priceUtils.ts`, which calls `taxRules.ts`, which imports a constant from `config/regions.ts`. Four files to understand one concept. The agent guessed. It guessed the way the structure invited it to.
+
+That's not an attention bug. It's an interface bug.
+
+## A legible codebase is persistent context
+
+We talk about context engineering as something you bolt onto the agent: a [rules file](/foundations/rules/), an [MCP connection](/foundations/mcp-servers/), a [skill](/foundations/skills/). All of that is real. But the largest, most permanent piece of context the agent has is the one you almost never think of as context — the shape of the code itself.
+
+The agent is broad and shallow on *your* system. It knows every rounding algorithm ever published and nothing about which of your eight files owns the decision. Your senior engineer is the inverse: narrow but deep, holding the whole map of "rounding lives here, formatting lives there, don't touch the regional constants" in their head. The gap between those two is the same gap this publication keeps circling — broad-but-contextless agent versus narrow-but-deep human.
+
+Most context engineering closes that gap by *supplying* the map in prose. But there's a higher-leverage move: change the territory so it needs less map. A well-structured module communicates its own boundaries. The agent reads one interface and knows what the subsystem does, without traversing the import graph. The structure *is* the context — and unlike a prompt, you never have to send it.
+
+The vocabulary worth borrowing here is **deep modules**: a thin interface in front of a large implementation. A deep module hides a lot of complexity behind a small surface. A *shallow* module is the opposite — a tiny wrapper whose interface is nearly as big as its body, so you pay the cost of understanding it without getting any hiding in return. Your rounding logic spread across four files is several shallow modules pretending to be organization. The cure is to collapse them into one deep one.
+
+The canonical example is the one under your fingers right now: Unix file I/O. Five calls — `open`, `read`, `write`, `seek`, `close` — sit in front of an implementation that handles directories, permissions, on-disk layout, caching, and concurrent access, and whose internals have been rewritten many times over the decades. The five signatures never changed. That's a deep module: a surface small enough to hold in your head, fronting an ocean of complexity you never have to think about. An agent that sees `open`/`read`/`close` doesn't need to know how the filesystem works in order to use the filesystem. Your `pricing` module should read the same way — and the proliferation of tiny pass-through classes that *don't* is common enough to have a name: classitis, the reflex to chop one coherent thing into a dozen shallow ones and call it structure.
+
+## The contrarian part
+
+Here's the uncomfortable bit. Today's agents are good at writing implementations and bad at deciding boundaries. The asymmetry is easy to watch in practice: hand an agent a small, well-scoped module with clear edges and it will often implement a feature almost perfectly in a single pass; turn the same agent loose on a sprawling, layered codebase and it will reach across boundaries it never needed to touch and break things it never needed to break. Ask one to "build a pricing service" and it will happily generate ten files that import each other in a knot — a system that is hard for the *agent itself* to use next week. It cannot reliably tell you that this tangle has outgrown a module and should become a service, or that those four files want to be one. That diagnosis — where the seams belong — is human work. It's exactly the deep, narrow judgment the agent lacks.
+
+So the leverage isn't a smarter prompt or a bigger model. It's giving the contextless agent an interface it can read in a single glance. You design the seams; the agent fills the volume.
+
+This is also why "just let the agent organize it" doesn't work. The agent has no memory of last week's tangle and no stake in next week's. It optimizes the file in front of it, not the system the file lives in. Boundary decisions need exactly the longitudinal, system-level context the agent lacks — the kind that lives in a senior engineer's head and nowhere in the source. You hold that context. The recipe below is how you spend it once and bank the result in the structure.
+
+## The recipe: a refactor workflow that designs the seams
+
+You can turn "make the codebase legible" into a repeatable workflow that combines three primitives — [skills](/foundations/skills/), [subagents](/foundations/subagents/), and [rules](/foundations/rules/). The skill is the orchestrator. Subagents do the work that would otherwise blow out your main context window. The rules file encodes the contract that survives every session.
+
+Call it `improve-codebase-architecture`. Here's the skill definition, trimmed to the load-bearing parts:
+
+```markdown
+---
+name: improve-codebase-architecture
+description: Find a tangle of shallow modules and propose a deep module to replace it.
+---
+
+# Deep module, defined
+A deep module is a SMALL interface over a LARGE implementation.
+Good: one entry point, internals hidden, callers never reach inside.
+Bad (shallow): a thin wrapper whose interface is as big as its body.
+
+# Steps
+1. EXPLORE. Dispatch a read-only explore subagent. It maps the target
+   area and reports friction: concepts that span 3+ files, callers that
+   reach past an interface into internals, names that lie.
+2. DESIGN. Spawn THREE design subagents in parallel, each proposing a
+   competing interface for the same deep module:
+     - minimal:        smallest surface that does the job
+     - flexible:       a few extra seams for likely future callers
+     - caller-optimized: shaped around how today's callers actually use it
+3. SYNTHESIZE. Compare the three. Pick or merge. Write a refactor RFC.
+4. EMIT. Open the RFC as an issue. Do NOT write implementation code yet.
+```
+
+The shape matters. Each step hands a fresh, scoped job to a [subagent](/foundations/subagents/) so the messy exploration never pollutes your main thread — context isolation is the whole point of the primitive. And the explore step is strictly read-only, so the agent can't "helpfully" start refactoring before you've approved a direction.
+
+### Why three design subagents, not one
+
+A single agent asked to "design the interface" returns one answer and hides its assumptions. Three agents, each optimizing a different axis, surface the trade-off you actually need to decide. The minimal interface is easiest to review but may force callers to do extra work. The flexible one anticipates the future and risks speculating wrong. The caller-optimized one fits today perfectly and may calcify. Reading three competing surfaces side by side is how *you* — the SME — apply judgment the agent can't. That comparison is the human-in-the-loop step, and it's cheap because subagents run in parallel.
+
+The output is a refactor RFC, not a diff. Something like:
+
+```markdown
+# RFC: Extract a deep `pricing` module
+
+## Problem
+Rounding is decided across formatPrice.ts, priceUtils.ts, taxRules.ts,
+and config/regions.ts. Four files to understand one concept. Agents and
+humans both guess wrong about where price is decided.
+
+## Proposed interface (caller-optimized)
+  pricing.quote(item, region) -> Money      // the only entry point
+  pricing.format(money, locale) -> string   // display only, no logic
+
+Everything else — tax tables, regional constants, rounding mode —
+moves INSIDE and stops being importable.
+
+## Blast radius
+14 call sites. All currently reach into priceUtils directly; all
+collapse to pricing.quote().
+```
+
+Now the subsystem is one deep module. A reader — agent or human — sees `pricing.quote` and `pricing.format` and knows the whole story. The four-file scavenger hunt is gone.
+
+## The rules clause that makes it stick
+
+Refactoring once isn't enough; the structure decays unless the contract is written down where the agent reads it every session. Add a clause to your [`AGENTS.md`](/foundations/rules/):
+
+```markdown
+## Deep modules
+- The INSIDE of a deep module is a gray box. You own the implementation;
+  reviewers read the interface and the tests, not the internals.
+- Callers MUST go through the module's public interface. Never import
+  from inside a module (e.g. never reach into pricing/internal/*).
+- When a concept spans 3+ files, stop and propose a deep module before
+  writing more code. Tangle is a design smell, not a coding task.
+```
+
+That "gray box" line is doing real work. It splits ownership cleanly: you review interfaces, the agent owns implementations. You stop reading every line of a 300-line internal file and start reading a 6-line interface plus its tests. That's the same division of labor a good API gives a human team — and it shrinks *your* map at the same time it shrinks the agent's.
+
+It also changes how review feels. A pull request that touches a deep module's internals is small to read, because you trust the interface and the tests guard it; you're checking a contract, not auditing a maze. The agent gets the same benefit on the next task — it loads the interface, sees the boundary, and stops guessing. The contract you wrote once is now doing work in two directions: it bounds the agent's blast radius and it bounds your reading.
+
+## Fold module-awareness into planning
+
+The last piece moves the discipline earlier, before any code exists. If you drive work through a planning skill or a PRD step — [plan mode](/foundations/plan-mode/), a `prd` command, whatever you use — add one question to it:
+
+```markdown
+## Module-awareness check (run during planning)
+Before writing code, answer:
+- Which new concept does this work introduce?
+- Should it become a deep module? If yes, sketch the interface FIRST.
+- Which existing tangle does it touch? Extract that into a module now,
+  or explicitly defer it with a note.
+```
+
+Asking "where does the deep module go?" before the first line is written is far cheaper than carving one out of a knot later. It turns architecture from cleanup into a default.
+
+## When a deep module is the wrong move
+
+Not every tangle wants to be a deep module, and a few collapses make things worse. The first failure is the *false* deep module: you bury genuinely unrelated responsibilities behind one interface because they happened to live near each other. Now you have a god module — a small surface over an incoherent inside, which is the worst of both, because the thin interface actively lies about how much is going on. Depth has to track a single concept, not a convenient pile. If you can't name the one thing the module decides, you're not deepening, you're hiding.
+
+The second failure is sealing off a seam the caller genuinely needs. If half your callers want `pricing.quote(item, region)` and the other half legitimately need to override the rounding mode per request, a single rigid entry point forces them to fight the abstraction — they'll find an escape hatch and import into your internals, and you're back where you started. When the variation is real, expose it as a parameter on the interface, not as a leak around it. A deep module narrows what callers must understand; it shouldn't narrow what they're allowed to do.
+
+And there's an agent-specific trap worth naming. A deep module the agent can't see into can hide its own bugs from review. The gray-box contract says you read the interface and the tests, not the internals — exactly the deal you want, *as long as the tests are real*. Hand an agent a deep module with thin tests and you've built a place for its mistakes to live unwatched. Depth buys you a smaller map only if the tests guard the territory you stopped reading. Skip that, and you haven't removed complexity — you've just stopped looking at it.
+
+## What you actually get
+
+Wrap four coupled pieces into one deep module and a few things change at once. Integration bugs that came from callers reaching into internals stop happening — there are no internals to reach into. Diffs get tighter, because a change to rounding now touches one file. And the module becomes testable at its interface: you assert on `pricing.quote(...)` instead of mocking four collaborators. I'd flag the exact magnitude as unverified — it depends entirely on how tangled you started — but the *direction* is reliable, because you removed the ambiguity the agent was guessing against.
+
+The reframe is the whole point. When the agent edits the wrong file, the instinct is to write a better prompt — to supply the missing map in words, every session, forever. Build the deep module instead. The structure says, once and permanently, what no prompt should have to: this is where price is decided, and you don't need to look inside to use it.
+
+Your agent isn't bad at reading code. Your code is hard to read. Fix the interface, and you've handed the contextless agent the one piece of context it can never infer on its own — and handed yourself a smaller map at the same time.
+
+## Where this fits
+
+This is context engineering aimed at the territory instead of the map. It combines three primitives into one workflow:
+
+- **Skills** — the [`improve-codebase-architecture` procedure](/foundations/skills/) that orchestrates the whole thing
+- **Subagents** — [isolated, parallel context](/foundations/subagents/) for explore-and-design without flooding your main thread
+- **Rules** — the [gray-box contract](/foundations/rules/) that keeps interfaces clean every session
+
+Start with one tangle you already dread. Extract one deep module. Then add the gray-box clause so it never tangles again.
+
+---
+
+*This is part of an ongoing series on context engineering — the discipline of closing the gap between capable, contextless agents and the deep knowledge of the teams they work alongside.*

@@ -1,0 +1,128 @@
+---
+title: "The smartest worker on your team is the one that forgets every job the moment it ships."
+description: "Pairing an isolated subagent with the right tools and a thin slice of your conventions rebuilds the proven agent loop — read, pick a tool, act, report — without dragging dozens of tool-call logs back into your main thread."
+authors: sourabh
+date: 2026-05-31
+tags: [context-engineering, subagents, mcp-servers, rules]
+draft: false
+---
+
+The agent was sharp at message three. By message forty it's mush — hedging, re-reading files it already read, re-proposing a fix it floated twenty messages ago. You didn't break it. You fed it. Every tool call, every file dump, every "let me check that" left residue in the window, and now it's reasoning over its own exhaust.
+
+So you reach for the obvious lever: give it a better memory. Wrong direction. The fix is a worker with *no* memory at all.
+
+It sounds backwards, so steel-man the instinct first. Persistent context feels like the lever that matters — the more your agent remembers about the codebase, the prior decisions, the half-finished thread from two hours ago, the smarter it should get. Retention as intelligence. It's the same reflex that makes you reluctant to close a tab.
+
+But retention is exactly what rotted the session above. The agent that remembered everything is the one that turned to sludge — not despite its memory, because of it. **The power move isn't a better memory. It's a worker whose context is deliberately thrown away.**
+
+## The loop is older than the tools
+
+Strip away the branding and every coding agent runs the same four-beat loop: **read the relevant context, pick a tool, act, write the result back.** That's it. The pattern was formalized in 2022 — reason, act, observe, repeat — and it worked because each observation fed *clean* into the next round of reasoning. Tool-using agents predate Claude Code, Codex, and opencode by years; those CLIs are just polished implementations of a loop that was already proven.
+
+The loop only stays sharp when the context it reads is *scoped to the task*. Hand it your entire chat history plus forty unrelated tool logs and step one — "read the relevant context" — silently fails. And this isn't a hunch. When researchers stress-tested eighteen frontier models — including the ones behind today's coding agents — every single one got worse as input grew, and they got worse *before* the context window was anywhere close to full. More tokens, weaker answers, even with plenty of room left. Two mechanisms drive it. Models attend well to the start and end of a long context and poorly to the middle, so a fact buried in the twentieth message can drop retrieval accuracy by thirty points or more. And irrelevant-but-similar content doesn't get politely ignored — it actively misleads, tugging the model toward the wrong neighbor. Forty stale tool logs aren't dead weight in the window. They're a thumb on the scale.
+
+So the decision quality you lose isn't dramatic; it's a slow drift toward plausible-but-wrong, the kind you don't catch until review.
+
+So here's the open question, and hold onto it: if isolation is what protects the loop, what's the cheapest way to get a clean context window *on demand* — without spinning up a second project?
+
+## Spin up a worker, hand it three things, throw it away
+
+You already have the primitive. A [subagent](/foundations/subagents/) is a fresh, isolated context window you can dispatch a task into. It doesn't see your main thread. It reads only what you hand it, runs its own loop, and returns one distilled answer.
+
+The trick is what you hand it. Exactly three things:
+
+1. **A narrow task** — one job, stated as an outcome.
+2. **The tools it needs** — usually a couple of [MCP servers](/foundations/mcp-servers/), nothing more.
+3. **A thin slice of your conventions** — the [rules](/foundations/rules/) that govern *this* kind of work, not your whole `AGENTS.md`.
+
+Picture the workflow everyone starts with instead: you ask the main session to "audit our open Sentry issues and file the three worst as GitHub tickets." It calls the Sentry MCP, pages through twenty issues, dumps each payload into the thread, reasons, calls the GitHub MCP, retries a malformed call, and finally produces three tickets. Your context window now holds twenty Sentry payloads you will never look at again. They cost you nothing today and corrupt every decision tomorrow.
+
+Now route the same job to a worker. The dispatch looks like this:
+
+```md
+# subagent: triage-worker
+You audit error tracking and file the worst issues as tickets.
+
+## Tools
+- mcp: sentry      (read issues, read events)
+- mcp: github      (create issues only)
+
+## Rules for this task
+- Rank by (users affected × error rate), not recency.
+- One GitHub issue per root cause, not per stack trace.
+- Title format: "[area] short symptom — N users". Label `triage`.
+- Never edit or close existing issues. Create only.
+
+## Return
+A 3-line summary: each ticket's title + URL. Nothing else.
+```
+
+The worker pages through all twenty Sentry issues inside *its own* window. It makes the malformed GitHub call and retries — inside its own window. It writes three tickets. Then it hands back exactly this:
+
+```
+Filed 3:
+- [checkout] 502 on payment confirm — 1,204 users  → gh #4471
+- [auth] token refresh loops — 880 users           → gh #4472
+- [search] timeout over 5k results — 310 users      → gh #4473
+```
+
+Your main thread never saw a single Sentry payload. It saw three lines. **The forgetting isn't a side effect — it's the product.**
+
+## Isolation, not retention, is what protects the decision
+
+This is the inversion. We default to thinking memory makes a worker smart. But a task worker that *retains* context across jobs accumulates exactly the noise that degrades the loop. Yesterday's triage run has nothing to teach today's, and everything to confuse it.
+
+What the worker needs to be good is the opposite of memory: a clean window every time, the right tools, and the conventions for *this* task encoded as rules so the standard survives the amnesia. The rules slice is doing the heavy lifting here — it's how a worker that remembers nothing still files tickets in your format, with your ranking, on your labels. **Persistence belongs in the rules file, not in the worker's head.**
+
+Notice what that buys you. The same dispatch pattern works for a dependency-bump worker, a flaky-test investigator, a changelog drafter — each one a narrow task, a couple of tools, a thin rules slice, and a one-line return contract. None of them pollutes your main session. None of them needs to remember the last run. You're not building agents; you're building a loop you can fire and forget.
+
+## The same shape, a sharper job
+
+Triage is the easy case — the worker produces artifacts and reports pointers to them. The pattern earns its keep on jobs where the worker has to *investigate* and hand back a judgment. Take a flaky test. Normally you'd ask the main session to "figure out why `checkout.spec` fails one run in five," then watch it pull the test file, the source under test, the last fifty CI runs, three suspect timing logs — all of it now permanent residue in your window, most of it a dead end.
+
+Route it instead:
+
+```md
+# subagent: flake-hunter
+You find the root cause of one intermittent test failure.
+
+## Tools
+- mcp: ci         (read run history, read logs)
+- fs: read-only   (test + source under test)
+
+## Rules for this task
+- Reproduce locally before theorizing. Note the seed or timing that triggers it.
+- Distinguish a flaky *test* from a flaky *system under test*. Say which.
+- Don't propose a fix that only adds a retry or a sleep.
+
+## Return
+One paragraph: root cause, the evidence, and the smallest correct fix. No log dumps.
+```
+
+The worker reads fifty CI runs so you don't have to. What comes back is one paragraph — *"race on the cart-total recompute; the assertion fires before the debounce settles; fix is to await the settle event, not bump the timeout"* — and a clean window on your end. You spent zero attention on the forty-nine green runs. The job that would have buried your main thread in timing logs leaves behind a single sentence you can act on.
+
+And the cost of *not* doing this compounds quietly. The contextless agent's whole weakness is that it doesn't know your codebase, your conventions, your domain — so the moment you let it drag irrelevant context into the window, you've made its one real problem worse. A worker that forgets on purpose closes the gap from the other side: it reads only what closes the gap *for this task*, acts, and clears the table.
+
+## When forgetting backfires
+
+Amnesia is a feature until it isn't. The same wall that keeps noise *out* of the worker also keeps context *out* — and sometimes the worker needed it. Three ways this bites:
+
+**The rules slice is too thin.** A worker that remembers nothing relies entirely on what you hand it. Leave out the convention that matters and it won't fail loudly — it'll confidently do the wrong thing in your exact format, which is harder to catch than an obvious error. Treat the rules slice as the actual deliverable: it is the only thing standing between a clean window and a *contextless* one.
+
+**The return contract is too loose.** Ask for "a summary of what you found" and the worker hands back the twenty Sentry payloads you were trying to avoid, now narrated. You've paid the round-trip *and* polluted the window. The contract is load-bearing — "three lines, title plus URL, nothing else" is doing real work.
+
+**The job genuinely needs the main thread.** Some tasks are inseparable from the live context: a debugging session where the decisive clue is something you noticed eight messages ago, a refactor whose constraints only make sense against the conversation so far. Hand that to a blank worker and you'll spend more tokens re-briefing it than you'd ever save.
+
+That last point is the real boundary, and it answers the obvious objection — *isn't re-briefing a fresh worker every time just wasteful?* For a **separable** task, no: the brief is four lines and the worker reads only what the task needs. For an inseparable one, yes — so don't isolate it. Isolation pays when the task has a clean input and a clean output and no dependence on the thread's history. The skill isn't dispatching workers; it's telling the two kinds of job apart.
+
+## What you do now
+
+Find the next multi-step job you'd normally hand the main session — anything that ends with "and report back." Don't run it inline. Write the four-line dispatch: task, tools, rules-for-this-task, return contract. Send it to a worker. Read the three lines that come back.
+
+You'll notice your main thread stayed clean enough to do real work. That's not luck. That's the loop, protected.
+
+Stop trying to give your worker a longer memory. Give it a sharper window and let it forget on purpose — the job ships, the noise dies with it.
+
+---
+
+For the mechanics: see [Subagents](/foundations/subagents/) for the isolated context window, [MCP servers](/foundations/mcp-servers/) for handing a worker exactly the tools it needs, and [Rules](/foundations/rules/) for encoding the conventions that survive the forgetting.

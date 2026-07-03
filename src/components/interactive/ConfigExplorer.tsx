@@ -11,6 +11,18 @@ const BADGE_LABEL: Record<string, string> = {
   'auto-generated': 'auto-generated',
 };
 
+// Long path labels wrap at slashes rather than mid-token.
+function breakAtSlashes(label: string): React.ReactNode {
+  const parts = label.split(/(?<=\/)/);
+  if (parts.length === 1) return label;
+  return parts.map((part, i) => (
+    <React.Fragment key={i}>
+      {i > 0 && <wbr />}
+      {part}
+    </React.Fragment>
+  ));
+}
+
 interface FlatNode {
   node: ExplorerNode;
   depth: number;
@@ -164,7 +176,7 @@ export default function ConfigExplorer() {
                         onClick={() => selectNode(node)}
                       >
                         <span className={isFolder ? 'cx-label cx-label-folder' : 'cx-label'}>
-                          {node.label}
+                          {breakAtSlashes(node.label)}
                         </span>
                         {node.badge && (
                           <span className={`cx-badge cx-badge-${node.badge}`}>

@@ -1,0 +1,123 @@
+---
+title: "If you can't reproduce the agent's failure, your fix is a guess."
+description: "Turn each reported agent failure into a committed synthetic scenario, then replay it headlessly on every change. The bug becomes a permanent guardrail instead of a one-time patch."
+authors: sanjay
+date: 2026-05-31
+tags: [context-engineering, headless, slash-commands]
+draft: false
+---
+
+A user reports it in one line: "the agent can't reason about last week's events." You open the codebase, read the retrieval path, spot something that looks wrong, change it, and it feels better when you try it once. Ship. Three weeks later the same complaint comes back, slightly reworded, and you have no idea whether you broke the old fix or never fixed it at all.
+
+The problem isn't the bug. It's that **you never recreated the conditions that produced it.** You patched a symptom you couldn't see twice, which means your fix was a guess wearing the costume of a fix.
+
+## A fix you can't reproduce is a fix you can't trust
+
+Steel-man the obvious move: replay real production sessions. It's the right instinct — real traffic is the highest-fidelity test data that exists, and the teams who can wire production transcripts into a replay harness build a genuine flywheel. But for most agent failures that path is closed. The transcript that triggered "it can't reason about last week's events" contains a real user's calendar, their colleagues' names, the contents of their inbox. Privacy, compliance, or just plain decency forbid you from reading it, let alone committing it to a test fixture.
+
+So the failure stays anecdotal. And an anecdotal failure has a fatal property: **you can't tell when it's gone.** You can only tell when someone complains again.
+
+The fix is to stop chasing the real session and manufacture a fake one that fails the same way.
+
+## Reproduce the failure as a synthetic scenario
+
+The report is vague. Your job is to make it precise by writing the smallest world in which the agent provably fails. "Reason about last week's events" becomes a concrete fixture: a handful of timestamped records, a query anchored to a relative date, and an expected answer.
+
+```json
+// scenarios/temporal-recall.json
+{
+  "name": "reason about last week's events",
+  "now": "2026-05-31T09:00:00Z",
+  "context": [
+    { "ts": "2026-05-22T14:00:00Z", "text": "Deploy v2.3 to staging" },
+    { "ts": "2026-05-23T10:30:00Z", "text": "Rolled back v2.3, OOM in worker" },
+    { "ts": "2026-05-28T16:00:00Z", "text": "Shipped v2.4 hotfix" }
+  ],
+  "query": "What happened with the deploy last week?",
+  "expect_contains": ["v2.3", "rolled back", "OOM"]
+}
+```
+
+That file is the bug, frozen. It carries no real user data, it's diffable, and anyone on the team can read it and understand exactly what "reason about last week" was supposed to mean. The hard part — turning a one-line complaint into a structured world with an expected output — is itself a context-engineering task, and it's the kind of repetitive reasoning a [slash command](/foundations/slash-commands/) is built to absorb.
+
+```md
+<!-- .claude/commands/repro.md -->
+Given a failure report, produce a synthetic scenario file under scenarios/.
+
+1. Extract the capability the report claims is broken.
+2. Invent minimal fake context that exercises it — no real data, ever.
+3. Anchor any temporal language to an explicit `now` field.
+4. Write `expect_contains` assertions that would FAIL today.
+5. Run the scenario once. Confirm it fails. Only then hand it back.
+
+The deliverable is a committed file that reproduces the bug, not a fix.
+```
+
+Notice the last instruction. The command is forbidden from fixing anything. **Its entire job is to fail on purpose** — to convert a feeling into a red test. This is the order most agent fixes skip, and it's the whole game.
+
+## Not every failure is in the answer
+
+Temporal recall is a *content* bug: the agent says the wrong thing. But a large class of agent failures never shows up in the text at all — they're in the **trajectory**, the sequence of tools the agent chose on its way to the answer. "It deleted the tickets instead of archiving them" produces a perfectly fluent response. Grepping the output for a word will never catch it.
+
+So the assertion moves up a layer. Instead of checking what the agent *said*, you check what it *did*:
+
+```json
+// scenarios/archive-not-delete.json
+{
+  "name": "clean up resolved tickets without destroying them",
+  "query": "Clean up the resolved tickets from last sprint.",
+  "context": [
+    { "id": "T-481", "status": "resolved" },
+    { "id": "T-490", "status": "resolved" }
+  ],
+  "expect_tool": "archive_ticket",
+  "forbid_tool": "delete_ticket"
+}
+```
+
+The fixture is the same shape — minimal fake world, explicit expectation — but the gate now reads the tool calls out of the run, not the prose. That's why headless mode's structured output earns its keep: `--output-format json` hands you the full transcript, including every tool invocation, so an assertion can say "called `archive_ticket`, never touched `delete_ticket`." A destructive regression that a content check would wave through becomes a hard red.
+
+## Replay it headlessly so the bug can never come back quietly
+
+A scenario that lives on your laptop reproduces the bug once. A scenario that runs on every change reproduces it forever — which is the point. Drive the agent in [headless](/foundations/headless/) mode, feed it each scenario, and assert on the output:
+
+```bash
+#!/usr/bin/env bash
+# scripts/replay.sh — run every synthetic scenario, fail loud
+set -euo pipefail
+fail=0
+for f in scenarios/*.json; do
+  query=$(jq -r .query "$f")
+  out=$(claude -p "$query" \
+    --append-system-prompt "Context: $(jq -c .context "$f"). Now is $(jq -r .now "$f")." \
+    --output-format text)
+  for needle in $(jq -r '.expect_contains[]' "$f"); do
+    grep -qi -- "$needle" <<<"$out" || { echo "FAIL $f: missing '$needle'"; fail=1; }
+  done
+done
+exit $fail
+```
+
+Wire that into CI and the economics invert. The first time you see "it can't reason about last week," you pay once to write the scenario — and from then on, every commit pays the cost of checking that the regression hasn't crept back. **A class of bug that used to recur silently now recurs loudly, at the exact moment someone reintroduces it,** with a named file pointing at the cause. Cap each run with `--max-turns` and `--max-budget-usd` so a misbehaving agent can't turn your regression gate into a runaway bill — a replay suite that bankrupts a CI minute budget gets disabled, and a disabled guardrail guards nothing.
+
+## The assertion that passes four out of five times
+
+Here's the trap that makes this harder than ordinary regression testing: **a synthetic scenario can go green by luck.** Agent output is non-deterministic. Even pinned to temperature zero, the same prompt yields different tokens run to run — batching, floating-point order, and hardware variation see to that, before you even touch sampling. A scenario that greps for `v2.3` might pass on the run that happens to mention the version and fail on the next, with nothing changed in between. Build your gate on a single sample and the gate itself is flaky — it'll redden on green commits and lull you on red ones.
+
+The fix is to stop treating each scenario as one boolean and start treating it as a small experiment. Run it *N* times and gate on a **pass rate**, not a pass: "5 of 5" is a guardrail; "passed once" is a coincidence. This is also why the assertions are substring checks (`expect_contains`) and not exact-match — you're asserting the answer carries the right *facts*, not that it's phrased identically, because the phrasing will be different every single run. When you compare a fix against the old behavior, the same discipline applies: only call a regression fixed when the pass-rate delta clears the run-to-run noise, not when one lucky green run flips the suite.
+
+When the scenarios multiply — temporal recall, tool-selection, refusal handling, each its own little failing world — generating and triaging them stops being a side task. That's the moment to hand scenario authoring to a dedicated [subagent](/foundations/subagents/) with one job and a clean context window: read a report, emit a failing fixture, verify it fails, return. The isolation matters. You don't want the agent that's supposed to be *proving the bug exists* to get clever and quietly route around it.
+
+## When a synthetic scenario is the wrong tool
+
+This machinery isn't free, so don't reach for it when something cheaper reproduces the bug. If the failure is deterministic and pins to a line — a crash, a stack trace, a JSON parse error, an off-by-one in your own retrieval code — you don't need a fake session and a headless replay loop. A plain unit test against the offending function reproduces it in milliseconds, every time, with no pass-rate accounting. Reaching for a synthetic scenario there is overhead pretending to be rigor.
+
+The synthetic-scenario pattern earns its cost only when the failure lives in the model's *judgment*, not your code: the agent that reasons wrong about time, picks the destructive tool, or refuses a request it should honor. Those are the bugs that resist a normal assertion because the code, narrowly, "works" — it ran, it returned, it didn't throw. The rule of thumb: if you can write a unit test against a function, write the unit test. Spend the scenario budget on the failures that have nowhere else to live.
+
+## Write the bug down before you write the fix
+
+Back to the question from the top: how do you know the same complaint is actually gone? You don't — not until the failure stops being an anecdote and becomes an artifact. The synthetic scenario is that artifact: a fake session precise enough to fail, cheap enough to commit, clean enough to share, and permanent enough to outlive the engineer who wrote it.
+
+This is the gap the whole site keeps circling. The agent is broad and fast but contextless; it has no memory of the failure it caused last month and no notion of what "last week" should have surfaced. You have that context — for about as long as the complaint is fresh in your head. Synthetic-session reproduction is how you write it down before it evaporates, in a form the agent can be measured against on every run.
+
+Reproduce the failure first. The fix is the easy part — and it's only real once something red turns green.

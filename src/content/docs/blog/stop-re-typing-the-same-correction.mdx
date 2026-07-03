@@ -1,0 +1,134 @@
+---
+title: "If you can describe your workflow, you don't have a workflow — you have a habit."
+description: "The correction you keep re-typing into the chat is a missing command. Fold the recurring ritual into one parameterized verb backed by a rules file, and the workflow stops varying with your mood."
+authors: sanjay
+date: 2026-05-31
+tags: [context-engineering, slash-commands, rules]
+draft: false
+---
+
+You type the same six sentences at the start of every feature. Branch off main with a sane name. Implement only what I asked — no drive-by refactors. Run the build before you touch a commit. Show me the diff. Squash it into one clean commit. Don't push until I say so. By the third feature of the day you're abbreviating. By the fifth you're skipping the build gate because you're tired and the agent "usually gets it right." That last shortcut is the one that ships the regression.
+
+Here's the uncomfortable part: **the instructions you find yourself dictating every single time are not instructions. They're a workflow you haven't written down yet.** And an unwritten workflow runs at the mercy of whatever patience you have left that afternoon.
+
+## The agent isn't forgetting — you're re-teaching it from scratch
+
+The mainstream advice is to "be a good prompter": write clearer, more complete instructions each session. That's real skill, and for a one-off task it's the right move. But apply it to a ritual you perform forty times a week and you've turned a fixed procedure into a manual one. You're paying full prompt cost for zero-novelty steps.
+
+The agent is broad and fast but it starts every session contextless — it doesn't know that *your* definition of "done" includes a green build and a squashed commit and an archived branch. So each session you re-teach it. The variance isn't in the agent. It's in the human typing slightly different instructions depending on the hour.
+
+Watch what the ritual actually contains. Pull a real sequence apart and it's a small program:
+
+```
+1. git checkout -b <type>/<short-slug>
+2. implement ONLY the described change — no drive-by refactors
+3. npm run build && npm test   # hard gate, stop on failure
+4. show me the diff, wait for approval
+5. git commit with a conventional message
+6. do NOT push or merge until I confirm
+```
+
+Six steps, one of which takes a name, one of which takes a description. That's not a sentence you should be typing. **That's a function with two arguments.** Which raises the question this whole post turns on: if you can write the steps down this cleanly, why are you still narrating them?
+
+## The recurring correction is a spec in disguise
+
+There's a tell. The moment you catch yourself correcting the agent the *same way* twice — "no, build first" — you've found a line of a specification you never wrote. The correction is the diff between what the agent did and what your house process requires. Re-typing it is treating a permanent fact as a per-session reminder.
+
+Two primitives absorb that fact so you stop paying for it.
+
+First, the durable conventions go in a [rules](/foundations/rules/) file — your `AGENTS.md` or `CLAUDE.md`. These are the always-true constraints that shouldn't depend on you remembering them:
+
+```md
+## Workflow constraints
+- Never push or merge without explicit approval.
+- A change is not "done" until `npm run build && npm test` passes.
+- One logical change per branch. No drive-by refactors.
+- Commit messages follow Conventional Commits.
+```
+
+That's persistent context: loaded every session, no re-typing. But rules are passive — they describe the world the agent operates in, they don't *drive* a sequence. The ritual itself, the ordered multi-step verb, belongs in a [slash command](/foundations/slash-commands/).
+
+## One verb, one argument, the same run every time
+
+A slash command is a parameterized prompt stored as a file. The ordered steps live in the file; the parts that change live in the argument. Here's the whole ritual collapsed into `/ship`:
+
+```md
+---
+description: Branch, implement, gate, review, commit — the house feature workflow
+argument-hint: <type>/<slug> — <what to build>
+---
+
+You are running the house feature workflow. The argument is: $ARGUMENTS
+
+1. Create a branch named from the `<type>/<slug>` portion, off the latest main.
+2. Implement ONLY what the description after `—` asks for. No drive-by refactors.
+3. Run `npm run build && npm test`. If either fails, stop and report — do not continue.
+4. Show me the full diff and wait. Do not commit until I approve.
+5. On approval, commit with a Conventional Commits message derived from the change.
+6. Stop. Do not push or merge — that's a separate, explicit step.
+
+Honor every constraint in AGENTS.md, especially the approval and build gates.
+```
+
+Now the dozen hand-typed sentences become:
+
+```
+/ship feat/rate-limit — add a 100 req/min limiter to the public API
+```
+
+The steps no longer vary with your patience. Step 3 fires whether it's 9am or 9pm. The build gate can't be "skipped because you're tired," because skipping it would require editing the command, which is a deliberate act, not a lapse. **You've moved the gate from your willpower into the system.** That's the entire game of context engineering: encode the judgment once, in a place the agent reads deterministically, so neither the agent's contextlessness nor your fatigue gets a vote.
+
+Note the division of labor. The command carries the *sequence* — the ordered procedure unique to this task. The rules file carries the *invariants* — the constraints true across every task. The command even points back at the rules ("honor every constraint in AGENTS.md") so the two reinforce instead of drifting. Steps live in the command; laws live in the rules.
+
+## Why the file beats the sentence: it's injected, not interpreted
+
+The reason this works isn't tidiness. It's that a command file is read deterministically. When you type `/ship`, the file's body is substituted into the prompt verbatim, the same characters every time, before the model does anything. Your typed instructions are reconstructed from memory each session — subject to abbreviation, omission, the 9pm version of you. The file is not. Steps 1 through 6 arrive in full whether you're sharp or exhausted, and the only way to change them is to open the file, which is an edit you'd notice yourself making.
+
+There's a second-order effect worth naming. Because the command is a file, it can pull *live* context at run time instead of relying on the model to ask for it. Prefix a line with `!` and a backtick-wrapped shell command, and Claude Code runs it before the prompt reaches the model and injects the output. So the command can hand the agent the actual current state, not a stale description of it.
+
+## A second ritual: the one that needs live context
+
+The feature workflow is a pure sequence. But plenty of rituals are *inspect-then-judge* — and those are the ones you most often run by pasting output into the chat by hand. The pre-review check is the classic: you run `git status`, copy the diff, and type "look at this against our conventions and tell me if I snuck in anything I shouldn't have." Every time.
+
+Fold it into `/review-prep`, and the copy-paste disappears too:
+
+```md
+---
+description: Prep the current branch for review against house conventions
+argument-hint: (no args — reads the working tree)
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*)
+---
+
+Working tree: !`git status --short`
+Diff against main: !`git diff main --stat`
+Recent commits: !`git log main..HEAD --oneline`
+
+Review the changes above against AGENTS.md. Flag three things specifically:
+any file touched that the stated task didn't require, any logic change
+landing without a matching test, and any commit message that isn't a clean
+Conventional Commit. Do not fix anything — produce a checklist I act on.
+```
+
+Now `/review-prep` gathers the real diff itself and judges it against the same rules file `/ship` honors. Two commands, one source of truth for what "done" means. The thing you used to narrate — *"check this against our conventions"* — is now a verb, and the context it needs to do its job is wired in rather than pasted.
+
+This is the division of labor at full stretch. The constraints live once in [rules](/foundations/rules/). The sequences live in commands. The live state gets injected by the command at run time. None of it depends on you remembering to supply it.
+
+## When NOT to encode it: a command is a commitment
+
+The discipline has a real edge, and ignoring it costs more than the boilerplate did. **A slash command is a commitment to a procedure. Don't make it before the procedure has stopped moving.**
+
+If you're still figuring out how a workflow should go — trying a build-first ordering one day and a test-first ordering the next, unsure whether the diff review belongs before or after the commit — encoding it freezes a decision you haven't made. You'll spend more time editing the command than you ever spent typing the sentences, and worse, you'll stop noticing that the process is still in flux because the command makes it *feel* settled. Encode the parts that have actually ossified. Leave the parts still in motion in the chat, where their friction is honest signal that you haven't decided yet.
+
+The second failure mode is quieter: **drift.** A command that hardcodes `npm run build` keeps confidently running `npm run build` for months after you've moved to a different toolchain — and because it runs deterministically, it fails deterministically, or worse, silently does the wrong thing. The command can't know the world changed. The mitigations are the ones already baked into the design: keep the genuinely volatile bits as arguments or live `!`-injected commands rather than frozen strings, push shared constraints down into the rules file so one edit fixes every command at once, and treat a command that starts misbehaving as a signal to re-read it, not to paste the old sentences back into the chat. A stale command is still cheaper to fix than an unwritten one — you have a single file to correct instead of a habit to retrain.
+
+## The test: can you describe it? Then stop saying it.
+
+The discipline is a single question you ask the next time you start typing a familiar instruction. *Have I said this before?* If yes, it's not a prompt — it's an unencoded procedure, and you're the bottleneck running it by hand.
+
+The progression is mechanical once you see it. A one-off instruction stays in the chat. A constraint you'd want true everywhere goes into [rules](/foundations/rules/). A multi-step ritual you keep narrating becomes a [slash command](/foundations/slash-commands/). You promote each correction up the stack the moment you catch yourself repeating it, and your chat history slowly empties of boilerplate until it contains only the genuinely novel — the actual thinking.
+
+The conventions you can recite from memory are exactly the ones you should never type again. If you can describe the steps, encode them. A habit you perform is a command you haven't written.
+
+---
+
+For the per-tool mechanics, see [Slash commands](/foundations/slash-commands/) for parameterized procedures and [Rules](/foundations/rules/) for the persistent constraints they lean on.
