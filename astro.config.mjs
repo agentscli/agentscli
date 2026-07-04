@@ -1,7 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import starlightBlog from 'starlight-blog';
 import starlightSidebarTopics from 'starlight-sidebar-topics';
 import react from '@astrojs/react';
 
@@ -86,23 +85,12 @@ export default defineConfig({
 			// configured. The two course topics (Claude Code, Codex) are siblings of
 			// the "Courses" hub; the custom Sidebar override nests them under it in the
 			// switcher so each course opens in isolation.
+			// NOTE: the starlight-blog PLUGIN is intentionally not registered — the blog
+			// is served entirely by custom routes under src/pages/blog/ (listing,
+			// posts, tags, rss.xml). The starlight-blog PACKAGE stays installed only
+			// for the blogSchema import in src/content/config.ts, which validates
+			// blog frontmatter (date, authors, tags, draft, …).
 			plugins: [
-				starlightBlog({
-						// 'none' keeps starlight-blog from registering its own ThemeSelect override,
-						// which would collide with our custom ThemeSelect and emit a build warning.
-						// Matches current rendered behavior (no blog nav link).
-						navigation: 'none',
-					authors: {
-						sourabh: {
-							name: 'Sourabh Kushwah',
-							title: 'Software Engineer',
-						},
-						sanjay: {
-							name: 'Sanjay Kushwah',
-							title: 'Software Engineer',
-						},
-					},
-				}),
 				starlightSidebarTopics(
 					[
 						{
