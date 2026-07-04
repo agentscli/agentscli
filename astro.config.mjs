@@ -42,6 +42,30 @@ export default defineConfig({
 						href: '/favicon.svg',
 					},
 				},
+				// Default social card for Starlight pages (foundations, courses).
+				// Blog posts set their own per-post hero in BlogPostLayout instead.
+				{
+					tag: 'meta',
+					attrs: {
+						property: 'og:image',
+						content: 'https://www.agentscli.com/og-default.png',
+					},
+				},
+				{
+					tag: 'meta',
+					attrs: { property: 'og:image:width', content: '1200' },
+				},
+				{
+					tag: 'meta',
+					attrs: { property: 'og:image:height', content: '630' },
+				},
+				{
+					tag: 'meta',
+					attrs: {
+						name: 'twitter:image',
+						content: 'https://www.agentscli.com/og-default.png',
+					},
+				},
 				{
 					tag: 'link',
 					attrs: {
