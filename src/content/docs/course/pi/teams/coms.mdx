@@ -1,0 +1,55 @@
+---
+title: "Peer-to-peer coms — and the honest 'is this worth it?' test"
+description: "Let two leads talk directly instead of routing through you, with the same four-verb protocol either way — then run the actual test for whether a peer channel is earning its keep or just a habit."
+sidebar:
+  label: "Coms · peer-to-peer, and when it earns its keep"
+---
+
+Here's the fact from the last lesson's expertise file, working itself out in real time: the new extractor starts returning a `lang` field on every row — something the old one never produced. The extraction lead learns this the moment its first worker comes back. The index lead needs to know it *before* it reindexes a single row, or it reindexes against a shape that's about to change again underneath it.
+
+Route that through the hierarchy as built and it takes two hops that add nothing: extraction lead reports it up to you, you relay it down to the index lead. You're not making a decision at either end — you're a wire. That's the shape peer-to-peer coms exists to remove: let the two leads that actually need the fact exchange it directly.
+
+## The mechanism — still no new primitive
+
+Same as the jump from spawn to teams, this isn't a new capability bolted onto Pi's core; it's the same idiom, applied bidirectionally. Coms exposes the same four verbs:
+
+- **list** — discover which peers are live right now, and their rough context usage.
+- **send** — fire a prompt at a named peer, get an acknowledgment back once it's queued.
+- **get** — check for a reply without blocking.
+- **await** — block until a reply arrives or a timeout passes.
+
+What the coms extension you've been building against actually ships is a local transport: a small socket per agent (a unix socket, or a named pipe on Windows), discovered through a per-project registry of small files the extension itself writes and prunes. That's enough for leads on the same machine — which covers everything `stash` needs. Leads on separate machines or in separate sandboxes are a real extension of the same four-verb idiom, but not a mode this same extension quietly switches into — it's a *different* extension, with its own dedicated hub process to run and secure and its own distinct tool names, standing in for the sockets. That's real infrastructure, not a free upgrade. Don't reach for it until you actually have leads that can't share a filesystem.
+
+The delivery idiom underneath is one you've already used: an inbound prompt arrives as a follow-up message that forces a new turn — the same `pi.sendMessage(..., {deliverAs: "followUp", triggerTurn: true})` call that delivered a background subagent's result back in the last chapter. And there's no separate "reply" tool to remember to call — when the receiving agent's turn ends, the extension reads its own last assistant message straight off its session history and ships that back as the reply automatically, so "the agent forgot to answer" isn't a failure mode you have to guard against.
+
+```text
+[extraction-lead → index-lead]
+  row shape changed: every row now carries `lang`. reindex against the
+  new shape, not the old one — don't start until you've confirmed this.
+
+[index-lead → extraction-lead]
+  ack. holding the reindex until the extractor migration finishes on the
+  last three sites, then running against `lang`-inclusive rows only.
+```
+
+One send, one ack, done. Notice what's missing compared to the hierarchical path: nobody above these two leads made a decision, because nobody above them needed to.
+
+## The one thing you must build in on purpose: an end condition
+
+A hierarchy has a natural end-state built in — a worker returns, the call is over. A flat peer channel doesn't; two agents messaging each other have no structural reason to ever stop, and a sloppy prompt on either end can turn one useful handshake into an endless back-and-forth. The concrete guard is a hop counter on every message — each envelope carries a count, and the transport refuses to forward a message past a fixed limit. It's a blunt instrument, but it's the difference between "one lead tells another a fact" and a runaway loop burning tokens on both sides until someone notices.
+
+## Is this actually worth it? The honest test
+
+Everything in this lesson is easy to over-apply — a peer channel is a fun thing to build, and "my agents talk to each other" sounds like progress whether or not it is. Before you wire one up for real, ask honestly:
+
+1. **Does the fact actually change what the other side does?** The `lang` field genuinely changes the index lead's plan — it passes. If a lead just wants to *share* something interesting with no bearing on the other's next move, that's a status update, not a reason for a peer channel.
+2. **Could the orchestrator relay it just as well?** For one message, once, routing through you costs you two hops of attention and nothing else. That's not expensive enough to justify standing up and securing a whole comms layer over. The channel earns its keep when the relay would happen *often enough*, or *urgently enough*, that your attention is the actual bottleneck.
+3. **Can you name the end condition before you send the first message?** "Index lead acks once, done" is a real end condition. If you can't state one in a sentence, you don't have a peer exchange — you have the start of a loop.
+4. **Does the cost scale with you in mind?** Cost here runs roughly with agent count times how many times a message bounces back and forth — cheap for two leads trading one fact, expensive fast for a five-agent debate that keeps going. Know which one you're building before you commit to it.
+5. **Is the infrastructure proportionate to how often this actually happens?** A running hub process, tokens to secure it, peers to register — that's real ongoing cost. For a single once-per-migration handshake between two leads on one machine, the lightweight local version is proportionate. A standing, always-on hub is worth it only if you're actually running a persistent multi-agent setup often enough to amortize it.
+
+Run stash's `lang`-field handshake through that list honestly and it passes on every count: it changes a real plan, it's a single exchange with a clean end, and a local socket-based call is cheap enough that building it costs less than the two hops of your attention it would otherwise take. That's the bar. A three-agent standing debate channel you build because the pattern exists and it looked good in a demo does not automatically clear it — and most of the time, it doesn't need to. The right amount of team, for most of what you'll actually do to `stash`, is smaller than it's tempting to build.
+
+## What you've assembled
+
+Rules, config, extensions, gates, skills, subagents, and now a team — orchestrator, leads that never touch a file, workers underneath them, expertise files that make the leads better over time, and a peer channel you only reach for when the test above actually passes. Every layer of this course is now sitting in one project. [Next: pull all of it into one coherent harness, and judge honestly where Pi belongs in your day](/course/pi/daily-workflow/).

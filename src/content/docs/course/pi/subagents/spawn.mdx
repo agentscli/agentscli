@@ -1,0 +1,80 @@
+---
+title: "Spawn a child Pi and read its JSONL"
+description: "Pi's only multi-agent primitive: a second pi process, run headless, streaming machine-readable events on stdout. Everything else in this module is control flow on top of this one mechanism."
+sidebar:
+  label: "Spawn · the one primitive"
+---
+
+You already know Pi has four run surfaces — the interactive TUI you've been living in, `-p` for a single headless prompt, `--mode json` for machine-readable event output, and `--mode rpc` for driving Pi as a subprocess from any language. So far you've only used the first. The other three exist for exactly this module: they're what let one Pi process treat *another* Pi process as a tool.
+
+There's no `pi.registerSubagent()`. There's `child_process.spawn("pi", [...])`, pointed at a prompt instead of a person, with its output piped somewhere you can parse. That's the whole primitive. Everything you'll build for the rest of this module — chains, fan-out, a verifier that checks a builder's work — is this one call, wired up in different control-flow shapes.
+
+## The call
+
+Pick one article off the re-extraction backlog and hand it to a child agent, headless:
+
+```text
+pi --mode json -p "Re-extract https://slow-blog.example/post-142 using
+  stash's fixed readability pipeline, via \`stash reextract <url>\`. Don't
+  touch extractor code — just re-run it and confirm the search index
+  entry updated." \
+  --no-session \
+  --tools read,bash \
+  --thinking off
+```
+
+Read that flag by flag, because each one is a deliberate choice, not boilerplate:
+
+- **`--mode json`** — instead of TUI chrome, stdout becomes a stream of newline-delimited JSON events: text as the model writes it, every tool call, every result, and a final event when the turn ends. This is what makes a child process legible to a parent process instead of just a wall of terminal output.
+- **`-p "<prompt>"`** — print mode. One prompt in, the agent runs to completion, then exits. No follow-up turn, no chat — you'll come back to why that matters when you build the verifier.
+- **`--no-session`** — this child is ephemeral. It doesn't need to remember this one article tomorrow; when it exits, its context goes with it. (Give it `--session <file>` instead if you *do* want it resumable — that's how a dispatcher gives each specialist persistent memory across repeated calls.)
+- **`--tools read,bash`** — a narrower toolset than your own session gets. This child re-runs an existing CLI command and reads the result; it has no business with `write` or `edit`. Scoping a child's tools to exactly what its one job needs is the same instinct behind the damage-control gate you built in an earlier module — just applied per-process instead of per-rule.
+- **`--thinking off`** — this is a mechanical re-run, not a judgment call. No reasoning budget to spend.
+
+## Reading what comes back
+
+Run that from inside an extension, a script, anything with a stdout pipe, and you get a line of JSON per event. The three that matter first:
+
+```js
+import { spawn } from "node:child_process";
+import readline from "node:readline";
+
+const child = spawn("pi", [
+  "--mode", "json",
+  "-p", "Re-extract https://slow-blog.example/post-142 using stash's fixed readability pipeline via `stash reextract <url>`. Confirm the search index entry updated.",
+  "--no-session",
+  "--tools", "read,bash",
+  "--thinking", "off",
+]);
+
+const lines = readline.createInterface({ input: child.stdout });
+
+lines.on("line", (raw) => {
+  const event = JSON.parse(raw);
+
+  switch (event.type) {
+    case "message_update":
+      // assistant text streams in as it's generated
+      if (event.assistantMessageEvent?.type === "text_delta") {
+        process.stdout.write(event.assistantMessageEvent.delta);
+      }
+      break;
+    case "tool_execution_start":
+      console.log(`\n[tool] ${event.toolName}`);
+      break;
+    case "agent_end": {
+      const lastAssistant = [...event.messages].reverse().find((m) => m.role === "assistant");
+      console.log(`\n[done] stop reason: ${lastAssistant?.stopReason}`);
+      break;
+    }
+  }
+});
+```
+
+That's genuinely most of it. `message_update` carries the model's own words as they stream; `tool_execution_start`/`tool_execution_end` mark every `bash` call the child makes against your one allowed command; `agent_end` fires once, when the child's turn is fully done, carrying the whole `messages[]` array for the run — you pull `stopReason` (and `usage`, if you're tracking token spend) off the *last assistant message* in that array, not off the event itself. Nothing here is Pi-specific plumbing you have to reverse-engineer — it's the same event vocabulary your own interactive session is built on, just handed to you directly on a pipe instead of rendered into a terminal UI.
+
+:::note[Check this against the live docs before you ship it]
+The event names above (`message_update`, `tool_execution_start`, `tool_execution_end`, `agent_end`) come from Pi's own SDK documentation. Some of the finer detail on exact payload shapes is reconstructed rather than pulled verbatim from source — treat the shape above as directionally right and worth a quick diff against your installed version before you depend on it in anything unattended.
+:::
+
+One child, one article, one narrow toolset, output you can parse instead of a black box you have to trust. That's the unit. The re-extraction backlog isn't one article, though — it's every saved URL from before the extractor fix, and you're not going to write this spawn call by hand a few hundred times. [Next: chain a few of these in sequence, then fan a big batch of them out in parallel](/course/pi/subagents/chains-and-fanout/).

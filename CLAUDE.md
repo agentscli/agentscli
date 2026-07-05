@@ -47,19 +47,21 @@ Content structure:
 ### Components
 
 Custom Astro components in `src/components/`:
-- `HomepageLayout.astro` - Layout for the custom homepage
 - `Header.astro`, `Footer.astro` - Site-wide navigation
 - `FeatureCard.astro`, `GuideCard.astro` - Content cards
 - `Terminal.astro`, `TerminalBlock.astro` - Terminal/code display components
-- `BlogPost.astro`, `BlogLayout.astro` - Blog-specific components
+- `BlogPost.astro`, `BlogLayout.astro`, `RelatedPosts.astro` - Blog-specific components
 - `AgentCallout.astro` - Special callout component
+- `Head.astro` - Shared head for custom pages; also carries the theme-var
+  `!important` override layer that makes the homepage and blog honor the
+  light/dark toggle (the scoped styles in those pages are dark-hardcoded)
 
 ### Starlight Configuration
 
 Configured in `astro.config.mjs`:
 - Title: "agents.cli"
-- Blog plugin enabled with predefined authors (james, elena, marcus)
-- Sidebar configured for Guides and Reference sections
+- Blog authors defined in config (sourabh, sanjay)
+- Sidebar organized as topics (Courses, Foundations) via starlight-sidebar-topics
 - Custom fonts: Fira Code (mono), Instrument Serif (serif), Space Grotesk (sans)
 
 ### Deployment
@@ -75,7 +77,8 @@ The site uses a custom dark/purple theme via `src/styles/theme.css`:
 - Overrides Starlight's default CSS custom properties for colors, fonts, and spacing
 - Applied globally via `customCss` in `astro.config.mjs`
 - All Starlight pages (docs, blog) inherit this theme automatically
-- Custom homepage (`src/pages/index.astro`) uses `src/styles/homepage.css`
+- Custom homepage (`src/pages/index.astro`) uses scoped styles plus the
+  theme-var override layer in `src/components/Head.astro`
 
 **Theme colors**: Primary purple (#7c69f7), dark background (#0a0910)
 **Fonts**: Fira Code (mono), Space Grotesk (sans), Instrument Serif (serif)

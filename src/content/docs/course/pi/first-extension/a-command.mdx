@@ -1,0 +1,85 @@
+---
+title: "Build a command: /stash"
+description: "pi.registerCommand turns a raw string into a user-triggered action. Build /stash, a triage view for saved entries that need attention, and see exactly what a command handler receives and how it differs from a tool."
+sidebar:
+  label: "A command · /stash"
+---
+
+The chore you're automating starts with finding *which* entry is broken, and right now that means opening a SQLite browser or writing a one-off query every time you suspect the extractor choked on something. That's a job for a command you trigger yourself, on demand — not something you want the model deciding to run on your behalf mid-conversation. Slash commands are Pi's answer to "user-initiated, not model-initiated," and `pi.registerCommand` is how you add one.
+
+## Registering it
+
+Inside your extension's factory function:
+
+```typescript
+// .pi/extensions/stash-tools.ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+  pi.registerCommand("stash", {
+    description: "Show stash entries that need attention",
+    getArgumentCompletions: (prefix) =>
+      [
+        { value: "failed", label: "failed — extraction errored" },
+        { value: "empty", label: "empty — extracted zero characters" },
+      ].filter((c) => c.value.startsWith(prefix)),
+
+    handler: async (args, ctx) => {
+      const filter = args.trim() || "failed";
+      ctx.ui.setStatus("stash", `Checking ${filter} entries…`);
+
+      const result = await pi.exec("stash", ["list", "--status", filter], {
+        signal: ctx.signal,
+        timeout: 10_000,
+      });
+
+      if (result.code !== 0) {
+        ctx.ui.notify(`stash list failed: ${result.stderr}`, "error");
+        return;
+      }
+
+      const rows = result.stdout.trim().split("\n").filter(Boolean);
+      ctx.ui.notify(
+        rows.length
+          ? `${rows.length} ${filter} entries:\n${rows.join("\n")}`
+          : `No ${filter} entries — you're clean.`,
+        "info"
+      );
+    },
+  });
+}
+```
+
+Save that, run `/reload`, and `/stash` is live:
+
+```text
+> /stash failed
+
+  3 failed entries:
+  #142  https://example.com/paywalled-article   (extractor: empty body)
+  #187  https://blog.example.org/post-slug       (extractor: timeout)
+  #201  https://news.example.net/story            (extractor: HTTP 403)
+```
+
+Type `/stash` and pause before hitting enter, and the completions you registered show up as suggestions — `failed`, `empty` — so you don't have to remember the exact filter strings you invented.
+
+## What the handler actually receives
+
+A few things about the signature are worth being precise about, because they're easy to get wrong by analogy with the tool you'll build next lesson:
+
+- **`name` is passed without the leading slash.** You call `pi.registerCommand("stash", …)`; the user types `/stash`.
+- **`args` is the raw remainder of the line, as one string** — everything after `/stash `, unsplit. `/stash failed` hands your handler `"failed"`; there's no automatic positional-argument parsing the way some other tools' templating syntax works. If a command needs several arguments, splitting `args` yourself is on you.
+- **The handler gets `ExtensionCommandContext`**, not the plain `ExtensionContext` your hooks will see — a superset with session-control methods layered on (`ctx.newSession`, `ctx.fork`, `ctx.switchSession`, `ctx.navigateTree`), which is the machinery behind Pi's fork/tree/resume commands and, later in this course, sub-agent extensions. You won't need any of that for `/stash`, but it's there when you do.
+- **`pi.exec`**, not something on `ctx` — it's a top-level convenience for shelling out with the turn's abort signal already wired through (`ctx.signal`), returning `{ stdout, stderr, code, killed }`. It's the same helper the worked "deploy" example in Pi's own docs uses.
+
+## Where `/stash` sits relative to everything else typed at the prompt
+
+A couple of ordering facts save you real confusion later:
+
+- **Commands are checked before skills or prompt templates expand.** If you later build a `stash` *skill* (chapter 7) with the same name, your registered command wins — it's resolved first, every time.
+- **Name collisions auto-suffix instead of erroring.** If two loaded extensions both register a `stash` command, Pi doesn't crash or silently drop one — you get `/stash:1` and `/stash:2`. Worth knowing if you ever load someone else's extension pack alongside your own.
+- Built-in commands you've already been using — `/settings`, `/model`, `/tree`, `/fork`, `/resume`, `/reload`, `/quit` — are registered through the exact same mechanism you just used. There's no separate, more-privileged tier for Pi's own commands versus yours.
+
+{/* TODO widget: CommandExpander is the natural fit conceptually (keystroke → file → expanded prompt), but it's a fact-bound five-tool comparison widget reserved for foundations pages per WIDGETS.md's course rule — embedding it here would break the single-tool narrative and it has no Pi tab. Revisit if a Pi-specific or evergreen equivalent is built. */}
+
+`/stash` solves half the chore: finding what's broken. But it only ever runs when *you* type it — the model can't reach for it mid-conversation, and it can't act on what it finds without you copy-pasting a URL back into the chat. Fixing an entry is exactly the kind of thing you'd rather hand to the agent directly. [Next: give the model its own tool to do the fixing](/course/pi/first-extension/a-tool/).

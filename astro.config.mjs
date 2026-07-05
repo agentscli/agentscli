@@ -1,7 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import starlightBlog from 'starlight-blog';
 import starlightSidebarTopics from 'starlight-sidebar-topics';
 import react from '@astrojs/react';
 
@@ -41,6 +40,30 @@ export default defineConfig({
 						rel: 'icon',
 						type: 'image/svg+xml',
 						href: '/favicon.svg',
+					},
+				},
+				// Default social card for Starlight pages (foundations, courses).
+				// Blog posts set their own per-post hero in BlogPostLayout instead.
+				{
+					tag: 'meta',
+					attrs: {
+						property: 'og:image',
+						content: 'https://www.agentscli.com/og-default.png',
+					},
+				},
+				{
+					tag: 'meta',
+					attrs: { property: 'og:image:width', content: '1200' },
+				},
+				{
+					tag: 'meta',
+					attrs: { property: 'og:image:height', content: '630' },
+				},
+				{
+					tag: 'meta',
+					attrs: {
+						name: 'twitter:image',
+						content: 'https://www.agentscli.com/og-default.png',
 					},
 				},
 				{
@@ -86,23 +109,12 @@ export default defineConfig({
 			// configured. The two course topics (Claude Code, Codex) are siblings of
 			// the "Courses" hub; the custom Sidebar override nests them under it in the
 			// switcher so each course opens in isolation.
+			// NOTE: the starlight-blog PLUGIN is intentionally not registered — the blog
+			// is served entirely by custom routes under src/pages/blog/ (listing,
+			// posts, tags, rss.xml). The starlight-blog PACKAGE stays installed only
+			// for the blogSchema import in src/content/config.ts, which validates
+			// blog frontmatter (date, authors, tags, draft, …).
 			plugins: [
-				starlightBlog({
-						// 'none' keeps starlight-blog from registering its own ThemeSelect override,
-						// which would collide with our custom ThemeSelect and emit a build warning.
-						// Matches current rendered behavior (no blog nav link).
-						navigation: 'none',
-					authors: {
-						sourabh: {
-							name: 'Sourabh Kushwah',
-							title: 'Software Engineer',
-						},
-						sanjay: {
-							name: 'Sanjay Kushwah',
-							title: 'Software Engineer',
-						},
-					},
-				}),
 				starlightSidebarTopics(
 					[
 						{
@@ -115,6 +127,7 @@ export default defineConfig({
 								{ label: 'GitHub Copilot', link: '/course/copilot/' },
 								{ label: 'Cursor', link: '/course/cursor/' },
 								{ label: 'OpenCode', link: '/course/opencode/' },
+								{ label: 'Pi', link: '/course/pi/' },
 							],
 						},
 						{
@@ -595,6 +608,108 @@ export default defineConfig({
 										{ label: 'Codify the chore', slug: 'course/opencode/daily-workflow/custom-commands' },
 										{ label: 'Prompt well & move fast', slug: 'course/opencode/daily-workflow/prompting-and-reflexes' },
 										{ label: 'The week back', slug: 'course/opencode/daily-workflow/the-week-back' },
+									],
+								},
+							],
+						},
+						{
+							label: 'Pi',
+							link: '/course/pi/',
+							icon: 'open-book',
+							items: [
+								{ label: 'Pi overview', slug: 'course/pi' },
+								{
+									label: 'Getting started',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/getting-started' },
+										{ label: 'Install · the CLI & surfaces', slug: 'course/pi/getting-started/install' },
+										{ label: 'Authenticate · BYOK, key vs OAuth', slug: 'course/pi/getting-started/auth' },
+										{ label: 'The loop · no approve beat', slug: 'course/pi/getting-started/the-loop' },
+										{ label: 'First change · fix, review, commit', slug: 'course/pi/getting-started/first-change' },
+									],
+								},
+								{
+									label: 'The core',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/the-core' },
+										{ label: 'Four tools · read/write/edit/bash', slug: 'course/pi/the-core/four-tools' },
+										{ label: 'The loop · steering vs follow-up', slug: 'course/pi/the-core/the-loop-in-depth' },
+										{ label: 'See the context · observability', slug: 'course/pi/the-core/see-the-context' },
+										{ label: 'The tiny prompt · under 1k tokens', slug: 'course/pi/the-core/the-tiny-prompt' },
+									],
+								},
+								{
+									label: 'Context',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/context' },
+										{ label: 'Sessions · resume, fork, tree', slug: 'course/pi/context/sessions' },
+										{ label: 'Compaction · shrink the window', slug: 'course/pi/context/compaction' },
+										{ label: 'SYSTEM.md · write it down once', slug: 'course/pi/context/system-md' },
+									],
+								},
+								{
+									label: 'Models & config',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/models-config' },
+										{ label: 'Config files · global vs project', slug: 'course/pi/models-config/config-files' },
+										{ label: 'Routing · cheap vs strong', slug: 'course/pi/models-config/routing' },
+										{ label: 'Local models · self-hosted limits', slug: 'course/pi/models-config/local-models' },
+									],
+								},
+								{
+									label: 'Your first extension',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/first-extension' },
+										{ label: 'Anatomy · factory & reload', slug: 'course/pi/first-extension/anatomy' },
+										{ label: 'A command · /stash', slug: 'course/pi/first-extension/a-command' },
+										{ label: 'A tool · registerTool', slug: 'course/pi/first-extension/a-tool' },
+										{ label: 'Hooks · the tool lifecycle', slug: 'course/pi/first-extension/hooks' },
+									],
+								},
+								{
+									label: 'Rebuild the defaults',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/rebuild-the-defaults' },
+										{ label: 'Permissions · damage-control', slug: 'course/pi/rebuild-the-defaults/permissions' },
+										{ label: 'Task discipline · one at a time', slug: 'course/pi/rebuild-the-defaults/task-discipline' },
+										{ label: 'Plan mode · PLAN.md', slug: 'course/pi/rebuild-the-defaults/plan-mode' },
+										{ label: 'Status line · ctx.ui', slug: 'course/pi/rebuild-the-defaults/statusline' },
+									],
+								},
+								{
+									label: 'Skills & packages',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/skills-packages' },
+										{ label: 'Skills · SKILL.md', slug: 'course/pi/skills-packages/skills' },
+										{ label: 'Templates & themes', slug: 'course/pi/skills-packages/templates-themes' },
+										{ label: 'Packages · share the setup', slug: 'course/pi/skills-packages/packages' },
+									],
+								},
+								{
+									label: 'Subagents',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/subagents' },
+										{ label: 'Spawn · child pi --mode json', slug: 'course/pi/subagents/spawn' },
+										{ label: 'Chains & fan-out', slug: 'course/pi/subagents/chains-and-fanout' },
+										{ label: "The verifier · don't trust the builder", slug: 'course/pi/subagents/the-verifier' },
+									],
+								},
+								{
+									label: 'Teams',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/teams' },
+										{ label: 'Orchestration · lead → worker', slug: 'course/pi/teams/orchestration' },
+										{ label: 'Expertise · per-agent roles', slug: 'course/pi/teams/expertise' },
+										{ label: 'Coms · peer messaging', slug: 'course/pi/teams/coms' },
+									],
+								},
+								{
+									label: 'Daily workflow',
+									items: [
+										{ label: 'Module intro', slug: 'course/pi/daily-workflow' },
+										{ label: 'Assemble · one harness', slug: 'course/pi/daily-workflow/assemble' },
+										{ label: 'When to reach for Pi', slug: 'course/pi/daily-workflow/when-pi' },
+										{ label: 'The week back', slug: 'course/pi/daily-workflow/finale' },
 									],
 								},
 							],

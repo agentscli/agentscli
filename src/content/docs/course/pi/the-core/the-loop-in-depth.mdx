@@ -1,0 +1,59 @@
+---
+title: One level deeper into the loop
+description: "No hidden step limit, and two different ways to talk to a run that's already underway — steering it mid-turn versus queuing what comes next."
+sidebar:
+  label: "The loop · no step limit, two ways to interrupt"
+---
+
+You already know the loop's shape from the last chapter: the model responds, any tool calls it made get executed, the results go back in, and it responds again — repeat until a response comes back with no more tool calls attached. What that description leaves out is a decision Pi's author made on purpose: there's no ceiling on how many times that cycle can run. No step 20 hard stop, no "you've used too many tool calls" refusal. In his own words, describing the design: *"I never found a use case for that."*
+
+Watch what that actually means by handing `stash` something bigger than a date fix — the fetch worker's missing retry logic. Right now, if a site times out or 429s, the fetch just fails and the URL sits unprocessed forever. Ask Pi to fix that:
+
+```text
+> the fetch worker has no retry or backoff — a slow site just fails once and
+  never gets retried. Add retry with exponential backoff, and don't hammer
+  sites that are genuinely down.
+
+  • Read app/worker/fetch.py                              (198 lines)
+  • Read app/worker/queue.py                               (94 lines)
+  • Edit app/worker/fetch.py
+  • Bash: python -m pytest tests/test_worker.py -v
+    [3 failed, 9 passed]
+  • Read tests/test_worker.py                              (140 lines)
+  • Edit app/worker/fetch.py
+  • Bash: python -m pytest tests/test_worker.py -v
+    [12 passed, 0 failed]
+```
+
+Seven tool calls, two of them because the first attempt broke three existing tests and the model went back to find out why. Nothing about this run required a bigger step budget than the one-line date fix — Pi didn't pre-allocate a turn count for "small task" versus "medium task." It just kept looping, tool call after tool call, until a response arrived with nothing left to call. A much larger migration later in this course will run the exact same loop for far longer, with no different mechanism underneath it.
+
+## Interjecting without derailing it
+
+A loop with no step limit is only comfortable to use if you can talk to it while it's running — otherwise "no ceiling" just means "no way to stop a run that's heading somewhere you didn't intend." Pi gives you two distinct ways to interject, and they land at genuinely different points:
+
+- **Steering** — press Enter while the agent is mid-run and type a message. It doesn't interrupt the tool call in flight; it gets queued and delivered the moment the *current* turn's tool calls finish, folded into the next turn as though you'd said it right then. Good for a correction that matters *now*: "stop, that retry count is way too high" while the edit is still being drafted.
+- **Follow-up** — Alt+Enter queues a message for after the *entire* run completes, once the loop has already terminated on its own. Good for "and once that's done, also update the README" — something that belongs after this task, not stitched into the middle of it.
+
+The distinction matters because of where each one lands relative to the loop's own termination check. A steering message can only be delivered between turns — after a tool call's result has come back, before the model is asked to respond again — never in the middle of the model composing a response. That's why steering feels like a correction and follow-up feels like a queue: one rides inside the current loop, the other waits for the loop to end and starts a new one.
+
+Try it on the retry fix. Midway through, before the second `Edit app/worker/fetch.py` call, you notice the backoff cap it chose is too aggressive for `stash`'s use case:
+
+```text
+[mid-run] > cap retries at 3 attempts, not 5 — this is a personal read-it-later
+            tool, not a production crawler
+```
+
+That lands as steering — folded into context the moment the current tool call resolves, before the model drafts its next move. The run doesn't restart; it just receives the correction and keeps going with it in view. Contrast that with queuing a genuinely separate ask for after the fix ships:
+
+```text
+[Alt+Enter] > once retry logic is in, also add a `last_fetch_error` column so
+              the UI can show why a URL is stuck
+```
+
+That one waits. It's not relevant to whether the retry fix is correct, and folding it into the same turn would just be two unrelated changes tangled together in one diff. Follow-up keeps them separate without you having to remember to type it again later.
+
+## Why this is worth noticing at all
+
+The absence of a step ceiling isn't a performance detail — it's a statement about what Pi assumes you'll do instead of relying on a governor. Some agents cap step count as a safety valve against a model looping forever on a task it can't actually solve; Pi's answer is that the human is the safety valve, via steering, via `Ctrl+C` to abort outright, via reviewing the diff before it's committed. That only works if you're actually watching — which is exactly the habit this whole module is building.
+
+You've now seen the loop run longer, watched it recover from a failed test on its own, and interjected in both directions without derailing it. But everything so far has been watching tool calls scroll past — you haven't actually looked at *the thing the model is working from* at any given moment: the full context, and the prompt sitting underneath all of it. That's next, and it's the feature that makes Pi worth learning specifically. [Next: see the full context Pi is working from](/course/pi/the-core/see-the-context/).

@@ -2,14 +2,15 @@
 // Individual Blog Post Page - Custom Figma Design
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import BlogPostLayout from '../../layouts/BlogPostLayout.astro';
+import RelatedPosts from '../../components/RelatedPosts.astro';
 import { getHero } from '../../lib/cover';
+import { isPublishedPost, getBlogPosts } from '../../lib/blog';
 
-// Generate paths for all blog posts
+// Generate paths for all published blog posts (dated, not draft)
 export async function getStaticPaths() {
   const docs = await getCollection('docs');
 
-  // Filter for blog posts (those with a date field)
-  const blogPosts = docs.filter(doc => 'date' in doc.data && doc.data.date);
+  const blogPosts = docs.filter(isPublishedPost);
 
   return blogPosts.map(post => {
     // Extract slug from the post id (e.g., "blog/my-post" -> "my-post")
@@ -67,6 +68,36 @@ const wordCount = (data as any).wordCount || 500;
 const readTime = calculateReadTime(wordCount);
 const formattedDate = formatDate(new Date(data.date));
 const heroImage = getHero(post.id);
+
+// Related posts: rank by shared tags, tiebreak on recency; pad with recent
+// posts when tag overlap yields fewer than 3.
+const allPosts = await getBlogPosts();
+const myTags: string[] = data.tags || [];
+const related = allPosts
+  .filter(p => p.id !== post.id)
+  .map(p => {
+    const tags: string[] = (p.data as any).tags || [];
+    const shared = tags.filter(t => myTags.includes(t));
+    return { post: p, score: shared.length, sharedTag: shared[0] };
+  })
+  .sort(
+    (a, b) =>
+      b.score - a.score ||
+      new Date((b.post.data as any).date).valueOf() -
+        new Date((a.post.data as any).date).valueOf()
+  )
+  .slice(0, 3)
+  .map(({ post: p, sharedTag }) => {
+    const d = p.data as any;
+    return {
+      href: `/blog/${p.id.replace('blog/', '')}/`,
+      title: d.title,
+      description: d.description || d.excerpt,
+      tag: sharedTag || (d.tags || [])[0],
+      date: String(d.date),
+      hero: getHero(p.id),
+    };
+  });
 ---
 
 <BlogPostLayout
@@ -79,4 +110,5 @@ const heroImage = getHero(post.id);
   heroImage={heroImage}
 >
   <Content />
+  <RelatedPosts slot="related" posts={related} />
 </BlogPostLayout>

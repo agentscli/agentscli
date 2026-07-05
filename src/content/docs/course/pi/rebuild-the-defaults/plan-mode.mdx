@@ -1,0 +1,66 @@
+---
+title: "Plan mode: the one Pi doesn't have"
+description: "Pi has no dedicated planning posture at all — the alternative is a PLAN.md file: persistent across sessions, fully observable, and lighter than the permission-prompt-heavy plan modes other tools ship. Build the habit, then wire it into the system prompt so it sticks."
+sidebar:
+  label: "Plan mode · PLAN.md"
+---
+
+import PlanModeStepper from '../../../../../components/interactive/PlanModeStepper.tsx';
+
+The task-discipline gate makes the agent finish one thing before starting the next. It says nothing about whether the *plan itself* — the shape of the three tasks, the order, what got left out — was ever any good. That's the job most tools hand to a dedicated planning mode: switch in, the agent researches read-only, drafts a plan, you approve it, then it executes. Here's what that posture looks like across the tools that have it:
+
+<PlanModeStepper client:visible />
+
+Pi has none of this. No toggle, no read-only posture the tool enforces for you, no plan artifact the system generates on your behalf. That's not an oversight — it's the same minimalism you've been running into all module. The stated reasoning: a dedicated plan mode tends to be heavier and more permission-prompt-heavy than it needs to be, and a plain `PLAN.md` file gets you the parts that actually matter — persistence across sessions, and something you and the agent can both read and edit directly — without the mode-switching machinery on top.
+
+## The habit: ask for the file, not the feature
+
+There's no API here to learn, which is the point. Before a multi-step change to `stash`, you just ask for the plan as an artifact:
+
+```text
+> Before you touch anything, write your plan for re-extracting all 300
+  saved URLs with the new rate-limited fetch worker to PLAN.md. Don't
+  start until I've reviewed it.
+
+  Wrote PLAN.md:
+
+  # Re-extraction: rate-limited fetch worker
+  1. Add exponential backoff + a per-domain rate limiter to worker.py
+  2. Dry-run against 5 URLs from the same domain, confirm no 429s
+  3. Batch-migrate the remaining 295 in groups of 20, sleep between groups
+  4. Re-run full-text index rebuild once extraction is clean
+
+  Ready for your go-ahead on the plan above.
+```
+
+Nothing about this required a mode switch. The agent used its ordinary `write` tool on an ordinary file, and stopped because you asked it to, not because a posture forced it to. That's a weaker guarantee than Claude Code's mode-enforced block on writes — an agent that ignores your instruction can still reach for `edit` mid-plan, and only the damage-control gate from the last lesson would actually stop it. What you get in exchange: the plan is a real file, in git, that survives a `/fork`, a compaction, or a session restart in a way a chat-only plan never does. Six modules from now you can still open `PLAN.md` and see exactly what you agreed to.
+
+## Wiring it in so it doesn't get lost
+
+The habit alone has one weak point: once the plan scrolls out of the visible context, the model can quietly stop consulting it. You've already seen the fix for that shape of problem — Module 5's `before_agent_start` hook, the one that lets an extension rewrite the system prompt on every turn. Point it at `PLAN.md` instead of a static string:
+
+```typescript
+// .pi/extensions/plan-injector.ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+export default function (pi: ExtensionAPI) {
+  pi.on("before_agent_start", async (event, ctx) => {
+    const planPath = join(ctx.cwd, "PLAN.md");
+    if (!existsSync(planPath)) return;
+
+    const plan = await readFile(planPath, "utf-8");
+    return {
+      systemPrompt: `${event.systemPrompt}\n\n<current-plan>\n${plan}\n</current-plan>`,
+    };
+  });
+}
+```
+
+Now every single turn — not just the one where you wrote the plan — the model is reminded what it agreed to, straight from the file on disk. Edit `PLAN.md` by hand mid-task (cross off a step, reorder two of them) and the very next turn picks up the change automatically, because the injection reads the file fresh every time rather than caching what it saw at session start.
+
+Combine this with the task-discipline gate from the last lesson and you've rebuilt most of what a dedicated plan mode buys you, minus the mode switch: the agent drafts a plan you can see and edit, commits to it in a durable file, gets reminded of it every turn, and can't skip ahead to task three before task two is marked done. The one thing you gave up is the enforced read-only research phase — on Pi, that's still a matter of you reading the plan before you say "go," not a wall the tool puts up for you. For the spec-level version of plan mode across tools, see [Foundations: Plan mode](/foundations/plan-mode/).
+
+Three gates down: what's allowed, how many things at once, and what the shape of the work is. One piece is still missing — you can't see any of this working without reading the transcript line by line. [Next: a live statusline](/course/pi/rebuild-the-defaults/statusline/).

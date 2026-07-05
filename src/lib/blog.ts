@@ -3,11 +3,18 @@ import { getCollection } from 'astro:content';
 // Number of posts shown per blog listing page.
 export const PAGE_SIZE = 10;
 
-// All blog posts (docs with a date), newest first.
+// True for docs entries that are publishable blog posts: dated AND not draft.
+// Content collections do NOT auto-exclude drafts — every route that lists or
+// renders posts must go through this predicate or drafts leak into prod.
+export function isPublishedPost(doc: { data: Record<string, unknown> }): boolean {
+  return 'date' in doc.data && Boolean(doc.data.date) && !doc.data.draft;
+}
+
+// All published blog posts, newest first.
 export async function getBlogPosts() {
   const allDocs = await getCollection('docs');
   return allDocs
-    .filter(doc => 'date' in doc.data && doc.data.date)
+    .filter(isPublishedPost)
     .sort((a, b) =>
       new Date((b.data as any).date).valueOf() - new Date((a.data as any).date).valueOf()
     );
