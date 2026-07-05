@@ -1,0 +1,97 @@
+---
+title: "Build a tool: re-extract a URL"
+description: "pi.registerTool gives the model something it can call, not just something you can. TypeBox schema, streamed progress, and the return shape that decides whether the model gets to comment on the result."
+sidebar:
+  label: "A tool · re-extract"
+---
+
+`/stash` finds the broken entries, but it stops at finding — you still have to fix each one by hand, and "fix" here means feeding the URL back through the same fetch-and-extract pipeline `stash`'s background worker already runs, in the hope the extractor does better on a second try (or does better once you've patched it). That's a job worth handing to the model directly: point it at a failed entry and let it decide whether re-extracting is the right move, run it, and tell you what happened. For that, the model needs a tool of its own — not a command only you can type.
+
+## Why a tool and not just "ask it to run a script"
+
+You could tell the agent "run `stash reextract <url>` via bash whenever I ask you to fix an entry," and it would probably work, most of the time. A registered tool buys you three things that instruction-following over `bash` doesn't: a **typed, validated schema** the model fills in instead of guessing shell-quoting right; a **description and usage guidance** that shows up in the model's own "available tools" list, so it reaches for this instead of reinventing the wheel with a raw curl; and a **structured return value** — separate from anything printed to a terminal — that the model can reason over precisely. Small, well-scoped tools like this one are also the case Pi's own docs point to as the alternative to reaching for an MCP server: you don't need a whole protocol and a running process for something this contained. More on that trade-off in the next lesson.
+
+## Registering it
+
+Schema definitions use [TypeBox](https://github.com/sinclairzx81/typebox), the same library pattern you'll recognize if you've written JSON Schema by hand before — and enum-shaped fields use Pi's own `StringEnum` helper instead of TypeBox's built-in enum, specifically because of a Gemini API compatibility quirk:
+
+```typescript
+// .pi/extensions/stash-tools.ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { StringEnum } from "@earendil-works/pi-ai";
+
+export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "reextract_url",
+    label: "Re-extract URL",
+    description:
+      "Re-runs stash's fetch-and-extract pipeline against an already-saved URL, replacing its stored article text.",
+    promptSnippet: "Use reextract_url to redo a saved entry whose extracted text looks wrong or empty.",
+    promptGuidelines: [
+      "Only call this on a URL that's already saved in stash — it doesn't save new URLs.",
+      "Default to mode \"readability\"; only use \"raw\" if readability mode has already failed once.",
+    ],
+    parameters: Type.Object({
+      url: Type.String({ description: "The saved URL to re-extract, exactly as stored." }),
+      mode: Type.Optional(
+        StringEnum(["readability", "raw"] as const)
+      ),
+    }),
+
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const mode = params.mode ?? "readability";
+
+      onUpdate?.({ content: [{ type: "text", text: `Fetching ${params.url}…` }] });
+      onUpdate?.({ content: [{ type: "text", text: `Extracting (${mode} mode)…` }] });
+
+      const result = await pi.exec(
+        "stash",
+        ["reextract", params.url, "--mode", mode],
+        { signal, timeout: 30_000 }
+      );
+
+      if (result.code !== 0) {
+        throw new Error(`reextract failed: ${result.stderr || "unknown error"}`);
+      }
+
+      const chars = result.stdout.trim();
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Re-extracted ${params.url} in ${mode} mode — stored ${chars} characters.`,
+          },
+        ],
+        details: { url: params.url, mode, chars },
+      };
+    },
+  });
+}
+```
+
+Reload, and the model can reach for it the moment a re-extract makes sense:
+
+```text
+> the paywalled-article entry has an empty body, can you fix it?
+
+  ● reextract_url  { url: "https://example.com/paywalled-article", mode: "readability" }
+    Fetching https://example.com/paywalled-article…
+    Extracting (readability mode)…
+    Re-extracted https://example.com/paywalled-article in readability
+    mode — stored 4,213 characters.
+
+  Fixed — readability mode picked up the article body this time.
+  If it comes back empty again, it's worth trying "raw" mode or
+  looking at whether the page is served differently to bots.
+```
+
+## The parts of the shape worth understanding
+
+- **`execute`'s signature is `(toolCallId, params, signal, onUpdate, ctx)`.** `params` arrives already validated against your TypeBox schema — you don't hand-check that `url` is a string. `signal` is the turn's `AbortSignal`, worth threading into anything that does I/O, exactly like `pi.exec` above does. `ctx` is the same kind of context object hooks receive, if you need it.
+- **`onUpdate` streams progress while the tool is still running.** For anything that takes more than an instant — and a real fetch-plus-extract against a slow site qualifies — this is what turns "the UI sits frozen for ten seconds" into "fetching… extracting…" scrolling by. It's optional; nothing breaks if you never call it, but a long tool with no `onUpdate` calls just looks stuck.
+- **Throwing inside `execute` marks the result `isError: true`.** You don't need to catch the error and hand-format a failure response — the `throw new Error(...)` above is the whole error path. The model sees it failed and reasons from there, the same way it would after a failed `bash` command.
+- **`details` is a second, separate payload from `content`.** `content` is what the model reads as the tool's result and can quote back to you in prose; `details` is structured data attached alongside it — useful for a custom `renderResult` to draw on, or for another part of your extension to read later without re-parsing text.
+- **We didn't set `terminate: true`.** That flag skips the follow-up LLM turn entirely when every tool call in a batch sets it — the right call for a tool whose result needs no interpretation (a fire-and-forget log write, say). Here you *want* the model to look at the result and tell you whether the fix actually worked, so the default (no `terminate`) is correct.
+
+You now have both halves of the chore automated — a command you run, a tool the model runs — and they're both live the moment you save the file and hit `/reload`. What you haven't touched yet is the machinery underneath both of them: the lifecycle events that let an extension see, and change, what's happening on every single turn, not just when a command or tool is explicitly invoked. [Next: hook into the loop](/course/pi/first-extension/hooks/).

@@ -20,42 +20,69 @@ Conventions (all widgets follow these):
 - Placement (foundations): the widget is the hook — it sits at the end of the
   first framing section, after one or two sentences of setup, not below the
   ToolTabs. Course placement stays at the story beat (see course rule below).
+- Script-driven terminal scenes reuse the `terminal-replay.tsx` engine
+  (+ `terminal-replay.css`): a scripted CLI session auto-plays in a fake
+  terminal beside a live state panel (blocks + annotation, plus an optional
+  capacity meter — in the panel or as a full-width top strip with a legend
+  row), optionally pausing at one decision point that branches on the
+  reader's choice. Block values and the meter are per-script optional, and
+  scripts can define slot colors beyond the built-in a–f — so scenes that
+  aren't about context length (or need a different palette) need no engine
+  changes. Once playback pauses the transcript is inspectable both ways —
+  hover/tap/focus a line to highlight the blocks its beat produced (and recall
+  that beat's note), or a block to highlight its causing lines — derived from
+  the beat structure, so scenes get it for free. A new scene is just a
+  `<scene>-data.ts` exporting a `TrScript` plus a thin named wrapper component
+  (what lessons import and this register lists) — no new interaction code.
+  Scenes so far: `SessionXray` (top meter, token story), `ApprovalLedger`
+  (no meter, custom slot palette — the non-token proof case).
 
 ## Fact-bound — drift when tool docs change; review monthly
 
 | Widget | Page | Source of truth | Last verified |
 |---|---|---|---|
 | `RulesResolver` | `foundations/rules.mdx` | `tool-instructions/<tool>/rules.mdx` | 2026-07-02 |
-| `ConfigExplorer` | `foundations/configuration.mdx`, `pages/index.astro` (homepage) | `tool-instructions/<tool>/*.mdx` (config surfaces) | 2026-07-02 |
+| `ConfigExplorer` | `foundations/configuration.mdx`, `pages/index.astro` (homepage), `course/pi/models-config/config-files.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/*.mdx` (config surfaces) | 2026-07-04 |
 | `HookTimeline` | `foundations/hooks.mdx` | `tool-instructions/<tool>/hooks.mdx` | 2026-07-02 |
 | `PermissionSim` | `foundations/permissions.mdx` | `tool-instructions/<tool>/permissions.mdx` | 2026-07-02 |
-| `PlanModeStepper` | `foundations/plan-mode.mdx` | `tool-instructions/<tool>/plan-mode.mdx` | 2026-07-02 |
+| `PlanModeStepper` | `foundations/plan-mode.mdx`, `course/pi/rebuild-the-defaults/plan-mode.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/plan-mode.mdx` | 2026-07-04 |
 | `HeadlessBuilder` | `foundations/headless.mdx` | `tool-instructions/<tool>/headless.mdx` | 2026-07-02 |
-| `SkillAnatomy` | `foundations/skills.mdx` | `tool-instructions/<tool>/skills.mdx` + cross-tool table in `foundations/skills.mdx` | 2026-07-02 |
+| `SkillAnatomy` | `foundations/skills.mdx`, `course/pi/skills-packages/skills.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/skills.mdx` + cross-tool table in `foundations/skills.mdx` | 2026-07-04 |
 | `PrimitivePicker` | `foundations/index.mdx`, `pages/index.astro` (homepage) | the "Why this and not…" tables across foundations chapters | 2026-07-02 |
 | `ModelMatcher` | `foundations/model-selection.mdx` | `tool-instructions/<tool>/model-selection.mdx` | 2026-07-02 |
 | `CommandExpander` | `foundations/slash-commands.mdx` | `tool-instructions/<tool>/slash-commands.mdx` | 2026-07-02 |
-| `PluginPacker` | `foundations/plugins.mdx` | `tool-instructions/<tool>/plugins.mdx` | 2026-07-02 |
+| `PluginPacker` | `foundations/plugins.mdx`, `course/pi/skills-packages/packages.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/plugins.mdx` | 2026-07-04 |
 
 ## Evergreen — concept-only, no vendor facts
 
 | Widget | Pages | Encodes |
 |---|---|---|
-| `LoopStepper` | `foundations/how-agents-work.mdx`, `pages/index.astro` (homepage), `course/claude-code/getting-started/first-change.mdx`, `course/codex/getting-started/the-loop.mdx`, `course/opencode/getting-started/the-loop.mdx`, `course/cursor/getting-started/the-loop/index.mdx` | the agentic loop (decide → tool → result), illustrative bug-fix trace |
-| `ContextSimulator` | `foundations/context-management.mdx`, `course/claude-code/sessions-context/inspect.mdx`, `course/codex/sessions-context/status.mdx` | a long session against a 200k window; illustrative token magnitudes |
+| `LoopStepper` | `foundations/how-agents-work.mdx`, `pages/index.astro` (homepage), `course/claude-code/getting-started/first-change.mdx`, `course/codex/getting-started/the-loop.mdx`, `course/opencode/getting-started/the-loop.mdx`, `course/cursor/getting-started/the-loop/index.mdx`, `course/pi/getting-started/the-loop.mdx` | the agentic loop (decide → tool → result), illustrative bug-fix trace |
+| `ContextSimulator` | `foundations/context-management.mdx`, `course/claude-code/sessions-context/inspect.mdx`, `course/codex/sessions-context/status.mdx`, `course/pi/the-core/see-the-context.mdx`, `course/pi/context/compaction.mdx` | a long session against a 200k window; illustrative token magnitudes |
 | `McpCostMeter` | `foundations/mcp-servers.mdx`, `course/claude-code/extending/mcp-connect.mdx`, `course/codex/extending/mcp-connect.mdx`, `course/copilot/extending/connect.mdx`, `course/opencode/extending/mcp-servers.mdx`, `course/cursor/extending/index.mdx` | context cost of mounted servers; order-of-magnitude schema sizes |
-| `SubagentFanout` | `foundations/subagents.mdx`, `course/claude-code/subagents/fan-out.mdx`, `course/codex/subagents/fan-out.mdx`, `course/opencode/subagents/fan-out.mdx` | inline vs delegated fan-out; window/overhead consistent with `context-sim-data.ts` |
+| `SubagentFanout` | `foundations/subagents.mdx`, `course/claude-code/subagents/fan-out.mdx`, `course/codex/subagents/fan-out.mdx`, `course/opencode/subagents/fan-out.mdx`, `course/pi/subagents/chains-and-fanout.mdx`, `course/pi/teams/orchestration.mdx` | inline vs delegated fan-out; window/overhead consistent with `context-sim-data.ts` |
 | `RuleEconomy` | `course/claude-code/rules-memory/good-rules.mdx`, `course/codex/rules/good-rules.mdx`, `course/copilot/rules/good-rules.mdx`, `course/opencode/rules-agents-md/first-agents-md.mdx`, `course/cursor/rules/index.mdx` | a rule is context paid once vs re-taught every session; toggle candidate lines, ledger decides which earn their slot |
-| `AutonomyDial` | `course/claude-code/permissions-modes/modes-ladder.mdx`, `course/codex/approvals-sandbox/two-axis.mdx`, `course/copilot/permissions/match-to-stakes.mdx`, `course/opencode/permissions/agent-as-policy.mdx`, `course/cursor/permissions/index.mdx` | match autonomy to stakes: reversibility × blast radius picks a rung on a generic trust ladder; each lesson's prose maps rungs to the tool's modes |
+| `AutonomyDial` | `course/claude-code/permissions-modes/modes-ladder.mdx`, `course/codex/approvals-sandbox/two-axis.mdx`, `course/copilot/permissions/match-to-stakes.mdx`, `course/opencode/permissions/agent-as-policy.mdx`, `course/cursor/permissions/index.mdx`, `course/pi/rebuild-the-defaults/permissions.mdx` | match autonomy to stakes: reversibility × blast radius picks a rung on a generic trust ladder; each lesson's prose maps rungs to the tool's modes |
 | `SkillEconomy` | `course/claude-code/skills/vs.mdx`, `course/codex/skills/vs.mdx`, `course/copilot/prompt-files/vs-rules.mdx`, `course/opencode/skills/first-skill.mdx` | where a piece of knowledge lives decides when its tokens are paid: rule = full size every session, skill = stub always + body on invocation, prompt = re-paid every time; sequel to `RuleEconomy` |
-| `ModelEconomy` | `course/claude-code/models-thinking/cost.mdx`, `course/codex/models-effort/cost-aware.mdx`, `course/copilot/models/credits.mdx`, `course/cursor/models/index.mdx`, `course/opencode/providers-models/per-agent-model.mdx` | model × effort as a per-task spend: matched corners on the diagonal, overpay leak on pinned-expensive, redo tax makes underpowering the hard task the costlier mistake; illustrative 5×/3× multipliers |
-| `GapDemo` | `pages/index.astro` (homepage; custom pages need the `styles/widget-standalone.css` token bridge) | the site thesis as a live trace: same task run bare vs with context mounted (rules / skills / MCP chips); auto-plays bare → flips to ctx on first view, then the toggle replays either side; illustrative rate-limit scenario |
-| `GuaranteeLadder` | `course/claude-code/extending/hooks-vs.mdx`, `course/codex/extending/hooks-vs.mdx`, `course/opencode/extending/plugins-hooks.mdx` | the enforcement ladder: rule informs (probabilistic, window-bound), permission forbids a named class (harness wall), hook enforces a condition on the real action (code on the rail); situation clock (watching / compacted / unattended) shows rule-backed guarantees decay while enforced ones hold |
+| `ModelEconomy` | `course/claude-code/models-thinking/cost.mdx`, `course/codex/models-effort/cost-aware.mdx`, `course/copilot/models/credits.mdx`, `course/cursor/models/index.mdx`, `course/opencode/providers-models/per-agent-model.mdx`, `course/pi/models-config/routing.mdx` | model × effort as a per-task spend: matched corners on the diagonal, overpay leak on pinned-expensive, redo tax makes underpowering the hard task the costlier mistake; illustrative 5×/3× multipliers |
+| `GapDemo` | `pages/index.astro` (homepage; custom pages need the `styles/widget-standalone.css` token bridge), `course/pi/getting-started/index.mdx` | the site thesis as a live trace: same task run bare vs with context mounted (rules / skills / MCP chips); auto-plays bare → flips to ctx on first view, then the toggle replays either side; illustrative rate-limit scenario |
+| `VerifierLoop` | `course/claude-code/automation/loops.mdx`, `course/codex/automation/ci.mdx`, `course/copilot/automation/draft-prs.mdx`, `course/cursor/cli-headless-ci/index.mdx`, `course/opencode/share-and-headless/server-and-ci.mdx`, `course/pi/subagents/the-verifier.mdx` | an unattended run's "done" is a claim until a wired check agrees: 9-task overnight batch, toggle build/types/unit/e2e verifiers, each converts a class of silent failure into a caught one; residual misread-ticket flaw no machine check catches; illustrative flaw rate |
+| `SessionXray` | `course/claude-code/sessions-context/compact.mdx`, `course/codex/sessions-context/compact.mdx`, `course/opencode/the-tui/undo-redo-compact.mdx`, `course/cursor/context/index.mdx`, `course/pi/context/sessions.mdx`, `foundations/context-management.mdx`, `blog/the-relay-not-the-window.mdx` (first widget on the blog surface) | the reset decision as a scripted terminal replay with a live window x-ray (first scene on the `terminal-replay.tsx` engine): a session fills to 75%, playback pauses, reader picks keep-going / compact / clear; keep-going ends in an unsteered mid-task auto-compact, compact shows a steered lossy summary, clear shows only on-disk blocks (rules) surviving; window size + magnitudes consistent with `context-sim-data.ts`; sequel to `ContextSimulator` |
+| `ApprovalLedger` | `course/claude-code/permissions-modes/rules.mdx`, `course/copilot/permissions/the-checkpoint.mdx` | the approval prompt as a policy edit, not a yes/no (second scene on the `terminal-replay.tsx` engine; first non-meter scene, scene-defined slot colors): routine prompts train the yes reflex, `npm test` earns a narrow standing grant, then a destructive command arrives on the same reflex — reader picks allow-once / always-allow-wildcard / deny-and-redirect; once expires with the run, the wildcard outlives the moment, deny plus redirection is the cheapest correction; panel x-rays the standing-grants ledger; generic commands, lessons map to each tool's spelling |
+| `GuaranteeLadder` | `course/claude-code/extending/hooks-vs.mdx`, `course/codex/extending/hooks-vs.mdx`, `course/opencode/extending/plugins-hooks.mdx`, `course/pi/first-extension/hooks.mdx` | the enforcement ladder: rule informs (probabilistic, window-bound), permission forbids a named class (harness wall), hook enforces a condition on the real action (code on the rail); situation clock (watching / compacted / unattended) shows rule-backed guarantees decay while enforced ones hold |
 
-Course rule: only **evergreen** widgets embed in course lessons — the five-tool
-comparative widgets would break the single-tool book narrative. Embed at the
+Course rule: prefer **evergreen** widgets in course lessons — the five-tool
+comparative widgets can break the single-tool book narrative. Embed at the
 story beat where the lesson hits the concept, with a prose bridge, never as a
 templated section.
+
+**Pi exception (2026-07-04).** The Pi course embeds a few fact-bound five-tool
+comparators (`ConfigExplorer`, `PlanModeStepper`, `SkillAnatomy`, `PluginPacker`)
+where the lesson explicitly frames them as *cross-tool contrast* — "here's how
+the other tools do it, and Pi does less" — because Pi is a minimal agent whose
+whole story is what it omits, and these widgets carry no Pi tab. They stay in the
+fact-bound review cadence above. If any of them gains a genuine Pi dataset later,
+promote the prose from contrast to inclusion.
 
 ## Adding a widget
 

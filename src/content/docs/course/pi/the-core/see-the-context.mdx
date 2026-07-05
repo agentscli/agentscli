@@ -1,0 +1,42 @@
+---
+title: See the context Pi is actually working from
+description: "Not a summary of the context — the context itself. Tokens, cost, the raw session log, and the literal system prompt as sent. This is the feature that makes Pi worth learning specifically."
+sidebar:
+  label: "See the context · Pi's signature"
+---
+
+import ContextSimulator from '../../../../../components/interactive/ContextSimulator.tsx';
+
+Here's the honest version of what happened during the last two lessons: you watched tool calls scroll past and took it on faith that they represented everything going on. Most agents ask you to keep taking that on faith — the context window is theirs, not yours, and what you get to see is whatever summary view they've decided to expose. Pi's bet is the opposite one: nothing about the loop's actual state is designed to stay hidden from you. This lesson is about collecting on that bet.
+
+## What's already on screen, all the time
+
+Look down at the footer while a session is running. It's not decorative — it's a live readout of exactly what the loop is spending:
+
+```text
+stash · main · ↑ 4,210  ↓ 1,840  R 12,400  W 0 · $0.09 · ctx 31% · claude-sonnet-4-5
+```
+
+Input tokens, output tokens, cache-read and cache-write tokens, running cost, context-window percentage used, and the exact model serving the session — every one of those numbers updates as the loop runs, not just at the end. Compare that to an agent where "how much of the window is left" is something you infer from vibes (the model getting vague, re-reading a file it already read) rather than read off a number. That inference-from-vibes failure mode is common enough elsewhere that it's worth naming directly: with Pi, you don't have to diagnose a feeling. You read the number.
+
+## Nothing gets thrown away — it gets written to disk
+
+Every session persists to a plain JSONL file on disk, and it holds the *full*, uncompacted history — every message, every tool call, every result — not a rolling window that quietly drops what doesn't fit. When a session eventually gets compacted (a full lesson of its own, coming next chapter), that only changes what gets sent to the model on the next turn. The complete record on disk doesn't shrink, and `/tree` lets you navigate back through it after the fact. If you ever want to know exactly what a session actually did three hours ago, the answer isn't "trust the running summary" — it's "go read the log; it's right there."
+
+## The system prompt isn't a black box either
+
+This is the one that matters most. Pi's `ExtensionAPI` exposes `ctx.getSystemPrompt()` and `ctx.getContextUsage()` directly — a few lines of TypeScript in an extension (you'll write your first one in a later chapter) get you the literal, fully-assembled system prompt as it was actually sent for that turn, and the exact token count backing that context-percentage number in the footer. Not a description of the prompt. Not "here's roughly what we tell the model." The actual string.
+
+Why that specific capability is worth dwelling on: it's the only reliable way to catch a prompt quietly growing on you. Skills, project context files, and per-turn extension injections all get spliced into the system prompt at runtime — and every one of them is invisible *until you actually look at the rendered result*. An agent that only shows you a static, documented version of its system prompt can't tell you that a skill you installed last week added another 400 tokens to every single turn. One that hands you the real, as-sent string can. That gap — between "here's our documented prompt" and "here's the prompt this exact turn actually used" — is the whole reason this level of access is worth having, not a nice-to-have on top of a summary view.
+
+It's also why the ecosystem around Pi leans so heavily into building on top of these events. People have wired the full event stream — every tool call with its exact arguments, every assistant message, thinking blocks, tokens-per-second, cost — into standalone dashboards: side-by-side "swim lanes" for comparing two runs, a start-of-session view showing the literal prompt as sent for that boot, cost tracking that doesn't stop at the footer's rounded number. None of that ships in the box. What ships in the box is the thing that makes it *possible to build* — an event surface with nothing withheld from it.
+
+## Rehearse the discipline
+
+The habit worth building is: before you assume the window is "getting full" or "acting weird," look. Step through a simulated session below and watch what actually occupies a context window as work happens — fixed overhead that's spent before you type a word, a careless full-file read that eats a double-digit percentage in one call, and what a compaction keeps versus discards. Click any segment to see what it actually is, rather than guessing from the bar's total:
+
+<ContextSimulator client:visible />
+
+The specific numbers here are illustrative, not `stash`'s actual session — the point is the reflex: a full context window is never a mystery you have to diagnose from symptoms. It's a number, a log on disk, and a string you can print. Every one of those is one call away.
+
+You now have direct access to *what's* in the window at any moment. The last piece is *why* it starts out so small in the first place — Pi's default system prompt is under a thousand tokens, and that's not an oversight. [Next: read the tiny prompt](/course/pi/the-core/the-tiny-prompt/).

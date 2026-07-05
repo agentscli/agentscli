@@ -1,0 +1,580 @@
+/* TerminalReplay engine — scripted terminal + live state panel, shared by
+   every script-driven-terminal scene. Theme-aware via Starlight tokens.
+   Slot colors a–f match context-simulator.css categories in order:
+   a=overhead gray, b=rules purple, c=chat blue, d=files amber, e=tools teal,
+   f=summary green. */
+
+.tr-root {
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 10px;
+  background: var(--sl-color-bg);
+  padding: 14px 16px 12px;
+  margin: 1.5rem 0;
+  font-family: var(--sl-font);
+
+  --tr-warn: #b45309;
+}
+
+[data-theme='dark'] .tr-root {
+  --tr-warn: #fbbf24;
+}
+
+.tr-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.tr-lead {
+  flex: 1;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--sl-color-gray-2);
+  margin: 0;
+}
+
+/* Widget-level reset — prominent, pinned top-right of the card */
+.tr-restart {
+  appearance: none;
+  flex: none;
+  border: 1px solid var(--sl-color-accent);
+  background: var(--sl-color-accent-low);
+  font-family: var(--sl-font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--sl-color-text-accent);
+  border-radius: 999px;
+  padding: 3px 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  animation: tr-in 0.3s ease backwards;
+}
+
+.tr-restart:hover {
+  background: var(--ac-accent-soft);
+}
+
+.tr-restart:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+}
+
+/* Top meter — the capacity strip generalized to a full-width bar above the
+   stage (script.meter: 'top'), with a legend row naming the slots */
+.tr-topmeter {
+  margin-bottom: 10px;
+}
+
+.tr-topmeter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tr-topmeter-bar .tr-meter {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.tr-topmeter .tr-panel-total {
+  white-space: nowrap;
+}
+
+.tr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  margin-top: 6px;
+  font-size: 0.66rem;
+  color: var(--sl-color-gray-3);
+}
+
+.tr-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tr-legend-item .tr-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+/* Stage: terminal | panel */
+.tr-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* Terminal */
+.tr-term {
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 8px;
+  background: var(--ac-code-frame-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tr-term-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--sl-color-hairline);
+}
+
+.tr-term-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tr-term-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sl-color-gray-5);
+}
+
+.tr-term-title {
+  font-family: var(--sl-font-mono);
+  font-size: 0.68rem;
+  color: var(--sl-color-gray-3);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tr-skip {
+  appearance: none;
+  border: 1px solid var(--sl-color-accent);
+  background: var(--sl-color-accent-low);
+  font-family: var(--sl-font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--sl-color-text-accent);
+  border-radius: 999px;
+  padding: 1px 10px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.tr-skip:hover {
+  background: var(--ac-accent-soft);
+}
+
+.tr-skip:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+}
+
+.tr-term-body {
+  font-family: var(--sl-font-mono);
+  font-size: 0.73rem;
+  line-height: 1.55;
+  padding: 10px 12px;
+  height: 318px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tr-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 4px;
+  border-left: 2px solid transparent;
+  padding-left: 6px;
+  /* backwards, not both: a lingering forwards-fill would pin opacity:1 and
+     defeat the .tr-dim inspect state */
+  animation: tr-in 0.3s ease backwards;
+}
+
+/* Inspect mode — lines whose beat maps to panel state */
+.tr-line--link {
+  cursor: pointer;
+  border-left-color: color-mix(in srgb, var(--sl-color-accent) 30%, transparent);
+}
+
+.tr-line--link:hover,
+.tr-line--link:focus-visible {
+  background: var(--ac-accent-soft);
+  border-left-color: var(--sl-color-accent);
+  outline: none;
+}
+
+.tr-line.tr-hl {
+  background: var(--ac-accent-soft);
+  border-left-color: var(--sl-color-accent);
+}
+
+.tr-dim {
+  opacity: 0.4;
+}
+
+.tr-line,
+.tr-block {
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+
+.tr-line--user {
+  color: var(--sl-color-text-accent);
+  font-weight: 600;
+}
+
+.tr-line--agent {
+  color: var(--sl-color-text);
+}
+
+.tr-line--tool {
+  color: var(--sl-color-gray-3);
+  padding-left: 14px;
+}
+
+.tr-line--sys {
+  color: var(--sl-color-gray-3);
+  font-style: italic;
+}
+
+.tr-line--warn {
+  color: var(--tr-warn);
+  font-weight: 600;
+}
+
+.tr-caret {
+  color: var(--sl-color-accent);
+  animation: tr-blink 1s steps(1) infinite;
+}
+
+/* State panel */
+.tr-panel {
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tr-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.tr-panel-title {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sl-color-gray-3);
+}
+
+.tr-panel-total {
+  font-family: var(--sl-font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--sl-color-text);
+}
+
+.tr-meter {
+  display: flex;
+  height: 13px;
+  border-radius: 4px;
+  background: var(--ac-surface);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.tr-seg {
+  display: block;
+  transition: width 0.4s ease;
+}
+
+.tr-blocks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+}
+
+.tr-block {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  padding: 1.5px 5px;
+  margin: 0 -5px;
+  border-radius: 4px;
+  color: var(--sl-color-gray-2);
+  animation: tr-in 0.3s ease backwards;
+}
+
+.tr-block--link {
+  cursor: pointer;
+}
+
+.tr-block--link:hover,
+.tr-block--link:focus-visible {
+  background: var(--ac-accent-soft);
+  outline: none;
+}
+
+.tr-block.tr-hl {
+  background: var(--ac-accent-soft);
+}
+
+.tr-block.tr-hl .tr-block-label {
+  color: var(--sl-color-text);
+}
+
+.tr-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  flex: none;
+  align-self: center;
+}
+
+.tr-block-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.tr-block-value {
+  font-family: var(--sl-font-mono);
+  font-size: 0.68rem;
+  color: var(--sl-color-gray-3);
+}
+
+.tr-note {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--sl-color-text);
+  border-top: 1px solid var(--sl-color-hairline);
+  padding-top: 7px;
+  margin: 8px 0 0;
+  min-height: 3.4em;
+}
+
+/* Slot colors — match context-simulator.css */
+.tr-slot-a {
+  background: #8b93a7;
+}
+.tr-slot-b {
+  background: #7c69f7;
+}
+.tr-slot-c {
+  background: #4a7db5;
+}
+.tr-slot-d {
+  background: #cf9744;
+}
+.tr-slot-e {
+  background: #4a9d8e;
+}
+.tr-slot-f {
+  background: #5aa564;
+}
+
+[data-theme='dark'] .tr-slot-a {
+  background: #5c6478;
+}
+[data-theme='dark'] .tr-slot-c {
+  background: #5d8fc4;
+}
+[data-theme='dark'] .tr-slot-d {
+  background: #d9a552;
+}
+[data-theme='dark'] .tr-slot-e {
+  background: #58b0a0;
+}
+[data-theme='dark'] .tr-slot-f {
+  background: #69b573;
+}
+
+/* Scene-defined slots — colors arrive as CSS vars from script.slotColors */
+.tr-slot-custom {
+  background: var(--tr-slot);
+}
+
+[data-theme='dark'] .tr-slot-custom {
+  background: var(--tr-slot-dark, var(--tr-slot));
+}
+
+/* Inspect hint */
+.tr-hint {
+  font-size: 0.68rem;
+  font-style: italic;
+  color: var(--sl-color-gray-3);
+  text-align: center;
+  margin: -4px 0 10px;
+  animation: tr-in 0.3s ease both;
+}
+
+/* Decision bar */
+.tr-decision {
+  border: 1px solid var(--sl-color-accent);
+  border-radius: 7px;
+  background: var(--ac-accent-soft);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  animation: tr-in 0.3s ease both;
+}
+
+.tr-decision-prompt {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--sl-color-text);
+  margin: 0 0 8px;
+}
+
+.tr-decision-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tr-btn {
+  appearance: none;
+  border: 1px solid var(--sl-color-accent);
+  background: var(--sl-color-accent-low);
+  font-family: var(--sl-font-mono);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--sl-color-text-accent);
+  border-radius: 999px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tr-btn:hover {
+  background: var(--ac-accent-soft);
+}
+
+.tr-btn:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+}
+
+.tr-btn--ghost {
+  border-color: var(--sl-color-hairline);
+  background: transparent;
+  color: var(--sl-color-gray-2);
+  font-weight: 500;
+}
+
+.tr-btn--ghost:hover {
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-text-accent);
+  background: transparent;
+}
+
+/* Verdict */
+.tr-verdict {
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 7px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  animation: tr-in 0.3s ease both;
+}
+
+.tr-verdict--good {
+  border-left: 3px solid var(--sl-color-accent);
+  background: var(--ac-accent-soft);
+}
+
+.tr-verdict--bad {
+  border-left: 3px solid var(--tr-warn);
+  background: color-mix(in srgb, var(--tr-warn) 7%, transparent);
+}
+
+.tr-verdict-text {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--sl-color-text);
+  margin: 0 0 8px;
+}
+
+.tr-replays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tr-footnote {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--sl-color-gray-3);
+  margin: 0;
+}
+
+.tr-root code {
+  font-family: var(--sl-font-mono);
+  font-size: 0.92em;
+  background: var(--sl-color-bg-inline-code);
+  color: var(--ac-inline-code-text);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+@keyframes tr-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tr-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .tr-stage {
+    grid-template-columns: 1fr;
+  }
+
+  .tr-term-body {
+    height: 240px;
+  }
+
+  .tr-note {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-line,
+  .tr-block,
+  .tr-decision,
+  .tr-verdict,
+  .tr-hint {
+    animation: none;
+  }
+
+  .tr-line,
+  .tr-block {
+    transition: none;
+  }
+
+  .tr-caret {
+    animation: none;
+  }
+
+  .tr-seg {
+    transition: none;
+  }
+}

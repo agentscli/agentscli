@@ -1,0 +1,60 @@
+---
+title: ".pi/SYSTEM.md and APPEND_SYSTEM.md — write stash's conventions once"
+description: "Stop re-explaining the same three stash rules in every session and every fork. Write them into a file Pi reads before you type a word — APPEND_SYSTEM.md to add to the default prompt, SYSTEM.md to replace it outright."
+sidebar:
+  label: "SYSTEM.md · write it down once"
+---
+
+You've resumed sessions, forked a design decision, and watched a long refactor get compacted mid-stream — and in every one of those, you've been typing some version of the same three sentences. Don't touch `.env` directly; it holds live API keys. Use `stash migrate`, never raw SQL, when the schema changes. The extractor's tests live in `tests/extractor/`, and the heuristics are fragile enough that you read `heuristics.py` before touching it, every time.
+
+Every fresh session forgets that. Every fork inherits it only if the fork happens to start after you already said it out loud. Compaction might even summarize it *away* eventually, because to a summarizer it can look like incidental chatter instead of a standing rule. You've been re-explaining `stash` to Pi for a week. There's a simpler move: write it down once, in a file Pi loads before it processes your first message — and never explain it again.
+
+## Where the default prompt already reads project context
+
+Recall from last chapter that Pi's default system prompt is a template assembled fresh every run, not a static string — and one of the steps in that assembly is a `<project_context>` block, filled in from context files Pi discovers by walking the directory tree: the global `~/.pi/agent/AGENTS.md`, then each parent directory from your project root down to the current directory, closest file winning where they overlap — the same layering logic as `.gitignore`. Drop an `AGENTS.md` in `stash`'s root and it's injected into every session automatically, on top of whatever else the default prompt already does. That's already a form of writing it down once, and it's worth knowing it exists (it's what the site's [Rules chapter](/foundations/rules/) covers in general, spec-level terms).
+
+But `AGENTS.md` is *one voice among several* in the assembled prompt — helpful context, not necessarily something the model treats as non-negotiable. For rules you want stated with more force — the kind you'd be genuinely unhappy to see quietly ignored — Pi gives you a sharper tool: the system prompt itself.
+
+## APPEND_SYSTEM.md: add to the default, don't replace it
+
+Drop a file at `.pi/APPEND_SYSTEM.md` in the project root (or `~/.pi/agent/APPEND_SYSTEM.md` for every project) and its contents get appended to whatever system prompt is in effect — the default template stays intact, plus your addition on top:
+
+```markdown title=".pi/APPEND_SYSTEM.md"
+## stash conventions
+
+- Never edit `.env` directly. It holds live API keys for the fetch worker.
+- Schema changes go through `stash migrate`. Never write raw SQL against the
+  SQLite file — the migration tool also updates the FTS5 index alongside it.
+- The readability extractor is fragile. Read `extractor/heuristics.py` before
+  changing it, and run `pytest -k extractor` before calling anything done.
+- The fetch worker has no rate-limiting or retry logic yet — treat any bulk
+  re-fetch job as something to run slowly and watch, not fire-and-forget.
+```
+
+This is the append option precisely because it's additive and low-risk: you keep everything Pi's default prompt already does well — the tool guidelines, the pointer to its own docs, the lazy-loaded skills metadata — and you're only ever adding to it, never silently losing default behavior you didn't mean to touch.
+
+Start a brand-new session tomorrow, on a task that has nothing to do with today's, and watch it already know:
+
+```text
+$ pi -c
+> can you rebuild the search index?
+
+  Before I do — that goes through stash migrate, not raw SQL, so the FTS5
+  index stays in sync. Want me to run that instead?
+```
+
+Nobody said a word about migrations in this session. The rule was already there when the session started.
+
+## SYSTEM.md: when you want a different agent, not an addition
+
+There's a second file, `.pi/SYSTEM.md` (or `~/.pi/agent/SYSTEM.md` globally), and it does something more drastic: it **replaces** the default prompt template wholesale, rather than adding to it. Context files and `APPEND_SYSTEM.md` still layer on top of whatever `SYSTEM.md` produces — but the built-in identity line, tool guidelines, and doc pointers are gone unless you write them back in yourself.
+
+That's the right tool when you want a fundamentally different agent, not a stricter version of the same one. A `stash`-review agent that only ever reads and never writes — reporting on whether a PR touches `.env` or skips the migration tool, say — is a `SYSTEM.md` job: replace the whole prompt with a narrower one that doesn't offer write/edit at all. For the day-to-day conventions you carry across every real session, `APPEND_SYSTEM.md` is the one you'll reach for. Keep the distinction straight: append to extend the same agent, replace to build a different one.
+
+Both are also available as one-off CLI flags — `--system-prompt <text>` and `--append-system-prompt <text>` — for a single invocation without touching a file at all, which is exactly how a scripted or child `pi` process gets shaped later in this course.
+
+## What you've actually built
+
+Three files deep into `stash`, you no longer re-explain anything that matters. Sessions resume the conversation; `AGENTS.md` and `APPEND_SYSTEM.md` carry the rules that have to survive *every* conversation, resumed, forked, or brand new. That's the whole thesis of this chapter in one sentence: the context window is a resource you spend and reclaim turn to turn, but the handful of things that are always true about `stash` don't belong in that spend at all — they belong on disk, read once at the start of every session, for free.
+
+Your rules are captured. The next problem is what to spend them *on* — because right now every one of these sessions, cheap grunt work included, is running through the same expensive model. [Next: route the right model to the right job](/course/pi/models-config/).

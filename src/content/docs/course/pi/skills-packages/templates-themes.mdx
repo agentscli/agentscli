@@ -1,0 +1,66 @@
+---
+title: "Prompt templates and themes: the lighter no-code layer"
+description: "A prompt template is a markdown shortcut for the thing you keep typing out by hand; a theme is a JSON file for the terminal you stare at all day. Neither is a Skill, and knowing why saves you from reaching for the wrong one."
+sidebar:
+  label: "Templates & themes"
+---
+
+The Skill you just wrote fires on its own when a request matches its description — that's the point of it, the whole reason it's worth the frontmatter. Not everything you'd like to save typing on deserves that. Some things are just a prompt you find yourself retyping verbatim, with one or two words swapped each time, and for those Pi has something simpler than a Skill: a **prompt template**, invoked by hand, no auto-detection, no `description` field doing pattern-matching.
+
+## Prompt templates: a markdown snippet with blanks
+
+A prompt template is a plain markdown file. No auto-invocation — you type the slash command yourself, every time. Say you keep asking Pi to triage a batch of failed `stash` fetches the same way: show the URL, the error, and a guess at whether it's a rate-limit problem or a genuinely broken extractor. Instead of typing that framing out again:
+
+```text
+// .pi/prompts/triage-fetch.md
+---
+description: Triage a batch of failed stash fetch-worker jobs
+argument-hint: "[since]"
+---
+
+Look at stash's fetch-worker failures ${1:-in the last 24 hours}. For
+each failed URL, report: the error message, whether it looks like a
+rate limit or a real extraction failure, and one recommended next step
+(retry, skip, or needs a new source adapter).
+```
+
+Frontmatter here is optional and thinner than a Skill's: `description` (if you skip it, Pi just uses the file's first non-empty line) and `argument-hint`, which is what shows up in autocomplete — angle brackets for a required argument, square brackets for optional ones. The body is where the argument syntax does its work:
+
+| Syntax | Meaning |
+|---|---|
+| `$1`, `$2`, … | positional arguments, in the order you typed them |
+| `$@` or `$ARGUMENTS` | every argument you passed, joined into one string |
+| `${1:-default}` | falls back to `default` if that argument wasn't supplied |
+| `${@:N}` / `${@:N:L}` | a slice of the arguments starting at position `N`, optionally limited to length `L` |
+
+Type `/triage-fetch` and `${1:-in the last 24 hours}` falls back to its default; type `/triage-fetch "since last Tuesday"` and `$1` becomes that string instead. Invocation is just the filename without its extension — `/triage-fetch`, same pattern as any other slash command you've already used.
+
+Templates live in the same kind of tiered locations as everything else in Pi: `~/.pi/agent/prompts/*.md` globally, `.pi/prompts/*.md` per project (gated behind project trust, same as extensions), inside an installed package's `prompts/` directory, listed in a `settings.json` `prompts` array, or handed in directly with a repeatable `--prompt-template <path>` flag.
+
+The distinction that matters: a Skill's `description` is read by the *model*, deciding on your behalf whether to pull the whole thing in. A prompt template's `description` is read by *you*, in autocomplete, deciding whether to type the slash command. If you find yourself wanting a template to fire automatically when a situation arises rather than when you type it — that's your sign it should have been a Skill all along.
+
+## Themes: the terminal you're staring at for eight hours
+
+Unrelated to either of the above, but worth five minutes here because it's the same "just a file" shape: a Pi theme is a JSON file describing the TUI's color palette — not just an accent color, a full token set covering syntax highlighting, message backgrounds, tool-output states, even a distinct border color per thinking-effort level.
+
+```json
+// .pi/themes/stash-dark.json
+{
+  // schema URL, see Pi's theme docs for the current location
+  "name": "stash-dark",
+  "vars": {
+    "ink": "#1a1a1a",
+    "amber": "#e0a458"
+  },
+  "colors": {
+    "accent": "amber",
+    "background": "ink"
+  }
+}
+```
+
+`name` can't contain a forward slash. The `vars` block is a small convenience — define a color once, reference it by name from `colors` instead of repeating a hex string across the 51 tokens the format actually requires. Each color value can be a hex string, a 256-color palette index, a `vars` name, or an empty string to fall back to whatever your terminal already uses.
+
+Pi ships two built-in themes, `dark` and `light`, and auto-picks one at first launch by detecting your terminal's background. Beyond those, discovery follows the same tiered pattern: `~/.pi/agent/themes/*.json` globally, `.pi/themes/*.json` per project, a package's `themes/` directory, a `settings.json` theme array, or `--theme <path>` on the command line — and `--no-themes` turns the whole discovery pass off if you just want the two built-ins. Switch with `/settings` or by setting `"theme": "stash-dark"` directly in `settings.json`. One nice touch worth knowing about if you end up tweaking one: editing the file behind your *currently active* custom theme hot-reloads it immediately — no restart, so you can nudge a color and watch it land in the same terminal.
+
+Neither of these two is where the leverage is, and that's fine — they're not supposed to carry the weight a Skill or an extension does. What they're good for is exactly what you used them for here: a repeatable prompt you don't want to retype, and a workspace that's pleasant to live in for a long session. The real leverage in this module is what you built in the last lesson and what you're about to do with it: hand it to someone else. [Next: package the skill, the extensions, and the templates, and share the whole thing](/course/pi/skills-packages/packages/).

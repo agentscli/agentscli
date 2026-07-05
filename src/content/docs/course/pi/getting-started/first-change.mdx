@@ -1,0 +1,80 @@
+---
+title: Ship your first fix with Pi
+description: "Hand Pi the feed-date bug in stash in plain English, watch the loop close without ever asking your permission, then read the diff and commit — because nothing stopped it from writing except you understanding what you asked for."
+sidebar:
+  label: "First change · fix, read, commit"
+---
+
+Now the actual ticket. You already have a lead from the last lesson: dates come from `app/worker/extract.py`, which parses whatever date string it finds in a page's metadata with no fallback if the format doesn't match. That's exactly the shape of bug that makes some saved articles sort into the wrong place in your reading queue. Describe the outcome you want, the same way you'd hand it to a teammate, and let the loop you just watched do the legwork — knowing, this time, that nothing is going to stop and ask you first.
+
+## Describe the outcome, not the steps
+
+```text
+> saved articles are sorting into the wrong place in the reading queue —
+  looks like the date extractor can't handle every date format sites
+  actually use, and silently gets it wrong instead of failing loudly.
+  Fix the parsing and add a test that pins down a format it currently
+  gets wrong.
+```
+
+You didn't name a function, didn't paste the parsing code, didn't specify a test framework. Pi runs the loop from the last lesson to close the gap itself:
+
+```text
+  read: app/worker/extract.py
+  read: tests/test_extract.py
+
+  Found it — parse_page_date() tries exactly one strptime format
+  ("%B %d, %Y") and returns None silently if it doesn't match, which
+  the caller then falls back to "now" for. I'll try a small ordered
+  list of common formats before giving up, and add a test for an
+  ISO-8601 date, which currently falls through to the "now" fallback.
+
+  edit: app/worker/extract.py
+    - def parse_page_date(raw: str) -> date | None:
+    -     try:
+    -         return datetime.strptime(raw, "%B %d, %Y").date()
+    -     except ValueError:
+    -         return None
+    + DATE_FORMATS = ("%B %d, %Y", "%Y-%m-%d", "%m/%d/%Y", "%d %b %Y")
+    +
+    + def parse_page_date(raw: str) -> date | None:
+    +     for fmt in DATE_FORMATS:
+    +         try:
+    +             return datetime.strptime(raw, fmt).date()
+    +         except ValueError:
+    +             continue
+    +     return None
+
+  edit: tests/test_extract.py
+    + def test_parse_page_date_handles_iso8601():
+    +     assert parse_page_date("2026-03-14") == date(2026, 3, 14)
+
+  bash: pytest tests/test_extract.py
+  → 6 passed
+```
+
+Notice the shape: read, then a plan stated in two sentences, then edits, then a verify step it ran on its own — and at no point did it stop and wait for you to say yes. That's the loop from the last lesson, minus the beat you already know is missing. The edit to `extract.py` was already sitting on disk and the test already ran before you read a single line of it.
+
+## Read the diff — this is the beat you have to supply yourself
+
+On an agent with an approve gate, the pause before "apply" is where you'd normally look closely. Pi doesn't give you that pause, which means the corresponding discipline has to come from you, after the fact instead of before it:
+
+```text
+> show me everything you changed
+```
+
+You're reading for the same two things you'd check anywhere — *does this do what I asked*, and *did it touch anything I didn't ask about* — except here it's the only check that exists. For a self-contained date-parsing fix in a service you've only just inherited, that's a genuinely small read. But get comfortable doing it every time regardless of how small the change looks, because the next fix you hand Pi might not be this contained, and the loop won't warn you either way.
+
+## Commit the moment it's right
+
+```text
+> commit this with a sensible message
+
+  bash: git commit -am "Try multiple date formats when parsing article dates"
+  → [main a91f2c3] Try multiple date formats when parsing article dates
+     2 files changed, 9 insertions(+), 3 deletions(-)
+```
+
+This matters more with Pi than with almost any other agent you've used. There's no approve gate holding the next instruction back, which means the very next thing you type could just as easily be a mistake as this one was a fix — and nothing built into the loop will stop it from landing. A commit at every reviewed, working checkpoint is the only floor that doesn't move: however badly the next experiment goes, the cost is capped at whatever changed since your last commit. On a codebase you've had for exactly one hour, that floor is doing a lot of the work "trust" would otherwise have to do.
+
+You just shipped a real fix — described, resolved, verified, reviewed, and committed — without Pi ever once asking your permission. That should feel like a genuine capability and a little bit unsettling at the same time. It worked, but you had almost no visibility into *why* it made the calls it made along the way — you only saw the parts it chose to print. The next module is about closing that gap: Pi's actual differentiator isn't that it's small, it's that everything it did just now is sitting somewhere you can go look at. [Next: see everything](/course/pi/the-core/).
