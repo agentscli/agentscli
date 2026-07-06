@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { withCode } from './with-code';
 import './terminal-replay.css';
 import { useWidgetFrame } from './widget-frame';
@@ -167,6 +167,20 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
   const [pinned, setPinned] = useState<number | null>(null);
 
   const termRef = useRef<HTMLDivElement>(null);
+  const blocksRef = useRef<HTMLUListElement>(null);
+  const decisionRef = useRef<HTMLDivElement>(null);
+  // Roving-tabindex pointers: which inspectable line / block currently holds
+  // the group's single Tab stop. null before inspect mode begins.
+  const [roveLine, setRoveLine] = useState<number | null>(null);
+  const [roveBlock, setRoveBlock] = useState<number | null>(null);
+  const lineRefs = useRef(new Map<number, HTMLDivElement>());
+  const blockRefs = useRef(new Map<number, HTMLLIElement>());
+  // Move focus to the decision bar only when playback was user-initiated
+  // (restart / skip) — never on first autoplay, so we don't steal focus from
+  // a reader mid-page.
+  const focusDecisionRef = useRef(false);
+  const uid = useId();
+  const decisionPromptId = `${uid}-decision`;
 
   // Autostart on hydration — with client:visible that means first scroll
   // into view. Reduced motion skips playback and lands on the decision.
@@ -270,6 +284,16 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [lines.length, chars, phase]);
 
+  // When the decision bar appears, move focus to it so screen-reader and
+  // keyboard users hear the question — but only if playback was user-initiated
+  // (restart / skip), never on first autoplay.
+  useEffect(() => {
+    if (phase === 'decision' && focusDecisionRef.current) {
+      focusDecisionRef.current = false;
+      decisionRef.current?.focus();
+    }
+  }, [phase]);
+
   const canInspect = !running && (phase === 'decision' || phase === 'done');
   const inspected = canInspect ? hovered ?? pinned : null;
   const shownNote =
@@ -280,22 +304,144 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
     setPinned(null);
   };
 
-  const hoverProps = (beat: number, active: boolean) =>
+  // Indices (into `lines`) of the transcript lines that are inspectable right
+  // now — the roving group's members.
+  const activeLineIdx = canInspect
+    ? lines.reduce<number[]>((acc, { beat }, i) => {
+        if (inspectable.has(beat)) acc.push(i);
+        return acc;
+      }, [])
+    : [];
+
+  // Effective roving stop, guarded so a stale index never leaves the group
+  // untabbable. Falls back to the first member.
+  const roveLineIdx =
+    roveLine !== null && activeLineIdx.includes(roveLine)
+      ? roveLine
+      : activeLineIdx[0] ?? null;
+  const roveBlockIdx =
+    roveBlock !== null && roveBlock < blocks.length
+      ? roveBlock
+      : blocks.length
+        ? 0
+        : null;
+
+  const togglePin = (beat: number) => setPinned((p) => (p === beat ? null : beat));
+
+  // Shared roving-tabindex keyboard model for a composite group. Arrows/Home/
+  // End move the single Tab stop between members; Enter/Space pin; Escape
+  // unpins and drops focus back to the group container so the next Tab leaves.
+  const roveKey = (
+    e: React.KeyboardEvent,
+    members: number[],
+    pos: number,
+    beat: number,
+    move: (target: number) => void,
+    onPin: () => void,
+    group: HTMLElement | null,
+  ) => {
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'ArrowRight':
+        e.preventDefault();
+        move(members[Math.min(pos + 1, members.length - 1)]);
+        break;
+      case 'ArrowUp':
+      case 'ArrowLeft':
+        e.preventDefault();
+        move(members[Math.max(pos - 1, 0)]);
+        break;
+      case 'Home':
+        e.preventDefault();
+        move(members[0]);
+        break;
+      case 'End':
+        e.preventDefault();
+        move(members[members.length - 1]);
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        onPin();
+        break;
+      case 'Escape':
+        e.preventDefault();
+        clearInspect();
+        group?.focus();
+        break;
+    }
+  };
+
+  const focusLine = (idx: number) => {
+    setRoveLine(idx);
+    lineRefs.current.get(idx)?.focus();
+  };
+  const focusBlock = (idx: number) => {
+    setRoveBlock(idx);
+    blockRefs.current.get(idx)?.focus();
+  };
+
+  // Props shared by mouse + keyboard for an inspectable transcript line.
+  const lineProps = (idx: number, beat: number, active: boolean) =>
     active
       ? {
+          ref: (el: HTMLDivElement | null) => {
+            if (el) lineRefs.current.set(idx, el);
+            else lineRefs.current.delete(idx);
+          },
+          role: 'button' as const,
+          tabIndex: idx === roveLineIdx ? 0 : -1,
+          'aria-pressed': pinned === beat,
           onMouseEnter: () => setHovered(beat),
           onMouseLeave: () => setHovered(null),
           onFocus: () => setHovered(beat),
           onBlur: () => setHovered(null),
-          onClick: () => setPinned((p) => (p === beat ? null : beat)),
-          onKeyDown: (e: React.KeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setPinned((p) => (p === beat ? null : beat));
-            }
+          onClick: () => togglePin(beat),
+          onKeyDown: (e: React.KeyboardEvent) =>
+            roveKey(
+              e,
+              activeLineIdx,
+              activeLineIdx.indexOf(idx),
+              beat,
+              focusLine,
+              () => togglePin(beat),
+              termRef.current,
+            ),
+        }
+      : {};
+
+  // Props shared by mouse + keyboard for an inspectable state block.
+  const blockProps = (idx: number, beat: number, active: boolean) =>
+    active
+      ? {
+          ref: (el: HTMLLIElement | null) => {
+            if (el) blockRefs.current.set(idx, el);
+            else blockRefs.current.delete(idx);
           },
           role: 'button' as const,
-          tabIndex: 0,
+          tabIndex: idx === roveBlockIdx ? 0 : -1,
+          'aria-pressed': pinned === beat,
+          onMouseEnter: () => setHovered(beat),
+          onMouseLeave: () => setHovered(null),
+          onFocus: () => setHovered(beat),
+          onBlur: () => setHovered(null),
+          onClick: () => {
+            togglePin(beat);
+            revealLines(beat);
+          },
+          onKeyDown: (e: React.KeyboardEvent) =>
+            roveKey(
+              e,
+              blocks.map((_, i) => i),
+              idx,
+              beat,
+              focusBlock,
+              () => {
+                togglePin(beat);
+                revealLines(beat);
+              },
+              blocksRef.current,
+            ),
         }
       : {};
 
@@ -334,6 +480,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
     setChosen(null);
     setChars(0);
     clearInspect();
+    focusDecisionRef.current = true;
     if (prefersReducedMotion()) {
       setQi(introEvents.length);
       setPhase(script.choices.length ? 'decision' : 'done');
@@ -348,6 +495,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
   const skip = () => {
     setChars(0);
     setQi(queue.length);
+    focusDecisionRef.current = true;
   };
 
   const cap = script.capacity;
@@ -390,9 +538,9 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
           <button
             className="tr-restart"
             onClick={restart}
-            title="reset the whole session and play it again"
+            title="replay the whole session from the top"
           >
-            ↺ restart
+            ↺ replay
           </button>
         )}
       </div>
@@ -436,7 +584,17 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
               </button>
             ) : null}
           </div>
-          <div className="tr-term-body" ref={termRef}>
+          <div
+            className="tr-term-body"
+            ref={termRef}
+            tabIndex={-1}
+            role="group"
+            aria-label={
+              canInspect
+                ? 'Terminal session replay, inspect mode. Use the arrow keys to move between lines, Enter to pin a line and highlight the state it produced, and Escape to exit.'
+                : 'Terminal session replay'
+            }
+          >
             {lines.map(({ line, beat, partial }, i) => {
               const active = canInspect && inspectable.has(beat);
               return (
@@ -447,7 +605,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
                     beat,
                     `tr-line tr-line--${line.kind}${active ? ' tr-line--link' : ''}`,
                   )}
-                  {...hoverProps(beat, active)}
+                  {...lineProps(i, beat, active)}
                 >
                   {LINE_PREFIX[line.kind]}
                   {partial === undefined ? line.text : line.text.slice(0, partial)}
@@ -469,10 +627,19 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
             {!meterTop && totalEl}
           </div>
           {!meterTop && meterEl}
-          <ul className="tr-blocks">
-            {blocks.map((b) => {
+          <ul
+            className="tr-blocks"
+            ref={blocksRef}
+            tabIndex={canInspect ? -1 : undefined}
+            role={canInspect ? 'group' : undefined}
+            aria-label={
+              canInspect
+                ? 'State blocks. Use the arrow keys to move between blocks, Enter to pin a block and highlight the lines that produced it, and Escape to exit.'
+                : undefined
+            }
+          >
+            {blocks.map((b, bi) => {
               const active = canInspect;
-              const props = hoverProps(b.beat, active);
               const dot = slotProps(b.slot);
               return (
                 <li
@@ -481,15 +648,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
                     b.beat,
                     `tr-block${active ? ' tr-block--link' : ''}`,
                   )}
-                  {...props}
-                  onClick={
-                    active
-                      ? () => {
-                          setPinned((p) => (p === b.beat ? null : b.beat));
-                          revealLines(b.beat);
-                        }
-                      : undefined
-                  }
+                  {...blockProps(bi, b.beat, active)}
                 >
                   <span className={`tr-dot ${dot.cls}`} style={dot.style} aria-hidden="true" />
                   <span className="tr-block-label">{b.label}</span>
@@ -511,13 +670,22 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
 
       {canInspect && (
         <p className="tr-hint" aria-hidden="true">
-          hover or tap any terminal line — or any block — to trace what caused what
+          tap or hover any terminal line — or any block — to trace what caused what
         </p>
       )}
 
       {phase === 'decision' && (
-        <div className="tr-decision">
-          <p className="tr-decision-prompt">{script.decisionPrompt}</p>
+        <div
+          className="tr-decision"
+          ref={decisionRef}
+          tabIndex={-1}
+          role="group"
+          aria-labelledby={decisionPromptId}
+          aria-live="polite"
+        >
+          <p className="tr-decision-prompt" id={decisionPromptId} role="heading" aria-level={3}>
+            {script.decisionPrompt}
+          </p>
           <div className="tr-decision-btns" role="group" aria-label="What happens next">
             {script.choices.map((c) => (
               <button key={c.id} className="tr-btn" onClick={() => pick(c)}>

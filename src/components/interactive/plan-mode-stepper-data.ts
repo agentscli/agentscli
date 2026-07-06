@@ -14,7 +14,7 @@ export interface PmsTool {
 export const pmsTools: PmsTool[] = [
   { id: 'claude-code', label: 'Claude Code' },
   { id: 'codex', label: 'Codex' },
-  { id: 'opencode', label: 'OpenCode' },
+  { id: 'opencode', label: 'opencode' },
   { id: 'cursor', label: 'Cursor' },
   { id: 'copilot', label: 'Copilot' },
 ];

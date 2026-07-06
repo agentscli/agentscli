@@ -127,3 +127,45 @@ export const primitiveEntries: PrimitiveEntry[] = [
     notThis: 'A wiki page asking everyone to copy five config files by hand.',
   },
 ];
+
+/**
+ * Step-1 clusters — reader-voice complaints that group the 12 problems
+ * into ≤4-option decisions. Each cluster's `entryIds` reference the
+ * `primitiveEntries` above by id; every entry appears in exactly one
+ * cluster. `hint` previews the primitives the cluster routes to.
+ */
+export interface ProblemCluster {
+  id: string;
+  /** The complaint, in the reader's own voice. */
+  label: string;
+  /** One-line preview of where this cluster routes. */
+  hint: string;
+  entryIds: string[];
+}
+
+export const problemClusters: ProblemCluster[] = [
+  {
+    id: 'knowledge',
+    label: 'It doesn’t know how we work',
+    hint: 'facts · procedures · saved prompts',
+    entryIds: ['rules', 'skills', 'slash-commands'],
+  },
+  {
+    id: 'control',
+    label: 'It won’t stay in its lane',
+    hint: 'gates · guardrails · approval',
+    entryIds: ['hooks', 'permissions', 'plan-mode'],
+  },
+  {
+    id: 'bottleneck',
+    label: 'I’m still the bottleneck',
+    hint: 'reach systems · run unattended · ship to team',
+    entryIds: ['mcp', 'headless', 'plugins'],
+  },
+  {
+    id: 'cost',
+    label: 'It burns window and money',
+    hint: 'isolation · cheaper models · window hygiene',
+    entryIds: ['subagents', 'model', 'context'],
+  },
+];

@@ -302,7 +302,7 @@ model = "gpt-5.4"`,
             type: 'folder',
             oneLiner: 'Skills following the cross-tool Agent Skills standard.',
             description:
-              'Codex walks up from your working directory to the repo root looking for `.agents/skills/`. Skills here are portable to Claude Code and OpenCode with their basic shape intact.',
+              'Codex walks up from your working directory to the repo root looking for `.agents/skills/`. Skills here are portable to Claude Code and opencode with their basic shape intact.',
             chapter: CHAPTER.skills,
             children: [
               {
@@ -408,7 +408,7 @@ command = "scripts/check-bash-command.sh"`,
             oneLiner: 'Personal skills in the cross-tool standard, available everywhere.',
             when: 'Descriptions at session start; body on invocation.',
             description:
-              'Your user-level skill repository in the Agent Skills open standard — portable between Codex, Claude Code, and OpenCode.',
+              'Your user-level skill repository in the Agent Skills open standard — portable between Codex, Claude Code, and opencode.',
             chapter: CHAPTER.skills,
           },
         ],
@@ -417,7 +417,7 @@ command = "scripts/check-bash-command.sh"`,
   },
   {
     slug: 'opencode',
-    label: 'OpenCode',
+    label: 'opencode',
     scopes: [
       {
         label: 'your-project/',
@@ -442,7 +442,7 @@ command = "scripts/check-bash-command.sh"`,
             label: 'AGENTS.md',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'The rules layer — OpenCode has no separate rules file.',
+            oneLiner: 'The rules layer — opencode has no separate rules file.',
             when: 'Read at session start, every invocation.',
             description:
               'Follows the open `agents.md` spec and is portable from Codex unchanged. Nesting uses a first-win strategy: a subdirectory\'s AGENTS.md replaces a parent\'s rather than merging with it — the opposite of Claude Code\'s additive layering.',
@@ -454,7 +454,7 @@ command = "scripts/check-bash-command.sh"`,
             type: 'folder',
             oneLiner: 'Project-scoped skills, commands, and agents.',
             description:
-              'OpenCode\'s native asset directory. Note that OpenCode also cross-reads `.claude/skills/` and `.agents/skills/` from the same repo — see those entries below.',
+              'opencode\'s native asset directory. Note that opencode also cross-reads `.claude/skills/` and `.agents/skills/` from the same repo — see those entries below.',
             chapter: CHAPTER.configuration,
             children: [
               {
@@ -462,7 +462,7 @@ command = "scripts/check-bash-command.sh"`,
                 label: 'skills/',
                 type: 'folder',
                 badge: 'committed',
-                oneLiner: 'Native OpenCode skills, loaded on demand via the `skill` tool.',
+                oneLiner: 'Native opencode skills, loaded on demand via the `skill` tool.',
                 when: 'Names and descriptions at session start; the body loads on demand.',
                 description:
                   'Frontmatter requires `name` (must match the directory) and `description`. There is no equivalent to Claude Code\'s `disable-model-invocation` or `context: fork` — the agent sees every skill and loads bodies as needed.',
@@ -487,7 +487,7 @@ command = "scripts/check-bash-command.sh"`,
                 oneLiner: 'Subagents and custom primary agents.',
                 when: 'Subagents run on `@mention`; primary agents are selected at launch.',
                 description:
-                  'Markdown with rich frontmatter: `mode` (`subagent` | `primary` | `all`), per-agent `model` and `temperature`, a `permission` object with glob support, `steps` to cap iterations, and `hidden` to keep it out of autocomplete. Custom primary agents are OpenCode\'s answer to Codex profiles.',
+                  'Markdown with rich frontmatter: `mode` (`subagent` | `primary` | `all`), per-agent `model` and `temperature`, a `permission` object with glob support, `steps` to cap iterations, and `hidden` to keep it out of autocomplete. Custom primary agents are opencode\'s answer to Codex profiles.',
                 exampleIntro: 'A read-only security auditor:',
                 exampleTitle: '.opencode/agents/auditor.md',
                 example: `---
@@ -508,10 +508,10 @@ permission:
             label: '.claude/skills/  (cross-read)',
             type: 'folder',
             badge: 'committed',
-            oneLiner: 'OpenCode reads Claude Code\'s skill directory directly.',
+            oneLiner: 'opencode reads Claude Code\'s skill directory directly.',
             when: 'Same lifecycle as native skills: descriptions at start, body on demand.',
             description:
-              'A skill authored for Claude Code generally works unchanged; OpenCode ignores frontmatter keys it doesn\'t know. Precedence when names collide: `.opencode/skills/` > `.claude/skills/` > `.agents/skills/`.',
+              'A skill authored for Claude Code generally works unchanged; opencode ignores frontmatter keys it doesn\'t know. Precedence when names collide: `.opencode/skills/` > `.claude/skills/` > `.agents/skills/`.',
             chapter: CHAPTER.skills,
           },
           {
@@ -522,7 +522,7 @@ permission:
             oneLiner: 'Skills in the cross-tool standard, shared with Codex.',
             when: 'Walked up from cwd to the git worktree root at session start.',
             description:
-              'The same `.agents/skills/` directories Codex reads. One skill directory can serve OpenCode, Codex, and Claude Code at once.',
+              'The same `.agents/skills/` directories Codex reads. One skill directory can serve opencode, Codex, and Claude Code at once.',
             chapter: CHAPTER.skills,
           },
         ],
@@ -534,7 +534,7 @@ permission:
             id: 'home-opencode',
             label: '~/.config/opencode/',
             type: 'folder',
-            oneLiner: 'Your personal OpenCode setup across all projects.',
+            oneLiner: 'Your personal opencode setup across all projects.',
             description:
               'Global counterparts of the project files: `opencode.json`, `AGENTS.md`, and skills/commands/agents directories.',
             chapter: CHAPTER.configuration,
@@ -556,7 +556,7 @@ permission:
                 oneLiner: 'Personal rules — skipped entirely when a project has its own.',
                 when: 'Read at session start only if the project has no AGENTS.md (first-win).',
                 description:
-                  'Because of OpenCode\'s first-win strategy, this file does not merge with a project AGENTS.md — it is only used when no project file exists.',
+                  'Because of opencode\'s first-win strategy, this file does not merge with a project AGENTS.md — it is only used when no project file exists.',
                 chapter: CHAPTER.rules,
               },
               {
@@ -566,7 +566,7 @@ permission:
                 oneLiner: 'Personal skills available in every project.',
                 when: 'Descriptions at session start; body on demand.',
                 description:
-                  'Same frontmatter schema as project skills. OpenCode also cross-reads `~/.claude/skills/` and `~/.agents/skills/` at the user level.',
+                  'Same frontmatter schema as project skills. opencode also cross-reads `~/.claude/skills/` and `~/.agents/skills/` at the user level.',
                 chapter: CHAPTER.skills,
               },
               {
@@ -585,7 +585,7 @@ permission:
                 oneLiner: 'Personal agent definitions.',
                 when: 'Subagents on `@mention`; primary agents at launch.',
                 description:
-                  'Same frontmatter schema as project agents. OpenCode also ships three built-in subagents: `general` (full access), `explore` (read-only codebase), and `scout` (read-only docs and dependencies).',
+                  'Same frontmatter schema as project agents. opencode also ships three built-in subagents: `general` (full access), `explore` (read-only codebase), and `scout` (read-only docs and dependencies).',
                 chapter: CHAPTER.subagents,
               },
             ],

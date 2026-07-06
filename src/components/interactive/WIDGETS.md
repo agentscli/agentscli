@@ -37,6 +37,30 @@ Conventions (all widgets follow these):
   Scenes so far: `SessionXray` (top meter, token story), `ApprovalLedger`
   (no meter, custom slot palette — the non-token proof case).
 
+Accessibility + interaction conventions (locked by the 2026-07-06 critique/fix
+pass — new widgets follow these from day one):
+
+- **Keyboard:** dense inspectable collections (transcript lines, block panels)
+  are roving-tabindex composites — one Tab stop per group, arrows move within,
+  Enter/Space pins, Escape exits. A widget's primary decision must be reachable
+  in ≤4 Tabs from its first stop. Visible `:focus-visible` outline (accent, 2px)
+  on every interactive element — never `outline: none` with only a tint.
+- **Screen readers:** narrative widgets announce beats via a polite live region
+  (the note line, not the char stream); decision bars are labelled `role="group"`
+  regions and receive focus only on user-initiated playback. Visual-only hints
+  get a non-visual equivalent (group `aria-label` or sr-only text).
+- **Mobile:** ≥24px effective tap targets (padding/hit-area, not layout blowup);
+  no "hover" in copy without "tap"; proportional bars whose segments can render
+  <24px need an equivalent selector (e.g. legend chips as buttons).
+- **Control naming:** playback widgets say `↺ replay`; stateful sims say `Reset`
+  (quiet ghost pill, top-right, rendered only when state differs from default).
+- **Choice architecture:** ≤4 visible options per decision point; bigger option
+  sets get clustered/two-step flows (see `PrimitivePicker`).
+- **No side-stripe accents** (`border-left` >1px on cards/callouts) — use a full
+  accent border and/or semantic tint. Exempt idioms: code-diff gutters
+  (`RulesResolver` added/removed lines), terminal-replay row markers, verdict
+  tone markers inside terminal chrome.
+
 ## Fact-bound — drift when tool docs change; review monthly
 
 | Widget | Page | Source of truth | Last verified |
@@ -48,7 +72,7 @@ Conventions (all widgets follow these):
 | `PlanModeStepper` | `foundations/plan-mode.mdx`, `course/pi/rebuild-the-defaults/plan-mode.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/plan-mode.mdx` | 2026-07-04 |
 | `HeadlessBuilder` | `foundations/headless.mdx` | `tool-instructions/<tool>/headless.mdx` | 2026-07-02 |
 | `SkillAnatomy` | `foundations/skills.mdx`, `course/pi/skills-packages/skills.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/skills.mdx` + cross-tool table in `foundations/skills.mdx` | 2026-07-04 |
-| `PrimitivePicker` | `foundations/index.mdx`, `pages/index.astro` (homepage) | the "Why this and not…" tables across foundations chapters | 2026-07-02 |
+| `PrimitivePicker` | `foundations/index.mdx`, `pages/index.astro` (homepage) | the "Why this and not…" tables across foundations chapters; two-step chooser (4 intent clusters → ≤4 problems each) since 2026-07-06 | 2026-07-06 |
 | `ModelMatcher` | `foundations/model-selection.mdx` | `tool-instructions/<tool>/model-selection.mdx` | 2026-07-02 |
 | `CommandExpander` | `foundations/slash-commands.mdx` | `tool-instructions/<tool>/slash-commands.mdx` | 2026-07-02 |
 | `PluginPacker` | `foundations/plugins.mdx`, `course/pi/skills-packages/packages.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/plugins.mdx` | 2026-07-04 |

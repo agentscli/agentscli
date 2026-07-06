@@ -50,14 +50,33 @@ function findNode(tool: ToolData, id: string): FlatNode | undefined {
     .find((f) => f.node.id === id);
 }
 
+interface TabState {
+  selectedId: string | null;
+  collapsed: Set<string>;
+}
+
+function emptyTabState(): TabState {
+  return { selectedId: null, collapsed: new Set() };
+}
+
 export default function ConfigExplorer() {
   const tools = configExplorerTools;
   const [toolIdx, setToolIdx] = useState(0);
+  // Per-tool memory: each tool keeps its own selection + collapse state for
+  // the session, so switching tabs and back restores where you left off
+  // instead of dumping you back to the empty state.
+  const tabStateRef = useRef<Map<number, TabState>>(new Map());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const detailRef = useRef<HTMLDivElement>(null);
 
   const tool = tools[toolIdx];
+
+  // Keep the active tool's entry in the state map current so it's there to
+  // restore from when the user switches away and back.
+  useEffect(() => {
+    tabStateRef.current.set(toolIdx, { selectedId, collapsed });
+  }, [toolIdx, selectedId, collapsed]);
 
   // Deep link: #cx-<toolslug>-<nodeid> selects the node. Re-applied on
   // hashchange so links into the explorer work after bfcache restores too.
@@ -69,8 +88,10 @@ export default function ConfigExplorer() {
         if (!hash.startsWith(tools[i].slug + '-')) continue;
         const nodeId = hash.slice(tools[i].slug.length + 1);
         if (findNode(tools[i], nodeId)) {
+          const saved = tabStateRef.current.get(i) ?? emptyTabState();
           setToolIdx(i);
           setSelectedId(nodeId);
+          setCollapsed(saved.collapsed);
           requestAnimationFrame(() => {
             document
               .getElementById(`cx-${tools[i].slug}-${nodeId}`)
@@ -118,9 +139,10 @@ export default function ConfigExplorer() {
   };
 
   const switchTool = (i: number) => {
+    const saved = tabStateRef.current.get(i) ?? emptyTabState();
     setToolIdx(i);
-    setSelectedId(null);
-    setCollapsed(new Set());
+    setSelectedId(saved.selectedId);
+    setCollapsed(saved.collapsed);
   };
 
   return (

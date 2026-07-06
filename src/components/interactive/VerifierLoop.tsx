@@ -47,6 +47,10 @@ export default function VerifierLoop() {
       return next;
     });
 
+  // Default is nothing wired — the agent's own report, unchecked.
+  const isDefault = wired.size === 0;
+  const reset = () => setWired(new Set());
+
   const outcomes = vlTasks.map((t) => outcomeOf(t, wired));
   const count = (o: VlOutcome) => outcomes.filter((x) => x === o).length;
 
@@ -83,6 +87,16 @@ export default function VerifierLoop() {
 
   return (
     <div className={useWidgetFrame('vl-root')}>
+      {!isDefault && (
+        <button
+          type="button"
+          className="vl-reset"
+          onClick={reset}
+          aria-label="Reset to an unverified run, nothing wired"
+        >
+          Reset
+        </button>
+      )}
       <p className="vl-lead">
         Nine chores, queued for the agent to run overnight. You’re asleep, so
         the agent’s <strong>report</strong> is all you’ll read in the morning —
@@ -168,13 +182,10 @@ export default function VerifierLoop() {
       </div>
 
       <p className="vl-footnote">
-        The flaw rate is theatrically high — seven dud first attempts in nine —
-        because the point is what each wiring <em>would have caught</em>, not
-        the odds. The check classes are also cleaner-cut here than in your
-        toolchain, where running the suite usually drags the build in with it;
-        they’re separated because each answers a different question. The
-        residual is real, though: no check catches a requirement nobody wrote
-        down.
+        Numbers are illustrative — the point is what each wiring{' '}
+        <em>would have caught</em>, not the odds (a theatrical seven duds in
+        nine). The residual is real, though: no check catches a requirement
+        nobody wrote down.
       </p>
     </div>
   );

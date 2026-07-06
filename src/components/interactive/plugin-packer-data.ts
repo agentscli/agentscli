@@ -76,7 +76,7 @@ export const ppkTools: PpkToolSpec[] = [
   },
   {
     id: 'opencode',
-    label: 'OpenCode',
+    label: 'opencode',
     pieces: {
       skill: { status: 'loose', note: 'Skills stay loose files in `.opencode/skills/`.' },
       subagent: { status: 'loose', note: 'Agent markdown stays a loose file.' },
