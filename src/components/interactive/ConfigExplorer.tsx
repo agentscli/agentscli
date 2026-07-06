@@ -59,9 +59,14 @@ function emptyTabState(): TabState {
   return { selectedId: null, collapsed: new Set() };
 }
 
-export default function ConfigExplorer() {
+export default function ConfigExplorer({ initialTool }: { initialTool?: string }) {
   const tools = configExplorerTools;
-  const [toolIdx, setToolIdx] = useState(0);
+  // Course pages open on their own tool's tab; a deep-link hash still wins
+  // because the hash effect below runs after mount and overrides this.
+  const [toolIdx, setToolIdx] = useState(() => {
+    const i = tools.findIndex((t) => t.slug === initialTool);
+    return i === -1 ? 0 : i;
+  });
   // Per-tool memory: each tool keeps its own selection + collapse state for
   // the session, so switching tabs and back restores where you left off
   // instead of dumping you back to the empty state.

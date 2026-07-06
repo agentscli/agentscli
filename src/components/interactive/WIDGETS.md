@@ -35,7 +35,9 @@ Conventions (all widgets follow these):
   `<scene>-data.ts` exporting a `TrScript` plus a thin named wrapper component
   (what lessons import and this register lists) — no new interaction code.
   Scenes so far: `SessionXray` (top meter, token story), `ApprovalLedger`
-  (no meter, custom slot palette — the non-token proof case).
+  (no meter, custom slot palette — the non-token proof case), `NightShift`
+  (no meter, custom slot palette; first scene converted *from* another genre —
+  it replaced the VerifierLoop toggle-ledger widget at the automation beat).
 
 Accessibility + interaction conventions (locked by the 2026-07-06 critique/fix
 pass — new widgets follow these from day one):
@@ -66,7 +68,7 @@ pass — new widgets follow these from day one):
 | Widget | Page | Source of truth | Last verified |
 |---|---|---|---|
 | `RulesResolver` | `foundations/rules.mdx` | `tool-instructions/<tool>/rules.mdx` | 2026-07-02 |
-| `ConfigExplorer` | `foundations/configuration.mdx`, `pages/index.astro` (homepage), `course/pi/models-config/config-files.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/*.mdx` (config surfaces) | 2026-07-04 |
+| `ConfigExplorer` | `foundations/configuration.mdx`, `pages/index.astro` (homepage), plus one config-beat lesson per course, each opening on its own tool via `initialTool`: `course/claude-code/rules-memory/hierarchy.mdx`, `course/codex/rules/the-hierarchy.mdx`, `course/copilot/rules/hierarchy.mdx`, `course/cursor/extending/index.mdx`, `course/opencode/rules-agents-md/discovery-and-nesting.mdx`, `course/pi/models-config/config-files.mdx` | `tool-instructions/<tool>/*.mdx` (config surfaces); Pi tab: `course/pi/*` (no tool-instructions dir) | 2026-07-06 |
 | `HookTimeline` | `foundations/hooks.mdx` | `tool-instructions/<tool>/hooks.mdx` | 2026-07-02 |
 | `PermissionSim` | `foundations/permissions.mdx` | `tool-instructions/<tool>/permissions.mdx` | 2026-07-02 |
 | `PlanModeStepper` | `foundations/plan-mode.mdx`, `course/pi/rebuild-the-defaults/plan-mode.mdx` (Pi exception — cross-tool contrast) | `tool-instructions/<tool>/plan-mode.mdx` | 2026-07-04 |
@@ -90,7 +92,7 @@ pass — new widgets follow these from day one):
 | `SkillEconomy` | `course/claude-code/skills/vs.mdx`, `course/codex/skills/vs.mdx`, `course/copilot/prompt-files/vs-rules.mdx`, `course/opencode/skills/first-skill.mdx` | where a piece of knowledge lives decides when its tokens are paid: rule = full size every session, skill = stub always + body on invocation, prompt = re-paid every time; sequel to `RuleEconomy` |
 | `ModelEconomy` | `course/claude-code/models-thinking/cost.mdx`, `course/codex/models-effort/cost-aware.mdx`, `course/copilot/models/credits.mdx`, `course/cursor/models/index.mdx`, `course/opencode/providers-models/per-agent-model.mdx`, `course/pi/models-config/routing.mdx` | model × effort as a per-task spend: matched corners on the diagonal, overpay leak on pinned-expensive, redo tax makes underpowering the hard task the costlier mistake; illustrative 5×/3× multipliers |
 | `GapDemo` | `pages/index.astro` (homepage; custom pages need the `styles/widget-standalone.css` token bridge), `course/pi/getting-started/index.mdx` | the site thesis as a live trace: same task run bare vs with context mounted (rules / skills / MCP chips); auto-plays bare → flips to ctx on first view, then the toggle replays either side; illustrative rate-limit scenario |
-| `VerifierLoop` | `course/claude-code/automation/loops.mdx`, `course/codex/automation/ci.mdx`, `course/copilot/automation/draft-prs.mdx`, `course/cursor/cli-headless-ci/index.mdx`, `course/opencode/share-and-headless/server-and-ci.mdx`, `course/pi/subagents/the-verifier.mdx` | an unattended run's "done" is a claim until a wired check agrees: 9-task overnight batch, toggle build/types/unit/e2e verifiers, each converts a class of silent failure into a caught one; residual misread-ticket flaw no machine check catches; illustrative flaw rate |
+| `NightShift` | `course/claude-code/automation/loops.mdx`, `course/codex/automation/ci.mdx`, `course/copilot/automation/draft-prs.mdx`, `course/cursor/cli-headless-ci/index.mdx`, `course/opencode/share-and-headless/server-and-ci.mdx`, `course/pi/subagents/the-verifier.mdx` | an unattended run's "done" is a claim until a wired check agrees (third scene on the `terminal-replay.tsx` engine; replaced the retired `VerifierLoop` toggle widget 2026-07-06): a 9-chore overnight batch reports 9/9 done with nothing wired in, playback pauses, reader picks ship-unverified / build+types / full-stack; shipping outsources the checks to production, build+types is the lint-green trap, the full stack retries reds and flags the seam break honestly — and the misread ticket still ships green through all four checks (the residual no machine check catches); illustrative flaw rate, generic checks that lessons map to each tool's spelling |
 | `SessionXray` | `course/claude-code/sessions-context/compact.mdx`, `course/codex/sessions-context/compact.mdx`, `course/opencode/the-tui/undo-redo-compact.mdx`, `course/cursor/context/index.mdx`, `course/pi/context/sessions.mdx`, `foundations/context-management.mdx`, `blog/the-relay-not-the-window.mdx` (first widget on the blog surface) | the reset decision as a scripted terminal replay with a live window x-ray (first scene on the `terminal-replay.tsx` engine): a session fills to 75%, playback pauses, reader picks keep-going / compact / clear; keep-going ends in an unsteered mid-task auto-compact, compact shows a steered lossy summary, clear shows only on-disk blocks (rules) surviving; window size + magnitudes consistent with `context-sim-data.ts`; sequel to `ContextSimulator` |
 | `ApprovalLedger` | `course/claude-code/permissions-modes/rules.mdx`, `course/copilot/permissions/the-checkpoint.mdx` | the approval prompt as a policy edit, not a yes/no (second scene on the `terminal-replay.tsx` engine; first non-meter scene, scene-defined slot colors): routine prompts train the yes reflex, `npm test` earns a narrow standing grant, then a destructive command arrives on the same reflex — reader picks allow-once / always-allow-wildcard / deny-and-redirect; once expires with the run, the wildcard outlives the moment, deny plus redirection is the cheapest correction; panel x-rays the standing-grants ledger; generic commands, lessons map to each tool's spelling |
 | `GuaranteeLadder` | `course/claude-code/extending/hooks-vs.mdx`, `course/codex/extending/hooks-vs.mdx`, `course/opencode/extending/plugins-hooks.mdx`, `course/pi/first-extension/hooks.mdx` | the enforcement ladder: rule informs (probabilistic, window-bound), permission forbids a named class (harness wall), hook enforces a condition on the real action (code on the rail); situation clock (watching / compacted / unattended) shows rule-backed guarantees decay while enforced ones hold |
@@ -98,15 +100,21 @@ pass — new widgets follow these from day one):
 Course rule: prefer **evergreen** widgets in course lessons — the five-tool
 comparative widgets can break the single-tool book narrative. Embed at the
 story beat where the lesson hits the concept, with a prose bridge, never as a
-templated section.
+templated section. Exception pattern (established with `ConfigExplorer`,
+2026-07-06): a comparator that covers **all six tools** and accepts an
+`initialTool` prop may sit in each course's config-beat lesson, opening on that
+course's own tab — the narrative stays single-tool, the other tabs become the
+cross-tool payoff.
 
 **Pi exception (2026-07-04).** The Pi course embeds a few fact-bound five-tool
-comparators (`ConfigExplorer`, `PlanModeStepper`, `SkillAnatomy`, `PluginPacker`)
+comparators (`PlanModeStepper`, `SkillAnatomy`, `PluginPacker`)
 where the lesson explicitly frames them as *cross-tool contrast* — "here's how
 the other tools do it, and Pi does less" — because Pi is a minimal agent whose
 whole story is what it omits, and these widgets carry no Pi tab. They stay in the
 fact-bound review cadence above. If any of them gains a genuine Pi dataset later,
-promote the prose from contrast to inclusion.
+promote the prose from contrast to inclusion — as happened with `ConfigExplorer`,
+which gained Copilot, Cursor, and Pi tabs on 2026-07-06 and was promoted out of
+this list.
 
 ## Adding a widget
 
