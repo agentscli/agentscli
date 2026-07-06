@@ -45,6 +45,26 @@ export default function ContextSimulator() {
     return Object.keys(SIM_CATEGORY_LABEL).filter((c) => seen.has(c as never));
   }, [segments]);
 
+  /**
+   * Legend chips are a full equivalent selector for the bar segments — the
+   * cleanest fix for segments that render only a few px wide (e.g. Rules at
+   * ~1% share) and are otherwise nearly untappable on touch. A category can
+   * back more than one segment at once (e.g. "Conversation" appears several
+   * times across a long session), so repeated taps cycle through them.
+   */
+  const selectCategory = (cat: string) => {
+    const inCat = segments.filter((s) => s.category === cat);
+    if (inCat.length === 0) return;
+    if (inCat.length === 1) {
+      const only = inCat[0];
+      setSelectedId(selectedId === only.id ? null : only.id);
+      return;
+    }
+    const curIdx = inCat.findIndex((s) => s.id === selectedId);
+    const next = inCat[(curIdx + 1) % inCat.length];
+    setSelectedId(next.id);
+  };
+
   return (
     <div className={useWidgetFrame('cxs-root')}>
       <div className="cxs-header">
@@ -114,20 +134,39 @@ export default function ContextSimulator() {
         <div
           className="cxs-threshold"
           style={{ left: `${(AUTO_COMPACT_AT / WINDOW_TOKENS) * 100}%` }}
+        />
+        <span
+          className="cxs-threshold-label"
+          style={{ left: `${(AUTO_COMPACT_AT / WINDOW_TOKENS) * 100}%` }}
         >
-          <span className="cxs-threshold-label">
-            auto-compact ~{Math.round((AUTO_COMPACT_AT / WINDOW_TOKENS) * 100)}%
-          </span>
-        </div>
+          auto-compact ~{Math.round((AUTO_COMPACT_AT / WINDOW_TOKENS) * 100)}%
+        </span>
       </div>
 
       <div className="cxs-legend">
-        {categoriesPresent.map((cat) => (
-          <span key={cat} className="cxs-legend-item">
-            <span className={`cxs-swatch cxs-seg-${cat}`} aria-hidden="true" />
-            {SIM_CATEGORY_LABEL[cat]}
-          </span>
-        ))}
+        {categoriesPresent.map((cat) => {
+          const isActive = !!selected && selected.category === cat;
+          const count = segments.filter((s) => s.category === cat).length;
+          return (
+            <button
+              key={cat}
+              type="button"
+              className={
+                isActive ? 'cxs-legend-item cxs-legend-item-active' : 'cxs-legend-item'
+              }
+              aria-pressed={isActive}
+              aria-label={
+                count > 1
+                  ? `${SIM_CATEGORY_LABEL[cat]}, ${count} segments, tap to cycle through them`
+                  : `${SIM_CATEGORY_LABEL[cat]} segment`
+              }
+              onClick={() => selectCategory(cat)}
+            >
+              <span className={`cxs-swatch cxs-seg-${cat}`} aria-hidden="true" />
+              {SIM_CATEGORY_LABEL[cat]}
+            </button>
+          );
+        })}
       </div>
 
       <div className="cxs-seg-detail" aria-live="polite">
@@ -138,7 +177,7 @@ export default function ContextSimulator() {
           </>
         ) : (
           <span className="cxs-seg-detail-hint">
-            Click any segment of the bar to see what it is.
+            Click any segment of the bar — or a legend chip below — to see what it is.
           </span>
         )}
       </div>

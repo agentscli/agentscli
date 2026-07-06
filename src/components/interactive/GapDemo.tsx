@@ -81,8 +81,8 @@ export default function GapDemo() {
       </div>
 
       <div className="hgd-trace" aria-live="polite">
-        {run.lines.slice(0, shown).map((line) => (
-          <div key={line.call} className={`hgd-line hgd-line--${line.kind}`}>
+        {run.lines.slice(0, shown).map((line, i) => (
+          <div key={`${i}-${line.call}`} className={`hgd-line hgd-line--${line.kind}`}>
             <div className="hgd-call">
               {line.kind === 'ask' ? '? ' : '$ '}
               {withCode(line.call)}

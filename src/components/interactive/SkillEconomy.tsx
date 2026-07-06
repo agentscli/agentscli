@@ -40,6 +40,13 @@ export default function SkillEconomy() {
   const place = (id: string, home: SkeHome) =>
     setHomes((prev) => ({ ...prev, [id]: home }));
 
+  // Default is everything crammed into the rules file (see useState above).
+  const isDefault = skeItems.every((i) => homes[i.id] === 'rule');
+  const reset = () =>
+    setHomes(
+      Object.fromEntries(skeItems.map((i) => [i.id, 'rule' as SkeHome]))
+    );
+
   const costPerWeek = skeItems.reduce(
     (sum, i) => sum + tokensPerWeek(i, homes[i.id]),
     0
@@ -79,6 +86,16 @@ export default function SkillEconomy() {
 
   return (
     <div className={useWidgetFrame('ske-root')}>
+      {!isDefault && (
+        <button
+          type="button"
+          className="ske-reset"
+          onClick={reset}
+          aria-label="Reset every item back to the rules file"
+        >
+          Reset
+        </button>
+      )}
       <p className="ske-lead">
         Four things you keep teaching the agent, all currently crammed into the
         rules file. Each needs a home: the <strong>rules file</strong> (loaded
@@ -169,11 +186,11 @@ export default function SkillEconomy() {
       </div>
 
       <p className="ske-footnote">
-        Token numbers are illustrative; the ratios are the point. Assumes{' '}
-        {SKE_SESSIONS_PER_WEEK} sessions a week. A rule pays its full size in
-        every session; a skill pays a ~{SKE_STUB_TOKENS}-token stub every
-        session and its body only when it fires; a prompt pays only when said —
-        but you’re the one saying it.
+        Numbers are illustrative — the ratios are the point. Over{' '}
+        {SKE_SESSIONS_PER_WEEK} sessions a week: a rule pays full size every
+        session, a skill pays a ~{SKE_STUB_TOKENS}-token stub plus its body only
+        when it fires, a prompt pays only when said — but you’re the one saying
+        it.
       </p>
     </div>
   );

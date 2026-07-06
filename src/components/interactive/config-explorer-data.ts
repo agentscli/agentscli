@@ -3,6 +3,9 @@ import type { ToolData } from './config-explorer-types';
 // Facts sourced from src/content/tool-instructions/<tool>/*.mdx — the same
 // verified content that renders in the foundations chapters. If a chapter
 // changes, this file needs the matching update.
+// Pi has no tool-instructions dir: its facts come from the Pi course
+// (src/content/docs/course/pi/, esp. models-config/config-files.mdx and
+// context/system-md.mdx) — sync against those instead.
 
 const CHAPTER = {
   configuration: { label: 'Configuration & profiles', href: '/foundations/configuration/' },
@@ -12,6 +15,7 @@ const CHAPTER = {
   subagents: { label: 'Subagents', href: '/foundations/subagents/' },
   mcp: { label: 'MCP servers', href: '/foundations/mcp-servers/' },
   hooks: { label: 'Hooks', href: '/foundations/hooks/' },
+  headless: { label: 'Headless & CI', href: '/foundations/headless/' },
 };
 
 export const configExplorerTools: ToolData[] = [
@@ -302,7 +306,7 @@ model = "gpt-5.4"`,
             type: 'folder',
             oneLiner: 'Skills following the cross-tool Agent Skills standard.',
             description:
-              'Codex walks up from your working directory to the repo root looking for `.agents/skills/`. Skills here are portable to Claude Code and OpenCode with their basic shape intact.',
+              'Codex walks up from your working directory to the repo root looking for `.agents/skills/`. Skills here are portable to Claude Code and opencode with their basic shape intact.',
             chapter: CHAPTER.skills,
             children: [
               {
@@ -408,7 +412,7 @@ command = "scripts/check-bash-command.sh"`,
             oneLiner: 'Personal skills in the cross-tool standard, available everywhere.',
             when: 'Descriptions at session start; body on invocation.',
             description:
-              'Your user-level skill repository in the Agent Skills open standard — portable between Codex, Claude Code, and OpenCode.',
+              'Your user-level skill repository in the Agent Skills open standard — portable between Codex, Claude Code, and opencode.',
             chapter: CHAPTER.skills,
           },
         ],
@@ -416,8 +420,412 @@ command = "scripts/check-bash-command.sh"`,
     ],
   },
   {
+    slug: 'copilot',
+    label: 'Copilot',
+    scopes: [
+      {
+        label: 'your-project/',
+        nodes: [
+          {
+            id: 'copilot-instructions',
+            label: '.github/copilot-instructions.md',
+            type: 'file',
+            badge: 'committed',
+            oneLiner: 'The repo-wide rules file, applied to every Copilot request.',
+            when: 'Always on, for every chat and agent request in this repo.',
+            description:
+              'Copilot\'s flagship rules surface — and the only customization layer that reaches every surface Copilot runs on: VS Code, JetBrains, Visual Studio, chat on GitHub.com, the cloud coding agent, and code review. Layers combine rather than override; on conflict, precedence is personal > repository > organization.',
+            tips: [
+              'Run `/init` in chat to scaffold this file from your codebase.',
+              'Gated by the VS Code setting `github.copilot.chat.codeGeneration.useInstructionFiles`.',
+            ],
+            chapter: CHAPTER.rules,
+          },
+          {
+            id: 'instructions-dir',
+            label: '.github/instructions/',
+            type: 'folder',
+            badge: 'committed',
+            oneLiner: 'Path-scoped rules that apply only where their glob matches.',
+            when: 'A file applies when files matching its `applyTo` glob are in play.',
+            description:
+              '`*.instructions.md` files with an `applyTo` glob in frontmatter — the pressure valve that keeps the repo-wide file small. Optional `excludeAgent` opts a file out of surfaces like code review. One catch: these are read in the IDE and by cloud agents, but not by chat on GitHub.com.',
+            exampleIntro: 'A rule scoped to model code:',
+            exampleTitle: '.github/instructions/models.instructions.md',
+            example: `---
+applyTo: "app/models/**/*.rb"
+---
+Use Active Record validations; never raw SQL in models.`,
+            chapter: CHAPTER.rules,
+          },
+          {
+            id: 'cp-agents-md',
+            label: 'AGENTS.md',
+            type: 'file',
+            badge: 'committed',
+            oneLiner: 'The cross-tool rules standard — Copilot reads it natively.',
+            when: 'Read when the `chat.useAgentsMdFile` setting is enabled.',
+            description:
+              'The same AGENTS.md that Codex, opencode, and Cursor read works here unchanged. Copilot also reads `CLAUDE.md` (repo root, `.claude/CLAUDE.md`, or `CLAUDE.local.md` — gated by `chat.useClaudeMdFile`), so a team already invested in another tool\'s rules file keeps it. Nested AGENTS.md support exists but is experimental.',
+            chapter: CHAPTER.rules,
+          },
+          {
+            id: 'prompts-dir',
+            label: '.github/prompts/',
+            type: 'folder',
+            badge: 'committed',
+            oneLiner: 'Reusable prompts invoked as `/name` — Copilot\'s slash commands.',
+            when: 'On invocation only: `/name` in chat, or "Chat: Run Prompt".',
+            description:
+              'One `<name>.prompt.md` file per command. Frontmatter picks what runs it — `agent: ask | agent | plan`, or a custom agent\'s name — plus `model` and `tools`. When a prompt file and a custom agent both set `tools`, the prompt file\'s list wins.',
+            exampleIntro: 'A prompt that runs in agent mode with scoped tools:',
+            exampleTitle: '.github/prompts/add-tests.prompt.md',
+            example: `---
+name: add-tests
+description: Generate unit tests for the selected file
+agent: agent
+tools: [read, edit, runTests]
+---
+Write unit tests covering edge cases for the selected file.`,
+            chapter: CHAPTER.slashCommands,
+          },
+          {
+            id: 'cp-agents-dir',
+            label: '.github/agents/',
+            type: 'folder',
+            badge: 'committed',
+            oneLiner: 'Custom agents: a persona with its own model, tools, and subagents.',
+            when: 'Loaded when you select the agent or another agent hands off to it.',
+            description:
+              'One `<name>.agent.md` per agent — note the extension: these were `.chatmode.md` before a rename, the single biggest churn trap in Copilot content. Frontmatter: `tools`, `model` (one name or a prioritized list), `agents` (which subagents it may call), and `handoffs` for sequential workflows.',
+            exampleIntro: 'A reviewer agent:',
+            exampleTitle: '.github/agents/db-reviewer.agent.md',
+            example: `---
+name: db-reviewer
+description: Reviews database migration PRs for safety
+model: [gpt-5, claude-sonnet]
+tools: [read, search]
+---
+You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
+            chapter: CHAPTER.subagents,
+          },
+          {
+            id: 'cp-skills-dir',
+            label: '.github/skills/',
+            type: 'folder',
+            badge: 'committed',
+            oneLiner: 'Agent Skills in the cross-tool open standard.',
+            when: 'Descriptions indexed up front; a skill\'s body loads on match or `/name`.',
+            description:
+              'Each skill is a folder with a SKILL.md — the same format the other tools on this page read, so a skill written for Claude Code drops in unchanged. Copilot also reads `.claude/skills/` and `.agents/skills/` in the repo. `disable-model-invocation: true` makes a skill user-only; custom locations via `chat.agentSkillsLocations`.',
+            chapter: CHAPTER.skills,
+          },
+          {
+            id: 'vscode-mcp',
+            label: '.vscode/mcp.json',
+            type: 'file',
+            badge: 'committed',
+            oneLiner: 'Workspace MCP servers, shared with the team.',
+            when: 'Servers start after you confirm trust; tools appear in agent mode.',
+            description:
+              'A `servers` object, each entry `type: "stdio"` (with `command` and `args`) or `"http"` (with `url`). VS Code asks you to confirm trust before a server first runs, and again when its config changes. Personal servers live in VS Code\'s user configuration instead ("MCP: Open User Configuration").',
+            exampleIntro: 'A stdio server:',
+            example: `{
+  "servers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@github/mcp-server"]
+    }
+  }
+}`,
+            chapter: CHAPTER.mcp,
+          },
+          {
+            id: 'setup-steps',
+            label: '.github/workflows/copilot-setup-steps.yml',
+            type: 'file',
+            badge: 'committed',
+            oneLiner: 'Environment prep for the cloud coding agent — not a hook.',
+            when: 'Runs once per cloud-agent task, before the agent starts.',
+            description:
+              'Despite the name, this is not a lifecycle hook: it is a GitHub Actions workflow that installs dependencies and preps the sandbox the cloud coding agent works in. It never runs for local VS Code sessions.',
+            chapter: CHAPTER.headless,
+          },
+        ],
+      },
+      {
+        label: 'you (VS Code & github.com)',
+        nodes: [
+          {
+            id: 'vscode-settings',
+            label: 'VS Code settings.json',
+            type: 'file',
+            oneLiner: 'The switchboard: `chat.*` settings decide which files Copilot reads.',
+            when: 'Always on, across every workspace.',
+            description:
+              'Copilot has no dotfile of its own — your personal layer is VS Code\'s user settings. The keys that matter for this map: `chat.useAgentsMdFile`, `chat.useClaudeMdFile`, `chat.instructionsFilesLocations`, `chat.promptFilesLocations`, `chat.agentFilesLocations`, `chat.agentSkillsLocations`, and the `chat.tools.*.autoApprove` permission family.',
+            chapter: CHAPTER.configuration,
+          },
+          {
+            id: 'personal-instructions',
+            label: 'Personal instructions  (github.com)',
+            type: 'file',
+            oneLiner: 'Your account-level rules — a setting on github.com, not a file.',
+            when: 'Always on, in every repo; the top of the precedence order.',
+            description:
+              'Set at github.com/settings/copilot and applied to your sessions everywhere. When layers conflict, personal beats repository beats organization — but all applicable layers are concatenated, not replaced.',
+            chapter: CHAPTER.rules,
+          },
+          {
+            id: 'org-instructions',
+            label: 'Org instructions  (github.com)',
+            type: 'file',
+            oneLiner: 'Org-wide rules — with a catch almost everyone misses.',
+            when: 'Applied only in chat on GitHub.com, the cloud coding agent, and code review.',
+            description:
+              'Organization custom instructions do not apply in your IDE — not VS Code, not JetBrains. A rule that must hold in the editor has to live in the repository file instead. Orgs also control model allow-lists, content exclusions, and MCP policy from here.',
+            chapter: CHAPTER.rules,
+          },
+          {
+            id: 'home-copilot-skills',
+            label: '~/.copilot/skills/',
+            type: 'folder',
+            oneLiner: 'Personal skills available in every repo.',
+            when: 'Same lifecycle as project skills: descriptions up front, body on demand.',
+            description:
+              'Same SKILL.md format as project skills. Copilot also reads `~/.agents/skills/`, the cross-tool location shared with Codex, Cursor, and opencode.',
+            chapter: CHAPTER.skills,
+          },
+          {
+            id: 'cp-home-claude-md',
+            label: '~/.claude/CLAUDE.md',
+            type: 'file',
+            oneLiner: 'Your user-level Claude Code rules — Copilot reads them too.',
+            when: 'Read when `chat.useClaudeMdFile` is enabled.',
+            description:
+              'Part of Copilot\'s convergence on the shared specs: rules you already maintain for Claude Code apply here without duplication.',
+            chapter: CHAPTER.rules,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'cursor',
+    label: 'Cursor',
+    scopes: [
+      {
+        label: 'your-project/',
+        nodes: [
+          {
+            id: 'cu-agents-md',
+            label: 'AGENTS.md',
+            type: 'file',
+            badge: 'committed',
+            oneLiner: 'Always-on portable rules; nested files stack, they don\'t replace.',
+            when: 'Root file always; a nested AGENTS.md joins in for work in its subtree.',
+            description:
+              'Plain markdown, no frontmatter — the cross-tool standard shared with Codex, opencode, and Copilot. Nested files concatenate with their ancestors, and the deeper file wins on direct conflict. When you need rules that load conditionally instead of always, you graduate to `.cursor/rules/`.',
+            chapter: CHAPTER.rules,
+          },
+          {
+            id: 'cursorrules',
+            label: '.cursorrules',
+            type: 'file',
+            badge: 'committed',
+            oneLiner: 'The legacy single-file rules format — still honored, no longer recommended.',
+            when: 'Always loaded if present, as one undifferentiated block.',
+            description:
+              'Cursor\'s original rules file, from before `.cursor/rules/` existed; current docs no longer mention it. Migration path: always-true lines move to AGENTS.md, conditional lines become scoped `.mdc` rules.',
+            chapter: CHAPTER.rules,
+          },
+          {
+            id: 'dot-cursor',
+            label: '.cursor/',
+            type: 'folder',
+            oneLiner: 'Everything Cursor reads that is specific to this repo.',
+            description:
+              'Rules, skills, commands, subagents, MCP servers, and hooks — all committed so the whole team shares them. User Rules and Team Rules have no file here: those live in Cursor Settings and the team dashboard.',
+            chapter: CHAPTER.configuration,
+            children: [
+              {
+                id: 'cu-rules-dir',
+                label: 'rules/',
+                type: 'folder',
+                badge: 'committed',
+                oneLiner: 'Structured `.mdc` rules whose frontmatter controls when they attach.',
+                when: 'Per rule: always, glob-matched, agent-judged, or manual via `@RuleName`.',
+                description:
+                  'Three frontmatter fields — `description`, `globs`, `alwaysApply` — combine into four rule types: Always, Apply Intelligently (the agent judges by description), Apply to Specific Files (globs), and Apply Manually. The glob type is not deterministic: it attaches when a matching file enters the agent\'s context, not merely when it\'s open in the editor.',
+                tips: [
+                  'Never trust a glob rule for a non-negotiable convention — promote it to `alwaysApply: true` or into AGENTS.md.',
+                ],
+                exampleIntro: 'A glob-scoped rule:',
+                exampleTitle: '.cursor/rules/api-validation.mdc',
+                example: `---
+description: Validate every API request body with a Zod schema
+globs: ["src/api/**"]
+alwaysApply: false
+---
+All handlers under src/api/ validate input with a Zod
+schema before any business logic.`,
+                chapter: CHAPTER.rules,
+              },
+              {
+                id: 'cu-skills-dir',
+                label: 'skills/',
+                type: 'folder',
+                badge: 'committed',
+                oneLiner: 'Agent Skills — procedures the agent loads when the work matches.',
+                when: 'Auto-loaded when the task matches the description, or invoked as `/skill-name`.',
+                description:
+                  'Folders with a SKILL.md; `paths` globs scope when a skill is a candidate, and `disable-model-invocation: true` makes it manual-only. Cursor also reads `.agents/skills/` plus legacy `.claude/skills/` and `.codex/skills/` — a skill authored for another tool works unchanged.',
+                chapter: CHAPTER.skills,
+              },
+              {
+                id: 'cu-commands-dir',
+                label: 'commands/',
+                type: 'folder',
+                badge: 'committed',
+                oneLiner: 'Fixed prompt templates fired as `/name` in chat.',
+                when: 'On invocation; the filename is the command name.',
+                description:
+                  'Plain markdown, one file per command. Argument passing is limited — no `$ARGUMENTS`-style templating — so write commands that act on current context (the staged diff, the open file) rather than expecting parameters. Team Commands can also be distributed from the dashboard with no local file.',
+                exampleIntro: 'A command that works on the staged diff:',
+                exampleTitle: '.cursor/commands/commit-msg.md',
+                example: `Write a conventional-commits message for the currently
+staged diff. Subject under 60 characters, imperative mood.`,
+                chapter: CHAPTER.slashCommands,
+              },
+              {
+                id: 'cu-agents-dir',
+                label: 'agents/',
+                type: 'folder',
+                badge: 'committed',
+                oneLiner: 'Subagents with isolated context windows, runnable in parallel.',
+                when: 'Auto-delegated by the main agent, invoked as `/name`, or mentioned by name.',
+                description:
+                  'One markdown file per subagent; frontmatter covers `name`, `description`, `model`, `readonly`, and `is_background`. Project definitions beat user-level ones on a name collision, and Cursor also discovers `.claude/agents/` and `.codex/agents/`.',
+                chapter: CHAPTER.subagents,
+              },
+              {
+                id: 'cu-mcp-json',
+                label: 'mcp.json',
+                type: 'file',
+                badge: 'committed',
+                oneLiner: 'MCP servers for this repo — stdio, SSE, or streamable HTTP.',
+                when: 'Servers connect at session start; every enabled server\'s tool schemas load into context.',
+                description:
+                  'stdio servers get `command`, `args`, and `env`; remote servers get `url` and `headers`. The project file resolves before your user file. One-click installs from the MCP Marketplace or cursor.directory write into an mcp.json for you — check which scope it landed in.',
+                exampleIntro: 'A local database server:',
+                example: `{
+  "mcpServers": {
+    "budgetcli-db": {
+      "command": "uvx",
+      "args": ["postgres-mcp", "--access-mode=restricted"],
+      "env": {
+        "DATABASE_URI": "postgresql://localhost:5432/budgetcli_dev"
+      }
+    }
+  }
+}`,
+                chapter: CHAPTER.mcp,
+              },
+              {
+                id: 'cu-hooks-json',
+                label: 'hooks.json',
+                type: 'file',
+                badge: 'committed',
+                oneLiner: 'Deterministic gates on the agent lifecycle — the broadest event surface in scope.',
+                when: 'Fires at the named lifecycle event, every time, whatever the model decided.',
+                description:
+                  'Around 21 events across agent, Tab, and app lifecycle. `beforeShellExecution`, `beforeReadFile`, and `beforeMCPExecution` are the policy workhorses — and the latter two have no analog in Claude Code or Codex. Hooks read JSON on stdin and answer with `permission: allow | deny | ask`; exit 2 blocks, other non-zero exits fail open, so test the deny path.',
+                exampleIntro: 'A gate on shell commands:',
+                example: `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "./.cursor/hooks/protect-ledger.sh" }
+    ]
+  }
+}`,
+                chapter: CHAPTER.hooks,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        label: '~ (home directory)',
+        nodes: [
+          {
+            id: 'home-cursor',
+            label: '~/.cursor/',
+            type: 'folder',
+            oneLiner: 'Your personal Cursor setup across every project.',
+            description:
+              'User-level counterparts of the project files. Note what\'s absent: there is no `~/.cursor/rules/` — personal rules are settings-managed, not a dotfile.',
+            chapter: CHAPTER.configuration,
+            children: [
+              {
+                id: 'cu-home-mcp',
+                label: 'mcp.json',
+                type: 'file',
+                oneLiner: 'Personal MCP servers, available in every repo.',
+                when: 'Servers connect at session start; resolved after the project file.',
+                description:
+                  'Same schema as the project file — the home for tools that are your habit rather than the repo\'s business. On Linux the path is `~/.config/cursor/mcp.json`.',
+                chapter: CHAPTER.mcp,
+              },
+              {
+                id: 'cu-home-hooks',
+                label: 'hooks.json',
+                type: 'file',
+                oneLiner: 'Personal hooks with the same event surface as project hooks.',
+                when: 'Fires at the named lifecycle event, in every project.',
+                description:
+                  'Same schema and verdict channels as the project file. Enterprise plans can also distribute hooks centrally from the dashboard, with no local file.',
+                chapter: CHAPTER.hooks,
+              },
+              {
+                id: 'cu-home-skills',
+                label: 'skills/',
+                type: 'folder',
+                oneLiner: 'Personal skills that follow you across projects.',
+                when: 'Same lifecycle as project skills.',
+                description:
+                  'Cursor also reads `~/.agents/skills/` and the legacy `~/.claude/skills/` and `~/.codex/skills/` at user scope.',
+                chapter: CHAPTER.skills,
+              },
+              {
+                id: 'cu-home-agents',
+                label: 'agents/',
+                type: 'folder',
+                oneLiner: 'Personal subagent definitions.',
+                when: 'Available everywhere; project definitions win on a name collision.',
+                description: 'Same frontmatter schema as project subagents.',
+                chapter: CHAPTER.subagents,
+              },
+            ],
+          },
+          {
+            id: 'cu-user-rules',
+            label: 'User Rules  (in-app, no file)',
+            type: 'file',
+            oneLiner: 'Personal working-style rules, set in Cursor Settings — not a dotfile.',
+            when: 'Always on, in every project.',
+            description:
+              'Your personal rules layer lives in Cursor Settings → Rules; there is no home-directory file for it. Team Rules and Team Commands are the same idea at org scope, distributed from the Cursor dashboard on Team and Enterprise plans. All rule layers are additive — none cancels another.',
+            chapter: CHAPTER.rules,
+          },
+        ],
+      },
+    ],
+  },
+  {
     slug: 'opencode',
-    label: 'OpenCode',
+    label: 'opencode',
     scopes: [
       {
         label: 'your-project/',
@@ -442,7 +850,7 @@ command = "scripts/check-bash-command.sh"`,
             label: 'AGENTS.md',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'The rules layer — OpenCode has no separate rules file.',
+            oneLiner: 'The rules layer — opencode has no separate rules file.',
             when: 'Read at session start, every invocation.',
             description:
               'Follows the open `agents.md` spec and is portable from Codex unchanged. Nesting uses a first-win strategy: a subdirectory\'s AGENTS.md replaces a parent\'s rather than merging with it — the opposite of Claude Code\'s additive layering.',
@@ -454,7 +862,7 @@ command = "scripts/check-bash-command.sh"`,
             type: 'folder',
             oneLiner: 'Project-scoped skills, commands, and agents.',
             description:
-              'OpenCode\'s native asset directory. Note that OpenCode also cross-reads `.claude/skills/` and `.agents/skills/` from the same repo — see those entries below.',
+              'opencode\'s native asset directory. Note that opencode also cross-reads `.claude/skills/` and `.agents/skills/` from the same repo — see those entries below.',
             chapter: CHAPTER.configuration,
             children: [
               {
@@ -462,7 +870,7 @@ command = "scripts/check-bash-command.sh"`,
                 label: 'skills/',
                 type: 'folder',
                 badge: 'committed',
-                oneLiner: 'Native OpenCode skills, loaded on demand via the `skill` tool.',
+                oneLiner: 'Native opencode skills, loaded on demand via the `skill` tool.',
                 when: 'Names and descriptions at session start; the body loads on demand.',
                 description:
                   'Frontmatter requires `name` (must match the directory) and `description`. There is no equivalent to Claude Code\'s `disable-model-invocation` or `context: fork` — the agent sees every skill and loads bodies as needed.',
@@ -487,7 +895,7 @@ command = "scripts/check-bash-command.sh"`,
                 oneLiner: 'Subagents and custom primary agents.',
                 when: 'Subagents run on `@mention`; primary agents are selected at launch.',
                 description:
-                  'Markdown with rich frontmatter: `mode` (`subagent` | `primary` | `all`), per-agent `model` and `temperature`, a `permission` object with glob support, `steps` to cap iterations, and `hidden` to keep it out of autocomplete. Custom primary agents are OpenCode\'s answer to Codex profiles.',
+                  'Markdown with rich frontmatter: `mode` (`subagent` | `primary` | `all`), per-agent `model` and `temperature`, a `permission` object with glob support, `steps` to cap iterations, and `hidden` to keep it out of autocomplete. Custom primary agents are opencode\'s answer to Codex profiles.',
                 exampleIntro: 'A read-only security auditor:',
                 exampleTitle: '.opencode/agents/auditor.md',
                 example: `---
@@ -508,10 +916,10 @@ permission:
             label: '.claude/skills/  (cross-read)',
             type: 'folder',
             badge: 'committed',
-            oneLiner: 'OpenCode reads Claude Code\'s skill directory directly.',
+            oneLiner: 'opencode reads Claude Code\'s skill directory directly.',
             when: 'Same lifecycle as native skills: descriptions at start, body on demand.',
             description:
-              'A skill authored for Claude Code generally works unchanged; OpenCode ignores frontmatter keys it doesn\'t know. Precedence when names collide: `.opencode/skills/` > `.claude/skills/` > `.agents/skills/`.',
+              'A skill authored for Claude Code generally works unchanged; opencode ignores frontmatter keys it doesn\'t know. Precedence when names collide: `.opencode/skills/` > `.claude/skills/` > `.agents/skills/`.',
             chapter: CHAPTER.skills,
           },
           {
@@ -522,7 +930,7 @@ permission:
             oneLiner: 'Skills in the cross-tool standard, shared with Codex.',
             when: 'Walked up from cwd to the git worktree root at session start.',
             description:
-              'The same `.agents/skills/` directories Codex reads. One skill directory can serve OpenCode, Codex, and Claude Code at once.',
+              'The same `.agents/skills/` directories Codex reads. One skill directory can serve opencode, Codex, and Claude Code at once.',
             chapter: CHAPTER.skills,
           },
         ],
@@ -534,7 +942,7 @@ permission:
             id: 'home-opencode',
             label: '~/.config/opencode/',
             type: 'folder',
-            oneLiner: 'Your personal OpenCode setup across all projects.',
+            oneLiner: 'Your personal opencode setup across all projects.',
             description:
               'Global counterparts of the project files: `opencode.json`, `AGENTS.md`, and skills/commands/agents directories.',
             chapter: CHAPTER.configuration,
@@ -556,7 +964,7 @@ permission:
                 oneLiner: 'Personal rules — skipped entirely when a project has its own.',
                 when: 'Read at session start only if the project has no AGENTS.md (first-win).',
                 description:
-                  'Because of OpenCode\'s first-win strategy, this file does not merge with a project AGENTS.md — it is only used when no project file exists.',
+                  'Because of opencode\'s first-win strategy, this file does not merge with a project AGENTS.md — it is only used when no project file exists.',
                 chapter: CHAPTER.rules,
               },
               {
@@ -566,7 +974,7 @@ permission:
                 oneLiner: 'Personal skills available in every project.',
                 when: 'Descriptions at session start; body on demand.',
                 description:
-                  'Same frontmatter schema as project skills. OpenCode also cross-reads `~/.claude/skills/` and `~/.agents/skills/` at the user level.',
+                  'Same frontmatter schema as project skills. opencode also cross-reads `~/.claude/skills/` and `~/.agents/skills/` at the user level.',
                 chapter: CHAPTER.skills,
               },
               {
@@ -585,10 +993,237 @@ permission:
                 oneLiner: 'Personal agent definitions.',
                 when: 'Subagents on `@mention`; primary agents at launch.',
                 description:
-                  'Same frontmatter schema as project agents. OpenCode also ships three built-in subagents: `general` (full access), `explore` (read-only codebase), and `scout` (read-only docs and dependencies).',
+                  'Same frontmatter schema as project agents. opencode also ships three built-in subagents: `general` (full access), `explore` (read-only codebase), and `scout` (read-only docs and dependencies).',
                 chapter: CHAPTER.subagents,
               },
             ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'pi',
+    label: 'Pi',
+    scopes: [
+      {
+        label: 'your-project/',
+        nodes: [
+          {
+            id: 'pi-agents-md',
+            label: 'AGENTS.md',
+            type: 'file',
+            badge: 'committed',
+            oneLiner: 'Project context collected on a directory walk — closest file wins.',
+            when: 'Collected at startup: global first, then each parent directory down to your cwd.',
+            description:
+              'Injected into the system prompt\'s project-context block as guidance — deliberately weaker than `APPEND_SYSTEM.md`, which is for rules the model must not treat as optional. Layering works like `.gitignore`: every file on the walk contributes and the closest wins on overlap. Disable with `--no-context-files`.',
+            chapter: CHAPTER.rules,
+          },
+          {
+            id: 'dot-pi',
+            label: '.pi/',
+            type: 'folder',
+            oneLiner: 'Everything project-specific — and Pi loads none of it until you trust the repo.',
+            description:
+              'The project mirror of `~/.pi/agent/`. Because a project\'s settings, extensions, and skills can execute code the moment they load, Pi stops and asks before honoring any of it the first time you open the repo; the answer persists in your global `trust.json`.',
+            chapter: CHAPTER.configuration,
+            children: [
+              {
+                id: 'pi-settings',
+                label: 'settings.json',
+                type: 'file',
+                badge: 'committed',
+                oneLiner: 'Project overrides, deep-merged key-by-key into your global settings.',
+                when: 'Read at startup, once the project is trusted.',
+                description:
+                  'The project file doesn\'t replace the global one — it deep-merges into it, key by key, on every nested object. Declare only what this repo overrides; everything else falls through from `~/.pi/agent/settings.json`. This is the mechanism behind the "I changed the project file and nothing happened" afternoon: you edited a key that wasn\'t the one winning.',
+                exampleIntro: 'A project file that only tightens one nested key:',
+                example: `// ~/.pi/agent/settings.json
+{ "compaction": { "enabled": true, "reserveTokens": 16384 } }
+
+// .pi/settings.json
+{ "compaction": { "reserveTokens": 8192 } }
+
+// effective for this project
+{ "enabled": true, "reserveTokens": 8192 }`,
+                chapter: CHAPTER.configuration,
+              },
+              {
+                id: 'pi-append-system',
+                label: 'APPEND_SYSTEM.md',
+                type: 'file',
+                badge: 'committed',
+                oneLiner: 'Rules appended to the system prompt itself — Pi\'s strongest rules layer.',
+                when: 'Appended at the start of every session in this repo.',
+                description:
+                  'Where AGENTS.md is helpful context, this file lands inside the system prompt and is stated with full force — while keeping everything the default prompt does well. Its sibling `SYSTEM.md` replaces the default prompt wholesale instead: that\'s for building a fundamentally different agent, at the cost of rewriting the built-in tool guidance yourself.',
+                chapter: CHAPTER.rules,
+              },
+              {
+                id: 'pi-extensions',
+                label: 'extensions/',
+                type: 'folder',
+                badge: 'committed',
+                oneLiner: 'TypeScript extensions: custom tools, commands, and hooks in one API.',
+                when: 'Scanned at startup — but only after the project is trusted.',
+                description:
+                  'Each extension is a `.ts` file (or a directory with an `index.ts`) exporting a function over `ExtensionAPI` — no build step; Pi transpiles on load. This one surface carries what other tools split across MCP configs, hook files, and command directories. An untrusted clone skips the folder silently.',
+                tips: [
+                  '`pi -e ./file.ts` loads one extension for a single run — the fast way to try an idea.',
+                  '`/reload` picks up extension edits without losing the conversation.',
+                ],
+                exampleIntro: 'The smallest useful extension:',
+                exampleTitle: '.pi/extensions/stash-tools.ts',
+                example: `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+  pi.on("session_start", async (_event, ctx) => {
+    ctx.ui.notify("stash-tools loaded", "info");
+  });
+}`,
+                chapter: CHAPTER.hooks,
+              },
+              {
+                id: 'pi-skills',
+                label: 'skills/',
+                type: 'folder',
+                badge: 'committed',
+                oneLiner: 'SKILL.md procedures, loaded progressively when the work matches.',
+                when: 'Names and descriptions enter the system prompt at startup; the body loads only when read.',
+                description:
+                  'Same SKILL.md format as the other tools, with one deliberate deviation: the `name` doesn\'t have to match the directory, so a shared skills repo can serve several tools. Invoke explicitly with `/skill:name`, or let the description match free-text requests.',
+                chapter: CHAPTER.skills,
+              },
+              {
+                id: 'pi-prompts',
+                label: 'prompts/',
+                type: 'folder',
+                badge: 'committed',
+                oneLiner: 'Prompt templates fired as `/name` — manual only, never model-invoked.',
+                when: 'Discovered at startup (trust-gated); invoked by typing `/` plus the filename.',
+                description:
+                  'Markdown with positional `$1`/`$2` arguments, `$ARGUMENTS`, and default fallbacks. The dividing line from a skill: a template\'s description is read by you, in autocomplete; a skill\'s description is read by the model to decide invocation. If it should fire on its own, it wanted to be a skill.',
+                exampleIntro: 'A template with a defaulted argument:',
+                exampleTitle: '.pi/prompts/triage-fetch.md',
+                example: `---
+description: Triage a batch of failed fetch-worker jobs
+argument-hint: "[since]"
+---
+Look at the fetch-worker failures \${1:-in the last 24 hours}.
+For each failed URL, report the error and one recommended
+next step (retry, skip, or needs a new source adapter).`,
+                chapter: CHAPTER.slashCommands,
+              },
+              {
+                id: 'pi-themes',
+                label: 'themes/',
+                type: 'folder',
+                badge: 'committed',
+                oneLiner: 'TUI color themes as JSON, hot-reloaded while active.',
+                when: 'Discovered at startup (trust-gated); the active theme reloads on edit.',
+                description:
+                  '51 color tokens per theme, with a `vars` block so you name a color once and reference it everywhere. Values can be hex, a 256-color index, or empty to fall back to the terminal default.',
+                chapter: CHAPTER.configuration,
+              },
+            ],
+          },
+          {
+            id: 'pi-cross-agents',
+            label: '.agents/skills/  (cross-read)',
+            type: 'folder',
+            badge: 'committed',
+            oneLiner: 'The cross-tool skills standard — the same directories the other tools read.',
+            when: 'Checked alongside `.pi/skills/`, plus ancestor directories up to the repo root.',
+            description:
+              'One skills directory can serve Pi, Claude Code, Codex, Cursor, opencode, and Copilot at once. Pi\'s relaxed name-matching rule exists partly for this: a shared skills repo doesn\'t need renaming per tool.',
+            chapter: CHAPTER.skills,
+          },
+        ],
+      },
+      {
+        label: '~ (home directory)',
+        nodes: [
+          {
+            id: 'home-pi',
+            label: '~/.pi/agent/',
+            type: 'folder',
+            oneLiner: 'Your entire personal Pi setup — settings, models, credentials, trust.',
+            description:
+              'The global tier of Pi\'s two-tier config. Notably absent from this map: no `mcp.json` and no `agents/` directory — MCP arrives via community extensions, and a subagent is just `pi` spawning `pi`. Mirrored `prompts/` and `themes/` directories work exactly like their project copies.',
+            chapter: CHAPTER.configuration,
+            children: [
+              {
+                id: 'home-pi-settings',
+                label: 'settings.json',
+                type: 'file',
+                oneLiner: 'Global defaults for every project — the base of the deep merge.',
+                when: 'Read at startup, in every project.',
+                description:
+                  'The fields worth knowing on sight: `defaultProvider` and `defaultModel`, `defaultThinkingLevel` (`off` through `xhigh`), `enabledModels` (the allow-list `Ctrl+P` cycles through), resource-path arrays (`packages`, `extensions`, `skills`, `prompts`, `themes`), retry policy, and `defaultProjectTrust`.',
+                chapter: CHAPTER.configuration,
+              },
+              {
+                id: 'home-pi-models',
+                label: 'models.json',
+                type: 'file',
+                oneLiner: 'Provider and model definitions: base URLs, API shapes, cost metadata.',
+                when: 'Reloads live; changes apply the next time you open `/model`.',
+                description:
+                  'Where custom and local providers live — the file that makes Pi provider-agnostic. Per-model overrides and context metadata sit alongside each definition.',
+                chapter: CHAPTER.configuration,
+              },
+              {
+                id: 'home-pi-auth',
+                label: 'auth.json',
+                type: 'file',
+                oneLiner: 'Stored credentials — the one pure-secret file, kept at 0600.',
+                when: 'Written by `/login` for OAuth; consulted whenever a provider needs a key.',
+                description:
+                  'Pi splits config into settings you tweak often, credentials you never want on screen, and trust decisions made once per repo — three files, so a stray `cat` of your config doesn\'t also dump your API keys.',
+                chapter: CHAPTER.configuration,
+              },
+              {
+                id: 'home-pi-trust',
+                label: 'trust.json',
+                type: 'file',
+                oneLiner: 'Which project directories you\'ve agreed to trust. Global only — no project mirror.',
+                when: 'Consulted the first time Pi finds project-local settings, extensions, or skills.',
+                description:
+                  'Project-local config can execute code the moment it loads, so Pi stops and asks once per repo and records the answer here. `defaultProjectTrust` and the `--approve`/`--no-approve` flags skip the prompt on purpose for scripted runs.',
+                chapter: CHAPTER.configuration,
+              },
+              {
+                id: 'home-pi-extensions',
+                label: 'extensions/',
+                type: 'folder',
+                oneLiner: 'Personal extensions loaded in every project.',
+                when: 'Scanned at startup; not trust-gated — you put them here yourself.',
+                description:
+                  'Same shape as project extensions. A tool you build for one repo belongs in that repo\'s `.pi/extensions/` instead, so it doesn\'t clutter every other session.',
+                chapter: CHAPTER.hooks,
+              },
+              {
+                id: 'home-pi-skills',
+                label: 'skills/',
+                type: 'folder',
+                oneLiner: 'Personal skills, highest tier in the discovery order.',
+                when: 'Descriptions at startup; body on demand.',
+                description:
+                  'Checked first, alongside `~/.agents/skills/`, before any project location.',
+                chapter: CHAPTER.skills,
+              },
+            ],
+          },
+          {
+            id: 'pi-home-agents-skills',
+            label: '~/.agents/skills/',
+            type: 'folder',
+            oneLiner: 'Personal skills in the cross-tool standard, shared with the other tools.',
+            when: 'Descriptions at startup; body on demand.',
+            description:
+              'The same user-level directory Codex, Cursor, opencode, and Copilot read — author a skill once, use it everywhere.',
+            chapter: CHAPTER.skills,
           },
         ],
       },

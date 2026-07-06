@@ -172,11 +172,11 @@ matcher = "Bash"
   },
   {
     slug: 'opencode',
-    label: 'OpenCode',
+    label: 'opencode',
     configNote:
       'No declarative config — hooks live inside JS/TS plugins. The plugin receives `project`, `client`, `$` (shell), `directory`, `worktree`, and returns an object keyed by event name.',
     orderNote:
-      'OpenCode exposes event families rather than a fixed pipeline — which events fire, and when, depends on what the session does.',
+      'opencode exposes event families rather than a fixed pipeline — which events fire, and when, depends on what the session does.',
     phases: ['Files', 'Commands', 'Permissions', 'Session & messages'],
     events: [
       {

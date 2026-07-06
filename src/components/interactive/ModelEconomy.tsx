@@ -97,6 +97,50 @@ export default function ModelEconomy() {
   const setDial = (id: string, patch: Partial<Dial>) =>
     setDials((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
+  const bestDial = (t: (typeof mdeTasks)[number]): Dial => {
+    const [model, effort] = t.best.split('/') as [MdeModel, MdeEffort];
+    return { model, effort };
+  };
+
+  // Three ways to set every dial at once — the second state (the redo tax)
+  // is one chip away instead of hidden behind a deliberate mis-dial.
+  type Preset = {
+    id: string;
+    label: string;
+    dialFor: (t: (typeof mdeTasks)[number]) => Dial;
+  };
+  const presets: Preset[] = [
+    {
+      id: 'pin',
+      label: 'pin everything expensive',
+      dialFor: () => ({ model: 'capable', effort: 'high' }),
+    },
+    { id: 'route', label: 'route by task', dialFor: bestDial },
+    {
+      id: 'underpower',
+      label: 'underpower the hard task',
+      dialFor: (t) => (t.hard ? { model: 'light', effort: 'low' } : bestDial(t)),
+    },
+  ];
+  const applyPreset = (p: Preset) =>
+    setDials(Object.fromEntries(mdeTasks.map((t) => [t.id, p.dialFor(t)])));
+  const presetActive = (p: Preset) =>
+    mdeTasks.every((t) => {
+      const d = p.dialFor(t);
+      return dials[t.id].model === d.model && dials[t.id].effort === d.effort;
+    });
+
+  // Default is the pinned-expensive corner (see useState above).
+  const isDefault = mdeTasks.every(
+    (t) => dials[t.id].model === 'capable' && dials[t.id].effort === 'high'
+  );
+  const reset = () =>
+    setDials(
+      Object.fromEntries(
+        mdeTasks.map((t) => [t.id, { model: 'capable', effort: 'high' } as Dial])
+      )
+    );
+
   const spend = mdeTasks.reduce((sum, t) => sum + runCost(t, dials[t.id]), 0);
   const redo = mdeTasks.reduce((sum, t) => sum + redoCost(t, dials[t.id]), 0);
   const total = spend + redo;
@@ -138,6 +182,16 @@ export default function ModelEconomy() {
 
   return (
     <div className={useWidgetFrame('mde-root')}>
+      {!isDefault && (
+        <button
+          type="button"
+          className="mde-reset"
+          onClick={reset}
+          aria-label="Reset the dials to the starting configuration"
+        >
+          Reset
+        </button>
+      )}
       <p className="mde-lead">
         A lumpy day: four kinds of task, and two dials on each — which{' '}
         <strong>model</strong> answers, and how much <strong>effort</strong> it
@@ -186,6 +240,21 @@ export default function ModelEconomy() {
         })}
       </ul>
 
+      <div className="mde-presets" role="group" aria-label="Dial presets">
+        <span className="mde-presets-name">presets</span>
+        {presets.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={presetActive(p) ? 'mde-preset mde-preset-on' : 'mde-preset'}
+            aria-pressed={presetActive(p)}
+            onClick={() => applyPreset(p)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
       <div className="mde-ledger" aria-live="polite">
         <div className="mde-stats">
           <span className="mde-stat">
@@ -221,13 +290,11 @@ export default function ModelEconomy() {
       </div>
 
       <p className="mde-footnote">
-        Units are illustrative — one unit is roughly the light model running a
-        small task at low effort. A capable model bills ~
-        {MDE_MODEL_MULT.capable}× per token; high effort generates ~
-        {MDE_EFFORT_MULT.high}× the tokens; the ratios are the point, not the
-        prices. The redo tax counts an underpowered task’s failed attempts
-        plus the escalation you do anyway — not the hour you spend reading
-        confident wrong answers, which is the real bill.
+        Numbers are illustrative — the ratios are the point (capable ≈{' '}
+        {MDE_MODEL_MULT.capable}× per token, high effort ≈{' '}
+        {MDE_EFFORT_MULT.high}× the tokens). The redo tax counts an
+        underpowered task’s failed attempts plus the escalation you’d run
+        anyway, not the hour lost to confident wrong answers.
       </p>
     </div>
   );

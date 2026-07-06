@@ -63,6 +63,15 @@ export default function GuaranteeLadder() {
   const allRule = gldConstraints.every((c) => homes[c.id] === 'rule');
   const allBest = gldConstraints.every((c) => homes[c.id] === c.best);
 
+  // Default is everything in the rules file, clock on "watch" (see useState).
+  const isDefault = allRule && sit === 'watch';
+  const reset = () => {
+    setHomes(
+      Object.fromEntries(gldConstraints.map((c) => [c.id, 'rule' as GldHome]))
+    );
+    setSit('watch');
+  };
+
   let reading: string;
   if (allRule) {
     reading =
@@ -84,6 +93,16 @@ export default function GuaranteeLadder() {
 
   return (
     <div className={useWidgetFrame('gld-root')}>
+      {!isDefault && (
+        <button
+          type="button"
+          className="gld-reset"
+          onClick={reset}
+          aria-label="Reset every constraint to the rules file and the clock to watch"
+        >
+          Reset
+        </button>
+      )}
       <p className="gld-lead">
         Four constraints you want to hold, three homes each: a{' '}
         <strong>rule</strong> (the model is told), a <strong>permission</strong>{' '}
@@ -205,11 +224,10 @@ export default function GuaranteeLadder() {
       </div>
 
       <p className="gld-footnote">
-        The homes wear each tool’s own names — permissions might be an
-        approvals-and-sandbox dial, a hook might be a plugin subscribing to
-        lifecycle events — but the ladder underneath is the same. Guarantee
-        strength is decided by what sits in the loop: the model’s memory, a
-        harness wall, or your code.
+        Each tool wears its own names — permissions may be an
+        approvals-and-sandbox dial, a hook a plugin on lifecycle events — but
+        the ladder is the same: guarantee strength is set by what sits in the
+        loop — the model’s memory, a harness wall, or your code.
       </p>
     </div>
   );

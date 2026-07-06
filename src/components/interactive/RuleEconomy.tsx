@@ -11,10 +11,15 @@ import { useWidgetFrame } from './widget-frame';
 const fmt = (n: number) =>
   n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
 
+const RLE_DEFAULT = ['test-cmd', 'clean-code'];
+
 export default function RuleEconomy() {
-  const [inFile, setInFile] = useState<Set<string>>(
-    new Set(['test-cmd', 'clean-code'])
-  );
+  const [inFile, setInFile] = useState<Set<string>>(new Set(RLE_DEFAULT));
+
+  const isDefault =
+    inFile.size === RLE_DEFAULT.length &&
+    RLE_DEFAULT.every((id) => inFile.has(id));
+  const reset = () => setInFile(new Set(RLE_DEFAULT));
 
   const toggle = (id: string) => {
     setInFile((prev) => {
@@ -52,6 +57,16 @@ export default function RuleEconomy() {
 
   return (
     <div className={useWidgetFrame('rle-root')}>
+      {!isDefault && (
+        <button
+          type="button"
+          className="rle-reset"
+          onClick={reset}
+          aria-label="Reset the rules file to its starting lines"
+        >
+          Reset
+        </button>
+      )}
       <p className="rle-lead">
         Seven candidate lines for your rules file. Toggle each one in and see
         whether it earns its slot over a week of sessions.
@@ -116,10 +131,10 @@ export default function RuleEconomy() {
       </div>
 
       <p className="rle-footnote">
-        Token numbers are illustrative — a re-teach cycle (wrong attempt,
-        correction, redo) dwarfs the cost of the line that prevents it, and
-        that ratio is the point. Assumes {RLE_SESSIONS_PER_WEEK} sessions a
-        week; the file is loaded into the window at the start of every one.
+        Numbers are illustrative — the ratios are the point: a re-teach cycle
+        (wrong attempt, correction, redo) dwarfs the line that prevents it.
+        Assumes {RLE_SESSIONS_PER_WEEK} sessions a week, the file loaded at the
+        start of each.
       </p>
     </div>
   );
