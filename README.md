@@ -4,57 +4,28 @@
   # 🤖 agents.cli
 
   **The missing layer between you and your AI agents.**
-  
-  [![Website](https://img.shields.io/badge/Website-agents.cli-blueviolet?style=for-the-badge)](#)
-  [![License](https://img.shields.io/badge/License-Private-red?style=for-the-badge)](#)
+
+  [![Website](https://img.shields.io/badge/Website-agentscli.com-blueviolet?style=for-the-badge)](https://www.agentscli.com)
 </div>
 
 ---
 
 ## 🌟 Overview
 
-**agents.cli** is your ultimate **warehouse and learning hub** for the most powerful AI coding assistants available today. Whether you're working with **Claude**, **OpenCode**, **KiloCode**, **GitHub Copilot**, or other cutting-edge tools, we provide a centralized website and knowledge base to help you master them all.
+**agents.cli** is a documentation and learning hub for AI coding tools — **Claude Code**, **Codex**, **GitHub Copilot**, **Cursor**, **opencode**, and **Pi** — covering the concepts that span all of them: how agents work, permissions, context management, subagents, hooks, MCP servers, and more.
 
-Beyond just a repository, it's a living educational platform designed to help you leverage AI skills, custom commands, integration hooks, and multi-tool workflows.
+It's a living site: course modules per tool, foundational concepts, and a blog on real-world agentic workflows.
 
 ---
 
-## 🚀 Key Features
+## 🚀 What's here
 
-*   🧠 **The Agent Warehouse**: Discover, compare, and integrate popular AI agents including Claude, OpenCode, KiloCode, GitHub Copilot, and more.
-*   🎓 **Interactive Learning Hub**: Access comprehensive blogs, tutorials, and deep-dives on how to maximize your productivity with AI tools.
-*   🛠️ **Master Skills & Commands**: Learn to define, configure, and execute custom skills and CLI commands that supercharge your daily workflow.
-*   🔗 **Hooks & Integrations**: Connect your existing toolchain seamlessly with powerful webhooks and CLI extensions.
-*   📚 **Rich Content Library**: Regularly updated guides detailing exactly how specific features are provided across multiple tools.
+*   🎓 **Course**: step-by-step modules per tool — getting started, sessions & context, permission modes, planning, and more.
+*   🧱 **Foundations**: cross-tool concepts (how agents work, rules, subagents, model selection, slash commands, skills, MCP servers).
+*   📝 **Blog**: practitioner notes on agentic workflows, session hygiene, and getting more out of AI coding tools.
 
-## 📖 What You'll Learn
+## 📚 Start here
 
-*   **Agent Integration**: How to plug multiple AI agents seamlessly into your development environment.
-*   **Workflow Automation**: Strategies for chaining commands and automating repetitive coding tasks.
-*   **Advanced Hook Usage**: Utilizing lifecycle hooks to trigger AI reviews, tests, and deployments automatically.
-*   **Skill Building**: Crafting specialized skills that your agents can utilize on demand natively.
-
-## 📚 Documentation & Blogs
-
-Dive into our growing collection of resources:
-*   [Getting Started with agents.cli](#)
-*   [Comparing Claude vs. GitHub Copilot in the CLI](#)
-*   [How to Build Custom Skills for OpenCode](#)
-*   [Automating Workflows with Hooks](#)
-
-## 🛠️ Quick Start
-
-Explore our documentation and install the CLI globally to get started:
-
-```bash
-npm install -g agents-cli
-agents-cli init
-```
-
-## 🤝 Contributing
-
-We welcome contributions from the community! Whether it's adding a new tutorial, fixing a bug, or suggesting a new agent integration, please read our contributing guidelines.
-
-## 📄 License
-
-This project is proprietary and closed-source. All rights reserved.
+*   [Course](https://www.agentscli.com/course/)
+*   [Foundations](https://www.agentscli.com/foundations/)
+*   [Blog](https://www.agentscli.com/blog/)
