@@ -18,7 +18,7 @@ export default defineConfig({
 		starlight({
 			title: 'agents.cli',
 			logo: {
-				light: './src/assets/logo-light.png',
+				light: './src/assets/logo-light.svg',
 				dark: './src/assets/logo-dark.svg',
 				replacesTitle: true,
 			},
@@ -92,15 +92,15 @@ export default defineConfig({
 				// when CF_BEACON_TOKEN is set, so local dev and untokened builds stay clean.
 				...(CF_BEACON_TOKEN
 					? [
-							{
-								tag: 'script',
-								attrs: {
-									defer: true,
-									src: 'https://static.cloudflareinsights.com/beacon.min.js',
-									'data-cf-beacon': `{"token": "${CF_BEACON_TOKEN}"}`,
-								},
+						{
+							tag: 'script',
+							attrs: {
+								defer: true,
+								src: 'https://static.cloudflareinsights.com/beacon.min.js',
+								'data-cf-beacon': `{"token": "${CF_BEACON_TOKEN}"}`,
 							},
-						]
+						},
+					]
 					: []),
 			],
 			// NOTE: the sidebar is intentionally NOT set here. starlight-sidebar-topics
