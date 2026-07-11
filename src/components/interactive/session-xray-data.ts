@@ -42,7 +42,7 @@ const intro: TrBeat[] = [
     ],
     panel: {
       add: [{ id: 'brief', slot: 'c', label: 'Your task brief', value: 1 }],
-      note: 'Your actual request: 1k. The window is already 9% committed, and your ask is half a percent of it.',
+      note: 'Your actual request: 1k. The window is already 9% spent, and your ask is half a percent of it.',
     },
     holdMs: 500,
   },

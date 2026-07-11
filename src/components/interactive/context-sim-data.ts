@@ -76,7 +76,7 @@ export const simSteps: SimStep[] = [
     id: 'brief',
     title: 'You describe the task',
     narration:
-      'Your migration brief: one careful paragraph, about 1k tokens. Notice the ratio — the window is already 16% committed, and your actual request is half a percent of it.',
+      'Your migration brief: one careful paragraph, about 1k tokens. Notice the ratio — the window is already 16% spent, and your actual request is half a percent of it.',
     add: [
       {
         id: 'user-brief',

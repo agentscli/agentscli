@@ -11,6 +11,12 @@ const BADGE_LABEL: Record<string, string> = {
   'auto-generated': 'auto-generated',
 };
 
+const BADGE_HINT: Record<string, string> = {
+  committed: 'Tracked in git — shared with your whole team.',
+  gitignored: 'Excluded from git — stays on your machine only.',
+  'auto-generated': "Written by the tool itself — don't hand-edit.",
+};
+
 // Long path labels wrap at slashes rather than mid-token.
 function breakAtSlashes(label: string): React.ReactNode {
   const parts = label.split(/(?<=\/)/);
@@ -166,6 +172,13 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
         ))}
       </div>
 
+      <div className="cx-legend">
+        <span className="cx-badge cx-badge-committed">committed</span>
+        <span className="cx-legend-text">in git, shared with your team</span>
+        <span className="cx-badge cx-badge-gitignored">gitignored</span>
+        <span className="cx-legend-text">local only, never shared</span>
+      </div>
+
       <div className="cx-body">
         <div className="cx-tree" aria-label={`${tool.label} config files`}>
           {tool.scopes.map((scope, scopeIdx) => (
@@ -206,7 +219,10 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
                           {breakAtSlashes(node.label)}
                         </span>
                         {node.badge && (
-                          <span className={`cx-badge cx-badge-${node.badge}`}>
+                          <span
+                            className={`cx-badge cx-badge-${node.badge}`}
+                            title={BADGE_HINT[node.badge]}
+                          >
                             {BADGE_LABEL[node.badge]}
                           </span>
                         )}
@@ -242,7 +258,9 @@ function DetailPanel({ node }: { node: ExplorerNode }) {
       <div className="cx-detail-header">
         <span className="cx-detail-title">{node.label}</span>
         {node.badge && (
-          <span className={`cx-badge cx-badge-${node.badge}`}>{BADGE_LABEL[node.badge]}</span>
+          <span className={`cx-badge cx-badge-${node.badge}`} title={BADGE_HINT[node.badge]}>
+            {BADGE_LABEL[node.badge]}
+          </span>
         )}
       </div>
       <p className="cx-detail-oneliner">{withCode(node.oneLiner)}</p>
