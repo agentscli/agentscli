@@ -4,6 +4,7 @@ description: "Audit how a fresh agent actually navigates your codebase, then fix
 ---
 
 import FreshEyes from '../../../components/interactive/FreshEyes.tsx';
+import { Steps } from '@astrojs/starlight/components';
 
 **Use this when** the agent keeps making wide, wrong edits in a particular part of your codebase — you ask it to "skip archived customers in the nightly billing run" and it touches a fistful of files, edits a shared helper two other jobs depend on, and quietly breaks the dunning emails — or when every session burns its first stretch of tokens rediscovering the same layout. Nothing the agent did was unreasonable; it read the code that was there. The codebase just never told it where the edit lived, or what else was listening.
 
@@ -23,182 +24,186 @@ Be the fresh agent for a minute — same question, two structures:
 
 Running example throughout: a billing folder, split three ways — `services/billing.ts`, `validators/billing.ts`, and `jobs/nightly-run.ts` — each holding a fragment of the same decision: who gets billed this cycle. No single file owns the answer.
 
-**1. Pick the seam where the agent actually struggles.** Evidence first: pull up the recent session where it went wrong and note where the wrong turns happened — the search that missed, the file it shouldn't have touched. Don't restructure ahead of demonstrated failure; this play is run per-seam, on evidence, not as a repo-wide beautification.
+<Steps>
 
-Here's what "went wrong" looks like in a transcript, not just in the retelling — the request from the top of this page, played out:
+1. **Pick the seam where the agent actually struggles.** Evidence first: pull up the recent session where it went wrong and note where the wrong turns happened — the search that missed, the file it shouldn't have touched. Don't restructure ahead of demonstrated failure; this play is run per-seam, on evidence, not as a repo-wide beautification.
 
-```text
-> skip archived customers in the nightly billing run
+   Here's what "went wrong" looks like in a transcript, not just in the retelling — the request from the top of this page, played out:
 
-  ⏵ Grep   "billing" src/                →  9 matches across controllers/, services/, models/, validators/, jobs/
-  ⏵ Read   services/billing.ts           # runBilling() filters by due date — adds the archived check here
-  ⏵ Edit   services/billing.ts
-  ⏵ Bash   npm test                       →  2 failing: dunning.test.ts, reports.test.ts
-  ⏵ Read   validators/billing.ts         # a second, competing exclusion rule this edit didn't know existed
-  ⏵ Edit   validators/billing.ts
-  ⏵ Bash   npm test                       →  1 failing: dunning.test.ts
-  ⏵ Read   jobs/nightly-run.ts           # a third, hardcoded filter — `status !== 'trial'` — never
-                                            mentioned by either file it just touched
-  ⏵ Edit   jobs/nightly-run.ts
-  ⏵ Bash   npm test                       →  green — after three edits, three re-reads, and a diff that
-                                            now touches every layer billing has a folder for
-```
+   ```text
+   > skip archived customers in the nightly billing run
 
-Nothing here is a reasoning failure. Three files each hold a piece of "who gets billed," and nothing on disk says so — the agent found the fragments the only way it could, one test failure at a time. That transcript, or one shaped like it, is the seam. Keep it; you'll want it again at the end of this audit, once the fix is in and the same request lands differently. *Checkpoint: one target area and one transcript showing the failure.*
+     ⏵ Grep   "billing" src/                →  9 matches across controllers/, services/, models/, validators/, jobs/
+     ⏵ Read   services/billing.ts           # runBilling() filters by due date — adds the archived check here
+     ⏵ Edit   services/billing.ts
+     ⏵ Bash   npm test                       →  2 failing: dunning.test.ts, reports.test.ts
+     ⏵ Read   validators/billing.ts         # a second, competing exclusion rule this edit didn't know existed
+     ⏵ Edit   validators/billing.ts
+     ⏵ Bash   npm test                       →  1 failing: dunning.test.ts
+     ⏵ Read   jobs/nightly-run.ts           # a third, hardcoded filter — `status !== 'trial'` — never
+                                               mentioned by either file it just touched
+     ⏵ Edit   jobs/nightly-run.ts
+     ⏵ Bash   npm test                       →  green — after three edits, three re-reads, and a diff that
+                                               now touches every layer billing has a folder for
+   ```
 
-**2. Probe naming: ask a fresh session where the logic lives, in your team's spoken words.**
+   Nothing here is a reasoning failure. Three files each hold a piece of "who gets billed," and nothing on disk says so — the agent found the fragments the only way it could, one test failure at a time. That transcript, or one shaped like it, is the seam. Keep it; you'll want it again at the end of this audit, once the fix is in and the same request lands differently. *Checkpoint: one target area and one transcript showing the failure.*
 
-```text
-> Where do we decide which customers get billed?
-```
+2. **Probe naming: ask a fresh session where the logic lives, in your team's spoken words.**
 
-Phrase it exactly how a teammate would say it over Slack — internal nicknames included — because an agent cannot infer synonyms for jargon that exists only in your standups. Don't ask a human who already knows; that's the tenure the agent doesn't have.
+   ```text
+   > Where do we decide which customers get billed?
+   ```
 
-**Pass:** the session lands in two greps or fewer. **Fail:** more than two greps, or three-plus file-opens, before it converges on an answer — the exact shape of the transcript in step 1, where the agent had to *discover* the fragmentation by testing its way through it, one broken assumption at a time.
+   Phrase it exactly how a teammate would say it over Slack — internal nicknames included — because an agent cannot infer synonyms for jargon that exists only in your standups. Don't ask a human who already knows; that's the tenure the agent doesn't have.
 
-*If it fails:* go domain-first over layer-first — organize by what the code is about, not by technical stratum:
+   **Pass:** the session lands in two greps or fewer. **Fail:** more than two greps, or three-plus file-opens, before it converges on an answer — the exact shape of the transcript in step 1, where the agent had to *discover* the fragmentation by testing its way through it, one broken assumption at a time.
 
-```text
-# illegible — organized by technical layer
-src/
-  controllers/billing.ts
-  services/billing.ts
-  models/billing.ts
-  validators/billing.ts
-  # "where does billing live?" — four files, four folders
+   *If it fails:* go domain-first over layer-first — organize by what the code is about, not by technical stratum:
 
-# legible — organized by domain
-src/
-  billing/
-    select.ts         # who gets billed
-    invoice.ts        # how much
-    notify.ts          # side effects: email, audit
-  # one folder, one answer
-```
+   ```text
+   # illegible — organized by technical layer
+   src/
+     controllers/billing.ts
+     services/billing.ts
+     models/billing.ts
+     validators/billing.ts
+     # "where does billing live?" — four files, four folders
 
-— and where renaming isn't feasible yet, one glossary line mapping slang to path ("the sync layer" → `telemetry-bridge/`) is a stopgap, not a fix; a name a newcomer has to look up in a glossary is still a name that failed the probe, just with a cheaper workaround attached. Better, when you can afford it, to rename toward the words people actually say — the glossary line is what you write down while that's still a bigger job than today's ticket. *Checkpoint: a fresh session lands in ≤2 greps.*
+   # legible — organized by domain
+   src/
+     billing/
+       select.ts         # who gets billed
+       invoice.ts        # how much
+       notify.ts          # side effects: email, audit
+     # one folder, one answer
+   ```
 
-**3. Probe the context budget: ask for one small change and watch what it reads.**
+   — and where renaming isn't feasible yet, one glossary line mapping slang to path ("the sync layer" → `telemetry-bridge/`) is a stopgap, not a fix; a name a newcomer has to look up in a glossary is still a name that failed the probe, just with a cheaper workaround attached. Better, when you can afford it, to rename toward the words people actually say — the glossary line is what you write down while that's still a bigger job than today's ticket. *Checkpoint: a fresh session lands in ≤2 greps.*
 
-```text
-> Add a $5 minimum invoice amount to the billing run — anything below
-  that rolls over to next cycle instead of getting billed.
-```
+3. **Probe the context budget: ask for one small change and watch what it reads.**
 
-**Pass:** what it opens is proportional to the edit — it reads the file that owns the decision, maybe one caller, and writes the change. **Fail:** it opens the whole file plus several others to understand an edit that should be local — a ten-line change dragging a thousand-line file, and everything that file imports, into context just to be safe.
+   ```text
+   > Add a $5 minimum invoice amount to the billing run — anything below
+     that rolls over to next cycle instead of getting billed.
+   ```
 
-A large file isn't wrong for crossing some number of lines — no vendor publishes a source-file-size threshold, and inventing one gives a rule fake authority it doesn't have. It's wrong because a small edit drags the whole thing into context, and every extra file read is a file the model now has to hold alongside the one that actually matters — which is where the "worse, not just slower" line from this chapter's opening bites hardest.
+   **Pass:** what it opens is proportional to the edit — it reads the file that owns the decision, maybe one caller, and writes the change. **Fail:** it opens the whole file plus several others to understand an edit that should be local — a ten-line change dragging a thousand-line file, and everything that file imports, into context just to be safe.
 
-*If it fails:* split along the seam it had to reason across — the file's job, not an arbitrary line count. And where the repo is what it is today — mid-migration, a vendor dependency you can't restructure, a rename too large to review in one sitting — give the agent structural eyes instead of asking it to read more text. A syntax-aware navigation layer over [MCP](/foundations/mcp-servers/), built on the same language-server protocol your IDE's "go to definition" and "rename symbol" already run on, turns "grep for the name, open every match, hope none of them are a comment or an unrelated method with the same name" into a small number of exact, structural operations: find where a symbol is defined, find every real reference to it (no false positives from strings or comments), rename it everywhere at once.
+   A large file isn't wrong for crossing some number of lines — no vendor publishes a source-file-size threshold, and inventing one gives a rule fake authority it doesn't have. It's wrong because a small edit drags the whole thing into context, and every extra file read is a file the model now has to hold alongside the one that actually matters — which is where the "worse, not just slower" line from this chapter's opening bites hardest.
 
-[Serena](https://github.com/oraios/serena) is the best-known example of this pattern as of mid-2026 — an MCP server wrapping language servers for 40-plus languages, installed with `uv tool install -p 3.13 serena-agent` and then `serena init`. Its own published evaluation quotes an agent describing the difference directly: cross-file renames and reference lookups that would otherwise cost "8–12 careful, error-prone steps collapse into one atomic call." That's a vendor's own selected quote, not an independent benchmark — treat it as directionally honest, not as a number to cite as fact — but the mechanism it's describing is the same one your IDE has used for years: a language server that actually resolves symbols, instead of a text search that has to guess. This is a recovery tool, not a substitute for step 2's restructure — it makes a codebase you can't reshape yet more navigable; it doesn't make the fragmentation disappear. *Checkpoint: what it reads is proportional to the edit.*
+   *If it fails:* split along the seam it had to reason across — the file's job, not an arbitrary line count. And where the repo is what it is today — mid-migration, a vendor dependency you can't restructure, a rename too large to review in one sitting — give the agent structural eyes instead of asking it to read more text. A syntax-aware navigation layer over [MCP](/foundations/mcp-servers/), built on the same language-server protocol your IDE's "go to definition" and "rename symbol" already run on, turns "grep for the name, open every match, hope none of them are a comment or an unrelated method with the same name" into a small number of exact, structural operations: find where a symbol is defined, find every real reference to it (no false positives from strings or comments), rename it everywhere at once.
 
-**4. Probe the boundaries: have it predict the blast radius before it edits.**
+   [Serena](https://github.com/oraios/serena) is the best-known example of this pattern as of mid-2026 — an MCP server wrapping language servers for 40-plus languages, installed with `uv tool install -p 3.13 serena-agent` and then `serena init`. Its own published evaluation quotes an agent describing the difference directly: cross-file renames and reference lookups that would otherwise cost "8–12 careful, error-prone steps collapse into one atomic call." That's a vendor's own selected quote, not an independent benchmark — treat it as directionally honest, not as a number to cite as fact — but the mechanism it's describing is the same one your IDE has used for years: a language server that actually resolves symbols, instead of a text search that has to guess. This is a recovery tool, not a substitute for step 2's restructure — it makes a codebase you can't reshape yet more navigable; it doesn't make the fragmentation disappear. *Checkpoint: what it reads is proportional to the edit.*
 
-```text
-> Before changing anything — if I ask you to add a $5 minimum invoice
-  threshold, which other files will that change affect?
-```
+4. **Probe the boundaries: have it predict the blast radius before it edits.**
 
-**Pass:** its list roughly matches what a careful human on the team would name. **Fail:** a wide gap between its prediction and reality — it names one obvious file and misses the two that actually break, or names files with no real connection at all. That gap *is* the finding: it means the coupling is tribal knowledge, invisible in the code, so invisible to the agent too. That's the multi-file billing edit from the top of this page, predicted in advance instead of discovered by breaking tests.
+   ```text
+   > Before changing anything — if I ask you to add a $5 minimum invoice
+     threshold, which other files will that change affect?
+   ```
 
-*If it fails:* make the decision a pure function and move side effects to the caller —
+   **Pass:** its list roughly matches what a careful human on the team would name. **Fail:** a wide gap between its prediction and reality — it names one obvious file and misses the two that actually break, or names files with no real connection at all. That gap *is* the finding: it means the coupling is tribal knowledge, invisible in the code, so invisible to the agent too. That's the multi-file billing edit from the top of this page, predicted in advance instead of discovered by breaking tests.
 
-```ts
-// illegible — one function, four responsibilities, invisible coupling
-export function process(items, opts) {
-  const cfg = Config.current()           // hidden dependency
-  const filtered = applyRules(items, cfg)
-  Cache.invalidate('billing')            // side effect
-  Audit.write('billing.run', filtered)   // side effect
-  Mailer.queueDunning(filtered)          // side effect — the surprise
-  return filtered
-}
+   *If it fails:* make the decision a pure function and move side effects to the caller —
 
-// legible — the decision is a pure function; side effects live at the caller
-export function selectBillableItems(items, now) {
-  return items.filter(i => !i.archived && i.dueBefore(now))
-}
-```
+   ```ts
+   // illegible — one function, four responsibilities, invisible coupling
+   export function process(items, opts) {
+     const cfg = Config.current()           // hidden dependency
+     const filtered = applyRules(items, cfg)
+     Cache.invalidate('billing')            // side effect
+     Audit.write('billing.run', filtered)   // side effect
+     Mailer.queueDunning(filtered)          // side effect — the surprise
+     return filtered
+   }
 
-— and aim for a few *deep* modules: a narrow public surface, cheap to read, hiding a lot of implementation. Deep is not the same as small, and it's worth seeing the wrong cure once. Split `process()` for its own sake, without redrawing the boundary, and you can end up here instead:
+   // legible — the decision is a pure function; side effects live at the caller
+   export function selectBillableItems(items, now) {
+     return items.filter(i => !i.archived && i.dueBefore(now))
+   }
+   ```
 
-```ts
-// confetti — five files, four responsibilities, the SAME coupling, plus new indirection
-// billing/getConfig.ts
-export function getConfig() { return Config.current() }
+   — and aim for a few *deep* modules: a narrow public surface, cheap to read, hiding a lot of implementation. Deep is not the same as small, and it's worth seeing the wrong cure once. Split `process()` for its own sake, without redrawing the boundary, and you can end up here instead:
 
-// billing/applyFilter.ts
-export function applyFilter(items, cfg) { return applyRules(items, cfg) }
+   ```ts
+   // confetti — five files, four responsibilities, the SAME coupling, plus new indirection
+   // billing/getConfig.ts
+   export function getConfig() { return Config.current() }
 
-// billing/invalidateCache.ts
-export function invalidateCache() { Cache.invalidate('billing') }
+   // billing/applyFilter.ts
+   export function applyFilter(items, cfg) { return applyRules(items, cfg) }
 
-// billing/writeAudit.ts
-export function writeAudit(filtered) { Audit.write('billing.run', filtered) }
+   // billing/invalidateCache.ts
+   export function invalidateCache() { Cache.invalidate('billing') }
 
-// billing/queueDunning.ts
-export function queueDunning(filtered) { Mailer.queueDunning(filtered) }
+   // billing/writeAudit.ts
+   export function writeAudit(filtered) { Audit.write('billing.run', filtered) }
 
-// billing/run.ts — still has to know all five exist, and in what order
-export function process(items, opts) {
-  const cfg = getConfig()
-  const filtered = applyFilter(items, cfg)
-  invalidateCache()
-  writeAudit(filtered)
-  queueDunning(filtered)
-  return filtered
-}
-```
+   // billing/queueDunning.ts
+   export function queueDunning(filtered) { Mailer.queueDunning(filtered) }
 
-Nothing shrank. `run.ts` still has to hold all five collaborators in mind, in the same order, with the same hidden dependency on global config — the confetti version just spread that same understanding across six files and a set of one-line indirections instead of one. An agent asked to predict this version's blast radius fails step 4 exactly as badly as it failed against the original tangle, now with more files to open first. The deep-module fix is the earlier code block: one pure decision, side effects pushed to the caller, a surface small enough that `selectBillableItems(items, now)` *is* the whole interface — nothing left to spread out.
+   // billing/run.ts — still has to know all five exist, and in what order
+   export function process(items, opts) {
+     const cfg = getConfig()
+     const filtered = applyFilter(items, cfg)
+     invalidateCache()
+     writeAudit(filtered)
+     queueDunning(filtered)
+     return filtered
+   }
+   ```
 
-That narrow surface is also the delegation contract this whole site keeps circling: you keep taste over the interface; the agent owns the implementation behind it, held in place by tests. Decide the boundary at planning time, when a ticket becomes tasks — not at review time, after the coupling already leaked into a diff you now have to unwind. *Checkpoint: on the next real change, its prediction matches what actually moved.*
+   Nothing shrank. `run.ts` still has to hold all five collaborators in mind, in the same order, with the same hidden dependency on global config — the confetti version just spread that same understanding across six files and a set of one-line indirections instead of one. An agent asked to predict this version's blast radius fails step 4 exactly as badly as it failed against the original tangle, now with more files to open first. The deep-module fix is the earlier code block: one pure decision, side effects pushed to the caller, a surface small enough that `selectBillableItems(items, now)` *is* the whole interface — nothing left to spread out.
 
-**5. Probe verification: have a fresh session confirm a recent "done" actually works.**
+   That narrow surface is also the delegation contract this whole site keeps circling: you keep taste over the interface; the agent owns the implementation behind it, held in place by tests. Decide the boundary at planning time, when a ticket becomes tasks — not at review time, after the coupling already leaked into a diff you now have to unwind. *Checkpoint: on the next real change, its prediction matches what actually moved.*
 
-```text
-> Here's a PR where I reported this feature as done. Using only the
-  existing test suite and your own exploration — not me — verify that
-  it actually works. What's your verdict, and what did you check?
-```
+5. **Probe verification: have a fresh session confirm a recent "done" actually works.**
 
-**Pass:** it reaches a verdict — pass or fail — from the suite and the code alone, and can point to what it ran. **Fail:** it can't get past "looks right to me" without asking you to manually check something, because there's nothing checkable to run.
+   ```text
+   > Here's a PR where I reported this feature as done. Using only the
+     existing test suite and your own exploration — not me — verify that
+     it actually works. What's your verdict, and what did you check?
+   ```
 
-If it fails, the scaffolding isn't carrying its weight — the agent's read-act-verify [loop](/foundations/how-agents-work/#the-agentic-loop) only closes if the verify step has something real to run. *If it fails:* the tests have to come from somewhere the agent didn't write them — which is exactly the [TDD playbook](/playbooks/tdd-with-agents/): a failing test committed before the fix, so "done" means "satisfies a spec that predates the implementation," not "the code and its own test agree with each other." For long unattended stretches, prefer a machine-checkable status format over a prose checklist; a JSON pass/fail list is harder for a stuck agent to quietly soften than a Markdown line it can edit into agreeing with itself. *Checkpoint: a fresh session reaches a verdict from the suite alone.*
+   **Pass:** it reaches a verdict — pass or fail — from the suite and the code alone, and can point to what it ran. **Fail:** it can't get past "looks right to me" without asking you to manually check something, because there's nothing checkable to run.
 
-Once this probe passes reliably, it's cheap enough to run as a standing regression check, not just a one-time audit: after any merge that touches the seam, before handing a new hire or a new agent session its first real task in this folder, or on a rolling cadence if the area sees steady churn. A structure that passed once can decay the same way a rules file goes stale — a new file added inside the domain folder without a clear name, a fast-follow PR that reintroduces a shared helper. Rerunning the same four prompts costs a few minutes and turns that decay into a failed probe today instead of next month's version of the transcript in step 1.
+   If it fails, the scaffolding isn't carrying its weight — the agent's read-act-verify [loop](/foundations/how-agents-work/#the-agentic-loop) only closes if the verify step has something real to run. *If it fails:* the tests have to come from somewhere the agent didn't write them — which is exactly the [TDD playbook](/playbooks/tdd-with-agents/): a failing test committed before the fix, so "done" means "satisfies a spec that predates the implementation," not "the code and its own test agree with each other." For long unattended stretches, prefer a machine-checkable status format over a prose checklist; a JSON pass/fail list is harder for a stuck agent to quietly soften than a Markdown line it can edit into agreeing with itself. *Checkpoint: a fresh session reaches a verdict from the suite alone.*
 
-**6. Write down only what structure can't say.** After the structural fixes, some residue remains — the one folder whose name truly can't explain itself, the team slang you didn't rename toward, one recurring mistake the codebase keeps inviting. Capture those as narrow, example-bound notes in your [rules file](/foundations/rules/) — a note scoped to one error class, with a bad example and a good one, not a paragraph of general advice:
+   Once this probe passes reliably, it's cheap enough to run as a standing regression check, not just a one-time audit: after any merge that touches the seam, before handing a new hire or a new agent session its first real task in this folder, or on a rolling cadence if the area sees steady churn. A structure that passed once can decay the same way a rules file goes stale — a new file added inside the domain folder without a clear name, a fast-follow PR that reintroduces a shared helper. Rerunning the same four prompts costs a few minutes and turns that decay into a failed probe today instead of next month's version of the transcript in step 1.
 
-```md
-## Lint: no-floating-promises in billing/
+6. **Write down only what structure can't say.** After the structural fixes, some residue remains — the one folder whose name truly can't explain itself, the team slang you didn't rename toward, one recurring mistake the codebase keeps inviting. Capture those as narrow, example-bound notes in your [rules file](/foundations/rules/) — a note scoped to one error class, with a bad example and a good one, not a paragraph of general advice:
 
-Bad — the promise is fired and forgotten; a failed charge disappears silently:
-  chargeCustomer(id)
+   ```md
+   ## Lint: no-floating-promises in billing/
 
-Good — awaited, and the failure has somewhere to go:
-  await chargeCustomer(id).catch(err => Audit.write('charge.failed', { id, err }))
+   Bad — the promise is fired and forgotten; a failed charge disappears silently:
+     chargeCustomer(id)
 
-This class of error recurs in billing/ because most calls here used to be
-synchronous. When you see a bare async call with no `await` or `.catch`,
-fix it to the pattern above — don't just silence the lint rule.
-```
+   Good — awaited, and the failure has somewhere to go:
+     await chargeCustomer(id).catch(err => Audit.write('charge.failed', { id, err }))
 
-A note this narrow is small enough to stay true and specific enough to change behavior — a general "write clean async code" line in the same file would do neither. The pattern is: one error class, one bad example, one good example, one sentence on why the mistake keeps happening here specifically. Practitioners who've tried this report a real jump in fix rate on the exact error the note names — treat the *shape* of that result as trustworthy and any specific number you hear quoted as unverified until you measure it on your own repo. *Checkpoint: every note covers one folder or one error class — nothing titled "how this codebase works."*
+   This class of error recurs in billing/ because most calls here used to be
+   synchronous. When you see a bare async call with no `await` or `.catch`,
+   fix it to the pattern above — don't just silence the lint rule.
+   ```
 
-With the fix in and the note written, run the opening scenario again and the transcript looks like nothing that came before it:
+   A note this narrow is small enough to stay true and specific enough to change behavior — a general "write clean async code" line in the same file would do neither. The pattern is: one error class, one bad example, one good example, one sentence on why the mistake keeps happening here specifically. Practitioners who've tried this report a real jump in fix rate on the exact error the note names — treat the *shape* of that result as trustworthy and any specific number you hear quoted as unverified until you measure it on your own repo. *Checkpoint: every note covers one folder or one error class — nothing titled "how this codebase works."*
 
-```text
-> skip archived customers in the nightly billing run
+   With the fix in and the note written, run the opening scenario again and the transcript looks like nothing that came before it:
 
-  ⏵ Grep   "billing" src/billing/       →  1 file: billing/select.ts — the one function that decides
-  ⏵ Read   billing/select.ts
-  ⏵ Edit   billing/select.ts            # adds the archived check to the one filter that owns it
-  ⏵ Bash   npm test                      →  green, first try
-```
+   ```text
+   > skip archived customers in the nightly billing run
 
-One file, one edit, no rediscovery. Nothing about the request changed between the two transcripts — only the structure it landed on.
+     ⏵ Grep   "billing" src/billing/       →  1 file: billing/select.ts — the one function that decides
+     ⏵ Read   billing/select.ts
+     ⏵ Edit   billing/select.ts            # adds the archived check to the one filter that owns it
+     ⏵ Bash   npm test                      →  green, first try
+   ```
+
+   One file, one edit, no rediscovery. Nothing about the request changed between the two transcripts — only the structure it landed on.
+
+</Steps>
 
 ## When not to use it
 

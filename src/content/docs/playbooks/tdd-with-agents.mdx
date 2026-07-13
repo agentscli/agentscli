@@ -4,6 +4,7 @@ description: "Write the failing test first, commit it as the spec, then let the 
 ---
 
 import SpecLock from '../../../components/interactive/SpecLock.tsx';
+import { Steps } from '@astrojs/starlight/components';
 
 **Use this when** you're delegating a bug fix or a well-understood behavior change, and you need to trust the result without auditing every line of the diff. The tell that you need it: the agent announces "done, all fixed!" and you realize you have no way to check that's true short of re-deriving the fix yourself. Run this play and the ending changes — the agent says done, you run one command, a test that existed *before* the fix, and you know. Not "looks right." Know.
 
@@ -25,166 +26,170 @@ The steps below run that same session out to its two commits, with the simplest 
 
 Running example: a seasonal-discount bug — on the *last day* of the sale, customers get the old rate. A boundary off-by-one, where "fixed" and "moved" are easy to confuse.
 
-**1. Write the failing test yourself, before the first prompt.** You, not the agent — a test from the author of the coming fix describes the code; a test from the requirement describes the truth:
+<Steps>
 
-```ts
-// src/pricing/discount.test.ts
-test('applies the sale rate through the last second of the sale', () => {
-  const saleEndsAt = new Date('2026-07-15T23:59:59Z');
-  expect(discountRate(new Date('2026-07-15T23:59:59Z'), saleEndsAt)).toBe(0.30);
-  expect(discountRate(new Date('2026-07-16T00:00:01Z'), saleEndsAt)).toBe(0.10);
-});
-```
+1. **Write the failing test yourself, before the first prompt.** You, not the agent — a test from the author of the coming fix describes the code; a test from the requirement describes the truth:
 
-Not "fix the discount thing" — the final second still counts, one second past midnight doesn't. Every ambiguity you resolve here is a question the agent won't guess at later. *Checkpoint: the assertions name the precise boundary, not just a happy path.*
+   ```ts
+   // src/pricing/discount.test.ts
+   test('applies the sale rate through the last second of the sale', () => {
+     const saleEndsAt = new Date('2026-07-15T23:59:59Z');
+     expect(discountRate(new Date('2026-07-15T23:59:59Z'), saleEndsAt)).toBe(0.30);
+     expect(discountRate(new Date('2026-07-16T00:00:01Z'), saleEndsAt)).toBe(0.10);
+   });
+   ```
 
-**2. Run it. Confirm it fails on the assertion.** Not a typo, not a missing import — a test that fails for the wrong reason proves nothing when it passes:
+   Not "fix the discount thing" — the final second still counts, one second past midnight doesn't. Every ambiguity you resolve here is a question the agent won't guess at later. *Checkpoint: the assertions name the precise boundary, not just a happy path.*
 
-```text
-$ npm test discount.test.ts
-✗ applies the sale rate through the last second of the sale
-  Expected: 0.3
-  Received: 0.1
-```
+2. **Run it. Confirm it fails on the assertion.** Not a typo, not a missing import — a test that fails for the wrong reason proves nothing when it passes:
 
-*Checkpoint: expected-vs-received values in the failure output.* Compare that to the fail you don't want:
+   ```text
+   $ npm test discount.test.ts
+   ✗ applies the sale rate through the last second of the sale
+     Expected: 0.3
+     Received: 0.1
+   ```
 
-```text
-$ npm test discount.test.ts
-✗ applies the sale rate through the last second of the sale
-  Cannot find module '../pricing/discount' — did you mean './discount'?
-```
+   *Checkpoint: expected-vs-received values in the failure output.* Compare that to the fail you don't want:
 
-Red for the wrong reason is still red — nothing here has exercised the boundary at all. Fix the import, rerun, and don't move to step 3 until the failure is the *assertion*, not the harness. That red line survives [compaction](/foundations/context-management/) and model swaps; "make sure the last day gets the sale rate," said in chat, does not.
+   ```text
+   $ npm test discount.test.ts
+   ✗ applies the sale rate through the last second of the sale
+     Cannot find module '../pricing/discount' — did you mean './discount'?
+   ```
 
-**3. Commit the test, alone.** The step everyone skips, and the load-bearing one. Committed, the test stops being your opinion and becomes the spec — a fixed target the agent can't negotiate down:
+   Red for the wrong reason is still red — nothing here has exercised the boundary at all. Fix the import, rerun, and don't move to step 3 until the failure is the *assertion*, not the harness. That red line survives [compaction](/foundations/context-management/) and model swaps; "make sure the last day gets the sale rate," said in chat, does not.
 
-```text
-$ git add src/pricing/discount.test.ts
-$ git commit -m "test: pin sale rate through last second of sale window"
-```
+3. **Commit the test, alone.** The step everyone skips, and the load-bearing one. Committed, the test stops being your opinion and becomes the spec — a fixed target the agent can't negotiate down:
 
-*Checkpoint: one commit, touching only the test file.*
+   ```text
+   $ git add src/pricing/discount.test.ts
+   $ git commit -m "test: pin sale rate through last second of sale window"
+   ```
 
-**4. Hand it to the agent — "make it pass; don't edit the test."** Say the constraint out loud so any violation shows up as a guilty diff. A real pass looks like iteration, not a one-shot:
+   *Checkpoint: one commit, touching only the test file.*
 
-```text
-> the test in src/pricing/discount.test.ts is failing on the sale-boundary
-  case. make it pass. do not edit the test file.
+4. **Hand it to the agent — "make it pass; don't edit the test."** Say the constraint out loud so any violation shows up as a guilty diff. A real pass looks like iteration, not a one-shot:
 
-  ⏵ Read   src/pricing/discount.ts
-  ⏵ Read   src/pricing/discount.test.ts
-  ⏵ Edit   src/pricing/discount.ts     # first try: still uses `<`
-  ⏵ Bash   npm test discount.test.ts  →  still Expected 0.3 / Received 0.1
-  ⏵ Edit   src/pricing/discount.ts     # second try: `now <= saleEndsAt`
-  ⏵ Bash   npm test discount.test.ts  →  1 passed
+   ```text
+   > the test in src/pricing/discount.test.ts is failing on the sale-boundary
+     case. make it pass. do not edit the test file.
 
-$ git diff -- src/pricing/discount.test.ts   # empty — good
-$ git diff -- src/pricing/discount.ts
-  -  if (now < saleEndsAt) return SALE_RATE;
-  +  if (now <= saleEndsAt) return SALE_RATE;
-```
+     ⏵ Read   src/pricing/discount.ts
+     ⏵ Read   src/pricing/discount.test.ts
+     ⏵ Edit   src/pricing/discount.ts     # first try: still uses `<`
+     ⏵ Bash   npm test discount.test.ts  →  still Expected 0.3 / Received 0.1
+     ⏵ Edit   src/pricing/discount.ts     # second try: `now <= saleEndsAt`
+     ⏵ Bash   npm test discount.test.ts  →  1 passed
 
-Nobody told it to re-run the test — closing the loop is its instinct; your test pointed that loop at the truth. *Checkpoint: cycles ending green, and `git diff` on the test file stays silent.*
+   $ git diff -- src/pricing/discount.test.ts   # empty — good
+   $ git diff -- src/pricing/discount.ts
+     -  if (now < saleEndsAt) return SALE_RATE;
+     +  if (now <= saleEndsAt) return SALE_RATE;
+   ```
 
-*A harder pass at the same bug, run in full.* The version above is the tidy case: the boundary was a literal sitting right in the test, and the operator was the whole story. More often the boundary arrives from somewhere else — config, a database row, a third-party payload — and the fix takes real digging. Same test, same intent, but now the sale window comes from a small parsing function instead of a hardcoded date (closer to how most real apps actually store one):
+   Nobody told it to re-run the test — closing the loop is its instinct; your test pointed that loop at the truth. *Checkpoint: cycles ending green, and `git diff` on the test file stays silent.*
 
-```ts
-// src/config/sales.ts — before
-export function getSaleWindow(raw: { endsOn: string }) {
-  return { saleEndsAt: new Date(raw.endsOn) };
-}
-```
+   *A harder pass at the same bug, run in full.* The version above is the tidy case: the boundary was a literal sitting right in the test, and the operator was the whole story. More often the boundary arrives from somewhere else — config, a database row, a third-party payload — and the fix takes real digging. Same test, same intent, but now the sale window comes from a small parsing function instead of a hardcoded date (closer to how most real apps actually store one):
 
-```ts
-// src/pricing/discount.test.ts — the boundary now flows in from config
-import { getSaleWindow } from '../config/sales';
+   ```ts
+   // src/config/sales.ts — before
+   export function getSaleWindow(raw: { endsOn: string }) {
+     return { saleEndsAt: new Date(raw.endsOn) };
+   }
+   ```
 
-test('applies the sale rate through the last second of the sale', () => {
-  const { saleEndsAt } = getSaleWindow({ endsOn: '2026-07-15' });
-  expect(discountRate(new Date('2026-07-15T23:59:59Z'), saleEndsAt)).toBe(0.30);
-  expect(discountRate(new Date('2026-07-16T00:00:01Z'), saleEndsAt)).toBe(0.10);
-});
-```
+   ```ts
+   // src/pricing/discount.test.ts — the boundary now flows in from config
+   import { getSaleWindow } from '../config/sales';
 
-Committed red, same as always — `Expected: 0.3 / Received: 0.1`. Handed to the agent with the same instruction, it takes three laps, not one:
+   test('applies the sale rate through the last second of the sale', () => {
+     const { saleEndsAt } = getSaleWindow({ endsOn: '2026-07-15' });
+     expect(discountRate(new Date('2026-07-15T23:59:59Z'), saleEndsAt)).toBe(0.30);
+     expect(discountRate(new Date('2026-07-16T00:00:01Z'), saleEndsAt)).toBe(0.10);
+   });
+   ```
 
-```text
-  ⏵ Read   src/pricing/discount.ts
-  ⏵ Read   src/pricing/discount.test.ts
-  ⏵ Edit   src/pricing/discount.ts        # lap 1 — the fix that worked last time
-  ⏵ Bash   npm test discount.test.ts  →  still Expected 0.3 / Received 0.1
-  ⏵ Edit   src/pricing/discount.ts        # lap 2 — timezone theory
-  ⏵ Bash   npm test discount.test.ts  →  still Expected 0.3 / Received 0.1
-  ⏵ Read   src/config/sales.ts
-  ⏵ Edit   src/config/sales.ts            # lap 3 — the actual cause
-  ⏵ Bash   npm test discount.test.ts  →  2 passed
+   Committed red, same as always — `Expected: 0.3 / Received: 0.1`. Handed to the agent with the same instruction, it takes three laps, not one:
 
-$ git diff -- src/pricing/discount.test.ts   # still empty
-```
+   ```text
+     ⏵ Read   src/pricing/discount.ts
+     ⏵ Read   src/pricing/discount.test.ts
+     ⏵ Edit   src/pricing/discount.ts        # lap 1 — the fix that worked last time
+     ⏵ Bash   npm test discount.test.ts  →  still Expected 0.3 / Received 0.1
+     ⏵ Edit   src/pricing/discount.ts        # lap 2 — timezone theory
+     ⏵ Bash   npm test discount.test.ts  →  still Expected 0.3 / Received 0.1
+     ⏵ Read   src/config/sales.ts
+     ⏵ Edit   src/config/sales.ts            # lap 3 — the actual cause
+     ⏵ Bash   npm test discount.test.ts  →  2 passed
 
-Three diffs, in order — the point isn't that lap 1 and 2 were foolish, it's that the loop kept running instead of settling for a plausible story:
+   $ git diff -- src/pricing/discount.test.ts   # still empty
+   ```
 
-```text
-# lap 1 — the same operator fix, reapplied on faith
--  if (now < saleEndsAt) return SALE_RATE;
-+  if (now <= saleEndsAt) return SALE_RATE;
-# still fails: saleEndsAt from config is already the wrong instant, so
-# no comparison operator on either side of it can be correct.
+   Three diffs, in order — the point isn't that lap 1 and 2 were foolish, it's that the loop kept running instead of settling for a plausible story:
 
-# lap 2 — a timezone theory that changes nothing
--  if (now <= saleEndsAt) return SALE_RATE;
-+  if (now.getTime() <= saleEndsAt.getTime()) return SALE_RATE;
-# cosmetic: two Date objects already compare by epoch millisecond.
-# plausible-sounding, zero effect — the classic second guess.
+   ```text
+   # lap 1 — the same operator fix, reapplied on faith
+   -  if (now < saleEndsAt) return SALE_RATE;
+   +  if (now <= saleEndsAt) return SALE_RATE;
+   # still fails: saleEndsAt from config is already the wrong instant, so
+   # no comparison operator on either side of it can be correct.
 
-# lap 3 — sales.ts was parsing a date-only string to UTC midnight at the
-# *start* of the day, not the end, so "ends July 15" silently meant
-# "ends the instant July 15 begins"
--  return { saleEndsAt: new Date(raw.endsOn) };
-+  const [y, m, d] = raw.endsOn.split('-').map(Number);
-+  return { saleEndsAt: new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999)) };
-```
+   # lap 2 — a timezone theory that changes nothing
+   -  if (now <= saleEndsAt) return SALE_RATE;
+   +  if (now.getTime() <= saleEndsAt.getTime()) return SALE_RATE;
+   # cosmetic: two Date objects already compare by epoch millisecond.
+   # plausible-sounding, zero effect — the classic second guess.
 
-The real cause was two files away from the one the agent started editing, and it took a wrong guess and a no-op guess to get there — with you in the room for none of it. That's what "closing the loop" is actually worth: not one lucky edit, but a target that refused to move through three attempts until the right one landed. *Checkpoint: the fix that finally passes touches the file the bug actually lives in — not just the file the test imports.*
+   # lap 3 — sales.ts was parsing a date-only string to UTC midnight at the
+   # *start* of the day, not the end, so "ends July 15" silently meant
+   # "ends the instant July 15 begins"
+   -  return { saleEndsAt: new Date(raw.endsOn) };
+   +  const [y, m, d] = raw.endsOn.split('-').map(Number);
+   +  return { saleEndsAt: new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999)) };
+   ```
 
-**5. Before it declares done, widen the check: full suite, then a test audit.** The fix that passes one test and breaks two others is classic. Then, while context is warm:
+   The real cause was two files away from the one the agent started editing, and it took a wrong guess and a no-op guess to get there — with you in the room for none of it. That's what "closing the loop" is actually worth: not one lucky edit, but a target that refused to move through three attempts until the right one landed. *Checkpoint: the fix that finally passes touches the file the bug actually lives in — not just the file the test imports.*
 
-```text
-> run the full suite. then review the tests you touched — does each one
-  actually assert what its name claims?
-```
+5. **Before it declares done, widen the check: full suite, then a test audit.** The fix that passes one test and breaks two others is classic. Then, while context is warm:
 
-This catches token tests that never check the token — a test named `'rejects an expired token'` whose body never constructs an expired one, so it passes against almost any implementation — and boundary tests that never touch the boundary. *Checkpoint: suite green, and every test title's claim is backed by its assertions.*
+   ```text
+   > run the full suite. then review the tests you touched — does each one
+     actually assert what its name claims?
+   ```
 
-**6. Read the fix, then commit it separately. Push on the neighbors of the case you just fixed.** Green means "satisfies what you wrote down" — whether that was the whole story is still your call. Ask for adjacent cases one at a time, and know what each answer should be before you ask:
+   This catches token tests that never check the token — a test named `'rejects an expired token'` whose body never constructs an expired one, so it passes against almost any implementation — and boundary tests that never touch the boundary. *Checkpoint: suite green, and every test title's claim is backed by its assertions.*
 
-```text
-> what about the day before the sale ends — same time, 23:59:59, one day
-  earlier? that should still get the sale rate.
-```
-*Expect:* `SALE_RATE` — a sanity check, not a real boundary. If this one fails, the boundary logic is broken more broadly than the last-second case suggested.
+6. **Read the fix, then commit it separately. Push on the neighbors of the case you just fixed.** Green means "satisfies what you wrote down" — whether that was the whole story is still your call. Ask for adjacent cases one at a time, and know what each answer should be before you ask:
 
-```text
-> what if the sale has no end date configured at all — an indefinite
-  promotion? saleEndsAt would be undefined.
-```
-*Expect:* `SALE_RATE`, always, and no thrown error from comparing against `undefined`. This is the case a hardcoded-literal test can't even surface, because the test never has to construct "no end date."
+   ```text
+   > what about the day before the sale ends — same time, 23:59:59, one day
+     earlier? that should still get the sale rate.
+   ```
+   *Expect:* `SALE_RATE` — a sanity check, not a real boundary. If this one fails, the boundary logic is broken more broadly than the last-second case suggested.
 
-```text
-> is the boundary based on the server's clock, or whatever time zone the
-  customer's browser reports?
-```
-*Expect:* an answer, not a guess — this is a product question wearing a code question's clothes. If the agent's answer is "I assumed server UTC," that assumption goes in the ticket before it ships, not after a support complaint from someone in UTC+13.
+   ```text
+   > what if the sale has no end date configured at all — an indefinite
+     promotion? saleEndsAt would be undefined.
+   ```
+   *Expect:* `SALE_RATE`, always, and no thrown error from comparing against `undefined`. This is the case a hardcoded-literal test can't even surface, because the test never has to construct "no end date."
 
-Then, once the fix and its neighbors hold:
+   ```text
+   > is the boundary based on the server's clock, or whatever time zone the
+     customer's browser reports?
+   ```
+   *Expect:* an answer, not a guess — this is a product question wearing a code question's clothes. If the agent's answer is "I assumed server UTC," that assumption goes in the ticket before it ships, not after a support complaint from someone in UTC+13.
 
-```text
-$ git add src/pricing/discount.ts
-$ git commit -m "fix: include saleEndsAt in the sale window (<= not <)"
-```
+   Then, once the fix and its neighbors hold:
 
-*Exit: two commits — the spec, then the fix that satisfies it.*
+   ```text
+   $ git add src/pricing/discount.ts
+   $ git commit -m "fix: include saleEndsAt in the sale window (<= not <)"
+   ```
+
+   *Exit: two commits — the spec, then the fix that satisfies it.*
+
+</Steps>
 
 ## When not to use it
 

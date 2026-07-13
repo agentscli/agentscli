@@ -4,6 +4,7 @@ description: "Anchor the mockup to your real components and tokens in text, then
 ---
 
 import BindingsCheck from '../../../components/interactive/BindingsCheck.tsx';
+import { Steps } from '@astrojs/starlight/components';
 
 **Use this when** you have a design — a Figma frame, a mockup, a screenshot of the thing you want — and it needs to become a component in *your* codebase. The tell that you need it: you pasted an image, typed "build this," and got back roughly the right layout, a blue that isn't in your palette, and a hand-rolled toggle when your codebase has a `<Toggle>` three folders over. The agent saw the picture fine. It had no idea it was looking at *your* design system.
 
@@ -23,206 +24,210 @@ Here's the gap the eye can't close — this card passed the looks check, and hal
 
 Running example: a pricing card from a mockup, into a React + Tailwind codebase.
 
-**1. Get the design in — and know what your path loses.** For a static mockup, paste or drag the image; every tool in this site's scope takes it, though a few want a specific key combo — check yours before you're fumbling mid-session. If the source is a live Figma frame, an [MCP connection](/foundations/mcp-servers/) beats a flattened export — component hierarchy, tokens, and layout as structured data instead of pixels to reverse-engineer — but only if the file is disciplined: every numeric value a bound variable, every frame on auto-layout. A file full of hand-typed numbers hands the agent the same guesses a screenshot would; people blame the integration for what is source-file hygiene. And if the target is a whole flow rather than one screen, a narrated screen recording carries what no screenshot can — every state, empty state, and error toast — which a multimodal model can turn into a phased spec before anyone writes code. *Checkpoint: the agent has the image or the structured frame, and you can say in one line what your path dropped — usually states and token names.*
+<Steps>
 
-**2. Anchor it in text, in the same turn as the image.** Four names, none optional: the **target** file, the **components to reuse** (with an explicit "don't create new primitives" and the states enumerated — default, hover, disabled, error), the **tokens with usage**, and the **conventions** a fresh hire would be told on day one. If a sibling component does it right, point at it — one good neighbor teaches more than a paragraph of convention:
+1. **Get the design in — and know what your path loses.** For a static mockup, paste or drag the image; every tool in this site's scope takes it, though a few want a specific key combo — check yours before you're fumbling mid-session. If the source is a live Figma frame, an [MCP connection](/foundations/mcp-servers/) beats a flattened export — component hierarchy, tokens, and layout as structured data instead of pixels to reverse-engineer — but only if the file is disciplined: every numeric value a bound variable, every frame on auto-layout. A file full of hand-typed numbers hands the agent the same guesses a screenshot would; people blame the integration for what is source-file hygiene. And if the target is a whole flow rather than one screen, a narrated screen recording carries what no screenshot can — every state, empty state, and error toast — which a multimodal model can turn into a phased spec before anyone writes code. *Checkpoint: the agent has the image or the structured frame, and you can say in one line what your path dropped — usually states and token names.*
 
-```text
-> Here's the pricing card mockup [image attached]. Build it as
-  src/components/PricingCard.tsx. Use the existing Card and Button
-  components from src/components/ui/ — don't create new primitives.
-  Match colors and spacing to the tokens in tailwind.config.ts,
-  not values you read off the image. States: default, hover, and a
-  highlighted "recommended" variant. Mirror the structure of
-  src/components/FeatureCard.tsx.
-```
+2. **Anchor it in text, in the same turn as the image.** Four names, none optional: the **target** file, the **components to reuse** (with an explicit "don't create new primitives" and the states enumerated — default, hover, disabled, error), the **tokens with usage**, and the **conventions** a fresh hire would be told on day one. If a sibling component does it right, point at it — one good neighbor teaches more than a paragraph of convention:
 
-Skip the "components to reuse" clause and the mockup's billing toggle — annual vs. monthly, say — gets built from nothing, because the agent has no way to know one already exists three folders over. It's not a bad guess; it's the only guess available:
+   ```text
+   > Here's the pricing card mockup [image attached]. Build it as
+     src/components/PricingCard.tsx. Use the existing Card and Button
+     components from src/components/ui/ — don't create new primitives.
+     Match colors and spacing to the tokens in tailwind.config.ts,
+     not values you read off the image. States: default, hover, and a
+     highlighted "recommended" variant. Mirror the structure of
+     src/components/FeatureCard.tsx.
+   ```
 
-```tsx
-// unanchored — a reasonable component, invented from the pixels alone
-function BillingToggle({ annual, onChange }) {
-  return (
-    <button
-      onClick={() => onChange(!annual)}
-      style={{
-        background: annual ? '#7c69f7' : '#d4d4d8',
-        borderRadius: 999,
-        width: 44,
-        height: 24,
-      }}
-    >
-      <span style={{ background: '#fff', borderRadius: '50%' /* ... */ }} />
-    </button>
-  );
-}
-```
+   Skip the "components to reuse" clause and the mockup's billing toggle — annual vs. monthly, say — gets built from nothing, because the agent has no way to know one already exists three folders over. It's not a bad guess; it's the only guess available:
 
-```tsx
-// anchored — "don't create new primitives" was in the prompt above
-import { Toggle } from 'src/components/ui/Toggle';
-// ...
-<Toggle checked={annual} onChange={setAnnual} aria-label="Bill annually" />
-```
+   ```tsx
+   // unanchored — a reasonable component, invented from the pixels alone
+   function BillingToggle({ annual, onChange }) {
+     return (
+       <button
+         onClick={() => onChange(!annual)}
+         style={{
+           background: annual ? '#7c69f7' : '#d4d4d8',
+           borderRadius: 999,
+           width: 44,
+           height: 24,
+         }}
+       >
+         <span style={{ background: '#fff', borderRadius: '50%' /* ... */ }} />
+       </button>
+     );
+   }
+   ```
 
-Today the two render pixel-for-pixel identical — which is exactly why looking right can't tell you which one you got. The hand-rolled version has no focus ring, no disabled state, no reduced-motion handling, and a color that happens to match `brand-600` right now; the reused one inherited all of that the day someone else built it once and never has to again. This is the same gap step 6 checks for, one level up: unreused components, not just unbound values.
+   ```tsx
+   // anchored — "don't create new primitives" was in the prompt above
+   import { Toggle } from 'src/components/ui/Toggle';
+   // ...
+   <Toggle checked={annual} onChange={setAnnual} aria-label="Bill annually" />
+   ```
 
-The token line is where anchoring quietly fails even when you remember it: a tokens file gives the agent names and raw values, and if the names are even slightly vague it can't tell *when* to apply which. What works is a usage table, not a token dump — copy this shape, swap in your own values, and paste it straight into the prompt (or, better, into the file the prompt points back to once you've done this pass — step 7):
+   Today the two render pixel-for-pixel identical — which is exactly why looking right can't tell you which one you got. The hand-rolled version has no focus ring, no disabled state, no reduced-motion handling, and a color that happens to match `brand-600` right now; the reused one inherited all of that the day someone else built it once and never has to again. This is the same gap step 6 checks for, one level up: unreused components, not just unbound values.
 
-```text
-| Token             | Value     | Use it for                                   | Never for                              |
-|-------------------|-----------|-----------------------------------------------|-----------------------------------------|
-| `brand-600`       | `#7c69f7` | primary CTA background, active nav, badges    | body text (fails contrast on light bg) |
-| `brand-500`       | `#8f7ffa` | hover states, secondary accents, focus rings   | page backgrounds                        |
-| `surface-raised`  | `#ffffff` | cards, popovers, modals                        | page backgrounds                        |
-| `surface-sunken`  | `#f4f4f6` | inputs, wells, code blocks                     | cards                                    |
-| `text-primary`    | `#18181b` | headings, body copy                            | disabled text                           |
-| `text-muted`      | `#71717a` | captions, placeholders, disabled text          | primary CTAs                            |
-| `border-default`  | `#e4e4e7` | dividers, input borders                        | focus rings (use `brand-500`)          |
-| `p-2` / `gap-2` / `mt-2`  | `8px`  | icon-to-label gap, chip padding        | card padding                            |
-| `p-4` / `gap-4` / `mt-4`  | `16px` | card padding, form-field gaps          | page margins                            |
-| `p-6` / `gap-6` / `mt-6`  | `24px` | section gaps                           | inline gaps                             |
-| `rounded-lg`      | `8px`     | cards, buttons, inputs                         | pills, avatars                          |
-```
+   The token line is where anchoring quietly fails even when you remember it: a tokens file gives the agent names and raw values, and if the names are even slightly vague it can't tell *when* to apply which. What works is a usage table, not a token dump — copy this shape, swap in your own values, and paste it straight into the prompt (or, better, into the file the prompt points back to once you've done this pass — step 7):
 
-The usage column is the part a raw `tailwind.config.ts` can't carry and the agent can't infer — it's the difference between "here are eleven values" and "here's when a fresh hire would reach for each one." *Checkpoint: the prompt names all four anchors, lists states the mockup doesn't show, and the token anchor is a usage table, not a values dump.*
+   ```text
+   | Token             | Value     | Use it for                                   | Never for                              |
+   |-------------------|-----------|-----------------------------------------------|-----------------------------------------|
+   | `brand-600`       | `#7c69f7` | primary CTA background, active nav, badges    | body text (fails contrast on light bg) |
+   | `brand-500`       | `#8f7ffa` | hover states, secondary accents, focus rings   | page backgrounds                        |
+   | `surface-raised`  | `#ffffff` | cards, popovers, modals                        | page backgrounds                        |
+   | `surface-sunken`  | `#f4f4f6` | inputs, wells, code blocks                     | cards                                    |
+   | `text-primary`    | `#18181b` | headings, body copy                            | disabled text                           |
+   | `text-muted`      | `#71717a` | captions, placeholders, disabled text          | primary CTAs                            |
+   | `border-default`  | `#e4e4e7` | dividers, input borders                        | focus rings (use `brand-500`)          |
+   | `p-2` / `gap-2` / `mt-2`  | `8px`  | icon-to-label gap, chip padding        | card padding                            |
+   | `p-4` / `gap-4` / `mt-4`  | `16px` | card padding, form-field gaps          | page margins                            |
+   | `p-6` / `gap-6` / `mt-6`  | `24px` | section gaps                           | inline gaps                             |
+   | `rounded-lg`      | `8px`     | cards, buttons, inputs                         | pills, avatars                          |
+   ```
 
-**3. Before any code, ask for the plan.** "Tell me exactly how you'll build this — which components, which tokens — before writing code." A misread surfaces in three lines of plan far cheaper than in three hundred lines of component:
+   The usage column is the part a raw `tailwind.config.ts` can't carry and the agent can't infer — it's the difference between "here are eleven values" and "here's when a fresh hire would reach for each one." *Checkpoint: the prompt names all four anchors, lists states the mockup doesn't show, and the token anchor is a usage table, not a values dump.*
 
-```text
-> Tell me exactly how you'll build this — which components, which
-  tokens — before writing code.
+3. **Before any code, ask for the plan.** "Tell me exactly how you'll build this — which components, which tokens — before writing code." A misread surfaces in three lines of plan far cheaper than in three hundred lines of component:
 
-⏵ Plan
-  1. New file src/components/PricingCard.tsx, structured like
-     FeatureCard.tsx — a Card wrapping a header, a price row, a
-     feature list, and a footer.
-  2. Outer wrapper: <Card variant="raised"> from ui/.
-  3. Price: text-3xl font-bold, color text-primary; period
-     text-sm, color text-muted.
-  4. CTA: <Button variant="primary" className="w-full">.
-  5. "Recommended" badge: a <span> with a custom background
-     (#7c69f7) and rounded-full — I don't see an existing badge
-     component in ui/.
-  6. Hover state: scale(1.02) on the whole card via a CSS
-     transform.
-```
+   ```text
+   > Tell me exactly how you'll build this — which components, which
+     tokens — before writing code.
 
-Two of those six lines are wrong, and the plan is where that's cheap to fix:
+   ⏵ Plan
+     1. New file src/components/PricingCard.tsx, structured like
+        FeatureCard.tsx — a Card wrapping a header, a price row, a
+        feature list, and a footer.
+     2. Outer wrapper: <Card variant="raised"> from ui/.
+     3. Price: text-3xl font-bold, color text-primary; period
+        text-sm, color text-muted.
+     4. CTA: <Button variant="primary" className="w-full">.
+     5. "Recommended" badge: a <span> with a custom background
+        (#7c69f7) and rounded-full — I don't see an existing badge
+        component in ui/.
+     6. Hover state: scale(1.02) on the whole card via a CSS
+        transform.
+   ```
 
-```text
-> Two corrections before you build: we do have a badge component —
-  Badge, in src/components/ui/ — use variant="brand" instead of a
-  custom span. And drop the hover-scale; the tokens don't define a
-  hover elevation for cards. Check how FeatureCard handles hover
-  instead of inventing one.
+   Two of those six lines are wrong, and the plan is where that's cheap to fix:
 
-⏵ Read   src/components/ui/Badge.tsx
-⏵ Read   src/components/FeatureCard.tsx
-⏵ Plan (revised)
-  5. "Recommended" badge: <Badge variant="brand">Recommended</Badge>.
-  6. Hover state: FeatureCard applies hover:border-brand-500 and
-     hover:shadow-md — same treatment on PricingCard.
-```
+   ```text
+   > Two corrections before you build: we do have a badge component —
+     Badge, in src/components/ui/ — use variant="brand" instead of a
+     custom span. And drop the hover-scale; the tokens don't define a
+     hover elevation for cards. Check how FeatureCard handles hover
+     instead of inventing one.
 
-Left uncorrected, step 5 would have shipped a hand-rolled badge with the exact failure mode from step 2's contrast — a color that matches today and drifts on the next rebrand. Caught here, it cost one sentence. Caught after step 4, it costs a diff. If the spec itself is fuzzy rather than the plan, flip the interview first: "ask me what you need to know, one question at a time" — an agent that asks about the empty state before building is saving you a rework cycle. *Checkpoint: the plan says your component and token names back to you; anything hand-rolled gets corrected here, not after the build.*
+   ⏵ Read   src/components/ui/Badge.tsx
+   ⏵ Read   src/components/FeatureCard.tsx
+   ⏵ Plan (revised)
+     5. "Recommended" badge: <Badge variant="brand">Recommended</Badge>.
+     6. Hover state: FeatureCard applies hover:border-brand-500 and
+        hover:shadow-md — same treatment on PricingCard.
+   ```
 
-**4. Let it build, and budget a punch list.** From a corrected plan onward it's an ordinary [agentic loop](/foundations/how-agents-work/):
+   Left uncorrected, step 5 would have shipped a hand-rolled badge with the exact failure mode from step 2's contrast — a color that matches today and drifts on the next rebrand. Caught here, it cost one sentence. Caught after step 4, it costs a diff. If the spec itself is fuzzy rather than the plan, flip the interview first: "ask me what you need to know, one question at a time" — an agent that asks about the empty state before building is saving you a rework cycle. *Checkpoint: the plan says your component and token names back to you; anything hand-rolled gets corrected here, not after the build.*
 
-```text
-⏵ Read   src/components/ui/Card.tsx
-⏵ Read   src/components/ui/Badge.tsx
-⏵ Read   src/components/FeatureCard.tsx
-⏵ Read   tailwind.config.ts
-⏵ Write  src/components/PricingCard.tsx
-⏵ Bash   npm run dev  →  compiled, no errors
-```
+4. **Let it build, and budget a punch list.** From a corrected plan onward it's an ordinary [agentic loop](/foundations/how-agents-work/):
 
-Even a corrected plan ships surface gaps — fidelity degrades with design complexity no matter how good the anchors are. Walk away from the first build with a punch list, not a verdict:
+   ```text
+   ⏵ Read   src/components/ui/Card.tsx
+   ⏵ Read   src/components/ui/Badge.tsx
+   ⏵ Read   src/components/FeatureCard.tsx
+   ⏵ Read   tailwind.config.ts
+   ⏵ Write  src/components/PricingCard.tsx
+   ⏵ Bash   npm run dev  →  compiled, no errors
+   ```
 
-```text
-- [ ] focus ring on the CTA missing — the mockup never showed a
-      focused state, so nothing anchored one
-- [ ] "Recommended" badge sits 2px higher than the badge slot in
-      FeatureCard — right component, wrong offset
-- [ ] the annual/monthly toggle updates its own label but the price
-      below it doesn't re-render
-- [ ] no disabled / "current plan" state — not in the mockup, but
-      the real page needs one for the plan the user is already on
-```
+   Even a corrected plan ships surface gaps — fidelity degrades with design complexity no matter how good the anchors are. Walk away from the first build with a punch list, not a verdict:
 
-None of these are "wrong component" or "wrong token" — the anchors already caught those. They're the ordinary residue of a mockup that only ever showed one moment in time. *Checkpoint: it compiles and renders; your punch list has items, and none of them is "wrong component."*
+   ```text
+   - [ ] focus ring on the CTA missing — the mockup never showed a
+         focused state, so nothing anchored one
+   - [ ] "Recommended" badge sits 2px higher than the badge slot in
+         FeatureCard — right component, wrong offset
+   - [ ] the annual/monthly toggle updates its own label but the price
+         below it doesn't re-render
+   - [ ] no disabled / "current plan" state — not in the mockup, but
+         the real page needs one for the plan the user is already on
+   ```
 
-**5. Check the looks — rendered output and mockup actually side by side.** A glance catches gross layout mismatches; the side-by-side catches four pixels of padding, a font-weight of 500 where the design says 600 — the errors that make a page feel *almost* right in a way users notice before they can articulate. *Checkpoint: the punch list is closed at the pixel level, not the squint level.*
+   None of these are "wrong component" or "wrong token" — the anchors already caught those. They're the ordinary residue of a mockup that only ever showed one moment in time. *Checkpoint: it compiles and renders; your punch list has items, and none of them is "wrong component."*
 
-**6. Check the bindings — grep the diff for literals.** Looking right is not the same as being wired right: an element can render the correct color as a hardcoded hex while ignoring the token — invisible today, wrong the day the brand color changes. The check is one command, run against exactly the file the agent just wrote:
+5. **Check the looks — rendered output and mockup actually side by side.** A glance catches gross layout mismatches; the side-by-side catches four pixels of padding, a font-weight of 500 where the design says 600 — the errors that make a page feel *almost* right in a way users notice before they can articulate. *Checkpoint: the punch list is closed at the pixel level, not the squint level.*
 
-```bash
-$ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/PricingCard.tsx
-9:  <Card className={cn('p-4', highlighted && 'border-[#8b7af8]')}>
-14: <h3 className="mt-[13px] font-semibold">Pro</h3>
-29: <Button className="w-full bg-[#7c69f7]">Start free trial</Button>
-```
+6. **Check the bindings — grep the diff for literals.** Looking right is not the same as being wired right: an element can render the correct color as a hardcoded hex while ignoring the token — invisible today, wrong the day the brand color changes. The check is one command, run against exactly the file the agent just wrote:
 
-Three hits, three different failures, none of them visible in the render from step 5:
+   ```bash
+   $ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/PricingCard.tsx
+   9:  <Card className={cn('p-4', highlighted && 'border-[#8b7af8]')}>
+   14: <h3 className="mt-[13px] font-semibold">Pro</h3>
+   29: <Button className="w-full bg-[#7c69f7]">Start free trial</Button>
+   ```
 
-- **line 9** — `#8b7af8` isn't `brand-500` (`#8f7ffa`) or `brand-600` (`#7c69f7`) from the table in step 2; it's a lookalike shade read off the mockup, close enough that the side-by-side passed.
-- **line 14** — `13px` isn't on the spacing scale at all (the nearest steps are `mt-2` at 8px and `mt-4` at 16px) — a number typed straight off the image, not chosen from the table.
-- **line 29** — `#7c69f7` is `brand-600`'s exact value, today. This is the one that fools a reviewer, because it's pixel-identical to the correct answer right up until the brand color changes and it isn't.
+   Three hits, three different failures, none of them visible in the render from step 5:
 
-The fix is a token swap, not a rebuild:
+   - **line 9** — `#8b7af8` isn't `brand-500` (`#8f7ffa`) or `brand-600` (`#7c69f7`) from the table in step 2; it's a lookalike shade read off the mockup, close enough that the side-by-side passed.
+   - **line 14** — `13px` isn't on the spacing scale at all (the nearest steps are `mt-2` at 8px and `mt-4` at 16px) — a number typed straight off the image, not chosen from the table.
+   - **line 29** — `#7c69f7` is `brand-600`'s exact value, today. This is the one that fools a reviewer, because it's pixel-identical to the correct answer right up until the brand color changes and it isn't.
 
-```diff
-- <Card className={cn('p-4', highlighted && 'border-[#8b7af8]')}>
-+ <Card className={cn('p-4', highlighted && 'border-brand-500')}>
+   The fix is a token swap, not a rebuild:
 
-- <h3 className="mt-[13px] font-semibold">Pro</h3>
-+ <h3 className="mt-4 font-semibold">Pro</h3>
+   ```diff
+   - <Card className={cn('p-4', highlighted && 'border-[#8b7af8]')}>
+   + <Card className={cn('p-4', highlighted && 'border-brand-500')}>
 
-- <Button className="w-full bg-[#7c69f7]">Start free trial</Button>
-+ <Button className="w-full bg-brand-600">Start free trial</Button>
-```
+   - <h3 className="mt-[13px] font-semibold">Pro</h3>
+   + <h3 className="mt-4 font-semibold">Pro</h3>
 
-If the design round-trips into your design tool, spot-check a few layers in its inspector the same way: a bound fill shows as a named variable (`Fill → brand/600`); a hardcoded one shows only the swatch and hex, with no name attached. *Checkpoint: the grep returns nothing, and every layer you spot-check in the design tool resolves to a named token, not a lookalike value.* Visual fidelity decays gracefully; a hardcoded palette decays all at once.
+   - <Button className="w-full bg-[#7c69f7]">Start free trial</Button>
+   + <Button className="w-full bg-brand-600">Start free trial</Button>
+   ```
 
-**7. Make the anchor durable.** The first pass earned an artifact — don't let it evaporate at the end of the session. Simplest version, a section in the [rules file](/foundations/rules/):
+   If the design round-trips into your design tool, spot-check a few layers in its inspector the same way: a bound fill shows as a named variable (`Fill → brand/600`); a hardcoded one shows only the swatch and hex, with no name attached. *Checkpoint: the grep returns nothing, and every layer you spot-check in the design tool resolves to a named token, not a lookalike value.* Visual fidelity decays gracefully; a hardcoded palette decays all at once.
 
-```md
-## Design system
-- Components live in `src/components/ui/` — Card, Button, Badge,
-  Toggle, Input. Never hand-roll one of these; extend or compose
-  the existing component instead.
-- Colors and spacing bind to the tokens in `tailwind.config.ts`,
-  not raw hex or px. See the usage table in `design-system.json`.
-- New screens mirror the structure of the nearest sibling
-  component (FeatureCard, PricingCard) rather than starting from
-  a blank file.
-```
+7. **Make the anchor durable.** The first pass earned an artifact — don't let it evaporate at the end of the session. Simplest version, a section in the [rules file](/foundations/rules/):
 
-More durable version — have the agent generate the usage table itself, as data every later prompt points back to instead of prose you maintain by hand:
+   ```md
+   ## Design system
+   - Components live in `src/components/ui/` — Card, Button, Badge,
+     Toggle, Input. Never hand-roll one of these; extend or compose
+     the existing component instead.
+   - Colors and spacing bind to the tokens in `tailwind.config.ts`,
+     not raw hex or px. See the usage table in `design-system.json`.
+   - New screens mirror the structure of the nearest sibling
+     component (FeatureCard, PricingCard) rather than starting from
+     a blank file.
+   ```
 
-```json
-{
-  "colors": {
-    "brand-600": { "value": "#7c69f7", "use": "primary CTA, active nav, badges" },
-    "brand-500": { "value": "#8f7ffa", "use": "hover states, focus rings" },
-    "surface-raised": { "value": "#ffffff", "use": "cards, popovers, modals" },
-    "text-muted": { "value": "#71717a", "use": "captions, disabled text" }
-  },
-  "spacing": {
-    "4": { "value": "16px", "use": "card padding, form-field gaps" }
-  },
-  "components": {
-    "Card": "src/components/ui/Card.tsx",
-    "Button": "src/components/ui/Button.tsx",
-    "Badge": "src/components/ui/Badge.tsx",
-    "Toggle": "src/components/ui/Toggle.tsx"
-  },
-  "doNotCreate": ["custom badges", "custom toggles", "custom buttons"]
-}
-```
+   More durable version — have the agent generate the usage table itself, as data every later prompt points back to instead of prose you maintain by hand:
 
-Either way, the second screen's prompt collapses from step 2's four anchors to one sentence: "build this like the pricing card — same rules." Or capture the working *procedure* as a [skill](/foundations/skills/), if it's the steps rather than the facts you want to hand off. *Checkpoint: the next screen's prompt is one sentence plus an image.*
+   ```json
+   {
+     "colors": {
+       "brand-600": { "value": "#7c69f7", "use": "primary CTA, active nav, badges" },
+       "brand-500": { "value": "#8f7ffa", "use": "hover states, focus rings" },
+       "surface-raised": { "value": "#ffffff", "use": "cards, popovers, modals" },
+       "text-muted": { "value": "#71717a", "use": "captions, disabled text" }
+     },
+     "spacing": {
+       "4": { "value": "16px", "use": "card padding, form-field gaps" }
+     },
+     "components": {
+       "Card": "src/components/ui/Card.tsx",
+       "Button": "src/components/ui/Button.tsx",
+       "Badge": "src/components/ui/Badge.tsx",
+       "Toggle": "src/components/ui/Toggle.tsx"
+     },
+     "doNotCreate": ["custom badges", "custom toggles", "custom buttons"]
+   }
+   ```
+
+   Either way, the second screen's prompt collapses from step 2's four anchors to one sentence: "build this like the pricing card — same rules." Or capture the working *procedure* as a [skill](/foundations/skills/), if it's the steps rather than the facts you want to hand off. *Checkpoint: the next screen's prompt is one sentence plus an image.*
+
+</Steps>
 
 ## When not to use it
 

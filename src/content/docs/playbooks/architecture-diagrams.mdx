@@ -4,6 +4,7 @@ description: "Ask for Mermaid text scoped to one question, watch the exploration
 ---
 
 import EdgeAudit from '../../../components/interactive/EdgeAudit.tsx';
+import { Steps } from '@astrojs/starlight/components';
 
 **Use this when** you're about to edit code whose shape you don't hold — a service you inherited, one you wrote six months ago, an auth flow and a job queue calling each other in an order nobody wrote down — and the alternative is a morning of grepping and tab-hopping to rebuild the map in your head. The agent can follow every import in the time it takes you to open the first file; this play is how you make its speed *trustworthy*.
 
@@ -21,150 +22,154 @@ Here's that constraint made clickable — a clean render with one edge that neve
 
 Running example: a login flow in an inherited service.
 
-**1. Match the diagram type to your question.** The wrong shape gets you a perfectly valid Mermaid file answering a question you didn't ask — a flowchart of "the login flow" that shows the modules exist but not the order anything happens in:
+<Steps>
 
-| Question | Ask for |
-| --- | --- |
-| How does a request flow through the system? | `sequenceDiagram` |
-| What depends on what? | `graph` (flowchart) |
-| What's the data model? | `erDiagram` |
-| What states can this thing be in? | `stateDiagram` |
+1. **Match the diagram type to your question.** The wrong shape gets you a perfectly valid Mermaid file answering a question you didn't ask — a flowchart of "the login flow" that shows the modules exist but not the order anything happens in:
 
-*Checkpoint: you can state, in one sentence, the question this diagram answers.*
+   | Question | Ask for |
+   | --- | --- |
+   | How does a request flow through the system? | `sequenceDiagram` |
+   | What depends on what? | `graph` (flowchart) |
+   | What's the data model? | `erDiagram` |
+   | What states can this thing be in? | `stateDiagram` |
 
-Same subject, two questions, two shapes — and neither is a smaller version of the other. Ask the sequence question about two files from the login flow and you get temporal order, nothing else:
+   *Checkpoint: you can state, in one sentence, the question this diagram answers.*
 
-```mermaid
-sequenceDiagram
-    participant AuthRoute as /auth/login
-    participant SessionSvc as session.ts
-    AuthRoute->>SessionSvc: createSession(userId)
-```
+   Same subject, two questions, two shapes — and neither is a smaller version of the other. Ask the sequence question about two files from the login flow and you get temporal order, nothing else:
 
-Ask the dependency question about the same two files and the call disappears — what's left is the *static* relationship, true whether or not that function ever runs today:
+   ```mermaid
+   sequenceDiagram
+       participant AuthRoute as /auth/login
+       participant SessionSvc as session.ts
+       AuthRoute->>SessionSvc: createSession(userId)
+   ```
 
-```mermaid
-graph TD
-    AuthRoute["/auth/login"] -->|imports| SessionSvc[session.ts]
-    SessionSvc -->|imports| DBClient[db.ts]
-```
+   Ask the dependency question about the same two files and the call disappears — what's left is the *static* relationship, true whether or not that function ever runs today:
 
-Notice the dependency graph adds a fact the sequence diagram has no room for: `/auth/login` imports `session.ts`, but nothing imports `db.ts` except `session.ts` itself — the route file never touches the database module directly. Hold onto that; it becomes a second, independent check in step 5, on an edge you haven't seen yet. Neither diagram is "more complete" — each is blind to what the other question doesn't ask. If you need both pictures, ask twice. A single hybrid diagram that tries to show call order *and* import structure at once is usually harder to read than either one alone.
+   ```mermaid
+   graph TD
+       AuthRoute["/auth/login"] -->|imports| SessionSvc[session.ts]
+       SessionSvc -->|imports| DBClient[db.ts]
+   ```
 
-**2. Ask for Mermaid, scoped to that one question — never "diagram the codebase."** "Draw me a diagram" often produces freehand ASCII boxes; "generate a Mermaid diagram" changes the output in kind — a compact text format a renderer can at least check for validity. And the repo-wide ask produces the map you can't trust: either a shallow box-per-folder sketch or, worse because it looks complete, a diagram that silently covers only the files the agent read before its [context](/foundations/context-management/) filled, with no warning label on the parts it skipped.
+   Notice the dependency graph adds a fact the sequence diagram has no room for: `/auth/login` imports `session.ts`, but nothing imports `db.ts` except `session.ts` itself — the route file never touches the database module directly. Hold onto that; it becomes a second, independent check in step 5, on an edge you haven't seen yet. Neither diagram is "more complete" — each is blind to what the other question doesn't ask. If you need both pictures, ask twice. A single hybrid diagram that tries to show call order *and* import structure at once is usually harder to read than either one alone.
 
-```text
-> generate a Mermaid sequence diagram of how a login request flows
-  from the /auth/login route to session-cookie issuance
-```
+2. **Ask for Mermaid, scoped to that one question — never "diagram the codebase."** "Draw me a diagram" often produces freehand ASCII boxes; "generate a Mermaid diagram" changes the output in kind — a compact text format a renderer can at least check for validity. And the repo-wide ask produces the map you can't trust: either a shallow box-per-folder sketch or, worse because it looks complete, a diagram that silently covers only the files the agent read before its [context](/foundations/context-management/) filled, with no warning label on the parts it skipped.
 
-*Checkpoint: the prompt names a flow, module, or specific mystery — not the repo, and it says "Mermaid."*
+   ```text
+   > generate a Mermaid sequence diagram of how a login request flows
+     from the /auth/login route to session-cookie issuance
+   ```
 
-**3. Watch it explore before it draws.** A diagram worth having is the residue of real reconnaissance — following imports, grepping entry points, reading the router — the same homework you'd have done by hand, compressed into tool calls. A diagram that appears *without* a trail of reads came from the model's idea of what codebases like yours usually look like. In Claude Code the exploration can go to the read-only [Explore subagent](/foundations/subagents/); opencode's `plan` mode gives the same look-don't-touch posture.
+   *Checkpoint: the prompt names a flow, module, or specific mystery — not the repo, and it says "Mermaid."*
 
-```text
-⏵ Grep    "router.post" src/routes/
-  →  src/routes/auth.ts:12
-⏵ Read    src/routes/auth.ts
-⏵ Grep    "createSession" src/
-  →  src/services/session.ts:9
-⏵ Read    src/services/session.ts
-⏵ Grep    "db\." src/services/session.ts
-  →  line 18: db.sessions.insert(...)
-⏵ Read    src/db/client.ts
-⏵ Read    src/routes/auth.ts:28-40
-```
+3. **Watch it explore before it draws.** A diagram worth having is the residue of real reconnaissance — following imports, grepping entry points, reading the router — the same homework you'd have done by hand, compressed into tool calls. A diagram that appears *without* a trail of reads came from the model's idea of what codebases like yours usually look like. In Claude Code the exploration can go to the read-only [Explore subagent](/foundations/subagents/); opencode's `plan` mode gives the same look-don't-touch posture.
 
-That's the whole trail for this flow — six calls touching four files, in the order the request actually moves through them. *Checkpoint: the transcript shows greps and reads touching the files the flow actually crosses — typically a handful, not zero.*
+   ```text
+   ⏵ Grep    "router.post" src/routes/
+     →  src/routes/auth.ts:12
+   ⏵ Read    src/routes/auth.ts
+   ⏵ Grep    "createSession" src/
+     →  src/services/session.ts:9
+   ⏵ Read    src/services/session.ts
+   ⏵ Grep    "db\." src/services/session.ts
+     →  line 18: db.sessions.insert(...)
+   ⏵ Read    src/db/client.ts
+   ⏵ Read    src/routes/auth.ts:28-40
+   ```
 
-Read the trail for what it *doesn't* touch, too: nothing here greps a users table, a `last_login` column, or anything about a second write. Keep that gap in mind — it's not proof of anything yet, but an edge with no line anywhere in this trail is exactly the kind that's about to render just as confidently as the six that do.
+   That's the whole trail for this flow — six calls touching four files, in the order the request actually moves through them. *Checkpoint: the transcript shows greps and reads touching the files the flow actually crosses — typically a handful, not zero.*
 
-**4. Keep the Mermaid source, not the rendering.** However your tool displays it — inline picture, terminal art, plain code fence — the text is the artifact. It goes in a docs file, gets committed, and shows up in a PR diff where a reviewer can question an edge the same way they'd question a line of code:
+   Read the trail for what it *doesn't* touch, too: nothing here greps a users table, a `last_login` column, or anything about a second write. Keep that gap in mind — it's not proof of anything yet, but an edge with no line anywhere in this trail is exactly the kind that's about to render just as confidently as the six that do.
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant AuthRoute as /auth/login
-    participant SessionSvc as session.ts
-    participant DB
+4. **Keep the Mermaid source, not the rendering.** However your tool displays it — inline picture, terminal art, plain code fence — the text is the artifact. It goes in a docs file, gets committed, and shows up in a PR diff where a reviewer can question an edge the same way they'd question a line of code:
 
-    Client->>AuthRoute: POST credentials
-    AuthRoute->>SessionSvc: createSession(userId)
-    SessionSvc->>DB: INSERT session
-    AuthRoute->>DB: UPDATE users.last_login
-    SessionSvc-->>AuthRoute: signed cookie
-    AuthRoute-->>Client: 200 + Set-Cookie
-```
+   ```mermaid
+   sequenceDiagram
+       participant Client
+       participant AuthRoute as /auth/login
+       participant SessionSvc as session.ts
+       participant DB
 
-*Checkpoint: the diagram exists as text in the repo, not as a screenshot pasted into a wiki.*
+       Client->>AuthRoute: POST credentials
+       AuthRoute->>SessionSvc: createSession(userId)
+       SessionSvc->>DB: INSERT session
+       AuthRoute->>DB: UPDATE users.last_login
+       SessionSvc-->>AuthRoute: signed cookie
+       AuthRoute-->>Client: 200 + Set-Cookie
+   ```
 
-Six edges, and nothing about the render distinguishes the one this pass never actually explored. That's the point of the next step.
+   *Checkpoint: the diagram exists as text in the repo, not as a screenshot pasted into a wiki.*
 
-**5. Spot-check the edges your work depends on.** This is where the trust actually comes from, and it's the one step no tool does for you. Pick the two or three edges your upcoming change rests on and demand the receipts one at a time — inline, edge by edge, not as a single batch grep at the end where one bad answer can hide in a wall of confirmations.
+   Six edges, and nothing about the render distinguishes the one this pass never actually explored. That's the point of the next step.
 
-Start with the edge you already expect to hold:
+5. **Spot-check the edges your work depends on.** This is where the trust actually comes from, and it's the one step no tool does for you. Pick the two or three edges your upcoming change rests on and demand the receipts one at a time — inline, edge by edge, not as a single batch grep at the end where one bad answer can hide in a wall of confirmations.
 
-```text
-> the diagram says session.ts calls the DB directly — show me that call
+   Start with the edge you already expect to hold:
 
-  ⏵ Read   src/services/session.ts:14-22
-  → confirmed: line 18, `db.sessions.insert(...)`
-```
+   ```text
+   > the diagram says session.ts calls the DB directly — show me that call
 
-Confirmed, in one tool call. Now do the same for the edge you have no particular reason to doubt — it rendered with exactly the same confidence as the first one:
+     ⏵ Read   src/services/session.ts:14-22
+     → confirmed: line 18, `db.sessions.insert(...)`
+   ```
 
-```text
-> and the diagram says /auth/login also writes users.last_login directly
-  to the DB — show me that call
+   Confirmed, in one tool call. Now do the same for the edge you have no particular reason to doubt — it rendered with exactly the same confidence as the first one:
 
-  ⏵ Grep   "last_login" src/
-  → no matches
-  ⏵ Grep   "UPDATE users" src/
-  → no matches
-```
+   ```text
+   > and the diagram says /auth/login also writes users.last_login directly
+     to the DB — show me that call
 
-Nothing. Two greps, zero matches, and an edge that looked exactly as authoritative as the one above it right up until you asked. This is the failure worth naming precisely: most login flows *do* stamp a last-login timestamp somewhere, so the model reached for the shape it's seen in a thousand training examples instead of the shape actually sitting in this repo. Rendering can't tell the two edges apart — only the grep can. And if you built the dependency graph back in step 1, you had a second, independent way to catch this before you ever typed the prompt above: that graph showed `session.ts` as the only importer of `db.ts` — `/auth/login` has no path to the database that doesn't run through code the graph already drew. A structural picture and a runtime picture disagreeing is itself a receipt.
+     ⏵ Grep   "last_login" src/
+     → no matches
+     ⏵ Grep   "UPDATE users" src/
+     → no matches
+   ```
 
-When a check comes back empty, don't just quietly delete the edge and move on — say out loud (to the agent, in the doc, in the PR description) that this specific claim was checked and found false. A diagram with a fabrication silently removed looks identical to one that was never wrong, and the next person to regenerate it gets no warning that this exact spot needs a second look.
+   Nothing. Two greps, zero matches, and an edge that looked exactly as authoritative as the one above it right up until you asked. This is the failure worth naming precisely: most login flows *do* stamp a last-login timestamp somewhere, so the model reached for the shape it's seen in a thousand training examples instead of the shape actually sitting in this repo. Rendering can't tell the two edges apart — only the grep can. And if you built the dependency graph back in step 1, you had a second, independent way to catch this before you ever typed the prompt above: that graph showed `session.ts` as the only importer of `db.ts` — `/auth/login` has no path to the database that doesn't run through code the graph already drew. A structural picture and a runtime picture disagreeing is itself a receipt.
 
-Thirty seconds per edge converts the diagram from "plausible summary" to "map I checked." Skip it and you haven't saved the morning — you've moved the surprise to Wednesday, when the code you're editing turns out not to do the thing the diagram told you it did. *Checkpoint: each load-bearing edge ends in either a file-and-line receipt or a named, checked absence — never silence.*
+   When a check comes back empty, don't just quietly delete the edge and move on — say out loud (to the agent, in the doc, in the PR description) that this specific claim was checked and found false. A diagram with a fabrication silently removed looks identical to one that was never wrong, and the next person to regenerate it gets no warning that this exact spot needs a second look.
 
-**6. Decide its lifespan before you walk away.** The diagram describes the code as of this moment, and nothing anywhere watches for drift. For a one-off comprehension pass, delete it when you're done — regenerating next month costs one prompt.
+   Thirty seconds per edge converts the diagram from "plausible summary" to "map I checked." Skip it and you haven't saved the morning — you've moved the surprise to Wednesday, when the code you're editing turns out not to do the thing the diagram told you it did. *Checkpoint: each load-bearing edge ends in either a file-and-line receipt or a named, checked absence — never silence.*
 
-If it's going into shared docs, give it three things a stale diagram can't fake: a date, an owner, and a named regeneration path. A four-line header answers "can I still trust this" without anyone having to open the code it describes:
+6. **Decide its lifespan before you walk away.** The diagram describes the code as of this moment, and nothing anywhere watches for drift. For a one-off comprehension pass, delete it when you're done — regenerating next month costs one prompt.
 
-```text
-<!--
-  Diagram: login flow (sequence) — POST /auth/login to session cookie
-  Generated: 2026-07-13 by @sanjay
-  Source scope: src/routes/auth.ts, src/services/session.ts, src/db/client.ts
-  Regenerate: /diagram-refresh, or automatically via ci/check-architecture-docs.sh
--->
-```
+   If it's going into shared docs, give it three things a stale diagram can't fake: a date, an owner, and a named regeneration path. A four-line header answers "can I still trust this" without anyone having to open the code it describes:
 
-Whatever your tool calls a saved, reusable prompt — a slash command, a custom command file, a stored template — point it at that same scope line every run, and make it a *diff*, not an overwrite; a diagram that silently replaces itself hides exactly the drift you wanted to see:
+   ```text
+   <!--
+     Diagram: login flow (sequence) — POST /auth/login to session cookie
+     Generated: 2026-07-13 by @sanjay
+     Source scope: src/routes/auth.ts, src/services/session.ts, src/db/client.ts
+     Regenerate: /diagram-refresh, or automatically via ci/check-architecture-docs.sh
+   -->
+   ```
 
-```text
-# diagram-refresh
-Re-explore the files listed in this doc's "Source scope" header. Regenerate
-the Mermaid block for the same question stated in "Diagram." Diff the
-result against the committed version and report only what changed —
-edges added, removed, or relabelled. Don't touch anything outside scope.
-```
+   Whatever your tool calls a saved, reusable prompt — a slash command, a custom command file, a stored template — point it at that same scope line every run, and make it a *diff*, not an overwrite; a diagram that silently replaces itself hides exactly the drift you wanted to see:
 
-For a diagram load-bearing enough to gate a merge, wire that same regeneration into [headless](/foundations/headless/) CI instead of trusting someone to remember it exists:
+   ```text
+   # diagram-refresh
+   Re-explore the files listed in this doc's "Source scope" header. Regenerate
+   the Mermaid block for the same question stated in "Diagram." Diff the
+   result against the committed version and report only what changed —
+   edges added, removed, or relabelled. Don't touch anything outside scope.
+   ```
 
-```bash
-# ci/check-architecture-docs.sh — runs when the scoped files change
-if git diff --name-only "$BASE_SHA"... | grep -qE 'src/routes/auth.ts|src/services/session.ts'; then
-  <tool> --headless "regenerate docs/architecture/login-flow.md per its \
-    header's source scope, diff the Mermaid block against the version \
-    committed on this branch, and exit 1 if any edge changed without a \
-    matching update to this PR's diagram"
-fi
-```
+   For a diagram load-bearing enough to gate a merge, wire that same regeneration into [headless](/foundations/headless/) CI instead of trusting someone to remember it exists:
 
-That check doesn't verify the diagram is *right* — nothing short of step 5 does that. It verifies the diagram hasn't silently drifted from the code it claims to describe, using the same commodity headless capability any of these tools already has, not a bespoke drift detector you have to maintain. (If hand-rolling that script sounds like a bigger project than the diagram itself, skip ahead to *Off the shelf* — more than one tool already ships this loop.) *Checkpoint: the diagram is either deleted, or it carries a date, an owner, and a regeneration path enforced by something other than someone's memory.*
+   ```bash
+   # ci/check-architecture-docs.sh — runs when the scoped files change
+   if git diff --name-only "$BASE_SHA"... | grep -qE 'src/routes/auth.ts|src/services/session.ts'; then
+     <tool> --headless "regenerate docs/architecture/login-flow.md per its \
+       header's source scope, diff the Mermaid block against the version \
+       committed on this branch, and exit 1 if any edge changed without a \
+       matching update to this PR's diagram"
+   fi
+   ```
+
+   That check doesn't verify the diagram is *right* — nothing short of step 5 does that. It verifies the diagram hasn't silently drifted from the code it claims to describe, using the same commodity headless capability any of these tools already has, not a bespoke drift detector you have to maintain. (If hand-rolling that script sounds like a bigger project than the diagram itself, skip ahead to *Off the shelf* — more than one tool already ships this loop.) *Checkpoint: the diagram is either deleted, or it carries a date, an owner, and a regeneration path enforced by something other than someone's memory.*
+
+</Steps>
 
 ## When not to use it
 
