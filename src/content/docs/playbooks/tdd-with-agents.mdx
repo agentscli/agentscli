@@ -4,7 +4,7 @@ description: "Write the failing test first, commit it as the spec, then let the 
 ---
 
 import SpecLock from '../../../components/interactive/SpecLock.tsx';
-import { Steps } from '@astrojs/starlight/components';
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 **Use this when** you're delegating a bug fix or a well-understood behavior change, and you need to trust the result without auditing every line of the diff. The tell that you need it: the agent announces "done, all fixed!" and you realize you have no way to check that's true short of re-deriving the fix yourself. Run this play and the ending changes — the agent says done, you run one command, a test that existed *before* the fix, and you know. Not "looks right." Know.
 
@@ -43,7 +43,7 @@ Running example: a seasonal-discount bug — on the *last day* of the sale, cust
 
 2. **Run it. Confirm it fails on the assertion.** Not a typo, not a missing import — a test that fails for the wrong reason proves nothing when it passes:
 
-   ```text
+   ```bash
    $ npm test discount.test.ts
    ✗ applies the sale rate through the last second of the sale
      Expected: 0.3
@@ -52,7 +52,7 @@ Running example: a seasonal-discount bug — on the *last day* of the sale, cust
 
    *Checkpoint: expected-vs-received values in the failure output.* Compare that to the fail you don't want:
 
-   ```text
+   ```bash
    $ npm test discount.test.ts
    ✗ applies the sale rate through the last second of the sale
      Cannot find module '../pricing/discount' — did you mean './discount'?
@@ -62,7 +62,7 @@ Running example: a seasonal-discount bug — on the *last day* of the sale, cust
 
 3. **Commit the test, alone.** The step everyone skips, and the load-bearing one. Committed, the test stops being your opinion and becomes the spec — a fixed target the agent can't negotiate down:
 
-   ```text
+   ```bash
    $ git add src/pricing/discount.test.ts
    $ git commit -m "test: pin sale rate through last second of sale window"
    ```
@@ -182,7 +182,7 @@ Running example: a seasonal-discount bug — on the *last day* of the sale, cust
 
    Then, once the fix and its neighbors hold:
 
-   ```text
+   ```bash
    $ git add src/pricing/discount.ts
    $ git commit -m "fix: include saleEndsAt in the sale window (<= not <)"
    ```
@@ -248,7 +248,11 @@ action: { "decision": "block",
                       Argue the case in chat instead of editing it." }
 ```
 
-The exact syntax for that is per-tool — see the [hooks chapter](/foundations/hooks/) for the real config. Layer them by how much you trust the loop unattended: the rules line states intent, the pre-commit hook catches it before it lands even if you review late, the tool-call hook makes the edit impossible in real time. Rules ask; hooks enforce.
+The exact syntax for that is per-tool — see the [hooks chapter](/foundations/hooks/) for the real config.
+
+<Aside type="tip" title="Layer by how much you trust the loop unattended">
+  The rules line states intent. The pre-commit hook catches it before it lands, even if you review late. The tool-call hook makes the edit impossible in real time. Rules ask; hooks enforce — pick the layer that matches how much supervision this particular run actually gets.
+</Aside>
 
 **The ninety-test slab.** Ask an agent to "add tests" unconstrained and it produces an enormous batch in one edit, then one-shots an implementation satisfying all of them — backfill for a design it already committed to.
 
@@ -262,7 +266,7 @@ The exact syntax for that is per-tool — see the [hooks chapter](/foundations/h
 
 Ninety-one tests reviewed in one sitting is not reviewed at all, and the implementation was shaped to fit a spec nobody negotiated — the reverse of the whole technique. *Recovery, because the test file was committed alone back in step 3 and nothing since then is committed either:*
 
-```text
+```bash
 $ git diff --stat -- src/pricing/discount.test.ts
  discount.test.ts | 327 ++++++++++++++++++++++++++++
 $ git restore src/pricing/discount.test.ts   # discard the slab, keep nothing
@@ -301,6 +305,38 @@ Green — because SQLite's `LIKE` is case-insensitive for ASCII by default. Poin
 Same test, same code, red the instant it runs on Postgres — `LIKE` is case-sensitive there; the query needed `ILIKE`, or the column needed to be normalized at write time. *Fix: catch it when you review the test plan, not the failure — force the production engine before trusting green. Suites moved onto the real engine have a habit of immediately finding a bug the stand-in was hiding.*
 
 **Declaring victory at one green.** The first test is the reproduction, not the coverage — the boundary you thought of is handled, its neighbors are still dark. *Fix: step 6's adjacent cases, while asking is cheap; production finds them expensively.*
+
+## Red flags
+
+Stop and return to the loop the moment you hear any of these:
+
+- *"Just write a test along with the fix."* — skips the order that makes the whole technique work.
+- Mid-fix, `git diff` on the test file isn't empty. — the quiet renegotiation, in progress.
+- *"Added a full test suite for this while I was at it."* — an unconstrained ask produced dozens of tests nobody reviewed one at a time.
+- *"Tests pass"* — with no pasted run, or a suite green against an in-memory stand-in for a dependency production doesn't use.
+- *"That edge case should already be covered."* — declaring victory before checking the neighbors in step 6.
+
+## Cross-tool notes
+
+The loop is identical everywhere; what differs is how the "don't touch the test" constraint gets enforced:
+
+<Tabs>
+  <TabItem label="Claude Code">
+    A `PreToolUse` [hook](/foundations/hooks/) in `settings.json` can block edits to the locked test file outright — the strongest of the three layers in the quiet-renegotiation fix. `/clear` between the spec commit and the fix keeps the two intents from blending in context.
+  </TabItem>
+  <TabItem label="Codex">
+    `config.toml`'s `[hooks]` table (or `hooks.json`) supports the same gate on a tool call, with a nonzero exit blocking the write. The pre-commit hook and the rules-file line work identically either way.
+  </TabItem>
+  <TabItem label="Cursor / Copilot">
+    Cursor's `hooks.json` declares the same before-write gate; rules live in `.cursor/rules`. Copilot's enforcement here is thinner — lean on the pre-commit hook and repo custom instructions rather than a runtime block.
+  </TabItem>
+  <TabItem label="opencode">
+    A plugin's tool-call hook is the same gating point — you can't have the block without writing the plugin, unlike the declarative config the other CLIs use.
+  </TabItem>
+  <TabItem label="Pi">
+    No declarative `hooks.json` — the gate is a TypeScript extension lifecycle hook instead. Same capability, code instead of config; see [foundations · hooks](/foundations/hooks/) for the shape.
+  </TabItem>
+</Tabs>
 
 ## Off the shelf
 

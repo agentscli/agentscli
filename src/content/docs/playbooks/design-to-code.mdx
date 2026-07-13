@@ -4,7 +4,7 @@ description: "Anchor the mockup to your real components and tokens in text, then
 ---
 
 import BindingsCheck from '../../../components/interactive/BindingsCheck.tsx';
-import { Steps } from '@astrojs/starlight/components';
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 **Use this when** you have a design — a Figma frame, a mockup, a screenshot of the thing you want — and it needs to become a component in *your* codebase. The tell that you need it: you pasted an image, typed "build this," and got back roughly the right layout, a blue that isn't in your palette, and a hand-rolled toggle when your codebase has a `<Toggle>` three folders over. The agent saw the picture fine. It had no idea it was looking at *your* design system.
 
@@ -173,6 +173,10 @@ Running example: a pricing card from a mockup, into a React + Tailwind codebase.
    - **line 14** — `13px` isn't on the spacing scale at all (the nearest steps are `mt-2` at 8px and `mt-4` at 16px) — a number typed straight off the image, not chosen from the table.
    - **line 29** — `#7c69f7` is `brand-600`'s exact value, today. This is the one that fools a reviewer, because it's pixel-identical to the correct answer right up until the brand color changes and it isn't.
 
+   <Aside type="caution" title="Visual fidelity decays gracefully; a hardcoded palette decays all at once">
+     Line 29's hex is correct *today* — the render looks identical to the token version, and no reviewer catches it by eye. It stays invisible until the brand color changes, and then every hardcoded copy is a rebrand bug the token version never has.
+   </Aside>
+
    The fix is a token swap, not a rebuild:
 
    ```diff
@@ -186,7 +190,7 @@ Running example: a pricing card from a mockup, into a React + Tailwind codebase.
    + <Button className="w-full bg-brand-600">Start free trial</Button>
    ```
 
-   If the design round-trips into your design tool, spot-check a few layers in its inspector the same way: a bound fill shows as a named variable (`Fill → brand/600`); a hardcoded one shows only the swatch and hex, with no name attached. *Checkpoint: the grep returns nothing, and every layer you spot-check in the design tool resolves to a named token, not a lookalike value.* Visual fidelity decays gracefully; a hardcoded palette decays all at once.
+   If the design round-trips into your design tool, spot-check a few layers in its inspector the same way: a bound fill shows as a named variable (`Fill → brand/600`); a hardcoded one shows only the swatch and hex, with no name attached. *Checkpoint: the grep returns nothing, and every layer you spot-check in the design tool resolves to a named token, not a lookalike value.*
 
 7. **Make the anchor durable.** The first pass earned an artifact — don't let it evaporate at the end of the session. Simplest version, a section in the [rules file](/foundations/rules/):
 
@@ -259,6 +263,37 @@ The screenshots carry density, rhythm, and restraint the way the mockup carried 
 **The prototype handed over as spec.** Give the agent a vibe-coded prototype's source and its accidents — a stubbed auth check, a global mutable store — read as intent. *Tell: the prototype's shortcuts reappearing in the real implementation. Fix: screenshot the working UI, pair it with a plain-text list of what was validated versus what was a shortcut, build from those two artifacts. The prototype gets deleted.*
 
 **Round-trip that silently can't write.** An account with read-only access to the design file can pull designs but not push back; the returning half of the workflow just never fires. *Tell: reads work, write-back "does nothing." Fix: check file permissions before debugging the integration.*
+
+## Red flags
+
+Any of these means you're about to review looks instead of bindings:
+
+- A grep for raw hex or px values in the new file hasn't been run yet.
+- A state the mockup didn't show (hover, disabled, error) is missing from the first pass.
+- The prompt described the look with an adjective ("clean," "modern") instead of a named reference.
+- A hand-rolled component exists where the design system already has one three folders over.
+
+## Cross-tool notes
+
+The anchoring discipline is identical everywhere; what differs is how the image gets in and whether a structured design connection is available at all:
+
+<Tabs>
+  <TabItem label="Claude Code">
+    Drag-and-drop or paste an image directly into the prompt. A Figma [MCP server](/foundations/mcp-servers/) connection pulls structured frame data instead of a flattened export, when the file itself is disciplined enough to have one.
+  </TabItem>
+  <TabItem label="Codex">
+    Image attach works the same way in the ChatGPT and IDE surfaces; MCP connections are configured the same as any other server — see [foundations · MCP](/foundations/mcp-servers/).
+  </TabItem>
+  <TabItem label="Cursor / Copilot">
+    Both take a pasted or dragged image in chat. Cursor's MCP config is per-project (`.cursor/mcp.json`); Copilot's depends on the surface (VS Code vs. Coding Agent) — check which one your Figma connection actually reaches before assuming it's live everywhere you work.
+  </TabItem>
+  <TabItem label="opencode">
+    Image attach is supported in the TUI; MCP servers configure the same as elsewhere, in `opencode.json`.
+  </TabItem>
+  <TabItem label="Pi">
+    No native [MCP](/foundations/mcp-servers/) — there's no structured Figma connection to fall back on here, only whatever image input the harness supports. The anchoring discipline in this playbook is doing all the work Serena-style MCP tooling does for the other five.
+  </TabItem>
+</Tabs>
 
 ## Off the shelf
 

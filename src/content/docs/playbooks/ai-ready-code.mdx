@@ -4,7 +4,7 @@ description: "Audit how a fresh agent actually navigates your codebase, then fix
 ---
 
 import FreshEyes from '../../../components/interactive/FreshEyes.tsx';
-import { Steps } from '@astrojs/starlight/components';
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 **Use this when** the agent keeps making wide, wrong edits in a particular part of your codebase — you ask it to "skip archived customers in the nightly billing run" and it touches a fistful of files, edits a shared helper two other jobs depend on, and quietly breaks the dunning emails — or when every session burns its first stretch of tokens rediscovering the same layout. Nothing the agent did was unreasonable; it read the code that was there. The codebase just never told it where the edit lived, or what else was listening.
 
@@ -90,7 +90,11 @@ Running example throughout: a billing folder, split three ways — `services/bil
 
    **Pass:** what it opens is proportional to the edit — it reads the file that owns the decision, maybe one caller, and writes the change. **Fail:** it opens the whole file plus several others to understand an edit that should be local — a ten-line change dragging a thousand-line file, and everything that file imports, into context just to be safe.
 
-   A large file isn't wrong for crossing some number of lines — no vendor publishes a source-file-size threshold, and inventing one gives a rule fake authority it doesn't have. It's wrong because a small edit drags the whole thing into context, and every extra file read is a file the model now has to hold alongside the one that actually matters — which is where the "worse, not just slower" line from this chapter's opening bites hardest.
+   <Aside type="caution" title="Don't invent a line-limit rule">
+     No tool vendor publishes a source-file-size threshold — "keep files under 300 lines" in a rules file borrows authority that doesn't exist, and a specific number reads as fact even when it's a guess. A file is wrong to drag into context because a small edit shouldn't need the whole thing, not because it crossed a line count nobody actually measured.
+   </Aside>
+
+   It's wrong because a small edit drags the whole thing into context, and every extra file read is a file the model now has to hold alongside the one that actually matters — which is where the "worse, not just slower" line from this chapter's opening bites hardest.
 
    *If it fails:* split along the seam it had to reason across — the file's job, not an arbitrary line count. And where the repo is what it is today — mid-migration, a vendor dependency you can't restructure, a rename too large to review in one sitting — give the agent structural eyes instead of asking it to read more text. A syntax-aware navigation layer over [MCP](/foundations/mcp-servers/), built on the same language-server protocol your IDE's "go to definition" and "rename symbol" already run on, turns "grep for the name, open every match, hope none of them are a comment or an unrelated method with the same name" into a small number of exact, structural operations: find where a symbol is defined, find every real reference to it (no false positives from strings or comments), rename it everywhere at once.
 
@@ -218,6 +222,40 @@ Skip it for code agents rarely touch — legibility pays rent per session, and a
 **Docs instead of structure.** In any real repo the code is the freshest layer and prose about the code is the stalest, because keeping it current is nobody's job — and an agent will trust a stale claim *confidently*, which is worse than no doc at all, because a wrong-but-confident answer doesn't prompt a second check. *Tell: a sprawling "how this codebase works" file, months old, describing a layout that moved. Fix: fix the structure; keep only step 6's narrow, example-bound residue — anything wider decays the same way.*
 
 **Verification theater.** A green suite that never touched the change — tests that assert on the wrong layer, mock out the exact thing that broke, or simply don't cover the seam the edit ran through. Step 5's probe catches this only if the fresh session actually tries to break the claim rather than skimming for a pass. *Tell: the suite is green, but a fresh session asked to verify can't explain* why *it's green in terms of the specific change. Fix: the same discipline as the [TDD playbook](/playbooks/tdd-with-agents/) — a test written from the requirement, before the fix, beats a test written from the code, after.*
+
+## Red flags
+
+Any of these means the structure, not the agent, is what needs fixing:
+
+- A fresh session takes three-plus file-opens to answer "where does X live?" — the naming probe, failing.
+- A ten-line edit reads five files first — the context-budget probe, failing.
+- Its predicted blast radius names one file and misses the two that actually break.
+- "Looks right to me" is as far as a fresh session gets when asked to verify a "done" PR.
+- A rules-file line reads like a general essay on the codebase, not one error class with a bad and a good example.
+
+## Cross-tool notes
+
+The four probes are plain prompts — the same words work in any chat surface. What differs is how you get a genuinely fresh session to run them in, and what recovery tooling is available where the restructure isn't feasible yet:
+
+<Tabs>
+  <TabItem label="Claude Code">
+    `/clear` between probes, or a fresh [subagent](/foundations/subagents/) for the audit itself so the main session's prior context can't leak an answer the structure didn't actually earn.
+  </TabItem>
+  <TabItem label="Codex">
+    A new session (not `/compact`) for each probe — compaction can carry forward exactly the context contamination the probes are designed to catch.
+  </TabItem>
+  <TabItem label="Cursor / Copilot">
+    A new chat, not a continued one — the sidebar's history panel makes it easy to confirm you're actually starting cold.
+  </TabItem>
+  <TabItem label="opencode">
+    The `explore` agent is a reasonable stand-in for the naming and context-budget probes, since it's already scoped to read-only reconnaissance.
+  </TabItem>
+  <TabItem label="Pi">
+    A fresh session with no `SYSTEM.md` loaded is the equivalent — the probes measure what the repo says with no standing context helping it along.
+  </TabItem>
+</Tabs>
+
+Serena's MCP navigation layer (step 3's recovery path) is client-agnostic — it wires into any MCP-capable tool the same way, so the recovery tooling doesn't gate which tool you run the audit from.
 
 ## Off the shelf
 
