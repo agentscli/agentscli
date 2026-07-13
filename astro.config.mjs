@@ -715,6 +715,19 @@ export default defineConfig({
 							],
 						},
 						{
+							label: 'Playbooks',
+							link: '/playbooks/',
+							icon: 'rocket',
+							items: [
+								{ label: 'Overview', slug: 'playbooks' },
+								{ label: 'TDD with agents', slug: 'playbooks/tdd-with-agents' },
+								{ label: 'Design-to-code', slug: 'playbooks/design-to-code' },
+								{ label: 'Architecture diagrams via agent', slug: 'playbooks/architecture-diagrams' },
+								{ label: 'AFK agents', slug: 'playbooks/afk-agents' },
+								{ label: 'AI-ready code', slug: 'playbooks/ai-ready-code' },
+							],
+						},
+						{
 							label: 'Foundations',
 							link: '/foundations/',
 							icon: 'add-document',
