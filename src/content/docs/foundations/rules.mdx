@@ -7,21 +7,15 @@ import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 import RulesResolver from '../../../components/interactive/RulesResolver.tsx';
 
-## What rules are
-
-**Rules** are the persistent, human-authored context each CLI reads automatically at session start and injects into the model's context — before you've typed anything. They live in a file (or set of files) you write and check into the repo: build commands, naming conventions, "we use pnpm not npm," "the API lives in `services/api`," "never edit migrations after they've been merged."
-
-There's a cross-tool convention here. Codex, OpenCode, Cursor, and Copilot all read [`AGENTS.md`](https://agents.md/) natively (Copilot also reads `CLAUDE.md` and `GEMINI.md` from the repo root). Claude Code reads `CLAUDE.md` but can import `@AGENTS.md` for interop. The clean pattern is one `AGENTS.md` at your repo root, imported into `CLAUDE.md` — a single source of truth that every major tool will load.
-
-Rules are *declarative* — **you** write them, the agent reads them. That's the distinction from agent-managed memory (where the agent decides what to remember about a session or a user); memory is a separate primitive, not covered here. This chapter is about the static, version-controlled context you author.
-
-## Why you'd want them
-
 You've started a fresh session on the same repo for the fifth time this week. The first three messages of every session are always the same: *"we use pnpm, not npm. Tests are in `__tests__/`, not next to source. Don't auto-run the dev server, it conflicts with the one I already have open. Use the `dev-stack` branch as base, not `main`."*
 
 You're not telling the agent anything new. You're telling *this session* something you already told *last session*, because sessions don't remember each other. The agent reads files, runs greps, can find anything in the codebase — but it still doesn't know the unwritten conventions of the team that owns it. So every session starts at zero on the same five facts.
 
-That's the gap rules close. Write the facts down once, in a file the CLI reads on every start, and they're loaded before your first message. The agent walks in already knowing.
+That's the gap **rules** close. Rules are the persistent, human-authored context each CLI reads automatically at session start and injects into the model's context — a file (or set of files) you write and check into the repo: build commands, naming conventions, "we use pnpm not npm," "the API lives in `services/api`," "never edit migrations after they've been merged." Write the facts down once and they're loaded before your first message. The agent walks in already knowing.
+
+There's a cross-tool convention here. Codex, OpenCode, Cursor, and Copilot all read [`AGENTS.md`](https://agents.md/) natively (Copilot also reads `CLAUDE.md` and `GEMINI.md` from the repo root). Claude Code reads `CLAUDE.md` but can import `@AGENTS.md` for interop. The clean pattern is one `AGENTS.md` at your repo root, imported into `CLAUDE.md` — a single source of truth that every major tool will load.
+
+Rules are *declarative* — **you** write them, the agent reads them. That's the distinction from agent-managed memory (where the agent decides what to remember about a session or a user); memory is a separate primitive, not covered here. This chapter is about the static, version-controlled context you author.
 
 **Real-world examples of what teams put in `CLAUDE.md` / `AGENTS.md`:**
 
@@ -58,15 +52,17 @@ The three tools agree on *where* rules files live but not on *how they combine* 
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot |
-|---|---|---|---|---|---|
-| Default project file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` | `.cursor/rules/*.mdc` or `AGENTS.md` | `.github/copilot-instructions.md` or `AGENTS.md` |
-| Cross-tool standard | Via `@AGENTS.md` import | Native (`agents.md`) | Native (`agents.md`) | Native (`AGENTS.md`) | Native (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) |
-| User-global file | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | `~/.config/opencode/AGENTS.md` | User Rules (UI; no local file) | Personal instructions (github.com) |
-| Path-scoped rules | `.claude/rules/` with `paths:` | — | `instructions:` in `opencode.json` | `globs:` in `.mdc` frontmatter | `.instructions.md` with `applyTo:` |
-| Nested files per subdir | Concatenated (additive) | Concatenated; deeper files override by appearing later | First match wins (no merging) | Nested `AGENTS.md` auto-applied in subtree | Nearest `AGENTS.md` takes precedence |
-| `@path` imports | Yes (bare `@path`) | No | No | `@RuleName` only (manual invocation) | No |
-| Managed/org override | Yes | Yes | Yes | Yes (Team Rules) | Yes (Business / Enterprise) |
+| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
+|---|---|---|---|---|---|---|
+| Default project file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` | `.cursor/rules/*.mdc` or `AGENTS.md` | `.github/copilot-instructions.md` or `AGENTS.md` | `AGENTS.md` / `CLAUDE.md` (+ `APPEND_SYSTEM.md` / `SYSTEM.md`) |
+| Cross-tool standard | Via `@AGENTS.md` import | Native (`agents.md`) | Native (`agents.md`) | Native (`AGENTS.md`) | Native (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) | Native (`agents.md`) |
+| User-global file | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | `~/.config/opencode/AGENTS.md` | User Rules (UI; no local file) | Personal instructions (github.com) | `~/.pi/agent/` |
+| Path-scoped rules | `.claude/rules/` with `paths:`¹ | — | `instructions:` in `opencode.json` | `globs:` in `.mdc` frontmatter | `.instructions.md` with `applyTo:` | — (nested walk only, no glob targeting) |
+| Nested files per subdir | Concatenated (additive) | Concatenated; deeper files override by appearing later | First match wins (no merging) | Nested `AGENTS.md` auto-applied in subtree | Nearest `AGENTS.md` takes precedence | Nested walk, concatenated; closest file wins |
+| `@path` imports | Yes (bare `@path`) | No | No | `@RuleName` only (manual invocation) | No | No |
+| Managed/org override | Yes | Yes | Yes | Yes (Team Rules) | Yes (Business / Enterprise) | — (project resources are trust-gated, not org-policy-gated) |
+
+¹ `paths:` is the documented, current key — not `globs:` (that's Cursor's). As of 2026-07 it has open reliability bugs: user-level (`~/.claude/rules/`) scoping can be silently ignored, and a rule may load on read but not on write. See the Claude Code tab above for detail.
 
 ## Name collisions
 
@@ -100,6 +96,11 @@ The three tools agree on *where* rules files live but not on *how they combine* 
       tool: 'Copilot',
       label: 'Custom instructions',
       url: 'https://docs.github.com/en/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot',
+    },
+    {
+      tool: 'Pi',
+      label: 'Coding agent README',
+      url: 'https://github.com/earendil-works/pi',
     },
   ]}
 />

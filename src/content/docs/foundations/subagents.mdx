@@ -6,18 +6,13 @@ description: Isolated worker contexts spawned by a parent — what they share, w
 import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 import SubagentFanout from '../../../components/interactive/SubagentFanout.tsx';
-
-## What a subagent is
-
-A **subagent** is an isolated worker the main agent spawns to do a discrete task. It runs its own loop — reading files, running searches, making tool calls — in a fresh context window that doesn't touch yours. When it finishes, the parent receives only a summary. Whatever the subagent read, tried, backtracked through, or threw away never lands in your conversation.
-
-## Why you'd want one
+import StackDiagram from '../../../components/StackDiagram.astro';
 
 You asked the agent to debug a flaky test. Forty messages later, it's read seventeen files, tried four hypotheses, run the test six times with different env vars, and finally pinned it down. Now you want to actually fix the test and ship the feature you originally came in to build — and your context window is *full of debug noise*. Stack traces. Trial fixes. Failed reproductions. The agent is now somewhat less coherent than it was an hour ago, because half its context is rabbit-hole.
 
 The cost wasn't the debugging. It was that the debugging happened *in the same window as the rest of your work*. Everything the agent learned to find the bug is now polluting the context it needs to write the fix.
 
-That's the gap subagents close. Hand the debug task to a subagent: it spawns fresh, burns through whatever context it needs, and returns *"the bug is in `auth/session.ts:142`, the session token is being mutated by the middleware before the test asserts on it."* One sentence back. Forty messages of investigation: gone. Your main context stays clean for the actual fix.
+That's the gap subagents close. A **subagent** is an isolated worker the main agent spawns to do a discrete task — it runs its own loop, in a fresh context window that doesn't touch yours, and when it finishes the parent receives only a summary. Hand the debug task to one: it spawns fresh, burns through whatever context it needs, and returns *"the bug is in `auth/session.ts:142`, the session token is being mutated by the middleware before the test asserts on it."* One sentence back. Forty messages of investigation: gone. Whatever the subagent read, tried, backtracked through, or threw away never lands in your conversation — your main context stays clean for the actual fix.
 
 **Real-world examples of what teams use subagents for:**
 
@@ -34,25 +29,26 @@ The test: if a task would generate a lot of intermediate noise but you only care
 
 The subagent's defining property is that it runs in its own context window — separate from yours. Picture two windows:
 
-```text
-┌─ parent context ──────────────────┐    ┌─ subagent context ───────────┐
-│                                   │    │                              │
-│  rules, skills, conversation,     │    │  (fresh window)              │
-│  the work you actually came       │    │   system prompt              │
-│  here to do                       │    │   subagent's instructions    │
-│                                   │    │   task: "debug the flaky     │
-│  ── you delegate a task ──────────┼───►│    test in auth/session.ts"  │
-│                                   │    │                              │
-│                                   │    │   reads 17 files             │
-│                                   │    │   runs the test 6 times      │
-│                                   │    │   tries 4 hypotheses         │
-│                                   │    │   ↓                          │
-│  "the bug is in session.ts:142,   │◄───┼── returns ONE sentence ──    │
-│   token mutated by middleware"    │    │                              │
-│                                   │    │  (window discarded)          │
-│                                   │    │                              │
-└───────────────────────────────────┘    └──────────────────────────────┘
-```
+<StackDiagram
+  panels={[
+    { title: 'parent context', rows: [
+      { label: 'rules, skills, conversation, the work you actually came here to do' },
+      { label: 'you delegate a task' },
+      { label: '"the bug is in session.ts:142, token mutated by middleware"' },
+    ]},
+    { title: 'subagent context', rows: [
+      { label: '(fresh window)' },
+      { label: 'system prompt' },
+      { label: "subagent's instructions" },
+      { label: 'task: "debug the flaky test in auth/session.ts"' },
+      { label: 'reads 17 files' },
+      { label: 'runs the test 6 times' },
+      { label: 'tries 4 hypotheses' },
+      { label: 'returns ONE sentence' },
+      { label: '(window discarded)' },
+    ]},
+  ]}
+/>
 
 The seventeen reads, the four hypotheses, the six test runs — none of them enter your parent window. The parent receives the one-sentence summary and nothing else. Whatever the subagent learned to *find* the answer is gone the moment it returns; whatever you needed to *act* on the answer is still there, uncluttered.
 
@@ -120,19 +116,19 @@ A subagent returns once. It doesn't continue the conversation. If you need a bac
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot |
-|---|---|---|---|---|---|
-| Built-in subagents | None by default | `default`, `worker`, `explorer` | `general`, `explore`, `scout` | None by default | — (no in-IDE subagent) |
-| Custom subagent path | `.claude/agents/*.md` | `.codex/agents/*.toml` | `.opencode/agents/*.md` | `.cursor/agents/*.md` (also reads `.claude/agents/`, `.codex/agents/`) | — (`.agent.md` custom agents are personas, not sub-contexts) |
-| Invocation | Via `Agent` tool from parent | Natural-language dispatch from parent | `@<name>` mention | Auto-delegation, `/name`, or natural-language mention | Chat picker (custom agents) |
-| Tool restriction | Frontmatter `tools:` field | No explicit allowlist field; shape via `mcp_servers` / `sandbox_mode` | `permission` (preferred) or deprecated `tools` | Frontmatter `readonly` flag | — |
-| Skill preload | Frontmatter `skills:` field | TOML `skills.config` field | Via `permission.skill` rules | — | — |
-| Inherits parent history | No | No | No | No | — |
-| Peer-to-peer coordination | Agent teams (experimental) | Via Agents SDK | — | — | Custom-agent handoffs |
+| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
+|---|---|---|---|---|---|---|
+| Built-in subagents | None by default | `default`, `worker`, `explorer` | `general`, `explore`, `scout` | None by default | None named — native `runSubagent`/`agent` tool spawns isolated subagents | None |
+| Custom subagent path | `.claude/agents/*.md` | `.codex/agents/*.toml` | `.opencode/agents/*.md` | `.cursor/agents/*.md` (also reads `.claude/agents/`, `.codex/agents/`) | `.github/agents/*.agent.md` (also reads `.claude/agents/`) — any custom agent doubles as a subagent | No native primitive — via extension/package, or spawn a second `pi` process (e.g. in `tmux`) |
+| Invocation | Via `Agent` tool from parent | Natural-language dispatch from parent | `@<name>` mention | Auto-delegation, `/name`, or natural-language mention | Agent-initiated via `runSubagent`; not typically user-invoked by name | Whatever the extension/package defines; or manual (separate `pi` session) |
+| Tool restriction | Frontmatter `tools:` field | No explicit allowlist field; shape via `mcp_servers` / `sandbox_mode` | `permission` (preferred) or deprecated `tools` | Frontmatter `readonly` flag | Frontmatter `tools:` (own surface) and `agents:` (allowed delegates) | — |
+| Skill preload | Frontmatter `skills:` field | TOML `skills.config` field | Via `permission.skill` rules | — | — | — |
+| Inherits parent history | No | No | No | No | No | N/A (no built-in concept) |
+| Peer-to-peer coordination | Agent teams (experimental) | Via Agents SDK | — | — | Custom-agent handoffs | — |
 
 ## Name collisions
 
-- **"Agent" vs "subagent"** — in OpenCode, "agent" alone usually means a *primary agent* (`build`, `plan`) you switch into with Tab. "Subagent" means a worker the primary spawns. In Claude Code, "agent" colloquially means a subagent unless someone says "agent team." In Copilot, a **custom agent** (`.agent.md`) is a *persona* you switch the chat into — not an isolated sub-context.
+- **"Agent" vs "subagent"** — in OpenCode, "agent" alone usually means a *primary agent* (`build`, `plan`) you switch into with Tab. "Subagent" means a worker the primary spawns. In Claude Code, "agent" colloquially means a subagent unless someone says "agent team." In Copilot, a **custom agent** (`.agent.md`) is dual-purpose: a *persona* you can pick from the chat dropdown, or a subagent another agent delegates to via `runSubagent` — same file, two invocation paths, not two separate primitives.
 - **Subagent vs Agent team (Claude Code)** — a subagent returns a summary; an agent team is a set of independent peer sessions that communicate directly and share a task list.
 - Don't confuse the Codex CLI's *child agents* with the OpenAI **Agents SDK**, which is a separate framework for production multi-agent orchestration.
 - **Cursor Cloud Agents** (formerly *Background Agents*) and **Copilot Coding Agent** both run in isolated remote sandboxes and return a PR — they're closer to "async hand-off" than "in-session subagent." Treat them as a separate primitive when comparing.
@@ -165,8 +161,14 @@ A subagent returns once. It doesn't continue the conversation. If you need a bac
 
     {
       tool: 'Copilot',
-      label: 'Chat modes & custom agents',
-      url: 'https://code.visualstudio.com/docs/copilot/chat/chat-modes',
+      label: 'Subagents',
+      url: 'https://code.visualstudio.com/docs/agents/subagents',
+    },
+
+    {
+      tool: 'Pi',
+      label: 'Extensions',
+      url: 'https://github.com/earendil-works/pi',
     },
   ]}
 />

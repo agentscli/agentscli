@@ -58,21 +58,24 @@ export const ppkTools: PpkToolSpec[] = [
     id: 'codex',
     label: 'Codex',
     pieces: {
-      skill: {
+      skill: { status: 'bundle', note: 'Lands in the plugin’s `skills/` directory.' },
+      subagent: {
         status: 'loose',
-        note: 'A portable skill folder — the closest thing to plugin-shaped distribution.',
+        note: 'No `agents` manifest field — agent TOML files ship alongside the plugin, not inside it.',
       },
-      subagent: { status: 'loose', note: 'Agent TOML files, shared as files.' },
-      hook: { status: 'loose', note: 'Config lines in `config.toml`, shared as config.' },
-      mcp: { status: 'loose', note: 'Configured in `config.toml`, shared as config.' },
-      command: { status: 'loose', note: 'Custom prompts are loose files in `~/.codex/prompts/`.' },
+      hook: { status: 'bundle', note: '`hooks/hooks.json` ships in the plugin.' },
+      mcp: { status: 'bundle', note: '`.mcp.json` ships in the plugin.' },
+      command: {
+        status: 'loose',
+        note: 'No dedicated commands field — package it as a skill (standalone custom prompts are deprecated).',
+      },
     },
     ship: {
-      text: 'No plugin format — deliberately. Share each piece as files, or wrap the whole workflow in an SDK orchestrator.',
+      code: 'codex plugin marketplace add our-org/team-plugins\n/plugins   # browse + install from the CLI',
     },
-    dist: 'The documented composition path: a skill for prompt-shaped extensions, an MCP server for tool-shaped ones, the SDK for full custom behaviour. The composition is up to you.',
+    dist: 'Marketplace sources are `marketplace.json` files (local path, Git repo, or npm package), declared in `~/.codex/config.toml` under `[marketplaces.<name>]`. `/plugins` browses tabs for OpenAI-curated, workspace, and personal sources.',
     caveat:
-      'Don’t wait for plugins to land — the design treats skills + MCP + SDK as the sufficient surface.',
+      'Per-plugin state lives in `config.toml` — `[plugins."team-stack@team-plugins"] enabled = false` turns it off without uninstalling.',
   },
   {
     id: 'opencode',

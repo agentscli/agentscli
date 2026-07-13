@@ -7,27 +7,17 @@ import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 import HeadlessBuilder from '../../../components/interactive/HeadlessBuilder.tsx';
 
-## What headless mode is
-
-Every CLI in scope has a way to run **non-interactively**: you pass a prompt, the agent runs its loop to completion, prints a result, and exits. No TUI, no live editing, no approvals — just *call it from a script, get an answer back*.
-
-The shapes converge — all of them give you a `run` / `exec` / `-p` / `--prompt` subcommand — but the surrounding ecosystem (SDKs, GitHub Actions, structured-output formats, remote execution, async background agents) differs significantly. That's usually what tips the decision when you're choosing one for an automation.
-
-Two tools in scope go further than a local headless command. **Copilot's** canonical headless surfaces are **Coding Agent** (background, async, GitHub-native) and the **`copilot` CLI** — both non-IDE. **Cursor** ships `cursor-agent` plus Cloud Agents (REST API) and Bugbot (PR reviewer).
-
-### Build the invocation
-
-Pick a task, an output format, and a permission posture — and see what the same CI job looks like in each tool. The interesting part is *where* the posture lives: an allowlist flag, a sandbox tier, or a config file.
-
-<HeadlessBuilder client:visible />
-
-## Why you'd want one
-
 You've got a thing the agent is *great* at when you're driving it: triaging an incoming bug report, drafting a release-notes summary from a diff, sweeping the codebase for missing test coverage, generating a TL;DR of a long PR description. You'd love this to just *happen*. On the schedule. On the GitHub event. As part of CI. Without you sitting there.
 
 Then you try to wire it up and the TUI gets in the way. It wants to confirm permissions. It wants to draw a status bar. It's expecting a human to type. The thing that's effortless interactively is suddenly a fight against the loop you didn't realise was assumed.
 
 That's the gap headless mode closes. The same agent, the same skills, the same model — but invoked as a subprocess that takes input from `stdin` or a flag, produces output to `stdout` (often as structured JSON), and exits with a status code. Now your nightly job, your GitHub Action, your `pre-push` git hook, your Slack `/triage` slash-handler — all of them can call the agent like any other command-line tool.
+
+Every CLI in scope has that **non-interactive** surface: you pass a prompt, the agent runs its loop to completion, prints a result, and exits. No TUI, no live editing, no approvals — just *call it from a script, get an answer back*.
+
+The shapes converge — all of them give you a `run` / `exec` / `-p` / `--prompt` subcommand — but the surrounding ecosystem (SDKs, GitHub Actions, structured-output formats, remote execution, async background agents) differs significantly. That's usually what tips the decision when you're choosing one for an automation.
+
+Two tools in scope go further than a local headless command. **Copilot's** canonical headless surfaces are **Coding Agent** (background, async, GitHub-native) and the **`copilot` CLI** — both non-IDE. **Cursor** ships `cursor-agent` plus Cloud Agents (REST API) and Bugbot (PR reviewer).
 
 **Real-world examples of headless agent runs:**
 
@@ -41,6 +31,12 @@ That's the gap headless mode closes. The same agent, the same skills, the same m
 - **Background PR work** — assign a GitHub Issue to Copilot Coding Agent, walk away, come back to a draft PR.
 
 The test: if you're describing the task to the agent in approximately the same shape every time, and the result is something a script could consume, it belongs in headless mode.
+
+## Build the invocation
+
+Pick a task, an output format, and a permission posture — and see what the same CI job looks like in each tool. The interesting part is *where* the posture lives: an allowlist flag, a sandbox tier, or a config file.
+
+<HeadlessBuilder client:visible />
 
 ## Why this and not...
 
@@ -63,21 +59,21 @@ The TUI is for *driving the agent*. Headless mode is for *the agent being driven
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot |
-|---|---|---|---|---|---|
-| Headless command | `claude -p` | `codex exec` | `opencode run` | `cursor-agent -p` | `copilot --prompt` |
-| Structured output | `--output-format json` | `--json` / `--experimental-json` + optional `--output-schema` | `--format json` | `json`, `stream-json`, `--stream-partial-output` | — |
-| Streaming output | `stream-json` | NDJSON (default with `--json`) | line-delimited JSON via `--format json` | `stream-json` / partial output | — |
-| Session resume/fork | `-c`/`--continue`, `-r`/`--resume <id>`, `--fork-session` (all headless) | `codex resume`, `codex fork` | Sessions w/ undo-redo | `/resume` (CLI) | — |
-| Remote / async execution | Agent SDK | `codex cloud exec` | Docker / self-hosted | **Cloud Agents API** (REST) | **Coding Agent** (background, GitHub-native) |
-| First-party CI integration | Claude Agent SDK | GitHub Action | GitHub / GitLab integrations | Bugbot (PR reviewer) | GitHub Actions, Coding Agent, PR review |
-| Programmatic SDK | Claude Agent SDK | Codex SDK | OpenCode SDK | Cloud Agents REST API | REST API (*Unverified* on stable path) |
+| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
+|---|---|---|---|---|---|---|
+| Headless command | `claude -p` | `codex exec` | `opencode run` | `cursor-agent -p` | `copilot --prompt` | `pi -p` |
+| Structured output | `--output-format json` | `--json` / `--experimental-json` + optional `--output-schema` | `--format json` | `json`, `stream-json`, `--stream-partial-output` | — | `--mode json` |
+| Streaming output | `stream-json` | NDJSON (default with `--json`) | line-delimited JSON via `--format json` | `stream-json` / partial output | — | Via RPC mode |
+| Session resume/fork | `-c`/`--continue`, `-r`/`--resume <id>`, `--fork-session` (all headless) | `codex resume`, `codex fork` | Sessions w/ undo-redo | `/resume` (CLI) | — | — (*Unverified*) |
+| Remote / async execution | Agent SDK | `codex cloud exec` | Docker / self-hosted | **Cloud Agents API** (REST) | **Coding Agent** (background, GitHub-native) | — |
+| First-party CI integration | Claude Agent SDK | GitHub Action | GitHub / GitLab integrations | Bugbot (PR reviewer) | GitHub Actions, Coding Agent, PR review | `pi -p` scripted into any CI runner |
+| Programmatic SDK | Claude Agent SDK | Codex SDK | OpenCode SDK | Cloud Agents REST API | REST API (*Unverified* on stable path) | Pi SDK + RPC mode |
 
 ## Name collisions
 
 - "Headless" in Claude Code (`claude -p`) is the same idea as Codex's `exec`, OpenCode's `run`, Cursor's `cursor-agent -p`, and Copilot CLI's `--prompt` — but each tool's *SDK* or *background-agent* surface is the more powerful path for non-trivial automation.
 - Codex Cloud is *not* the same as "remote MCP" — Cloud runs the whole CLI remotely; remote MCP just connects a local CLI to a remote tool server.
-- Copilot **Coding Agent** (background async PR work) is a different surface from Copilot **CLI** headless (`copilot --prompt`) and from **`gh copilot`** (the legacy GitHub-CLI extension, not an agent).
+- Copilot **Coding Agent** (background async PR work) is a different surface from Copilot **CLI** headless (`copilot --prompt`). The older **`gh copilot`** GitHub-CLI extension was retired in October 2025 — don't confuse it with either of the two live surfaces.
 - Cursor **Cloud Agents** (REST API, GitHub-native) ≠ **`cursor-agent` headless** (local CLI) ≠ **Bugbot** (PR reviewer service).
 
 <UpstreamRefs
@@ -106,6 +102,11 @@ The TUI is for *driving the agent*. Headless mode is for *the agent being driven
       tool: 'Copilot',
       label: 'About Copilot CLI',
       url: 'https://docs.github.com/copilot/concepts/agents/about-copilot-cli',
+    },
+    {
+      tool: 'Pi',
+      label: 'Docs',
+      url: 'https://pi.dev/',
     },
   ]}
 />

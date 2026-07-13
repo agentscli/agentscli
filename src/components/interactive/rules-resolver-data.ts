@@ -286,4 +286,82 @@ export const rlrTools: RlrTool[] = [
       },
     },
   },
+  {
+    slug: 'pi',
+    label: 'Pi',
+    model:
+      'Walk + concatenate — global, then each ancestor down to cwd; closest file wins where guidance overlaps.',
+    results: {
+      root: {
+        outcomes: [
+          {
+            path: '~/.pi/agent/AGENTS.md',
+            status: 'loaded',
+            order: 1,
+            note: 'User-global; always collected when present.',
+          },
+          {
+            path: 'AGENTS.md',
+            status: 'loaded',
+            order: 2,
+            note: 'Project root on the walk from cwd; CLAUDE.md is accepted as an alternate filename.',
+          },
+          {
+            path: 'packages/api/AGENTS.md',
+            status: 'skipped',
+            note: 'Not on the path from repo root to this working file.',
+          },
+        ],
+        summary:
+          'Global + root concatenate. Stronger must-follow rules belong in APPEND_SYSTEM.md / SYSTEM.md, not only AGENTS.md.',
+      },
+      api: {
+        outcomes: [
+          {
+            path: '~/.pi/agent/AGENTS.md',
+            status: 'loaded',
+            order: 1,
+            note: 'User-global; still collected.',
+          },
+          {
+            path: 'AGENTS.md',
+            status: 'loaded',
+            order: 2,
+            note: 'Root file still loads; overlaps yield to the closer file.',
+          },
+          {
+            path: 'packages/api/AGENTS.md',
+            status: 'loaded',
+            order: 3,
+            note: 'Closest file on the walk — wins where it conflicts with the root file.',
+          },
+        ],
+        summary:
+          'All three load; on conflict the nested packages/api file wins. Disable context files entirely with --no-context-files.',
+      },
+      web: {
+        outcomes: [
+          {
+            path: '~/.pi/agent/AGENTS.md',
+            status: 'loaded',
+            order: 1,
+            note: 'User-global; still collected.',
+          },
+          {
+            path: 'AGENTS.md',
+            status: 'loaded',
+            order: 2,
+            note: 'packages/web has no AGENTS.md, so the walk lands on the root file.',
+          },
+          {
+            path: 'packages/api/AGENTS.md',
+            status: 'skipped',
+            note: 'Not an ancestor of packages/web/.',
+          },
+        ],
+        summary:
+          'Global + root only — no nested file under packages/web, so the root AGENTS.md is the most specific project voice.',
+      },
+    },
+  },
 ];

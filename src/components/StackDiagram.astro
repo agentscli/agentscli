@@ -1,0 +1,280 @@
+---
+// StackDiagram — themed replacement for ASCII box diagrams in foundations.
+// Renders one or more "stack" panels (a context window, a pipeline, …) as
+// real markup: theme-aware, responsive (side-by-side → stacked), readable
+// by screen readers and Ctrl-F.
+//
+// Row shapes:
+//   { label, note? }                  plain row, optional right-hand annotation
+//   { divider, items: [...] }        section header with dimmed, indented items
+//   { box, items: [...] }            nested bordered box (e.g. a lossy summary)
+
+interface PlainRow {
+  label: string;
+  note?: string;
+}
+interface DividerRow {
+  divider: string;
+  items: string[];
+}
+interface BoxRow {
+  box: string;
+  items: string[];
+}
+type Row = PlainRow | DividerRow | BoxRow;
+
+interface Panel {
+  title: string;
+  rows: Row[];
+}
+
+interface Message {
+  to: 'right' | 'left';
+  label: string;
+}
+
+interface Props {
+  panels: Panel[];
+  caption?: string;
+  /* When set (two panels), the connector becomes a column of labeled
+     directional messages instead of a bare arrow — for protocol/exchange
+     diagrams. */
+  messages?: Message[];
+}
+
+const { panels, caption, messages } = Astro.props;
+---
+
+<figure class="stack-diagram">
+  <div class="sd-panels">
+    {panels.map((panel, i) => (
+      <>
+        {i > 0 && (
+          messages ? (
+            <div class="sd-messages">
+              {messages.map((m) => (
+                <div class:list={['sd-message', m.to === 'left' && 'sd-message-left']}>
+                  {m.to === 'right' ? <>{`${m.label} `}<span class="sd-msg-arrow">→</span></> : <><span class="sd-msg-arrow">←</span>{` ${m.label}`}</>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div class="sd-arrow" aria-hidden="true">▶</div>
+          )
+        )}
+        <div class="sd-panel">
+          <div class="sd-title">{panel.title}</div>
+          <div class="sd-box">
+            {panel.rows.map((row) => {
+              if ('divider' in row) {
+                return (
+                  <div class="sd-section">
+                    <div class="sd-divider"><span>{row.divider}</span></div>
+                    <ul class="sd-items">
+                      {row.items.map((item) => <li>{item}</li>)}
+                    </ul>
+                  </div>
+                );
+              }
+              if ('box' in row) {
+                return (
+                  <div class="sd-inner-box">
+                    <div class="sd-inner-title">{row.box}</div>
+                    <ul class="sd-items sd-items-boxed">
+                      {row.items.map((item) => <li>{item}</li>)}
+                    </ul>
+                  </div>
+                );
+              }
+              return (
+                <div class="sd-row">
+                  <span class="sd-label">{row.label}</span>
+                  {row.note && <span class="sd-note">← {row.note}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </>
+    ))}
+  </div>
+  {caption && <figcaption class="sd-caption">{caption}</figcaption>}
+</figure>
+
+<style>
+  .stack-diagram {
+    margin: 2.5rem 0;
+    font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  .sd-panels {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  /* Starlight's markdown content adds margin-top to sibling elements;
+     inside the flex row that misaligns the panels. */
+  .sd-panels > :global(*) {
+    margin-top: 0 !important;
+  }
+
+  .sd-panel {
+    align-self: flex-start;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sd-title {
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sl-color-gray-2);
+    margin-bottom: 0.5rem;
+    padding-left: 0.25rem;
+  }
+
+  .sd-box {
+    border: 1px solid var(--sl-color-hairline-shade);
+    border-radius: 8px;
+    background: var(--sl-color-bg-code, var(--sl-color-gray-6));
+    padding: 0.75rem 0.875rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .sd-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    color: var(--sl-color-text);
+  }
+
+  .sd-label { min-width: 0; }
+
+  .sd-note {
+    color: var(--sl-color-text-accent);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .sd-section { margin: 0.25rem 0; }
+
+  .sd-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--sl-color-gray-2);
+  }
+
+  .sd-divider::before,
+  .sd-divider::after {
+    content: '';
+    flex: 1;
+    border-top: 1px dashed var(--sl-color-hairline-shade);
+  }
+
+  .sd-divider::before { max-width: 1rem; flex: none; width: 1rem; }
+
+  .sd-items {
+    list-style: none;
+    margin: 0.375rem 0 0;
+    padding: 0 0 0 1.25rem;
+    color: var(--sl-color-gray-2);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .sd-items li { margin: 0; }
+
+  .sd-inner-box {
+    border: 1px solid var(--sl-color-accent);
+    border-radius: 6px;
+    background: var(--sl-color-accent-low);
+    padding: 0.5rem 0.75rem 0.625rem;
+    margin: 0.25rem 0;
+  }
+
+  .sd-inner-title {
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sl-color-text-accent);
+    margin-bottom: 0.25rem;
+  }
+
+  .sd-items-boxed {
+    padding-left: 0;
+    color: var(--sl-color-text);
+  }
+
+  .sd-arrow {
+    color: var(--sl-color-text-accent);
+    font-size: 0.875rem;
+    padding: 0 0.125rem;
+  }
+
+  .sd-messages {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    max-width: 15rem;
+    font-size: 0.75rem;
+    color: var(--sl-color-text);
+    text-align: right;
+    /* offset the panel-title row so centering tracks the boxes, not the
+       full column height */
+    align-self: stretch;
+    margin-top: 1.6rem;
+  }
+
+  .sd-message-left {
+    text-align: left;
+  }
+
+  .sd-msg-arrow {
+    color: var(--sl-color-text-accent);
+  }
+
+  .sd-caption {
+    text-align: center;
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--sl-color-gray-2);
+    font-family: var(--sl-font, inherit);
+  }
+
+  @media (max-width: 40rem) {
+    .sd-panels {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .sd-panel {
+      align-self: stretch;
+    }
+    .sd-arrow {
+      transform: rotate(90deg);
+      align-self: center;
+      padding: 0.25rem 0;
+    }
+    .sd-messages {
+      align-self: center;
+      max-width: 100%;
+      text-align: center;
+      padding: 0.25rem 0;
+    }
+    .sd-message-left {
+      text-align: center;
+    }
+  }
+</style>
+</invoke>

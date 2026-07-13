@@ -3,9 +3,8 @@ import type { ToolData } from './config-explorer-types';
 // Facts sourced from src/content/tool-instructions/<tool>/*.mdx — the same
 // verified content that renders in the foundations chapters. If a chapter
 // changes, this file needs the matching update.
-// Pi has no tool-instructions dir: its facts come from the Pi course
-// (src/content/docs/course/pi/, esp. models-config/config-files.mdx and
-// context/system-md.mdx) — sync against those instead.
+// Pi facts: keep in sync with src/content/tool-instructions/pi/ and the
+// Pi course (esp. models-config/config-files.mdx, context/system-md.mdx).
 
 const CHAPTER = {
   configuration: { label: 'Configuration & profiles', href: '/foundations/configuration/' },
