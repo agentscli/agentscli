@@ -9,4 +9,5 @@ export const tools: Tool[] = [
   { slug: 'opencode', label: 'OpenCode' },
   { slug: 'cursor', label: 'Cursor' },
   { slug: 'copilot', label: 'Copilot' },
+  { slug: 'pi', label: 'Pi' },
 ];

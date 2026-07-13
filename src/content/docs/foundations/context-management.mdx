@@ -4,11 +4,12 @@ description: The levers for keeping a long session coherent — inspecting what'
 ---
 
 import ToolTabs from '../../../components/ToolTabs.astro';
+import StackDiagram from '../../../components/StackDiagram.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 import ContextSimulator from '../../../components/interactive/ContextSimulator.tsx';
 import SessionXray from '../../../components/interactive/SessionXray.tsx';
 
-## What context window management is
+You've been pairing with the agent for two hours on a gnarly migration. It was sharp at the start. Now it's started re-suggesting a fix it already tried and you already rejected, it's "forgotten" the constraint you stated forty messages ago, and its edits are getting vaguer. Nothing is broken. The window is just *full* — mostly of stale file reads, greps that didn't pan out, and abandoned attempts — and the signal you actually need is buried under noise it can no longer tell apart from signal.
 
 [How agents work](/foundations/how-agents-work/) establishes the substrate: the agent runs a loop, everything it can see lives in a finite **context window**, and that window both fills up and loses fidelity as a session grows. This chapter is the set of levers for operating *within* that limit over a long session — the management layer on top of the substrate.
 
@@ -25,10 +26,6 @@ None of these change *what* the agent can do. They change what it can still see 
 Before the levers, the problem they exist for — a whole session compressed into eleven steps. Walk through it and watch the window fill: the fixed overhead you pay before typing, the exploration spikes, a subagent detour that keeps 45k of noise out entirely, the auto-compact threshold — and what `/compact` actually keeps. Token counts are illustrative; the shape is the point.
 
 <ContextSimulator client:visible />
-
-## Why you'd want to think about this
-
-You've been pairing with the agent for two hours on a gnarly migration. It was sharp at the start. Now it's started re-suggesting a fix it already tried and you already rejected, it's "forgotten" the constraint you stated forty messages ago, and its edits are getting vaguer. Nothing is broken. The window is just *full* — mostly of stale file reads, greps that didn't pan out, and abandoned attempts — and the signal you actually need is buried under noise it can no longer tell apart from signal.
 
 That's the failure context management addresses. The window has a hard size limit and a softer coherence limit, and a long session walks into both. The levers above are how you stay ahead of them: notice the window filling (**inspect**), squeeze the dead weight out without losing the thread (**compact**), and never pay to rebuild context you already had (**carry it across**).
 
@@ -50,21 +47,42 @@ The first two moves — compact or clear, and *when* — are a decision you can 
 
 Compaction is lossy by definition: it trades a faithful, expensive transcript for a cheap, approximate summary. Knowing what survives the trade is the difference between compacting safely and compacting away the thing you needed.
 
-```text
-   BEFORE compaction (window ~90% full)         AFTER compaction (~35%)
- ┌─────────────────────────────────────┐      ┌────────────────────────────┐
- │ system prompt        ← always kept  │      │ system prompt              │
- │ rules (AGENTS.md / CLAUDE.md) kept  │      │ rules                      │
- │ tool definitions     ← always kept  │      │ tool definitions           │
- │ ── ~40 turns of work ────────────── │      │ ┌── summary (lossy) ─────┐ │
- │    17 file reads (full contents)    │  ►   │ │ goal · key decisions · │ │
- │    9 greps, 6 test runs             │      │ │ files touched ·        │ │
- │    4 abandoned hypotheses           │      │ │ next steps             │ │
- │    exact error/command output       │      │ └────────────────────────┘ │
- │ most recent turns    ← kept         │      │ most recent turns          │
- └─────────────────────────────────────┘      └────────────────────────────┘
-        the middle is what gets compressed
-```
+<StackDiagram
+  panels={[
+    {
+      title: 'Before compaction · window ~90% full',
+      rows: [
+        { label: 'system prompt', note: 'always kept' },
+        { label: 'rules (AGENTS.md / CLAUDE.md)', note: 'always kept' },
+        { label: 'tool definitions', note: 'always kept' },
+        {
+          divider: '~40 turns of work',
+          items: [
+            '17 file reads (full contents)',
+            '9 greps, 6 test runs',
+            '4 abandoned hypotheses',
+            'exact error/command output',
+          ],
+        },
+        { label: 'most recent turns', note: 'kept' },
+      ],
+    },
+    {
+      title: 'After compaction · ~35%',
+      rows: [
+        { label: 'system prompt' },
+        { label: 'rules' },
+        { label: 'tool definitions' },
+        {
+          box: 'summary (lossy)',
+          items: ['goal · key decisions · files touched · next steps'],
+        },
+        { label: 'most recent turns' },
+      ],
+    },
+  ]}
+  caption="the middle is what gets compressed"
+/>
 
 **Reliably kept:** the high-level goal, the decisions made and why, which files matter (by name), the state of the in-progress task, and the most recent turns verbatim.
 
@@ -96,18 +114,18 @@ Compaction is a *recovery* tool — it salvages a window that's already heavy. T
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot |
-|---|---|---|---|---|---|
-| Inspect usage | `/context`, `/usage`, status line | `/status` | status indicator *Unverified* | input-box gauge | chat input context control |
-| Manual compaction | `/compact [instructions]` | `/compact` | agent-/auto-driven | manual summarise *Unverified* | `/compact [instructions]` (CLI) |
-| Automatic compaction | Yes, near limit | Not documented *Unverified* | Yes, on overflow | Yes, near limit (uses a faster model) | Yes (~80% of window) |
-| Custom compact instructions | Yes (inline + `CLAUDE.md`) | Not exposed *Unverified* | Fixed structured template | Not exposed *Unverified* | Yes (inline) |
-| Disable auto-compaction | Via config *Unverified* | n/a | `compaction.auto=false` / `OPENCODE_DISABLE_AUTOCOMPACT` | Not exposed *Unverified* | `github.copilot.chat.summarizeAgentConversationHistory.enabled=false` |
-| Fresh window (same app) | `/clear` | `/new`, `/clear` | new session | New Chat | New Chat |
-| Resume prior session | `/resume`, `claude --continue`/`-c` | `/resume`, `codex resume` | `opencode --continue`/`-c`, `--session`/`-s` | Chat history | Chat history |
-| Fork / branch a session | `--fork-session` (CLI), `/fork` (TUI) | `/fork`, `/side` | `opencode --fork` | — | — |
+| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
+|---|---|---|---|---|---|---|
+| Inspect usage | `/context`, `/usage`, status line | `/status` | status indicator *Unverified* | input-box gauge | chat input context control | — (*Unverified*) |
+| Manual compaction | `/compact [instructions]` | `/compact` | agent-/auto-driven | `/summarize` | `/compact [instructions]` | Auto compaction, extensible |
+| Automatic compaction | Yes, near limit | Yes (`model_auto_compact_token_limit`) | Yes, on overflow | Yes, near limit (uses a faster model) | Yes (~80% of window) | Yes (built-in, extension-adjustable) |
+| Custom compact instructions | Yes (inline + `CLAUDE.md`) | Yes — `compact_prompt` (inline string) or `experimental_compact_prompt_file` (file path, experimental) | Fixed structured template | Not exposed *Unverified* | Yes (inline) | Via extension |
+| Disable auto-compaction | Via config *Unverified* | n/a | `compaction.auto=false` / `OPENCODE_DISABLE_AUTOCOMPACT` | Not exposed *Unverified* | `github.copilot.chat.summarizeAgentConversationHistory.enabled=false` | Via extension |
+| Fresh window (same app) | `/clear` | `/new`, `/clear` | new session | New Chat | New Chat | New tree session |
+| Resume prior session | `/resume`, `claude --continue`/`-c` | `/resume`, `codex resume` | `opencode --continue`/`-c`, `--session`/`-s` | Chat history | Chat history | `/tree` session picker |
+| Fork / branch a session | `--fork-session` (CLI), `/branch` (TUI) | `/fork`, `/side` | `opencode --fork` | `/fork` (CLI) | — | **Yes** — native tree-of-sessions (`/tree`) |
 
-Auto-compaction is now the default everywhere it's offered; the axis that still separates the tools is **control** — whether you can see the window filling, steer what the summary keeps, and turn the automation off. The terminal CLIs expose the most knobs; the IDE tools manage it for you with the fewest. *Verify tool-specific flags against the upstream docs below before relying on them — these settings move between releases.*
+Auto-compaction is now the default everywhere it's offered; the axis that still separates the tools is **control** — whether you can see the window filling, steer what the summary keeps, and turn the automation off. The terminal CLIs expose the most knobs; the IDE tools manage it for you with the fewest. Codex's custom prompt only governs its local compaction path — providers that support remote compaction skip the local path entirely, and `compact_prompt` isn't read on that path either, per the Codex source (as of 2026-07). *Verify tool-specific flags against the upstream docs below before relying on them — these settings move between releases.*
 
 ## Name collisions
 
@@ -115,6 +133,7 @@ Auto-compaction is now the default everywhere it's offered; the axis that still 
 - **"Summarize" vs "compact".** Cursor and Copilot surface the behaviour as "summarising conversation history"; the terminal tools call the same operation "compaction." Same mechanism, different label.
 - **"Session" is overloaded.** In [how agents work](/foundations/how-agents-work/) a *session* is one run of the loop with one window. OpenCode also has an `opencode session` CLI noun and `/share`-able sessions; don't read the CLI sense as a different concept.
 - **Compaction vs memory.** Compaction works *within* a session to fit the window. Agent-managed **memory** persists facts *across* sessions and is a separate primitive (deferred; distinct from [rules](/foundations/rules/)). Resuming a session is not the same as the agent remembering it.
+- **Claude Code's `/branch` vs `/fork`.** These are two different commands, not one renamed. `/branch` is the session-branching command — it splits your current window into a new one you can diverge from. `/fork` now spawns a background subagent instead, inheriting the conversation but running independently. Don't reach for `/fork` expecting a session branch.
 
 <UpstreamRefs
   links={[
@@ -136,12 +155,17 @@ Auto-compaction is now the default everywhere it's offered; the axis that still 
     {
       tool: 'Cursor',
       label: 'Summarization',
-      url: 'https://cursor.com/docs/agent/chat/summarization',
+      url: 'https://docs.cursor.com/en/agent/chat/summarization',
     },
     {
       tool: 'Copilot',
       label: 'Manage context for AI',
-      url: 'https://code.visualstudio.com/docs/copilot/chat/copilot-chat-context',
+      url: 'https://code.visualstudio.com/docs/chat/copilot-chat-context',
+    },
+    {
+      tool: 'Pi',
+      label: 'Docs',
+      url: 'https://pi.dev/',
     },
   ]}
 />

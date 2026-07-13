@@ -232,4 +232,66 @@ matcher = "Bash"
       },
     ],
   },
+  {
+    slug: 'pi',
+    label: 'Pi',
+    configNote:
+      'No hooks.json — hooks are TypeScript extensions via ExtensionAPI (`pi.on(...)`). Global: `~/.pi/agent/extensions/`. Project: `.pi/extensions/` (trust-gated).',
+    orderNote:
+      'Pi exposes a large ExtensionAPI event surface. The events below are the ones that map cleanest onto the hooks primitive; many more exist for turns, messages, and UI.',
+    phases: ['Project trust', 'Session opens', 'Each tool call', 'Compaction', 'Session ends'],
+    events: [
+      {
+        id: 'pi-project-trust',
+        name: 'project_trust',
+        phase: 'Project trust',
+        kind: 'gate',
+        fires:
+          'Before project-local `.pi/` resources load. A user/global or CLI extension can own the trust decision.',
+        blocking:
+          'Return `{ trusted: "yes" | "no" | "undecided" }`. First yes/no wins; otherwise built-in trust.json / prompt flow continues.',
+      },
+      {
+        id: 'pi-session-start',
+        name: 'session_start',
+        phase: 'Session opens',
+        kind: 'reactive',
+        fires:
+          'When a session starts, resumes, or forks. Classic use: notify, inject startup context, open session-scoped resources.',
+        exampleTitle: '.pi/extensions/stash-tools.ts',
+        example: `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+  pi.on("session_start", async (_event, ctx) => {
+    ctx.ui.notify("stash-tools loaded", "info");
+  });
+}`,
+      },
+      {
+        id: 'pi-tool-call',
+        name: 'tool_call',
+        phase: 'Each tool call',
+        kind: 'gate',
+        fires:
+          'Before a tool runs. The enforcement point for permission gates and protected paths.',
+        blocking:
+          'Can block or reshape the call — the stock pattern for hand-rolling approval prompts Pi does not ship by default.',
+      },
+      {
+        id: 'pi-compact',
+        name: 'session_before_compact / session_compact',
+        phase: 'Compaction',
+        kind: 'reactive',
+        fires: 'Around context compaction — customize summarization or observe what was dropped.',
+      },
+      {
+        id: 'pi-session-shutdown',
+        name: 'session_shutdown',
+        phase: 'Session ends',
+        kind: 'reactive',
+        fires:
+          'When the session runtime is torn down (quit, switch, fork). Clean up anything opened in session_start.',
+      },
+    ],
+  },
 ];

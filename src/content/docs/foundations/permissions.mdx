@@ -7,31 +7,21 @@ import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 import PermissionSim from '../../../components/interactive/PermissionSim.tsx';
 
-## What permissions are
-
-Every CLI in scope has some way of deciding three things, on every action the agent attempts: *do it without asking*, *ask me first*, or *refuse outright*. The shapes are wildly different:
-
-- **Claude Code:** named permission modes (`default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions`, cycled with Shift+Tab — see the [permission modes ladder](/course/claude-code/permissions-modes/modes-ladder/)) layered over allow/ask/deny rules per tool, plus managed policy.
-- **Codex:** OS-level sandbox tiers combined with approval policies.
-- **OpenCode:** per-tool allow/ask/deny, scoped per primary agent.
-- **Cursor:** auto-run modes (Always ask / Auto-run in sandbox / Always run everything) plus command allow/denylists; OS-level Agent Sandbox on macOS.
-- **Copilot:** per-call tool approval in VS Code Chat, with `chat.permissions.default` and per-category auto-approve knobs; optional shell sandbox; org-wide content exclusions.
-
-Same job — decide what the agent can do unattended — different mental models, different vocabulary, different layers.
-
-### Will it run?
-
-Those mental models, side by side: Claude Code walks allow/ask/deny rule lists, Codex passes two gates in sequence (sandbox, then approval policy), and OpenCode looks up a per-agent permission map. Pick a tool, set the policy, and trace a command through it.
-
-<PermissionSim client:visible />
-
-## Why you'd want one
-
 You're two settings into the agent's lifecycle and you've already hit the wall. Either it pops up a confirmation dialog on *every single command* — and you spend the session pressing `y`, `y`, `y` until you stop reading what you're approving — or you've turned approvals off and now there's nothing between the agent and `rm -rf node_modules` in the wrong directory.
 
 There's a real range of actions the agent does in a session: reading a file (boring, always fine), running tests (boring, always fine), editing your code (usually fine), running a one-off shell command (depends on the command), pushing to remote (you definitely want to know), `chmod`-ing system files (probably not). Treating all of those as one "do you approve?" question is what produces both fatigue and accidents.
 
 That's the gap permissions close. Decide *once*, declaratively: which tools are always fine, which always need you in the loop, which are flatly forbidden. Then the agent runs unattended through the boring 80% and only interrupts you for the genuinely risky 20% — and the truly dangerous things just can't happen, even if the agent decides they're a good idea.
+
+Every CLI in scope encodes exactly that three-way decision — *do it without asking*, *ask me first*, or *refuse outright* — on every action the agent attempts. The shapes are wildly different:
+
+- **Claude Code:** named permission modes (`default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions`, cycled with Shift+Tab — see the [permission modes ladder](/course/claude-code/permissions-modes/modes-ladder/)) layered over allow/ask/deny rules per tool, plus managed policy.
+- **Codex:** OS-level sandbox tiers combined with approval policies.
+- **OpenCode:** per-tool allow/ask/deny, scoped per primary agent.
+- **Cursor:** auto-run modes (Auto-review / Allowlist / Run Everything) plus command allow/denylists; OS-level Agent Sandbox on macOS, Linux, and Windows (via WSL2), folded into Allowlist as a layer rather than its own mode.
+- **Copilot:** per-call tool approval in VS Code Chat, with `chat.permissions.default` and per-category auto-approve knobs; optional shell sandbox; org-wide content exclusions.
+
+Same job — decide what the agent can do unattended — different mental models, different vocabulary, different layers.
 
 **Real-world examples of permission rules people actually set:**
 
@@ -43,6 +33,12 @@ That's the gap permissions close. Decide *once*, declaratively: which tools are 
 - **Org-wide policy** — managed config forbids any tool that can touch `prod` for everyone in the team, regardless of what they set locally.
 
 The test: if you've ever caught yourself approving a command without actually reading it, your permission rules are too tight. If you've ever discovered the agent did something you wouldn't have approved, they're too loose.
+
+## Will it run?
+
+Those mental models, side by side: Claude Code walks allow/ask/deny rule lists, Codex passes two gates in sequence (sandbox, then approval policy), and OpenCode looks up a per-agent permission map. Pick a tool, set the policy, and trace a command through it.
+
+<PermissionSim client:visible />
 
 ## Why this and not...
 
@@ -62,24 +58,24 @@ Permissions are *coarse and declarative* — "Bash is ask, Read is allow." Hooks
 
 ## Comparison
 
-| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot |
-|---|---|---|---|---|---|
-| Primary axis | Permission mode + allow/ask/deny rules per tool | Sandbox tier × approval policy | Per-tool per-agent | Auto-run mode + allow/denylist | Per-call approval + auto-approve knobs |
-| OS-level sandbox | No | Yes (`read-only` / `workspace-write` / `danger-full-access`) | No (wrap in a container if you need it) | Yes (Agent Sandbox, macOS; *other OSes unverified*) | Optional (`chat.agent.sandbox.enabled`, macOS/Linux) |
-| Approval modes | Named modes: `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` (Shift+Tab to cycle), over allow/ask/deny rules | `untrusted` / `on-request` / `never` | `allow` / `ask` / `deny` | Always ask / Auto-run in sandbox / Always run everything | `default` / `autoApprove` / `autopilot` |
-| Org/managed override | Yes (managed `settings.json`) | Yes (managed config) | Yes (managed config) | Yes (Team / Enterprise) | Yes (Business / Enterprise; content exclusions, MCP policy) |
-| Evaluation order | Deny > Ask > Allow | Sandbox blocks first, then approval gate | Last match wins | Sandbox first, then allow/denylist (with caveats) | Per-call gate unless auto-approve set |
-| Per-agent profile | No (single profile per session) | No (single mode per session) | **Yes** (per primary agent) | — | — |
-| "YOLO mode" | `bypassPermissions` mode (`--dangerously-skip-permissions`) | `danger-full-access` + `never` | All tools `allow` | "Always run everything" | `chat.tools.global.autoApprove` |
+| Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
+|---|---|---|---|---|---|---|
+| Primary axis | Permission mode + allow/ask/deny rules per tool | Sandbox tier × approval policy | Per-tool per-agent | Auto-run mode + allow/denylist | Per-call approval + auto-approve knobs | Trust gate on project resources; no per-tool permission popups |
+| OS-level sandbox | No | Yes (`read-only` / `workspace-write` / `danger-full-access`) | No (wrap in a container if you need it) | Yes (Agent Sandbox: macOS/Linux native, Windows via WSL2) | Optional (`chat.agent.sandbox.enabled`, macOS/Linux) | Via container/extension, not built-in |
+| Approval modes | Named modes: `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` (Shift+Tab to cycle), over allow/ask/deny rules | `untrusted` / `on-request` / `never` | `allow` / `ask` / `deny` | Auto-review / Allowlist / Run Everything | `default` / `autoApprove` / `autopilot` | None — YOLO by default; gates come from a container or extension |
+| Org/managed override | Yes (managed `settings.json`) | Yes (managed config) | Yes (managed config) | Yes (Team / Enterprise) | Yes (Business / Enterprise; content exclusions, MCP policy) | — |
+| Evaluation order | Deny > Ask > Allow | Sandbox blocks first, then approval gate | Last match wins | Sandbox first, then allow/denylist (with caveats) | Per-call gate unless auto-approve set | N/A |
+| Per-agent profile | No (single profile per session) | No (single mode per session) | **Yes** (per primary agent) | — | — | — |
+| "YOLO mode" | `bypassPermissions` mode (`--dangerously-skip-permissions`) | `danger-full-access` + `never` | All tools `allow` | "Run Everything" | `chat.tools.global.autoApprove` | The default posture |
 
 ## Translation: "make it stop asking"
 
 | Tool | How |
 |---|---|
 | Claude Code | Add `allow` rules for the tool pattern, or move `Bash(...)` out of `ask`. |
-| Codex | `--ask-for-approval never` (and pick a sandbox you trust). |
+| Codex | `--ask-for-approval never` (and pick a sandbox you trust) — the exact flag and config surface has moved across recent Codex releases, so confirm against your installed version. |
 | OpenCode | Set the relevant tool to `allow` on the active primary agent. |
-| Cursor | Switch auto-run mode to "Auto-run in sandbox" (or "Always run everything," with the usual warning). |
+| Cursor | Switch auto-run mode to "Allowlist" with sandboxing enabled (or "Run Everything," with the usual warning). |
 | Copilot | Set `chat.permissions.default` to `autoApprove`, or flip specific `chat.tools.*.autoApprove` keys. |
 
 ## Name collisions
@@ -111,13 +107,19 @@ Permissions are *coarse and declarative* — "Bash is ask, Read is allow." Hooks
     {
       tool: 'Cursor',
       label: 'Agent sandboxing',
-      url: 'https://forum.cursor.com/t/agent-sandboxing-available-in-cursor-2-0/139449',
+      url: 'https://cursor.com/blog/agent-sandboxing',
     },
 
     {
       tool: 'Copilot',
       label: 'VS Code settings reference',
       url: 'https://code.visualstudio.com/docs/copilot/reference/copilot-settings',
+    },
+
+    {
+      tool: 'Pi',
+      label: 'Docs',
+      url: 'https://pi.dev/',
     },
   ]}
 />

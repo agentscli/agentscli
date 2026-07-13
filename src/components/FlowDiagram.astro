@@ -1,0 +1,271 @@
+---
+// FlowDiagram — sibling of StackDiagram for flow-shaped ASCII diagrams:
+// vertical event flows, nested loop containers, horizontal pipelines,
+// and simple fan-outs. Theme-aware and responsive.
+//
+// Step shapes:
+//   { point: 'session opens' }                       bare text (also string[])
+//   { node: 'PreToolUse', note?: 'gate: …', sub?: 'read, grep' }
+//                                                    boxed node; note renders
+//                                                    beside it, sub inside it
+//   { branch: [{ node, sub? }, …], note?: '…' }      fan-out to parallel nodes
+//   { group: 'per turn', steps: [...], loop?: 'repeat until done',
+//     direction?: 'row' }                            nested container; groups
+//                                                    nest recursively
+interface NodeRef {
+  node: string;
+  sub?: string;
+}
+interface PointStep {
+  point: string | string[];
+}
+interface NodeStep extends NodeRef {
+  note?: string;
+}
+interface BranchStep {
+  branch: NodeRef[];
+  note?: string;
+}
+interface GroupStep {
+  group: string;
+  steps: Step[];
+  loop?: string;
+  direction?: 'row' | 'column';
+}
+type Step = PointStep | NodeStep | BranchStep | GroupStep;
+
+interface Props {
+  steps: Step[];
+  caption?: string;
+  nested?: boolean;
+}
+
+const { steps, caption, nested = false } = Astro.props;
+
+const asLines = (v: string | string[]) => (Array.isArray(v) ? v : [v]);
+---
+
+{
+  /* Nested invocations render only the step list; the top level adds the
+     figure/caption wrapper. */
+}
+{nested ? (
+  <Fragment>
+    {steps.map((step, i) => (
+      <Fragment>
+        {i > 0 && !('branch' in step) && <div class="fd-arrow" aria-hidden="true">▶</div>}
+        {'point' in step && (
+          <div class="fd-point">
+            {asLines(step.point).map((line) => <div>{line}</div>)}
+          </div>
+        )}
+        {'node' in step && (
+          <div class="fd-node-row">
+            <div class="fd-node">
+              <div>{step.node}</div>
+              {step.sub && <div class="fd-sub">{step.sub}</div>}
+            </div>
+            {step.note && <div class="fd-note">{step.note}</div>}
+          </div>
+        )}
+        {'branch' in step && (
+          <div class="fd-branch-wrap">
+            <div class="fd-branch">
+              {step.branch.map((b) => (
+                <div class="fd-branch-item">
+                  <div class="fd-arrow" aria-hidden="true">▶</div>
+                  <div class="fd-node">
+                    <div>{b.node}</div>
+                    {b.sub && <div class="fd-sub">{b.sub}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {step.note && <div class="fd-branch-note">{step.note}</div>}
+          </div>
+        )}
+        {'group' in step && (
+          <div class:list={['fd-group', { 'fd-group-row': step.direction === 'row' }]}>
+            {step.group && <div class="fd-group-title">{step.group}</div>}
+            <div class:list={['fd-steps', { 'fd-steps-row': step.direction === 'row' }]}>
+              <Astro.self steps={step.steps} nested />
+            </div>
+            {step.loop && <div class="fd-loop">↺ {step.loop}</div>}
+          </div>
+        )}
+      </Fragment>
+    ))}
+  </Fragment>
+) : (
+  <figure class="flow-diagram">
+    <div class="fd-steps">
+      <Astro.self steps={steps} nested />
+    </div>
+    {caption && <figcaption class="fd-caption">{caption}</figcaption>}
+  </figure>
+)}
+
+<style>
+  .flow-diagram {
+    margin: 2.5rem 0;
+    font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  .fd-steps {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  /* Starlight's markdown content adds margin-top to sibling elements. */
+  .fd-steps > :global(*) {
+    margin-top: 0 !important;
+  }
+
+  .fd-steps :global(.fd-arrow) {
+    color: var(--sl-color-text-accent);
+    font-size: 0.75rem;
+    padding-left: 1.25rem;
+    transform: rotate(90deg);
+    transform-origin: center;
+    width: 1rem;
+  }
+
+  .fd-steps-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .fd-steps-row > :global(.fd-arrow) {
+    transform: none;
+    padding-left: 0;
+    width: auto;
+  }
+
+  .fd-point {
+    color: var(--sl-color-text);
+    padding-left: 0.25rem;
+    white-space: pre-wrap;
+  }
+
+  .fd-node-row {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    min-width: 0;
+  }
+
+  .fd-node {
+    border: 1px solid var(--sl-color-hairline-shade);
+    border-radius: 6px;
+    background: var(--sl-color-bg-code, var(--sl-color-gray-6));
+    padding: 0.375rem 0.875rem;
+    color: var(--sl-color-text);
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .fd-sub {
+    color: var(--sl-color-gray-2);
+    font-size: 0.6875rem;
+  }
+
+  .fd-note {
+    color: var(--sl-color-text-accent);
+    font-size: 0.75rem;
+    max-width: 24rem;
+  }
+
+  .fd-group {
+    border: 1px dashed var(--sl-color-hairline-shade);
+    border-radius: 8px;
+    padding: 1rem 1rem 0.75rem;
+    position: relative;
+    margin-top: 0.5rem !important;
+    max-width: 100%;
+  }
+
+  .fd-group-title {
+    position: absolute;
+    top: -0.75em;
+    left: 0.75rem;
+    padding: 0 0.375rem;
+    background: var(--sl-color-bg);
+    color: var(--sl-color-gray-2);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .fd-loop {
+    margin-top: 0.625rem;
+    color: var(--sl-color-text-accent);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .fd-branch-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    max-width: 100%;
+  }
+
+  .fd-branch {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .fd-branch-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .fd-branch-item :global(.fd-arrow),
+  .fd-branch-item .fd-arrow {
+    padding-left: 0;
+    width: auto;
+  }
+
+  .fd-branch-note {
+    color: var(--sl-color-gray-2);
+    font-size: 0.75rem;
+    font-style: italic;
+  }
+
+  .fd-caption {
+    text-align: center;
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--sl-color-gray-2);
+    font-family: var(--sl-font, inherit);
+  }
+
+  @media (max-width: 40rem) {
+    .fd-steps-row {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .fd-steps-row > :global(.fd-arrow) {
+      transform: rotate(90deg);
+      padding-left: 1.25rem;
+    }
+    .fd-node-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.25rem;
+    }
+    .fd-note {
+      padding-left: 0.25rem;
+    }
+  }
+</style>

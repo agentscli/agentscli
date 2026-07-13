@@ -1,7 +1,22 @@
-Copilot has **no in-session subagent primitive** comparable to Claude Code's `Agent` tool — there is no built-in way for an active VS Code Chat agent to spawn an isolated sub-context. The closest in-IDE analog:
+Copilot Chat in VS Code ships a native **Subagents** primitive (current as of 2026-07): the main agent calls a `runSubagent` tool to spawn a worker in its own context window, optionally in parallel with others, and gets a summary back — the same shape as Claude Code's `Agent` tool, different plumbing.
 
-- **Custom agents** (`.agent.md` files; previously "custom chat modes") — a configured persona with its own tool restrictions, model preference, and instructions. Invoke from the chat picker. Custom agents support **handoffs**: one custom agent can pass work to another. This is the closest IDE-side primitive to a subagent, but it's a persona switch, not a fork of context.
-- **Copilot Extensions** (`@extension-name` in Chat) are full external agents running on the extension provider's servers, not isolated sub-contexts of your local session. Examples: `@docker`, `@sentry`. Distributed via GitHub Marketplace.
-- **SKILL.md `context: fork`** — the skill spec includes a `fork` context mode that suggests subagent-style execution, but real isolation semantics are *unverified as of 2026-05-21* and not equivalent to Claude Code's `Agent` tool.
+**Any custom agent doubles as a subagent.** A **custom agent** (`.agent.md`, discovered at `.github/agents/`, or the Claude-compatible `.claude/agents/`) is dual-purpose: pick it from the chat agents dropdown to switch personas, or let another agent delegate to it via `runSubagent` — same file, two invocation paths. Relevant frontmatter:
 
-There's no equivalent to Claude Code's `.claude/agents/` directory for in-session worker isolation in VS Code Chat. If a workflow needs hard context isolation today, the answer lives outside the IDE (async hand-off to Coding Agent in GitHub Actions) — at the cost of latency.
+```yaml
+---
+name: security-reviewer
+tools: ['agent']                              # lets THIS agent delegate to others
+agents: ['security-reviewer', 'perf-checker']  # who it may delegate to ('*' = all, [] = none)
+model: ['Claude Opus 4.5', 'GPT-5.2']          # tried in order
+user-invocable: true                          # show in the chat picker
+disable-model-invocation: false               # allow other agents to invoke this one as a subagent
+---
+```
+
+**Invocation is agent-initiated, not typed by you** — the coordinating agent decides isolation helps and calls `runSubagent` on its own; natural-language hints ("investigate X in isolation," "run these in parallel") are enough to nudge it. This is a different invocation model from Claude Code's `Agent` tool, which a user can also trigger by name.
+
+**Parallel and nested execution:** subagents can run side by side — e.g. security/perf/accessibility reviewer agents over one diff, or the same task across two models for comparison. Nesting is off by default; a subagent can't spawn its own subagents until `chat.subagents.allowInvocationsFromSubagents` is enabled, at which point nesting goes up to depth 5.
+
+**Copilot Extensions** (`@extension-name` in Chat) are a separate thing: full external agents running on the extension provider's servers, not isolated sub-contexts of your local session. Examples: `@docker`, `@sentry`. Distributed via GitHub Marketplace.
+
+**Copilot Coding Agent** (cloud, GitHub Actions-backed) is also separate from the in-session primitive above — an async hand-off that returns a PR, not a subagent inside your current session. Reach for it when the isolation needs to outlive the session, not just a subroutine within it.

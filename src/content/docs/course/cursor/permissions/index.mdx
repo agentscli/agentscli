@@ -20,9 +20,9 @@ Before Cursor's names for any of this, the judgment itself: how much leash a tas
 
 ## The auto-run modes
 
-Cursor exposes auto-run as a setting with **four modes**. You set it in **Cursor Settings**. From the CLI, `/auto-run [on|off|status]` toggles auto-run on or off (or reports its state) — it's a toggle, not a selector among the named GUI modes.
+Cursor exposes auto-run as a setting with **three modes**. You set it in **Cursor Settings**. From the CLI, `/run-everything [on|off|status]` toggles Run Everything on or off (or reports its state) — `/auto-run` is an alias for the same command — it's a toggle, not a selector among the named GUI modes.
 
-The four modes, per the current terminal docs:
+The three modes, per the current terminal docs:
 
 ### Auto-review
 
@@ -38,15 +38,13 @@ The classifier is the new piece in 3.6, and the one to be precise about: it is *
 
 Commands matching your allowlist run without prompting; anything not on the list is gated. This is the classic "let it run `go test ./...` and `git status` freely, but pause on everything else" posture — useful for cutting friction on a known-safe set of commands while keeping a checkpoint in front of the rest.
 
-### Allowlist (with Sandbox)
+Sandboxing is not a separate mode — it's a layer *inside* Allowlist. Historically "Run in Sandbox" was its own option; as of Cursor 3.5 it was folded into Allowlist, so you turn sandboxing on or off as a setting on this one mode rather than picking a different mode for it. With sandboxing enabled, the agent gets to grind through its loop — run tests, re-run the build, retry after a failure — without stopping at every step, because supported shell commands can run inside an OS-level sandbox instead of waiting on the allowlist. A command that tries to write outside the allowed area, or reach the network, doesn't get to. This is the setting the rest of the chapter is really about, because it's where the sandbox is doing the protecting and you need to understand exactly what the sandbox does and doesn't cover.
 
-Commands run **without prompting you**, but inside an OS-level sandbox. The agent gets to grind through its loop — run tests, re-run the build, retry after a failure — without stopping at every step, and the sandbox is what makes that safe: a command that tries to write outside the allowed area, or reach the network, doesn't get to. This is the mode the rest of the chapter is really about, because it's the one where the sandbox is doing the protecting and you need to understand exactly what the sandbox does and doesn't cover.
-
-One thing to be precise about: **in sandbox mode the allowlist is not applied.** The sandbox is meant to *replace* the allowlist — filesystem and network restrictions instead of per-command approval. So when a sandboxed command genuinely needs something the sandbox blocks — outbound network, or filesystem access outside the sandboxed area — it doesn't silently fail into the void, and it doesn't fall through to allowlist evaluation. Cursor **prompts you** with three options: skip the command, run it without restrictions, or run it and add it to the allowlist. The fall-through is to a prompt, not to a list.
+One thing to be precise about: **with sandboxing on, the allowlist stops being the thing that's gating reach.** The sandbox is meant to *replace* per-command approval with filesystem and network restrictions for whatever it can isolate. So when a sandboxed command genuinely needs something the sandbox blocks — outbound network, or filesystem access outside the sandboxed area — it doesn't silently fail into the void, and it doesn't fall through to allowlist evaluation. Cursor **prompts you** with three options: skip the command, run it without restrictions, or run it and add it to the allowlist. The fall-through is to a prompt, not to a list.
 
 ### Run Everything
 
-No gating. Every command runs, no sandbox, no prompt — this is the historical **"YOLO mode"** by another name. There are legitimate places for it: a throwaway container, a CI runner that's already isolated, a VM you've deliberately made disposable. On your actual development machine, with your real repos and credentials in reach, it's almost always the wrong answer. The reason you'd reach for an AI agent on serious work is that the stakes are real, and this is precisely the setting that throws away every protection those stakes call for. When you feel the pull toward it, the right move is usually to switch to **Allowlist (with Sandbox)** instead — you get the unattended loop without removing the wall.
+No gating. Every command runs, no sandbox, no prompt — this is the historical **"YOLO mode"** by another name. There are legitimate places for it: a throwaway container, a CI runner that's already isolated, a VM you've deliberately made disposable. On your actual development machine, with your real repos and credentials in reach, it's almost always the wrong answer. The reason you'd reach for an AI agent on serious work is that the stakes are real, and this is precisely the setting that throws away every protection those stakes call for. When you feel the pull toward it, the right move is usually to switch to **Allowlist with sandboxing on** instead — you get the unattended loop without removing the wall.
 
 ## The Agent Sandbox is the wall
 
@@ -71,7 +69,7 @@ Cursor historically gave you two fine-grained lists:
 
 These looked like the way to express "let it run `go test ./...` and `git status` freely on budgetcli, but never `git push` or `rm -rf`." Useful as intent — but you have to know exactly how much weight they can bear, because the honest answer is *less than they look like they bear.* Two facts make the point, and both have since been resolved in Cursor's favor by *removing* the list as the load-bearing layer rather than hardening it.
 
-**The allowlist is not applied under the sandbox — by design.** This isn't a build-specific bug or a silent leak: it's intended behavior, confirmed by Cursor staff. In sandbox mode the allowlist really isn't applied; the sandbox is meant to replace it, swapping per-command approval for filesystem and network restrictions. So you can't reason "this command ran, therefore it was on my allowlist." Under the sandbox, the *sandbox* is what's gating reach; the allowlist is not in the loop at all. (If you specifically need the old per-command allowlist behavior, enabling the Legacy Terminal Tool is the workaround.)
+**The allowlist is not applied when sandboxing is on — by design.** This isn't a build-specific bug or a silent leak: it's intended behavior, confirmed by Cursor staff. With sandboxing enabled inside Allowlist, the allowlist really isn't applied; the sandbox is meant to replace it, swapping per-command approval for filesystem and network restrictions. So you can't reason "this command ran, therefore it was on my allowlist." Under the sandbox, the *sandbox* is what's gating reach; the allowlist is not in the loop at all. (If you specifically need the old per-command allowlist behavior, enabling the Legacy Terminal Tool is the workaround.)
 
 **The denylist was bypassable, so Cursor deprecated it.** A denylist looks like it blocks dangerous commands, but security research (Backslash Security, reported by *The Register*) demonstrated reproducible bypasses that don't go near the obvious cases: obfuscation via Base64, subshell execution with parentheses, writing the dangerous action into a shell script and running that, and quote-escaping such as `"e"cho` to dodge a literal pattern match. Backslash's core finding was blunt — for every command in a Cursor denylist, there are infinite commands *not* in the denylist that have the same behavior. A pattern-matcher over command strings can't win that game. Cursor's response was to officially **deprecate the denylist feature in release 1.3** — so the denylist is not a current advisory control you should be leaning on; it's a removed one.
 
@@ -89,7 +87,7 @@ This is the cleanest way to give an agent a long leash safely: the isolation is 
 
 The shape to carry out of this chapter:
 
-- **Pick the mode for the work.** Unfamiliar code or real stakes → **Auto-review** (the default) or plain **Allowlist** for a known-safe command set. Repetitive, supervised grind where you want the loop to run unattended → **Allowlist (with Sandbox)**. **Run Everything** stays in the disposable-environment box, not on your real machine.
+- **Pick the mode for the work.** Unfamiliar code or real stakes → **Auto-review** (the default) or plain **Allowlist** for a known-safe command set. Repetitive, supervised grind where you want the loop to run unattended → **Allowlist with sandboxing on**. **Run Everything** stays in the disposable-environment box, not on your real machine.
 - **Lean on the sandbox, not the lists.** The Agent Sandbox is the wall that actually holds — on macOS directly, on Linux given the kernel prerequisites, on Windows via WSL2. The allowlist is superseded by the sandbox when sandboxing is on, and the denylist is deprecated. Treat lists as friction-reduction and intent, never as your last line of defense.
 - **When you need a real guarantee, change where the agent runs** — a Cloud Agent in an isolated VM — rather than trying to harden the local lists into something they aren't.
 
