@@ -1,0 +1,74 @@
+---
+title: "Agent Skills: package the procedure"
+description: "A SKILL.md packages the procedure you keep re-explaining into one the agent loads when the work matches: where skills live, how to author one, how to invoke."
+sidebar:
+  label: "Skills · Procedure"
+---
+
+## Structure: Agent Skills
+
+MCP gave the agent new *systems* to reach. The next gap is different: there's a *procedure* you keep re-explaining. Every time `budgetcli` gets a new bank's CSV format, you walk the agent through the same dance - sniff the delimiter, map the columns to the canonical schema, normalize dates to UTC, convert amounts to integer cents, dry-run before writing. The agent can do each step; what it can't do is *remember the recipe* across sessions. You're paying a re-teaching tax on a procedure that never changes.
+
+That's what an **Agent Skill** is for. Skills are a first-class Cursor primitive - they shipped in **Cursor 2.4**, "in the editor and CLI." A skill is a folder containing a `SKILL.md` - Markdown plus YAML frontmatter - that packages the procedure once, in a form Cursor loads *when the work matches*.
+
+### Where skills live (and the fallback paths)
+
+Cursor discovers skills from project and user locations, and notably reads several *fallback* directories so a skill written for another tool still works:
+
+- **Project** - `.cursor/skills/`, `.agents/skills/` (plus legacy `.claude/skills/` and `.codex/skills/`).
+- **User** - `~/.cursor/skills/`, `~/.agents/skills/` (plus the same legacy `~/.claude/skills/` and `~/.codex/skills/` fallbacks).
+
+Those `.claude/` and `.codex/` fallbacks aren't an accident: Cursor's docs state that "Agent Skills is an open standard" and point at **agentskills.io**. The recognized Claude and Codex directories mean a skill a teammate authored for Claude Code drops into `budgetcli` and works unchanged - cross-tool compatibility in practice, even though Cursor's docs don't formally endorse a named third-party spec.
+
+### Author a SKILL.md
+
+The skill is a folder whose name matches the skill's `name`, holding a `SKILL.md`:
+
+```text
+budgetcli/
+└── .cursor/
+    └── skills/
+        └── import-bank-csv/
+            └── SKILL.md
+```
+
+```markdown title=".cursor/skills/import-bank-csv/SKILL.md"
+---
+name: import-bank-csv
+description: >
+  Import a bank's CSV statement into budgetcli. Use when the user provides
+  a raw bank export and asks to load, import, or reconcile transactions
+  from it.
+paths: ["importers/**", "data/statements/**"]
+---
+
+# Import a bank CSV
+
+1. Sniff the delimiter and header row; do not assume comma-separated.
+2. Map source columns to the canonical schema: date, description,
+   amount_cents, currency, account_id.
+3. Parse every date to **UTC** at ingest. Reject ambiguous formats -
+   ask which is day vs month rather than guessing.
+4. Convert amounts to **integer cents**, never a float.
+5. Run the importer in `--dry-run` first and show the row count and a
+   three-row sample. Only write after the user confirms.
+```
+
+Two frontmatter fields carry the load. **`name`** must be lowercase-hyphenated and match the folder. **`description`** is the field the agent reads to decide *when* this skill is relevant - so write it as a trigger condition ("use when the user provides a raw bank export…"), not a title. The body is the procedure itself, in plain imperative steps, exactly the brief you'd give a sharp engineer.
+
+Beyond the required `name` and `description`, three **optional** frontmatter fields are where the control is - `paths`, `disable-model-invocation`, and a free-form `metadata`:
+
+- **`paths`** - glob scoping. The skill becomes a candidate only when files matching these globs are in play, so an importer skill doesn't surface while you're editing the test suite.
+- **`disable-model-invocation`** - when `true`, the skill is only included when explicitly invoked via `/skill-name`; the agent will not automatically apply it based on context. This turns a skill into something that behaves like a slash command - a procedure you trigger by hand, never by the model's judgment.
+- **`metadata`** - a free-form block for your own bookkeeping: who owns this skill, which version of the importer contract it targets, when it was last checked against a real statement. Treat it as a place to keep the provenance a reviewer will want in six months, not as a behavioural knob. {/* VERIFY: `metadata` is documented as free-form, but Cursor's skills docs do not describe Cursor itself reading or acting on anything inside it. The prose deliberately claims only "free-form bookkeeping" - do not assert that Cursor consumes these keys. Source: https://cursor.com/docs/skills */}
+
+### Three ways to invoke
+
+A skill reaches the agent two documented ways, plus a third that's often assumed but not confirmed:
+
+- **Automatic** - the agent reads the `description`, decides the current task matches, and loads the skill on its own. This is the default and the point of the whole primitive.
+- **`/skill-name`** - you type it in chat to *run* the skill explicitly, overriding the agent's judgment. (This is the only way to invoke a skill marked `disable-model-invocation`.)
+
+A tidy `@skill-name`-as-attach syntax - pulling a skill's content into context *without* running it - is an appealing symmetry with the rest of `@`, but it isn't something Cursor's skills docs actually describe; they document only the two slash paths above. {/* VERIFY: "@skill-name attaches a skill without invoking it" is NOT documented - Cursor's skills docs describe only slash invocation (auto-selected or manually invoked by typing / in Agent chat and searching the skill name). Don't assert @skill-as-attach as fact. Source: https://cursor.com/docs/skills */} The `/` runs / `@` attaches split itself - the one you drilled in the daily-edit-loop chapter - is the grammar under all of Cursor's chat, and it's worth holding onto as we move to commands; just don't lean on a skill-specific `@` form the docs haven't confirmed.
+
+Commands are the simpler half of that structure layer - not a procedure the agent reasons through but a fixed prompt you fire verbatim. [Next: custom slash commands](/course/cursor/extending/commands/).

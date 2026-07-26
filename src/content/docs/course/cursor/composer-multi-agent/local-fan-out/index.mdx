@@ -1,0 +1,41 @@
+---
+title: "Flavour one - local fan-out from the multi-agent sidebar"
+description: "One prompt, several agents, each in its own git worktree. Fan out to compare approaches or split slices, then review every branch before you merge."
+sidebar:
+  label: "Fan-out · Parallel worktrees"
+---
+
+The Cursor 2.0 multi-agent sidebar takes a single prompt and runs it across several agents at once, in parallel, each in its own isolated copy of the codebase. The cap is small and deliberate - up to eight agents on a single prompt.
+
+Two distinct ways to use it, matching the chapter's two jobs - the caching decision you can't make from reading alone, and the float-to-cents migration that has to touch many files without the workers colliding:
+
+**Competing agents - same prompt, compare the results.** Point the same prompt at several agents and let each take its own swing. This is the caching decision: you write the brief once, fan it out, and get back several complete implementations to compare side by side instead of one you have to trust blind.
+
+```text
+> Add a caching layer to the reports endpoint in api/reports.py.
+  Keep the public response identical; add cache invalidation on any
+  write that touches a report's underlying rows. Make it production-shaped,
+  not a sketch.
+```
+
+Dispatched across three agents, you get three real branches to read - one that reached for in-process LRU, one for Redis, one for a materialised view - each having actually written the code, run against your real types, and produced a diff you can review. You're no longer guessing which approach is cleanest; you're reading three answers and keeping the best.
+
+**Cooperating agents - different slices, no shared working tree.** Point each agent at a different slice of the *same* job. This is the float-to-cents migration: agent one takes the parsing layer, agent two the storage layer, agent three the report formatting, all running at once. They're not competing - they're dividing labour - and the reason they don't corrupt each other is the isolation mechanism underneath.
+
+### Why each agent gets its own worktree
+
+When several agents edit one working directory at once, the failure isn't merge conflicts - it's worse, and it's the reason isolation is load-bearing rather than a nicety. Picture two agents in one directory. Agent A is halfway through rewriting `money.py`, the file saved in an inconsistent state mid-edit. Agent B, working a path that imports it, reads that file *right now* and reasons over a half-written version that never existed in any commit and never will. The result is a non-deterministic failure even though the two slices were logically independent. Agents make this worse than humans do - they don't pause to notice something looks off, they auto-iterate on the bad state, and they can't attribute a passing test to the right branch.
+
+A git **worktree** fixes exactly this. One repository, but multiple checked-out working directories - each with its own branch, its own index, its own files on disk - all sharing the same underlying object database and history. That buys file-level isolation (B can't see A's unsaved edits), index isolation (each has its own staging area), and a branch lock (git refuses to check out a branch that's already checked out elsewhere). Cursor's multi-agent sidebar does this for you: per the 2.0 changelog, it "uses git worktrees or remote machines to prevent file conflicts," so each agent operates in its own isolated copy of the codebase. The cooperating agents on the cents migration never read each other's half-written files, and the competing agents on the caching decision never clobber each other's branch.
+
+The isolation a worktree gives you is **code state** - files, index, branch pointer. It does nothing for **execution state**, and that gap bites the cents migration the moment a worker tries to run the test server. Three agents in three worktrees still share ports, the dev database, and a root `.env` - so two of them binding `localhost:8000` or running concurrent migrations against one shared dev database will collide outside any worktree's protection. The rule of thumb: anything that lives *outside* the working directory is not isolated, and you handle it yourself (a per-worker port range, a per-worktree database file). And one line worth its own sentence - **runtime isolation is not security isolation.** A worktree keeps honest, cooperating agents from tripping over each other; it does nothing against untrusted code or prompt injection. For that, the guardrails are the sandbox and permission defaults from the [permissions chapter](/course/cursor/permissions/), layered underneath.
+
+### Reviewing and merging the competing results
+
+Fan-out's real work happens at the *end*, not the start - and skipping it is how you turn a slate of options into a faster way to ship the wrong one. Each agent comes back with a branch and a diff. For the **competing** caching agents, you read all three against one question you decided up front - *which keeps the response identical with the least new surface area?* - and you keep one. The Redis branch might be cleanest in isolation but drag in an infrastructure dependency you don't want; the materialised-view branch might be the least code but the hardest to invalidate correctly. You're making an engineering call across three real implementations, which is exactly the call you couldn't make from reading the endpoint alone. The other two branches get thrown away - that's not waste, that's the point. You paid compute to buy a comparison.
+
+For the **cooperating** cents agents, the merge is a different shape: you're not picking a winner, you're integrating three slices that should compose. Review each branch on its own terms - does the parsing slice actually convert at every entry point, does the storage slice round-trip cleanly - then merge them in sequence, running the test suite after each so a silent failure in one slice can't hide behind a green run from another. The discipline that carried every earlier chapter applies here, just multiplied: **what comes back is a proposal you review, never a result you apply.** More agents means more surface for a confident-but-wrong diff, so the review gate gets *more* important as you widen the fan-out, not less.
+
+So the shape that works for flavour one: fan out when the task has competing approaches you want compared *or* independent slices you want done at once; let the worktree isolation keep the agents from corrupting each other; namespace anything that lives outside the working tree yourself; and treat the returning branches as a slate to review, never a result to merge blind.
+
+That is the widest radius Cursor gives you on your own machine: a fleet, one prompt, and a slate of branches at the end. The next flavour narrows it hard - instead of several agents taking the same brief, a single worker you defined in advance takes one scoped job and hands back only what it concluded. [Next: delegated Subagents](/course/cursor/composer-multi-agent/subagents/).

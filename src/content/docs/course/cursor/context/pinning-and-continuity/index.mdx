@@ -1,0 +1,43 @@
+---
+title: "When hand-pinning still wins - and chat as your session"
+description: "Two cases where auto-retrieval reliably guesses wrong, the durable disambiguation move, and why a new chat per task keeps every window sharp."
+sidebar:
+  label: "Hand-pinning · Chat continuity"
+---
+
+import SessionXray from '../../../../../../components/interactive/SessionXray.tsx';
+
+## When hand-pinning still wins
+
+Self-gathering is a retrieval heuristic, and heuristics have failure modes you can predict. Two cases where you should pin context by hand rather than trust auto-gather:
+
+**1. Large or sprawling repos, where retrieval surfaces the wrong slice.** The bigger and more uniform the codebase, the more ways there are for semantic search to land in a plausible-but-wrong neighbourhood. `budgetcli` has three packages that all have a `client.ts`; a query about "the API client" can pull the *API surface's* fetch wrapper when you meant the *worker's* upstream HTTP client. The agent then reasons fluently about the wrong file. Symptom to watch for: the agent's edits touch a package you didn't expect. The fix is to stop describing and start pointing - `@`-attach the folder `apps/worker/` or the file `apps/worker/src/http.ts` - to fence retrieval into the right subtree.
+
+**2. Ambiguous symbols, where a name resolves to the wrong definition.** This is the sharpest case. `budgetcli` defines `parse()` in the worker's feed extractor *and* re-exports a different `parse()` from a shared util. Ask the agent to "fix `parse`" and self-gathering has to *guess* which one you mean from surrounding context - and it can guess wrong, confidently, because both are real. Cursor used to offer a by-name symbol attachment (`@Code`) for exactly this, but that menu entry was removed around the 2.0 release, so the durable disambiguation move today is to pin the *file* that holds the right definition and name the symbol in prose - the file scope rules out the other `parse()` even though you can't pin the function directly:
+
+```text
+> the feed extractor's parse() drops the amount field on pending rows.
+  fix parse() in @apps/worker/src/extract.ts - not the shared util's parse.
+
+  • Reading apps/worker/src/extract.ts
+
+  Fixing the pending-row branch in this file's parse()…
+```
+
+{/* VERIFY: by-name symbol attachment (the old @Code) is no longer in the @-menu - the @Code docs page now 308-redirects to /docs and symbol autocomplete on "@" broke/was removed with Cursor 2.0 (Cursor staff folded the bug report into a known-issue thread). If a symbol-pinning UX has since returned, re-derive it from the live docs before reinstating any "@Code file > symbol" gesture. Sources: https://cursor.com/docs/context/mentions and https://forum.cursor.com/t/code-stopped-working-for-me-after-cursor-2-0-upgrade/141488 */}
+
+The pattern under both: **auto-gather is a guess; hand-pinning is a constraint.** When the cost of the agent guessing wrong is high - a big repo where wrong means "edited the wrong package," or an ambiguous symbol where wrong means "fixed the wrong function" - spend the two seconds to pin and remove the guess. When the cost is low and your map of the code is incomplete, let it gather. That judgement, not a rule about always- or never-tagging, is the skill.
+
+## Continuity: the chat *is* your session
+
+Everything above lives inside a **chat**, and in the editor the chat is also your continuity layer - Cursor keeps a **history** of past conversations you can reopen, so context you built up doesn't vanish when you switch tasks or close the window. The deliberate move that matters here is the *opposite* of resuming: **start a new chat when you switch tasks.** A fresh chat gives the agent a clean window with none of the previous task's material - which both improves output and delays hitting the context limit. Cursor can compact a conversation to free up space in the context window (the CLI exposes this as `/summarize`, with `/compress` as an alias), but compaction is lossy, so you'd rather not lean on it for unrelated work. Riding one long thread across three different bugs is how the agent goes hazy; a new chat per task is how you keep each window sharp. {/* VERIFY: the specific claim that compaction runs on a *smaller* model is not confirmed on Cursor's docs - chat history and /summarize ("free up space in the context window") are documented, but keep the smaller-model phrasing out unless re-confirmed. Source: https://cursor.com/docs/cli/reference/slash-commands */}
+
+Here's that judgment made visible - a session playing out with its context window x-rayed, pausing where you'd have to decide. The commands wear generic names; in Cursor, `/compact` is the CLI's `/summarize` (`/compress` is an alias), and `/clear` is starting a new chat:
+
+<SessionXray client:visible />
+
+This is also where the editor and the CLI differ in ergonomics - though less than you'd expect. The Cursor CLI's current invocation is **`agent`** (`cursor-agent` is the legacy alias you'll still see in mixed sources; the [CLI chapter](/course/cursor/cli-headless-ci/) writes the longer `cursor-agent` form on purpose for disambiguation, while noting `agent` is now the first-party name). It does *not* trade the `@` primitive for flags: its docs say you "select files and folders to include in context with `@`," the same attach gesture as the editor. What the CLI adds is a set of terminal-native slash commands for session continuity - `/new-chat`, `/resume <chat>`, `/fork`, and `/summarize` (`/compress` alias) - driven from the prompt instead of a GUI history pane. So the honest editor-vs-CLI contrast is "same `@` attach primitive, plus slash commands, in a terminal surface," not "commands and flags *instead of* `@`." ([source](https://cursor.com/docs/cli/using))
+
+If you want the spec-level view of how any of these primitives are defined across tools, that's [Foundations: context window management](/foundations/context-management/). This chapter was the muscle memory: see the substrate once, point when you know, let it gather when you don't, and take the wheel back the moment the stakes of a wrong guess go up.
+
+What the agent *sees* is one dial. Which engine reads it - and what that engine bills you for the turn - is the next one. [Next: models, Auto, and the two pools](/course/cursor/models/).

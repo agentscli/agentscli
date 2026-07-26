@@ -1,0 +1,46 @@
+---
+title: "Wiring it into CI"
+description: "Put the headless command on a runner: install, an encrypted key, one print-mode run, and an exit code that turns the agent's answer into a merge gate."
+sidebar:
+  label: "CI · gate the push"
+---
+
+import NightShift from '../../../../../../components/interactive/NightShift.tsx';
+
+The headless command plus `CURSOR_API_KEY` is everything you need to put `budgetcli`'s agent on a runner. The job we'll automate is the transaction check: on every push, recategorise whatever landed and flag anything that looks off, so a bad import doesn't quietly corrupt months of history before you notice.
+
+The workflow is unremarkable on purpose - install the CLI, set the key from a secret, run one headless command, gate the step on its result:
+
+```text
+# .github/workflows/budgetcli-check.yml (shape only - confirm flags before use)
+name: budgetcli transaction check
+on: [push]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cursor-agent
+        run: curl https://cursor.com/install -fsS | bash
+      - name: Run the check
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          cursor-agent -p "Recategorise the transactions added in this push.
+            Reply with exactly PASS or FAIL: FAIL if any move sends an account
+            negative or lands in 'uncategorised', otherwise PASS." \
+            --output-format json --force > result.json
+          test "$(jq -r '.result' result.json)" = "PASS"
+```
+
+The assertion here reads the documented `.result` field - the headless JSON output carries `.result`, so `jq -r '.result'` pulls the agent's answer and `test` turns it into the step's exit code. An earlier draft of this example asserted a `.ok` boolean; there is no documented `.ok` field, so don't reach for one. {/* VERIFY: the CI shape is illustrative. `.result` is the documented headless JSON field; there is no documented `.ok` field. Re-read the real output schema at publish time before committing a pipeline to any specific field. Source: https://cursor.com/docs/cli/headless */}
+
+Everything load-bearing here you've already met. The install line is the same one-liner. The key is the same `CURSOR_API_KEY`, now an encrypted GitHub secret rather than an inline export. The command is a headless `-p` run with `--force`, because there's no human on the runner to approve a write - which is exactly the moment to remember the beta caveat and the fact that a CI container *is* your containment. The runner is disposable and isolated; that's what makes `--force` tolerable here in a way it wouldn't be against your laptop's working tree.
+
+The one genuinely new thing is the gate: reading `.result` and comparing it turns the agent's JSON answer into the step's exit code, so a failed check fails the push. That's the difference between an agent that *comments* and an agent that *blocks* - and for guarding `budgetcli`'s financial history, you want it to block.
+
+The gate is also where an unattended run's honesty comes from. With no one at the keyboard, `PASS` is just the agent's opinion until something the agent can't sweet-talk - a build, the suite, a full-path run - has to agree. Which checks you wire into the job decide what its green actually means:
+
+<NightShift client:visible />
+
+A CI job still burns your minutes on your runner, and it only fires on a push. The last two surfaces move the work off your infrastructure entirely and let it start from a comment. [Next: Cloud Agents and Bugbot](/course/cursor/cli-headless-ci/cloud-and-bugbot/).

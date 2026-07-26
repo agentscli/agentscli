@@ -1,0 +1,108 @@
+---
+title: "Hooks: the gate that can say no"
+description: "A hook is a subprocess Cursor runs at a fixed point in the agent loop, model-independent: the event surface, the stdin/stdout contract, the fail-open default."
+sidebar:
+  label: "Hooks · The gate"
+---
+
+import ConfigExplorer from '../../../../../../components/interactive/ConfigExplorer.tsx';
+
+## Gate: Hooks
+
+MCP *widened* what the agent can reach. Skills and commands *packaged* what you keep repeating. None of them is a guarantee - they all depend, in the end, on the model choosing to do the right thing. There's one move in `budgetcli` where "the model usually chooses right" is precisely the wrong assurance: **Cursor must never write to your real ledger database.** It can read it, reason about it, generate a migration for you to review - but the live table where your actual balances are counted is off-limits to automated writes. An accidental `UPDATE` there isn't a bug you catch in review; it's wrong numbers in your own money.
+
+You could put that in `AGENTS.md` and ask nicely. But for the one thing that must never slip, you want a wall that fires *every single time*, no matter what the model decided. That's a **Hook** - introduced in **Cursor 1.7** to let you "observe, control, and extend the Agent loop using custom scripts": a subprocess Cursor runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason around it.
+
+### Where hooks live and the schema
+
+Hooks are configured in a `hooks.json`, at the user or project scope (Enterprise installs distribute them centrally from the dashboard):
+
+- **User** - `~/.cursor/hooks.json`
+- **Project** - `<repo>/.cursor/hooks.json`
+- **Enterprise / Team** - platform-managed, dashboard-distributed.
+
+The schema names an event and the command(s) it triggers:
+
+```json title=".cursor/hooks.json"
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "./.cursor/hooks/protect-ledger.sh" }
+    ]
+  }
+}
+```
+
+### The event surface - pick the right moment
+
+Hooks attach to lifecycle **events**, and Cursor's event surface is the broadest in this course - wider than Claude Code's. Picking the right event is most of the design. Cursor exposes 21 events across three groups - 18 agent-lifecycle, two Tab, and one app-lifecycle (the list does drift between releases, so re-check it against the hooks docs before you depend on a specific name):
+
+- **Agent** - `sessionStart`, `sessionEnd`, `preToolUse`, `postToolUse`, `postToolUseFailure`, `subagentStart`, `subagentStop`, `beforeShellExecution`, `afterShellExecution`, `beforeMCPExecution`, `afterMCPExecution`, `beforeReadFile`, `afterFileEdit`, `beforeSubmitPrompt`, `preCompact`, `stop`, `afterAgentResponse`, `afterAgentThought`.
+- **Tab** (inline completion) - `beforeTabFileRead`, `afterTabFileEdit`.
+- **App lifecycle** - `workspaceOpen`.
+
+That `beforeShellExecution`, `beforeReadFile`, `beforeMCPExecution` trio is the policy-enforcement workhorse - command allowlisting, secret scanning, gating the very MCP servers you wired up earlier - and the read-file and MCP gates have no direct analog in Claude Code or Codex. For our ledger wall we want **`beforeShellExecution`**: it fires *before* a shell command runs, the only moment you can stop a write from ever happening.
+
+### Wire it up: stdin in, JSON out
+
+Cursor hands the hook a JSON payload on **stdin** describing the call, and reads the verdict from the hook's **stdout** (JSON) and its **exit code**:
+
+```bash title=".cursor/hooks/protect-ledger.sh"
+#!/bin/bash
+# Field path below is illustrative - verify against the hooks payload schema.
+input=$(cat)
+command=$(echo "$input" | jq -r '.command')
+
+# Refuse any write that targets the live ledger database.
+if echo "$command" | grep -Eqi 'ledger_prod|UPDATE .*ledger|INSERT .*ledger|DELETE .*ledger'; then
+  echo '{"permission":"deny","agent_message":"Writes to the production ledger are blocked. Generate a migration for review instead.","user_message":"Blocked a write to ledger_prod."}'
+  exit 0
+fi
+
+echo '{"permission":"allow"}'
+exit 0
+```
+
+There are two ways to signal a verdict, and the script above uses the explicit one. The **`permission`** field - `"allow"`, `"deny"`, or `"ask"` - is the nuanced channel: emit it as JSON on stdout with exit `0`, optionally with `agent_message` (fed back to the model as the reason) and `user_message` (shown to you). The blunt channel is the **exit code**: exit `2` blocks outright, equivalent to `"permission": "deny"`; any *other* non-zero code is **fail-open** - the action proceeds. That fail-open default is the one to internalize: a crashing hook does *not* silently block your agent, but it also means a buggy gate can leak. Test the deny path.
+
+### Watch the wall hold
+
+Cursor finishes some balance-reconciliation work and reaches for the database:
+
+{/* Note: the transcript below is a stylized illustration of the flow (tool call → hook deny → reroute), not a byte-accurate capture of Cursor's chat rendering; the glyphs and labels are illustrative. */}
+
+```text
+> apply the corrected balances to the ledger
+
+  Run  psql budgetcli -c "UPDATE ledger_prod SET balance_cents=… "
+
+  ⊘ Blocked by hook (protect-ledger.sh):
+    Writes to the production ledger are blocked. Generate a migration
+    for review instead.
+
+  Understood - I can't write the live ledger directly. I'll emit the
+  corrections as a reviewed migration instead.
+
+  Edit  migrations/0007_reconcile_balances.sql
+    -- review and apply this yourself
+```
+
+Watch what the agent did with the rejection. It didn't get stuck - it read the `agent_message` the hook fed back, understood *why*, and rerouted to the safe path: a migration you apply by hand. The gate didn't just stop a bad action; it steered Cursor toward the right one. And it would fire identically with auto-run set to run everything, in a [headless CLI](/course/cursor/cli-headless-ci/) run, at 2am with nobody watching. That's the property no rule, skill, or permission setting can give you: **always runs, model-independent.**
+
+## What you've built - and which surface to reach for
+
+`budgetcli` can now reach past its own files, carry its procedures across sessions, and refuse the one move that must never happen:
+
+- **MCP servers** gave the agent *reach* - it queries the real Postgres schema and the live exchange-rate API instead of guessing, declared once in `mcp.json` (project to share, user to keep personal), added by hand or in one click from the Marketplace / cursor.directory.
+- **Agent Skills** packaged the CSV-import *procedure* into a `SKILL.md` the agent loads when the work matches - and, because the format is the agentskills.io open standard, a teammate's `.claude/skills/` version works unchanged.
+- **Custom slash commands** turned the prompts you kept retyping into `/commit-msg`-style templates - the natural home, alongside Skills, for prompts you used to stash in the now-deprecated Notepads.
+- **Hooks** put a deterministic *wall* around the production ledger that fires whether or not the model cooperates.
+
+All four surfaces - plus the rules layers from the earlier chapter - live in a small, regular file layout: `.cursor/` in the repo for what the team shares, `~/.cursor/` for what follows you, and a couple of layers that are settings rather than files at all. Here it is at a glance, file by file:
+
+<ConfigExplorer client:visible initialTool="cursor" />
+
+The distinction worth carrying out of this chapter is the one that's easy to blur: **reach when the agent can't see the system; structure when you're repeating yourself; a gate when the model's judgment isn't a guarantee you can accept.** Reach for the wrong one and you'll fight it - a hook where you wanted a skill, a command where you needed a subagent. Reach for the right one and the agent stops re-deriving, re-asking, and occasionally getting the unforgivable thing wrong.
+
+The property that sets a hook apart from the other three surfaces - always runs, model-independent - matters most in the setting this chapter kept gesturing at: the agent running at 2am with nobody watching. The next chapter takes `budgetcli`'s agent out of the editor entirely, into one-shot scripts, CI steps, and pull-request review, where whatever containment you settled in advance is the only containment there is. [Next: the CLI, headless & CI](/course/cursor/cli-headless-ci/).
