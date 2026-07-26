@@ -1,0 +1,50 @@
+---
+title: "Project Rules: .mdc frontmatter and the four rule types"
+description: "Cursor's native format adds conditional attachment. Three frontmatter fields decide whether a rule is always-on, model-judged, file-scoped or manual."
+sidebar:
+  label: "Project Rules · .mdc types"
+---
+
+`AGENTS.md` is always on. That's its strength and its limit - there's no way to say "load this rule *only* when editing API handlers" or "let the agent decide whether this is relevant." That control is exactly what Cursor's native `.mdc` format adds.
+
+A Project Rule is a Markdown file with YAML frontmatter, living under `.cursor/rules/`:
+
+```text
+budgetcli/
+├── AGENTS.md                    ← always-on, portable, cross-tool
+├── .cursor/
+│   └── rules/
+│       ├── api-validation.mdc   ← attaches when editing API files
+│       ├── commit-style.mdc     ← agent decides relevance
+│       └── migrations.mdc       ← invoked by hand: @migrations
+└── src/...
+```
+
+The frontmatter carries three control fields - `description`, `globs`, and `alwaysApply` - and the combination you set determines one of **four rule types** (Always Apply, Apply Intelligently, Apply to Specific Files, Apply Manually):
+
+```markdown title=".cursor/rules/api-validation.mdc"
+---
+description: Validate every API request body with a Zod schema
+globs: ["src/api/**"]
+alwaysApply: false
+---
+
+All handlers under src/api/ validate input with a Zod schema before any
+business logic. Reject invalid bodies at the boundary; never hand-roll
+validation with if-checks.
+```
+
+The four types map to those fields like this:
+
+- **Always** - `alwaysApply: true`. The rule is loaded into every request in this project, the same posture as `AGENTS.md`. Use it for repo-wide truths that must never be missed.
+- **Apply Intelligently** - `alwaysApply: false` with a `description` and no `globs`. The agent reads the `description` and *decides* whether the rule is relevant to the current task. In Cursor's earlier naming this type was called **Agent Requested** - the description-driven, model-judged type. (Don't confuse it with the old **Auto Attached** name, which was the glob/file-pattern type, not this one; that's the former name of "Apply to Specific Files" below.)
+- **Apply to Specific Files** - a `globs:` pattern. The rule is meant to attach when a file matching the glob enters context - e.g. `["src/api/**"]` for the validation rule above. In Cursor's earlier naming, this glob-driven type was called **Auto Attached**.
+- **Apply Manually** - no auto-attach at all. You pull the rule in on demand by typing `@RuleName` in chat (e.g. `@migrations`). Good for heavyweight procedures you only want loaded when you ask.
+
+This is the divergence from Codex and OpenCode in one paragraph: there, a rule is on or it isn't. Here, a rule can be always-on, model-judged, file-scoped, or hand-invoked - and you choose per rule with two lines of frontmatter.
+
+:::note[Which file for which rule]
+Reach for `AGENTS.md` when the rule is a flat, always-true fact you'd happily share with another tool. Reach for a `.mdc` Project Rule when you need *conditional* attachment - scoped to certain files, judged by the model, or invoked by hand. They live side by side; most repos end up with both.
+:::
+
+Four types, two lines of frontmatter, all under your control. Except one of the four isn't as reliable as it looks. [Next: the globbing sharp edge](/course/cursor/rules/sharp-edges/).

@@ -1,11 +1,11 @@
 ---
 title: "Models: Auto, Composer, MAX Mode, and the two pools"
-description: "Spend where it pays. Use the per-chat model picker, let Auto route everyday work from the discounted pool, reach for a frontier model only when the reasoning earns it, and understand the billing split - the Auto+Composer pool versus the per-token API pool - before MAX Mode quietly moves a request from one to the other."
+description: "Spend where it pays. Let Auto route the everyday work, reach for a frontier model only when the reasoning earns it, and know which pool bills you."
 ---
 
 import ModelEconomy from '../../../../../components/interactive/ModelEconomy.tsx';
 
-The last chapter was about *posture* - how much latitude a task deserves before you look. This one is about *engine*: which model answers at all, and what that choice costs. They're different dials, and the mistake is to wire them together in your head. A mode change is free; reaching for the biggest model on a one-line fix is not.
+The last two chapters were about *posture* - how much latitude a task deserves before you look - and *material*: what the agent has in front of it when it answers. This one is about *engine*: which model answers at all, and what that choice costs. They're different dials, and the mistake is to wire them together in your head. A mode change is free, and so is pointing at the right file; reaching for the biggest model on a one-line fix is not.
 
 Here's the trap. People find a model they trust, pin it, and pay for it on every prompt - burning a frontier model's tokens to stamp out a CRUD endpoint that any cheap model would have nailed. Or they leave it on the cheapest thing and watch it flail at a genuine reasoning problem that needed the heavy engine. Both are the same error: a fixed setting against a variable workload. The operator's move is to let the *cheap, routed* default carry the everyday work, and spend the expensive engine only on the turns that actually change the outcome.
 
@@ -15,69 +15,11 @@ Before Cursor's own vocabulary for this - pools, Auto, MAX Mode - price the mist
 
 What makes Cursor different from the single-vendor agents - and the reason this chapter exists at all - is that "the model" isn't one company's model. Cursor lets you pick across vendors per chat, route automatically when you don't care, and run its own in-house agentic model. And underneath all of it sits a billing structure with **two separate pools** that decides what a given request actually costs. Get the pools straight and the rest of the chapter is just judgment.
 
-## The per-chat model picker
+## The four moves of this chapter
 
-Every chat has a model picker. You set it per conversation - not once globally - which is the whole point: the model is a per-task decision, the same way the mode is.
+- **The per-chat model picker and Auto** - the roster spans vendors, the picker is per-conversation, and Auto routes the everyday work from the discounted pool - [The per-chat model picker and Auto](/course/cursor/models/picker-and-auto/)
+- **Composer** - Anysphere's own agentic coding model, the one you can name explicitly and still stay in the cheap lane - [Composer: Anysphere's own agentic model](/course/cursor/models/composer/)
+- **The two pools** - discounted Auto + Composer versus per-token API, plus the MAX Mode button that moves a request between them (sometimes without asking) - [The two pools: discounted, per-token, and MAX Mode](/course/cursor/models/pricing-pools/)
+- **Mixing models** - plan with a frontier model, build with a cheap one, and spend the expensive pool on the single turn that earned it - [Mixing models: plan with one, build with another](/course/cursor/models/mixing-models/)
 
-The roster spans multiple vendors. As documented, it covers Anthropic, OpenAI, Google, xAI, Moonshot, and Cursor's own **Composer** family - frontier reasoning models, fast cheap models, and everything between, all behind one picker.
-
-You'll notice this chapter names almost no specific models, and that's deliberate. The roster turns over fast enough that any slug printed here will be stale within a release or two. What *doesn't* go stale is the shape of the decision: cheap-and-routed for the everyday, a strong frontier model for the genuinely hard reasoning, and an awareness of which pool each one bills against. Learn the shape; check the live picker for the names.
-
-The judgment behind the picker is the one from the last chapter restated. A boilerplate accounts endpoint in `budgetcli` - list, create, read, delete, following patterns already in the codebase - has nothing to reason about. Don't reach for a frontier engine to type it out. But the categorisation rules engine, where the *design* of how rules match, how they order, and how conflicts resolve is a genuine fork with several reasonable answers - that's a turn where a stronger model's reasoning changes the result. Spend there: as of writing (June 2026), reach for a frontier model like Claude Opus 4.8 - but treat that name as a stand-in, not a slug to memorise, and check the live picker for what's actually current. {/* VERIFY: Claude Opus 4.8 listed in Cursor's picker as of 2026-06 - https://cursor.com/docs/models */}
-
-## Auto: let Cursor route the everyday
-
-Most of the time you shouldn't be picking a model at all. **Auto** lets Cursor choose for you - in its own words, Auto "allows Cursor to select models that balance intelligence, cost efficiency, and reliability." It routes across models rather than pinning one default.
-
-The detail that makes Auto more than a convenience toggle is *which pool it bills against*. Auto requests draw from the **discounted Auto + Composer pool** - the cheaper of the two usage pools we're about to lay out. Cursor describes it as significantly more included usage when Auto or Composer is selected, designed for everyday agentic coding at a lower cost. So Auto isn't just "let the tool decide"; it's "let the tool decide *and* keep this request in the cheap pool." For the bulk of a working day - the CRUD endpoints, the small refactors, the rename-this-everywhere chores - that's exactly the right default. You get a competent model and you don't pay frontier per-token rates to get it.
-
-The reflex to build: **default to Auto, and only override the picker when you can name why.** "This is a hard reasoning problem and I want a specific frontier model on it" is a reason. "I always use this model" is a habit, and habits are what burn budget on mechanical work.
-
-## Composer: Anysphere's own agentic model
-
-One name on the roster isn't a third-party vendor's - **Composer** is Cursor's own model, built by Anysphere. Cursor 2.0 introduced it as Anysphere's first agentic coding model - a frontier model billed as roughly 4x faster than similarly intelligent models - and the line has since iterated through several versions, so the current Composer in the picker is newer than the 2.0-era original. It's an *agentic coding model*: trained for the edit-test-fix loop the agent runs, not a general chat model bolted into an editor.
-
-The reason Composer matters to *this* chapter is billing, not benchmarks. Composer shares the discounted pool with Auto - the **Auto + Composer pool** is named for the two of them together, and Cursor's docs state plainly that both Auto and Composer draw from this pool. So Composer is the in-house model you can reach for by name and still stay in the cheap pool, rather than tipping a request over into per-token API pricing. When you want Cursor's own agentic model specifically - and not whatever Auto would have routed to - Composer is how you ask for it without leaving the discounted lane.
-
-## The two pools: discounted vs. per-token
-
-Here is the billing model the whole chapter hangs on. Cursor's usage splits into **two pools**, and which pool a request lands in is what actually determines its cost:
-
-- **The Auto + Composer pool** - *discounted*. Everyday work routed by Auto, plus requests you send explicitly to Composer, draw from here. This is the cheap lane and it's where most of your day should live.
-- **The API pool** - *per-token, at the model's underlying rate*. When you pin a specific third-party frontier model (or trip MAX Mode, below), the request bills against the model's real per-token price with no discount. This is the expensive lane, and it's correct to use - on the turns that earn it.
-
-That's the lever. You're not really choosing "a model" - you're choosing *a pool*, and the model choice is what puts you in one or the other. Auto and Composer keep you in the discounted pool; pinning a frontier model or invoking MAX Mode moves you to the per-token pool. The skill is spending the per-token pool deliberately, the same spend-where-it-pays instinct from the modes chapter aimed at the meter instead of the latitude.
-
-:::note[Teams add a Cursor Token Rate]
-On **Teams** plans there's an extra layer: a **Cursor Token Rate** applied on top of the model's underlying cost. So the API-pool math on a team plan isn't just "the model's per-token price" - it's that price plus the team rate. If you're on an individual plan this won't bite; if you're on a team plan, it's why the same model can cost differently than a teammate on a personal account quoted to you.
-:::
-
-## MAX Mode: maximum context, per-token pricing
-
-**MAX Mode** does two things at once, and you should hold both in mind because they pull in opposite directions. First, it expands the context window to the selected model's **maximum** - the most code and conversation the model can hold at once. Second, it switches that request to **token-based pricing from the API pool** - the expensive lane. Cursor's docs put it plainly: Max Mode extends the context window to the maximum a model supports, and it uses token-based pricing at the model's API rate.
-
-So MAX Mode is the explicit "I need this model's full context and I'll pay per-token for it" button. The right time to press it is a genuine whole-codebase reasoning task where the limiting factor is *how much the model can see at once* - a cross-cutting refactor, a bug whose cause and effect are in different corners of `budgetcli`. The wrong time is everyday work, where you're paying for context you don't use and leaving the discounted pool for no reason.
-
-### The friction: some thinking models force MAX Mode on
-
-Here's the sharp edge, and it's the part most likely to surprise you on the meter. As of recent Cursor releases, several frontier "thinking" models **auto-enable MAX Mode when you select them** - and users have reported that it can't be turned off per-request. Picking one of those models silently moves you into the API pool at token-based pricing whether or not you wanted the max-context behaviour. It's an ongoing policy, not a one-release glitch: the behaviour has carried across releases, tied to a change that makes the latest GPT and Claude models MAX-only.
-
-The operator takeaway doesn't depend on which models are on the list this month: **selecting a frontier thinking model can move a request into the per-token pool for you, sometimes without an off switch.** That's not a reason to avoid those models - it's a reason to reach for them *on purpose*, on the turns where their reasoning earns the per-token bill, rather than leaving one pinned out of habit and paying API-pool rates on mechanical work. When you genuinely need the heavy engine, this is the right spend. When you're typing out a CRUD endpoint, it's exactly the leak Auto exists to prevent.
-
-## Plan with one model, build with another
-
-This is the callback that ties the engine dial to the posture dial. Plan Mode (from the [modes chapter](/course/cursor/modes/)), introduced with Cursor 2.0, lets you **plan with one model and build with another** - point a frontier reasoning model at the design, where a bad call is most expensive, then hand the approved, written-down plan to a faster, cheaper model to execute. Cursor's 2.0 changelog frames it directly: create your plan with one model and build the plan with another, in the foreground or background, even planning with parallel agents to have multiple plans to review.
-
-Read through the pools, that workflow is a billing strategy as much as a quality one. The frontier planner runs for one expensive turn - the design - and then the cheap, discounted-pool model does the bulk typing against a plan that's already sitting in a markdown file. You spend the API pool on the single turn that needed it and keep the long tail of edits in the cheap lane. That's spend-where-it-pays expressed as a two-model loop: heavy reasoning where the fork is, cheap throughput where it's just execution.
-
-## The skill, restated
-
-The model picker isn't a roster to memorise - the roster will have changed by the time you've memorised it. It's a single dial with a meter attached, and the judgment is the same one this whole course keeps circling:
-
-- **Default to Auto.** It routes for you and keeps the request in the discounted Auto + Composer pool. Most of your day belongs here.
-- **Reach for Composer** when you want Cursor's own agentic model by name - still in the discounted pool.
-- **Pin a frontier model** only when the reasoning genuinely pays. That moves you to the per-token API pool, and on a Teams plan adds the Cursor Token Rate on top.
-- **Use MAX Mode** when the bottleneck is *how much the model can see at once* - and know that some thinking models trip it for you, moving you into the per-token pool whether you asked or not.
-- **Split the loop** when the stakes justify it: a frontier model to plan, a cheap one to build.
-
-The person who's merely *installed* Cursor pins their favourite model and pays frontier rates to type out boilerplate. The person who's *good* with it lets Auto carry the everyday from the cheap pool and spends the per-token pool on purpose - on the handful of turns where a stronger engine actually changes the answer.
+The arc runs from the dial to the meter and back to judgment. The first lesson gives you the control surface and the default that should carry most of your week. The second names the one in-house model worth reaching for by name. The third turns the whole thing over and shows the billing structure underneath - because once you can see the pools, "which model?" stops being a taste question and becomes a spending one. The fourth puts both dials in the same loop: a strong engine on the design, a cheap one on the typing. The person who's merely *installed* Cursor pins a favourite model and pays frontier rates to stamp out boilerplate. By the end of this chapter you'll be the other kind of user - the one who lets Auto carry the everyday and reaches for the expensive engine on purpose.

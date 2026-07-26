@@ -53,7 +53,7 @@ export interface HlbFragment {
 }
 
 export interface HlbPostureFragment extends HlbFragment {
-  /** Posture that lives in config instead of flags (opencode) */
+  /** Posture that lives in config instead of flags (OpenCode) */
   config?: { title: string; code: string };
 }
 
@@ -134,7 +134,7 @@ export const hlbTools: HlbToolSpec[] = [
   },
   {
     id: 'opencode',
-    label: 'opencode',
+    label: 'OpenCode',
     base: 'opencode run "{prompt}"',
     outputs: {
       text: { note: 'Plain output - the default, no flag needed.' },
@@ -153,7 +153,7 @@ export const hlbTools: HlbToolSpec[] = [
           title: 'opencode.json - the posture lives in config, not flags',
           code: '"permission": {\n  "read": "allow",\n  "grep": "allow",\n  "edit": "deny",\n  "bash": "deny"\n}',
         },
-        note: 'opencode has no permission flags on `run` - the per-agent permission map decides. This shape is the stock `plan` agent.',
+        note: 'OpenCode has no permission flags on `run` - the per-agent permission map decides. This shape is the stock `plan` agent.',
       },
       edit: {
         config: {
@@ -167,7 +167,7 @@ export const hlbTools: HlbToolSpec[] = [
           title: 'opencode.json',
           code: '"permission": {\n  "read": "allow",\n  "edit": "allow",\n  "bash": "allow"\n}',
         },
-        note: 'Everything allowed. opencode has no built-in OS sandbox - wrap the run in a Docker container if you go here.',
+        note: 'Everything allowed. OpenCode has no built-in OS sandbox - wrap the run in a Docker container if you go here.',
       },
     },
     footnote:

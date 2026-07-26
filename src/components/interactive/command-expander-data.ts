@@ -77,7 +77,7 @@ export const cxpTools: CxpToolSpec[] = [
   },
   {
     id: 'opencode',
-    label: 'opencode',
+    label: 'OpenCode',
     typed: '/security-review src/auth.ts',
     path: '.opencode/commands/security-review.md',
     file: [

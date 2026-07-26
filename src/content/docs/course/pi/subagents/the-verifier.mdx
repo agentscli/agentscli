@@ -1,6 +1,6 @@
 ---
 title: "Build a verifier that doesn't trust the builder"
-description: "A second agent, spawned after the first, scoped to read-only tools, that decomposes a builder's self-report into falsifiable claims and checks each one against the real data - and because it can't chat back, the only way to fix what it misses is to edit its rules."
+description: "A second agent, scoped read-only, that turns the builder's self-report into falsifiable claims and checks each one against the real data instead of the summary."
 sidebar:
   label: "The verifier · trust nothing self-reported"
 ---
@@ -13,11 +13,11 @@ That's a structural problem, not a prompting one - no amount of "please double-c
 
 ## Spawn the verifier against the builder's own transcript, not its summary
 
-You already have everything the verifier needs, for free: every Pi session persists its full, uncompacted history to a JSONL file on disk, regardless of what got summarized into context along the way. Point the verifier at that file instead of at the builder's closing message, and it isn't reading a summary - it's reading exactly what happened, tool call by tool call:
+The verifier doesn't have to take the builder's word for anything, because a Pi session persists its full, uncompacted history to a JSONL file on disk, regardless of what got summarized into context along the way. One catch carried over from the last two lessons: those children ran with `--no-session`, so they left no file behind - spawn any child whose work you intend to verify with `--session ~/.pi/agent/sessions/reextract-batch-07.jsonl` instead. Point the verifier at that file rather than at the builder's closing message, and it isn't reading a summary - it's reading exactly what happened, tool call by tool call:
 
 ```text
 pi --mode json -p "Read the builder's session log at
-  .pi/sessions/reextract-batch-07.jsonl. It claims to have re-extracted
+  ~/.pi/agent/sessions/reextract-batch-07.jsonl. It claims to have re-extracted
   12 URLs and updated their search index entries. Do not trust that
   report. For each URL: (1) read the actual stored article text and
   confirm it contains no nav/ad boilerplate, (2) query the search index
@@ -36,13 +36,13 @@ Two choices here matter more than they look. First, **the toolset**: `read,bash`
 
 The instruction above already does the important part: it doesn't ask "did this work?" - it asks the verifier to break "done" into pieces, each one either true or false against something real. "Re-extracted" isn't one claim, it's at least two: *the stored text changed*, and *the new text is actually clean*. "Index updated" is a separate claim from either of those. A verifier that checks "did it run" is worthless; a verifier that checks each falsifiable piece of what the builder implied is the whole mechanism.
 
-That decomposition belongs in a durable file, not a one-off prompt - put it in the verifier's own system prompt (`.pi/agents/verifier.md`, or handed in via `--append-system-prompt`), the same way `.pi/SYSTEM.md` captures `stash`'s conventions so you stop re-typing them every session. And that's not incidental - it's the whole reason this pattern is worth building at all.
+That decomposition belongs in a durable file, not a one-off prompt - put it in the verifier's own system prompt (`.pi/agents/verifier.md`, or handed in via `--append-system-prompt`), the same way `.pi/APPEND_SYSTEM.md` captures `stash`'s conventions so you stop re-typing them every session. And that's not incidental - it's the whole reason this pattern is worth building at all.
 
 ## Why "no chat input" is the point, not a limitation
 
 Look again at the flag you already know from the last two lessons: **`-p`**. Print mode. One prompt, one run, exit. You've been using it because it's the natural way to spawn a headless child - but for the verifier specifically, that constraint does something you haven't needed yet: it removes your ability to argue with it.
 
-Sit with what that means in practice. If the verifier wrongly flags a clean re-extraction as broken, or worse, waves through one that's actually still full of nav cruft - you can't just reply "no, that one's fine, ignore it" and move on. There's no follow-up turn to send it. The only lever you have is the file: open `.pi/agents/verifier.md` and change what it checks, or how. That's a real constraint, and it's a good one. It's the exact same discipline behind writing `.pi/SYSTEM.md` instead of re-explaining `stash`'s conventions in every session - except here it isn't a convenience, it's *enforced*. A chat-shaped reviewer lets you patch a bad judgment call in the moment and forget it by next week. A verifier with no chat surface forces every fix to become a durable rule the first time, because a durable rule is the only kind of fix it's capable of receiving.
+Sit with what that means in practice. If the verifier wrongly flags a clean re-extraction as broken, or worse, waves through one that's actually still full of nav cruft - you can't just reply "no, that one's fine, ignore it" and move on. There's no follow-up turn to send it. The only lever you have is the file: open `.pi/agents/verifier.md` and change what it checks, or how. That's a real constraint, and it's a good one. It's the exact same discipline behind writing `.pi/APPEND_SYSTEM.md` instead of re-explaining `stash`'s conventions in every session - except here it isn't a convenience, it's *enforced*. A chat-shaped reviewer lets you patch a bad judgment call in the moment and forget it by next week. A verifier with no chat surface forces every fix to become a durable rule the first time, because a durable rule is the only kind of fix it's capable of receiving.
 
 Here's that same shape, made concrete. Nine chores went out overnight; only the worker's own report comes back unless you've wired something in to check it. Watch the night play out, then choose what gets wired into the re-run - and what the morning report is actually worth:
 

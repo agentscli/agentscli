@@ -15,7 +15,7 @@ import { withCode } from './with-code';
 import './permission-sim.css';
 import { useWidgetFrame } from './widget-frame';
 
-const TABS = ['Claude Code', 'Codex', 'opencode'];
+const TABS = ['Claude Code', 'Codex', 'OpenCode'];
 
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
   return (
@@ -177,7 +177,7 @@ function OpenCodePanel() {
   return (
     <div>
       <p className="psim-intro">
-        opencode scopes permissions <strong>per tool, per agent</strong> - each
+        OpenCode scopes permissions <strong>per tool, per agent</strong> - each
         primary agent carries its own allow/ask/deny map, so switching agents
         (Tab) switches policies. Example config:
       </p>

@@ -144,11 +144,11 @@ export const mmtTools: MmtToolSpec[] = [
   },
   {
     id: 'opencode',
-    label: 'opencode',
+    label: 'OpenCode',
     tiers: {
       flagship: {
         model: 'anthropic/claude-opus-4-7',
-        note: 'An example - opencode refs are `provider/model`, and any of ~75 providers can fill either side. Zen curates the tested combinations.',
+        note: 'An example - OpenCode refs are `provider/model`, and any of ~75 providers can fill either side. Zen curates the tested combinations.',
       },
       default: {
         model: 'anthropic/claude-sonnet-4-6',

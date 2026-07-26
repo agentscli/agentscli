@@ -1,0 +1,36 @@
+---
+title: "Auto-run: how much the agent runs without asking"
+description: "Cursor's auto-run setting has three modes - Auto-review, Allowlist, Run Everything. Which one you pick decides how often the agent stops to ask you."
+sidebar:
+  label: "Auto-run · Three modes"
+---
+
+## The auto-run modes
+
+Cursor exposes auto-run as a setting with **three modes**. You set it in **Cursor Settings**. From the CLI, `/run-everything [on|off|status]` toggles Run Everything on or off (or reports its state) - `/auto-run` is an alias for the same command - it's a toggle, not a selector among the named GUI modes.
+
+The three modes, per the current terminal docs:
+
+### Auto-review
+
+The default as of Cursor 3.6, and the most important mode to understand because it isn't a single gate - it's a three-tier router. When the agent proposes a Terminal, MCP, or Fetch call, Auto-review sorts it through three stages in order:
+
+1. **Allowlisted commands run immediately** - trusted calls execute with no model and no prompt in the loop. This is your known-safe set (`go test`, `git status` on budgetcli) going straight through.
+2. **Sandboxable commands are auto-sandboxed** - anything Cursor can safely isolate is run inside the sandbox automatically, without asking you. The sandbox does the containing; you don't get a prompt.
+3. **Everything else is routed to a classifier subagent** - a small reasoning agent embedded in the main agent loop. It reads the proposed action, applies any custom instructions you've given it, and decides whether to allow the call, try a different approach, or ask for your approval.
+
+The classifier is the new piece in 3.6, and the one to be precise about: it is **not a security boundary.** It's a non-deterministic LLM making a best-effort convenience call to cut approval prompts - Cursor reduced "y-spamming" roughly 84% with it - but because it can be wrong, you do not lean on it to keep the agent away from something irreversible. {/* VERIFY: classifier explicitly "not a security boundary" - confirmed on forum.cursor.com (Auto-review Run Mode thread) and secondary coverage; cursor.com/changelog documents the three tiers but does not carry the security-boundary disclaimer itself */} The three tiers are real and useful for staying in motion; the wall is still the sandbox (next section), not the classifier's judgment.
+
+### Allowlist
+
+Commands matching your allowlist run without prompting; anything not on the list is gated. This is the classic "let it run `go test ./...` and `git status` freely, but pause on everything else" posture - useful for cutting friction on a known-safe set of commands while keeping a checkpoint in front of the rest.
+
+Sandboxing is not a separate mode - it's a layer *inside* Allowlist. Historically "Run in Sandbox" was its own option; as of Cursor 3.5 it was folded into Allowlist, so you turn sandboxing on or off as a setting on this one mode rather than picking a different mode for it. With sandboxing enabled, the agent gets to grind through its loop - run tests, re-run the build, retry after a failure - without stopping at every step, because supported shell commands can run inside an OS-level sandbox instead of waiting on the allowlist. A command that tries to write outside the allowed area, or reach the network, doesn't get to. This is the setting the rest of the chapter is really about, because it's where the sandbox is doing the protecting and you need to understand exactly what the sandbox does and doesn't cover.
+
+One thing to be precise about: **with sandboxing on, the allowlist stops being the thing that's gating reach.** The sandbox is meant to *replace* per-command approval with filesystem and network restrictions for whatever it can isolate. So when a sandboxed command genuinely needs something the sandbox blocks - outbound network, or filesystem access outside the sandboxed area - it doesn't silently fail into the void, and it doesn't fall through to allowlist evaluation. Cursor **prompts you** with three options: skip the command, run it without restrictions, or run it and add it to the allowlist. The fall-through is to a prompt, not to a list.
+
+### Run Everything
+
+No gating. Every command runs, no sandbox, no prompt - this is the historical **"YOLO mode"** by another name. There are legitimate places for it: a throwaway container, a CI runner that's already isolated, a VM you've deliberately made disposable. On your actual development machine, with your real repos and credentials in reach, it's almost always the wrong answer. The reason you'd reach for an AI agent on serious work is that the stakes are real, and this is precisely the setting that throws away every protection those stakes call for. When you feel the pull toward it, the right move is usually to switch to **Allowlist with sandboxing on** instead - you get the unattended loop without removing the wall.
+
+Every one of those three modes decides only *which* commands pause for you. None of them decides what a command can reach once it's running - and on this chapter's central point, that second question is the one that actually protects you. [Next: the sandbox is the wall](/course/cursor/permissions/sandbox/).

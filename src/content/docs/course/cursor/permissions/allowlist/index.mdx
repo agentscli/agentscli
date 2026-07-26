@@ -1,0 +1,21 @@
+---
+title: "Allowlist and denylist: superseded, not guarantees"
+description: "The allowlist isn't applied when sandboxing is on, by design, and the denylist was deprecated after researchers proved it bypassable. Trust the sandbox instead."
+sidebar:
+  label: "Lists · Superseded"
+---
+
+Cursor historically gave you two fine-grained lists:
+
+- a **command allowlist** - patterns that are permitted to run, and
+- a **command denylist** - patterns that should be blocked.
+
+These looked like the way to express "let it run `go test ./...` and `git status` freely on budgetcli, but never `git push` or `rm -rf`." Useful as intent - but you have to know exactly how much weight they can bear, because the honest answer is *less than they look like they bear.* Two facts make the point, and both have since been resolved in Cursor's favor by *removing* the list as the load-bearing layer rather than hardening it.
+
+**The allowlist is not applied when sandboxing is on - by design.** This isn't a build-specific bug or a silent leak: it's intended behavior, confirmed by Cursor staff. With sandboxing enabled inside Allowlist, the allowlist really isn't applied; the sandbox is meant to replace it, swapping per-command approval for filesystem and network restrictions. So you can't reason "this command ran, therefore it was on my allowlist." Under the sandbox, the *sandbox* is what's gating reach; the allowlist is not in the loop at all. (If you specifically need the old per-command allowlist behavior, enabling the Legacy Terminal Tool is the workaround.)
+
+**The denylist was bypassable, so Cursor deprecated it.** A denylist looks like it blocks dangerous commands, but security research (Backslash Security, reported by *The Register*) demonstrated reproducible bypasses that don't go near the obvious cases: obfuscation via Base64, subshell execution with parentheses, writing the dangerous action into a shell script and running that, and quote-escaping such as `"e"cho` to dodge a literal pattern match. Backslash's core finding was blunt - for every command in a Cursor denylist, there are infinite commands *not* in the denylist that have the same behavior. A pattern-matcher over command strings can't win that game. Cursor's response was to officially **deprecate the denylist feature in release 1.3** - so the denylist is not a current advisory control you should be leaning on; it's a removed one.
+
+The conclusion is not "lists are useless." It's that they're the **wrong layer to put your trust in**, and Cursor has effectively said so by replacing them. Use the allowlist (outside the sandbox) to cut friction and express intent - to let known-safe commands run without a prompt. Do **not** reach for a denylist entry as the thing standing between the agent and an irreversible action: the feature is deprecated, and even when present it never held. The thing that actually contains a running command is the sandbox. The lists are superseded; the sandbox is load-bearing. When in doubt, believe the sandbox.
+
+That leaves one case the local controls can't cover: work where you want a guarantee rather than a good boundary. For that, you stop tuning settings and change where the agent runs at all. [Next: when you need real isolation](/course/cursor/permissions/isolation/).

@@ -1,0 +1,58 @@
+---
+title: "Cloud Agents and Bugbot"
+description: "The two surfaces that run without you: agents spawned over REST into isolated VMs, and an AI reviewer that lands on every pull request as a status check."
+sidebar:
+  label: "Cloud & Bugbot · off your machine"
+---
+
+## Cloud Agents: spawning an agent over HTTP
+
+Headless `cursor-agent` runs the agent *on your runner* - your machine, your container, your CI minutes. **Cloud Agents** are a different primitive: full agents that run in **isolated VMs in Cursor's cloud**, not locally, and that you can spawn **programmatically over a REST API**. The docs confirm both: "The Cloud Agents API lets you programmatically launch and manage cloud agents," and the execution environment "uses Cursor-hosted VMs." The canonical docs live under `cursor.com/docs/cloud-agent`.
+
+The naming is a known trap. These were called **Background Agents** and were renamed **Cloud Agents** - the docs say so directly: "Cloud Agents were formerly called Background Agents." Older forum posts and even some menus may still say "Background"; they're the same thing. The docs URL has moved with the rename, too - it's now the `/cloud-agent` tree, not the old `/background-agent` path.
+
+What you get over the API:
+
+- **Programmatic spawn** - kick off an agent from a script, a webhook, or another service, not just from the desktop app.
+- **Model-selectable** - choose the model per spawned agent, the same roster you pick from in the editor.
+- **GitHub PR and Linear integration out of the box** - a Cloud Agent clones the repo to a fresh branch, does the work, pushes results, and opens a pull request; it can pick up work from a Linear issue.
+- **Triggers from Slack, GitHub, and Linear** - each can launch an agent without anyone touching the API directly. The mention syntax is `@cursor`, uniform across every host - Slack, a GitHub PR or issue comment, and Linear all use the same handle. These automations are documented under `cursor.com/docs/cloud-agent/automations`.
+
+The core capabilities - programmatic REST spawn, per-agent model selection, the `autoCreatePR` flow onto an auto-generated `cursor/` branch, and Linear via MCP - are all confirmed in the Cloud Agents docs.
+
+For `budgetcli`, the Cloud Agents shape is the natural next step past CI: instead of a headless command that runs *inside* your pipeline, you fire an agent that runs in Cursor's cloud, on a clean clone, and comes back with a PR you review. The blast-radius story is the cleanest of any surface in this chapter - the agent never touches your machine or your runner, so the local threat model from the permissions chapter simply doesn't apply. The containment is by construction: it's an isolated VM in someone else's cloud, working a throwaway branch, and the only thing that reaches you is a pull request you read before you merge.
+
+That said, a Cloud Agent opening PRs against `budgetcli` is exactly the kind of access you scope deliberately - what repos it can reach, what it's allowed to merge (it shouldn't auto-merge), and which triggers can launch it. An open `@cursor` trigger in a Slack channel is convenient and is also a way for anyone in that channel to spawn an agent against your repo. Treat the trigger list as an access-control surface, not just a convenience.
+
+## Bugbot: an AI reviewer on every PR
+
+The last surface inverts the relationship. Everywhere else in this chapter *you* drive the agent - from a script, from CI, from the API. **Bugbot** is Cursor's AI **PR reviewer**: you connect a repo once from the Cursor dashboard, and from then on Bugbot "analyzes PR diffs and leaves comments with explanations and fix suggestions," the way a careful human reviewer would.
+
+It runs across both major hosts, including the self-managed flavours that matter to corporate teams: **GitHub (including GitHub Enterprise Server)** and **GitLab (including GitLab Self-Hosted)**.
+
+You set a **per-repo mode** for how aggressively it runs:
+
+- **Every PR** - Bugbot reviews automatically on each pull request.
+- **On mention** - it stays quiet until someone asks, via a `cursor review` or `bugbot run` comment.
+- **Once per PR** - a single review that skips re-review on subsequent commits.
+
+Where Bugbot earns its place in a *CI* chapter is the **GitHub check**. Bugbot publishes a status check named **"Cursor Bugbot"** with three documented conclusions: **`success`** when the PR is clean (no issues and no unresolved prior comments), **`neutral`** when it found issues, the run was cancelled by a newer commit, or it hit an internal error - and **`failure`** when it found issues *and the check is configured to fail on unresolved issues*. That's the hook into branch protection: the review stops being an advisory comment and becomes a check your merge rules can see. By default, issues found surface as `neutral` - Bugbot flags rather than blocks, leaving the merge decision with a human - but a repo can opt into the failing check and let Bugbot hard-block. For `budgetcli`, the default `neutral` posture fits: you want a second set of eyes on a categoriser change, not a robot with automatic veto power over your own repo, though the option to escalate to a blocking check is there if you want it.
+
+Bugbot also learns. A reviewer can comment **`@cursor remember [fact]`** on a PR to teach it a team-specific pattern - a convention, a known sharp edge, a "we always do it this way here" - and the docs confirm this "saves the fact as a learned rule and applies it to future reviews." It's the same instinct as the [Rules](/course/cursor/rules/) chapter - writing the project's standing facts down once so the agent stops re-deriving them - except taught conversationally, in the review thread, instead of authored as `.mdc` files.
+
+One thing the docs are firm about and you should be too: Bugbot's pricing is **usage-based** - it "first consumes your included usage, then bills additional reviews through on-demand spend" - and the specific numbers are version-fluid. Don't quote a figure from memory; read it off Cursor's pricing page at publish time.
+
+## The shape to carry out of this chapter
+
+You started this course inside the editor, and most of your hours will stay there - that's correct, the editor is where the deciding happens. What this chapter added is the export: four ways to run the *same* agent with no one in the room, ordered by how far they sit from your machine.
+
+- **Headless `cursor-agent -p`** - the agent as a command. `text`/`json`/`stream-json` output, `--force` to write unattended, `CURSOR_API_KEY` for auth. It runs on *your* hardware, so *your* containment (sandbox, disposable clone) is what holds - and the beta caveat means you lean on that containment, not the flags.
+- **CI** - the same headless command on a runner, keyed by a secret, gated by an exit code so a bad `budgetcli` import fails the push instead of landing.
+- **Cloud Agents over the REST API** - the agent in an isolated VM in Cursor's cloud, spawned programmatically or by a Slack/GitHub/Linear trigger, returning a PR you review. Containment by construction; the local threat model doesn't apply.
+- **Bugbot** - the inversion: an AI reviewer on every PR, surfacing as a "Cursor Bugbot" GitHub check you can wire into branch protection, learning your team's patterns through `@cursor remember`.
+
+Get the ordering right - editor for deciding, headless for scripting, CI for gating, Cloud Agents and Bugbot for the work that should happen without you at all - and Cursor stops being an app you sit in front of and becomes a thing your repo runs. The discipline that makes that safe is the one you already have: the further you push the agent from your keyboard, the less you trust the flags and the more you trust *where* it runs.
+
+And every flag, format, command, model, and price in this chapter is version-fluid by design - Cursor's own blog called the CLI a beta whose safeguards were still evolving, Cloud Agents were renamed (and their docs URL moved) once already, and Bugbot's pricing moves. Confirm each against the docs cited inline before you put any of it in a pipeline you can't watch.
+
+That is the last new primitive in the course. Everything after this is about wearing the whole toolkit lightly - reaching for the right surface without deliberating first. [Next: the daily workflow](/course/cursor/daily-workflow/).
