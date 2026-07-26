@@ -1,0 +1,100 @@
+---
+title: "MCP servers: reach past the repo"
+description: "Declare a database or API as an MCP server and Cursor stops guessing at schemas: the three transports, where mcp.json lives, OAuth, and what servers cost."
+sidebar:
+  label: "MCP · Reach"
+---
+
+import McpCostMeter from '../../../../../../components/interactive/McpCostMeter.tsx';
+
+## Reach: MCP servers
+
+You hit the wall the moment you ask Cursor to touch `budgetcli`'s storage. You ask it to add a column to the reconciliation path, and it writes a query against an `accounts` table with a `balance` column - except `budgetcli` stores money as integer cents in `balance_cents`, and there's a `currency` column the agent never mentioned because it never saw it. The schema lives in a running Postgres database. The agent's whole world is the files in the repo. So it guesses from the struct definitions, gets the column names half-right, and you spend the turn pasting `\d accounts` back at it.
+
+That pasting *is* the gap. The truth isn't in the codebase - it's in a live system the agent has no hands on. Cursor's answer is the **Model Context Protocol**: you declare the database as an MCP server, and Cursor hands the agent a tool that queries it directly. MCP is configuration, not code - you write JSON pointing at a process or URL that already speaks the protocol; you don't write a server. One direction only, though: Cursor is an MCP *client* - it consumes the servers you point it at - and does not itself act as an MCP server you can connect other tools to.
+
+### Three transports
+
+The first decision is *how* Cursor talks to the server. Cursor supports exactly three transports, under these names - pick by where the server runs and how it's reached, not by what it does:
+
+- **stdio** - Cursor spawns and manages a local process and talks to it over standard in/out. The fit when the server is a command on your machine - like a Postgres MCP pointed at your dev database.
+- **SSE** (Server-Sent Events) - local or remote, over HTTP with a streaming response channel.
+- **Streamable HTTP** - local or remote, the current HTTP transport in the MCP spec.
+
+For `budgetcli`'s local dev database, stdio is the fit: Cursor launches the MCP process itself and pipes to it.
+
+### Where `mcp.json` lives
+
+MCP servers are declared in a file called **`mcp.json`**, which Cursor reads from two locations:
+
+1. **Project** - `<repo>/.cursor/mcp.json`, committed with `budgetcli`, so anyone who clones the repo gets the same database tool.
+2. **User** - `~/.cursor/mcp.json`, which follows *you* across every project - the right home for a personal tool that isn't `budgetcli`'s business.
+
+The rule mirrors every other Cursor config: a server everyone working on `budgetcli` should have goes in the **project** file and gets committed; a server that's your own habit goes in the **user** file and stays out of the repo.
+
+### The stdio schema
+
+The schema mirrors the common MCP shape. For a stdio (local) server you give it a `command`, its `args`, and `env` (with `type` set to `"stdio"`, plus an optional `envFile`):
+
+```json title=".cursor/mcp.json"
+{
+  "mcpServers": {
+    "budgetcli-db": {
+      "command": "uvx",
+      "args": ["postgres-mcp", "--access-mode=restricted"],
+      "env": {
+        "DATABASE_URI": "postgresql://localhost:5432/budgetcli_dev"
+      }
+    }
+  }
+}
+```
+
+The `command` plus `args` is the argv Cursor spawns, exactly as you'd type it in a shell. The connection string goes in `env` rather than inline in `args`, so it stays out of the process listing - and you can resolve it from a real environment variable instead of pasting a live credential into a file you'll commit.
+
+:::caution[Don't reach for the deprecated Postgres server]
+Anthropic's old reference `@modelcontextprotocol/server-postgres` was archived in 2025 and its last published version carries an unpatched read-only-bypass SQL-injection flaw - a crafted statement (`COMMIT;` followed by, say, a `DROP TABLE`) escapes the intended read-only mode because input isn't properly sanitized. The example above uses the maintained `postgres-mcp` ("Postgres MCP Pro"), which is actively patched and ships an `--access-mode` flag so you can pin it to `restricted` (read-only) rather than `unrestricted`.
+:::
+
+Once it's declared, the next time the agent needs the schema it runs the query itself - sees `balance_cents` and the `currency` column with its own eyes - and writes the migration against what's actually there. The schema-guessing turn is gone. And because MCP tools are tools, they sit under the same [permission model](/course/cursor/permissions/) as everything else: a server that can *write* to your system is gated exactly like a shell command that can.
+
+### Remote servers: url, headers, OAuth
+
+When the system isn't a local process - `budgetcli`'s exchange-rate provider is a hosted API - you point at a `url` instead of spawning a `command`, and put auth in `headers`:
+
+```json title=".cursor/mcp.json"
+{
+  "mcpServers": {
+    "fx-rates": {
+      "url": "https://rates.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FX_RATES_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+For a static token, `headers` is the whole story - resolve it from the environment rather than committing a live credential. For a service that speaks **OAuth**, Cursor runs the authorization dance for you and holds the tokens, so you never manage a bearer string. Cursor uses a single fixed OAuth redirect URL for *all* MCP servers:
+
+```text
+cursor://anysphere.cursor-mcp/oauth/callback
+```
+
+When a provider requires fixed client credentials, you can embed them: `mcp.json` accepts an optional `auth` object (`CLIENT_ID`, `CLIENT_SECRET`, `scopes`) alongside `url` and `headers` for static OAuth client credentials.
+
+That `cursor://` callback is one of a small family of Cursor deep links; another - `cursor://anysphere.cursor-deeplink/mcp/install` - is the mechanism behind one-click install, the easiest way to add a server you didn't write yourself.
+
+### One-click install: Marketplace and cursor.directory
+
+You rarely hand-author `mcp.json`. Cursor has a curated **MCP Marketplace** in-app with one-click install, and the community directory at **cursor.directory** carries an **"Add to Cursor"** button on each server. That button is an `mcp/install` deep link - it carries a base64-encoded server config, prompts you to confirm, writes the declaration into `mcp.json`, and kicks off the OAuth flow if the server needs it. So a remote, OAuth-gated server can go from "found it on the directory" to "authenticated and live" without you touching a config file.
+
+:::note[Where the one-click install lands]
+After a one-click install, confirm *which* `mcp.json` the declaration landed in. {/* VERIFY: cursor.directory's "Add to Cursor" deep link is confirmed to prompt-and-install with a base64 config, but no primary Cursor source documents the destination scope as fixed to the user config (~/.cursor/mcp.json) vs the project file. Don't assert it writes to user config without a primary source. */}A server that should follow *you* belongs in `~/.cursor/mcp.json`; one that everyone on `budgetcli` needs belongs in `<repo>/.cursor/mcp.json`, committed - move the declaration there if the install put it elsewhere.
+:::
+
+One-click install makes collecting servers easy, and collecting has a price: every enabled server's tool schemas land in the model's context at session start, whether or not the session uses them. The database server closes a real gap in `budgetcli`; a directory-browsing habit stacks up definitions that crowd the window before you've asked anything. Mount and unmount below and watch what each server costs:
+
+<McpCostMeter client:visible />
+
+Reach solves what the agent cannot see. It does nothing for the other tax you keep paying - the procedure the agent runs perfectly today and will not remember next session. [Next: package the procedure as a Skill](/course/cursor/extending/skills/).

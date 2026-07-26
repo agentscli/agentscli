@@ -496,9 +496,37 @@ export default defineConfig({
 										{ label: 'First change · ship a reviewed edit', slug: 'course/cursor/getting-started/first-change' },
 									],
 								},
-								{ label: 'The daily edit loop', slug: 'course/cursor/daily-edit-loop' },
-								{ label: 'Modes · Ask, Plan, Agent, Debug', slug: 'course/cursor/modes' },
-								{ label: 'Context · @-tag & self-gathering', slug: 'course/cursor/context' },
+								{
+									label: 'The daily edit loop',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/daily-edit-loop' },
+										{ label: 'Tab · Predict and jump', slug: 'course/cursor/daily-edit-loop/tab' },
+										{ label: 'Inline edit · Cmd+K', slug: 'course/cursor/daily-edit-loop/inline-edit' },
+										{ label: '@ and / · The split', slug: 'course/cursor/daily-edit-loop/attach-vs-run' },
+										{ label: 'Review · Keep and undo', slug: 'course/cursor/daily-edit-loop/review-and-restore' },
+										{ label: 'The loop · Four beats', slug: 'course/cursor/daily-edit-loop/the-loop' },
+									],
+								},
+								{
+									label: 'Modes · Ask, Plan, Agent, Debug',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/modes' },
+										{ label: 'Ask · Read-only Q&A', slug: 'course/cursor/modes/ask' },
+										{ label: 'Agent · Full execution', slug: 'course/cursor/modes/agent' },
+										{ label: 'Plan · Editable plan first', slug: 'course/cursor/modes/plan' },
+										{ label: 'Debug · Instrument and fix', slug: 'course/cursor/modes/debug' },
+									],
+								},
+								{
+									label: 'Context · @-tag & self-gathering',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/context' },
+										{ label: 'Indexing · The substrate', slug: 'course/cursor/context/indexing' },
+										{ label: '@-mentions · The attach menu', slug: 'course/cursor/context/at-mentions' },
+										{ label: 'Self-gathering · Let it search', slug: 'course/cursor/context/self-gathering' },
+										{ label: 'Hand-pinning · Chat continuity', slug: 'course/cursor/context/pinning-and-continuity' },
+									],
+								},
 								{
 									label: 'Models · Auto, Composer, MAX',
 									items: [
@@ -509,7 +537,16 @@ export default defineConfig({
 										{ label: 'Mixing · Plan then build', slug: 'course/cursor/models/mixing-models' },
 									],
 								},
-								{ label: 'Rules · .mdc & AGENTS.md', slug: 'course/cursor/rules' },
+								{
+									label: 'Rules · .mdc & AGENTS.md',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/rules' },
+										{ label: 'Layers · Four sources', slug: 'course/cursor/rules/layers' },
+										{ label: 'AGENTS.md · Portable path', slug: 'course/cursor/rules/agents-md' },
+										{ label: 'Project Rules · .mdc types', slug: 'course/cursor/rules/project-rules' },
+										{ label: 'Sharp edges · Legacy path', slug: 'course/cursor/rules/sharp-edges' },
+									],
+								},
 								{
 									label: 'Permissions · auto-run & sandbox',
 									items: [
@@ -520,10 +557,48 @@ export default defineConfig({
 										{ label: 'Isolation · Cloud Agents', slug: 'course/cursor/permissions/isolation' },
 									],
 								},
-								{ label: 'Parallel & remote agents', slug: 'course/cursor/composer-multi-agent' },
-								{ label: 'Extending · MCP, skills, commands, hooks', slug: 'course/cursor/extending' },
-								{ label: 'The CLI, headless & CI', slug: 'course/cursor/cli-headless-ci' },
-								{ label: 'Daily workflow', slug: 'course/cursor/daily-workflow' },
+								{
+									label: 'Parallel & remote agents',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/composer-multi-agent' },
+										{ label: 'Fan-out · Parallel worktrees', slug: 'course/cursor/composer-multi-agent/local-fan-out' },
+										{ label: 'Subagents · Delegated work', slug: 'course/cursor/composer-multi-agent/subagents' },
+										{ label: 'Cloud Agents · Remote VMs', slug: 'course/cursor/composer-multi-agent/cloud-agents' },
+										{ label: 'Taxonomy · Which flavour', slug: 'course/cursor/composer-multi-agent/taxonomy' },
+									],
+								},
+								{
+									label: 'Extending · MCP, skills, commands, hooks',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/extending' },
+										{ label: 'MCP · Reach', slug: 'course/cursor/extending/mcp' },
+										{ label: 'Skills · Procedure', slug: 'course/cursor/extending/skills' },
+										{ label: 'Commands · Prompt templates', slug: 'course/cursor/extending/commands' },
+										{ label: 'Hooks · The gate', slug: 'course/cursor/extending/hooks' },
+									],
+								},
+								{
+									label: 'The CLI, headless & CI',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/cli-headless-ci' },
+										{ label: 'Install · the terminal agent', slug: 'course/cursor/cli-headless-ci/install' },
+										{ label: 'Headless · command, key, config', slug: 'course/cursor/cli-headless-ci/headless' },
+										{ label: 'Slash commands · the TUI set', slug: 'course/cursor/cli-headless-ci/slash-commands' },
+										{ label: 'CI · gate the push', slug: 'course/cursor/cli-headless-ci/ci' },
+										{ label: 'Cloud & Bugbot · off your machine', slug: 'course/cursor/cli-headless-ci/cloud-and-bugbot' },
+									],
+								},
+								{
+									label: 'Daily workflow',
+									items: [
+										{ label: 'Module intro', slug: 'course/cursor/daily-workflow' },
+										{ label: 'Reflexes · Posture, model, spend', slug: 'course/cursor/daily-workflow/reflexes' },
+										{ label: 'Surface · Match task to place', slug: 'course/cursor/daily-workflow/choosing-surface' },
+										{ label: 'Written once · Rules & commands', slug: 'course/cursor/daily-workflow/written-once' },
+										{ label: 'Briefing · Four parts', slug: 'course/cursor/daily-workflow/briefing' },
+										{ label: 'Finale · The whole job', slug: 'course/cursor/daily-workflow/finale' },
+									],
+								},
 							],
 						},
 						{

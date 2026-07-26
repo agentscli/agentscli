@@ -1,0 +1,39 @@
+---
+title: "The sharp edge: globbed rules, and the legacy .cursorrules"
+description: "A glob-scoped rule only attaches when the file enters the agent's context. Promote load-bearing rules, and know where .cursorrules actually stands."
+sidebar:
+  label: "Sharp edges · Legacy path"
+---
+
+## The sharp edge: globbed rules can be silently skipped
+
+Here's the one that surprises people, and it's worth internalising before it costs you a debugging session. You'd reasonably assume that **Apply to Specific Files** is deterministic - that a rule with `globs: ["src/api/**"]` *will* load whenever an `src/api/` file is in context, the way a build tool's glob is mechanical. It isn't quite that.
+
+The behaviour reported by the community is that a glob-scoped rule (`alwaysApply: false`) can fail to load even when you'd expect it to. The precise trigger, as the forum thread clarified, is narrower than "the model ignored it": in Cursor 2.0.x, a glob rule only attaches when the matching file actually enters the *agent's context* - pulled in by an `@`-mention or a file the agent itself decides to read - not merely by being open in your editor. That's a behaviour change from Cursor 1.x, where having the file open was enough. So you can have a perfectly written `api-validation.mdc`, scoped to exactly the right files, watch yourself edit a handler in `src/api/`, and still get hand-rolled `if`-validation back - because the file was open in the editor but never entered the agent's working context, so the rule never attached. This is the "glob rules not auto-loaded" friction, and it's a recurring report on the Cursor forum.
+
+[forum.cursor.com/t/140641](https://forum.cursor.com/t/cursor-2-0-project-rule-mdc-files-with-glob-patterns-not-auto-loaded-in-conversations/140641)
+
+The practical lesson for `budgetcli`: **if a rule is load-bearing - a convention you cannot afford the agent to miss - don't trust a glob to deliver it.** Promote it. A non-negotiable like "API handlers validate with Zod" is safer as an **Always** rule (`alwaysApply: true`) or as a line in `AGENTS.md`, where it's loaded unconditionally, than as a glob-scoped rule that only attaches if the matching file happens to enter the agent's context. Save **Apply to Specific Files** for guidance that's *helpful when it fires but not catastrophic when it doesn't* - style preferences, module-local hints - and keep the bugs-you-keep-reintroducing in an always-on layer.
+
+## The legacy path: .cursorrules
+
+If you've used Cursor for a while, or you're looking at an older repo, you'll meet a single `.cursorrules` file at the project root - the original, pre-`.mdc` format. It's a plain file of instructions with no frontmatter and no per-file attachment: one undifferentiated blob, always applied.
+
+Cursor still honours `.cursorrules` for backward compatibility, so an old repo keeps working. Worth knowing where this status comes from: Cursor's current rules documentation no longer mentions `.cursorrules` at all - it's been dropped from the docs entirely, consistent with "legacy, no longer recommended," and community reports line up, describing it as deprecated-but-still-working since Project Rules landed around v0.45. So treat the "still honoured for backward compatibility" line as the well-understood legacy status, not a sentence you'll find quoted on the docs page. Either way, it is **no longer the recommended path** - new work belongs in `.cursor/rules/*.mdc` (for Cursor-specific power) or `AGENTS.md` (for portability), both of which give you scoping `.cursorrules` never had. If you inherit a `.cursorrules`, the clean migration is to move its always-true lines into `AGENTS.md` and split anything conditional into scoped `.mdc` rules.
+
+:::caution[Don't assume .cursorrules is going away]
+It's tempting to treat the legacy file as deprecated-and-doomed, but whether Cursor will ever *remove* `.cursorrules` support is not something to state as fact. The current primary docs give no removal timeline; some secondary blogs assert one, but that isn't confirmable, so don't bank on it.
+:::
+
+## What you've built
+
+`budgetcli`'s conventions now live with the code instead of in your memory:
+
+- The flat, portable truths - UTC, integer cents - sit in `AGENTS.md`, in force on Cursor and on any teammate's Codex or OpenCode.
+- The conditional ones live as `.mdc` Project Rules, each with frontmatter that picks its moment: always-on, model-judged, file-scoped, or `@`-invoked by hand.
+- Your personal habits sit in **User Rules** and follow you across every repo; if `budgetcli` is a team project, shared mandates can be pushed as **Team Rules** with no local file.
+- And the one trap that would have bitten you - a load-bearing rule hidden behind a glob that only attaches when the matching file enters the agent's context - you've defused by promoting it to an always-on layer.
+
+The agent isn't getting smarter. It just stopped having to guess at `budgetcli`'s rules every session, because now it can read them. The next time you ask for a new handler, the Zod validation and the UTC timestamp are simply there - and you never review that same mistake again.
+
+Rules decide what the agent *knows* before it acts. What it's allowed to *do* once it acts is a separate dial entirely - and that one is set by the sandbox, not by the lists most people trust. [Next: permissions, auto-run and the sandbox](/course/cursor/permissions/).

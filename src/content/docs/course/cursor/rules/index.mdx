@@ -3,124 +3,15 @@ title: "Rules: .cursor/rules/*.mdc and AGENTS.md"
 description: "Stop Cursor reintroducing the same bugs. The four rule layers, the .mdc rule types, AGENTS.md as the portable path, and the globbing sharp edge."
 ---
 
-import RuleEconomy from '../../../../../components/interactive/RuleEconomy.tsx';
-
 You've watched it happen across the last few sessions. You ask Cursor to add a handler to the `budgetcli` API and it validates the request body by hand with a pile of `if` checks - even though every other handler in `src/api/` runs input through a Zod schema, the convention you standardised on weeks ago. You ask it to record when a transaction posted and it writes the timestamp in server-local time, when the rest of the codebase stores everything in UTC and the reconciliation job quietly depends on that. Every session Cursor re-derives `budgetcli`'s conventions from the code it can see, and every session it gets the same few wrong, because the rules that would prevent it live in your head and in old review comments, not anywhere the agent can read.
 
 This chapter ends that re-teaching tax. You'll write `budgetcli`'s hard-won conventions down once, into files Cursor reads on every request - and then push on the edges, because Cursor doesn't have one rules file, it has *four layers*, and the way those layers attach has teeth you'll hit in a real repo. The thing worth knowing up front: of all the tools in this course, Cursor's rules system is the richest and the most divergent. Codex and OpenCode give you a single `AGENTS.md`. Cursor reads `AGENTS.md` too - natively, so your rules stay portable - but layers its own `.cursor/rules/*.mdc` format on top, with frontmatter that decides *when* each rule attaches. That extra power is also extra ways to get it subtly wrong.
 
-## The four rule layers
+## The four moves of this chapter
 
-Cursor assembles its standing instructions from four separate sources. They're **additive** - none cancels another; they stack into the brief the agent works from.
+- **The four rule layers** - Project Rules, User Rules, Team Rules and `AGENTS.md`, and how they stack additively into the brief the agent works from - [The four rule layers](/course/cursor/rules/layers/)
+- **`AGENTS.md`** - the plain-Markdown layer Cursor reads natively, so the same file is in force on a teammate's Codex or OpenCode - [AGENTS.md: the portable path, the same file Codex reads](/course/cursor/rules/agents-md/)
+- **Project Rules** - Cursor's native `.mdc` format, where three frontmatter fields pick one of four attachment behaviours per rule - [Project Rules: .mdc frontmatter and the four rule types](/course/cursor/rules/project-rules/)
+- **The sharp edges** - the glob-scoped rule that silently doesn't attach, and where the legacy `.cursorrules` file actually stands - [The sharp edge: globbed rules, and the legacy .cursorrules](/course/cursor/rules/sharp-edges/)
 
-- **Project Rules** - `.cursor/rules/*.mdc`, version-controlled and repo-scoped. This is Cursor's native format, and the only layer with the frontmatter that controls *when* a rule attaches. The bulk of `budgetcli`'s conventions live here.
-- **User Rules** - global to you, edited from **Cursor Settings → Rules**. No local file; they apply to every chat in every project on your machine. This is the home for personal working style ("always show me a diff before editing"), not facts about a specific repo.
-- **Team Rules** - managed centrally from the Cursor dashboard and pushed to every member with no local file. These are plan-gated: per Cursor's docs, "Team and Enterprise plans can create and enforce rules across their entire organization."
-- **`AGENTS.md`** - plain Markdown at the project root, the cross-tool path. **Cursor reads `AGENTS.md` natively** - the same file Codex and OpenCode read, so a rule you write here travels with the repo to a teammate on a different tool, unchanged. Nested `AGENTS.md` files in subdirectories are supported and applied automatically when the agent works with files in that directory or its children. Crucially, nested files are *concatenated* with their ancestors rather than replacing them - Cursor combines the instructions, with the more specific (deeper) ones taking precedence on any conflict.
-
-Two of these are the ones you'll touch constantly: `.cursor/rules/*.mdc` for Cursor-specific power, and `AGENTS.md` for portable simplicity. Cursor's docs frame `AGENTS.md` as a "simple alternative to `.cursor/rules`" - for "simple, readable instructions without the overhead of structured rules" - and present both formats as coexisting options in the same repo, `AGENTS.md` for portable simplicity and `.cursor/rules/` when you want structured, conditional control.
-
-## AGENTS.md: the portable path, the same file Codex reads
-
-Start with the simplest layer, because it's the one that travels. Drop an `AGENTS.md` at the root of `budgetcli`, write the two facts that keep walking out of memory, and you're covered on every tool that reads the standard:
-
-```markdown title="AGENTS.md"
-# budgetcli
-
-A budgeting / personal-finance API (TypeScript). You're working on live
-transaction data - be precise about money and time.
-
-## Conventions
-
-- All timestamps are stored and compared in **UTC**. Parse incoming dates to
-  UTC at ingest; never store server-local time.
-- Every API handler validates its request body with a **Zod schema** before
-  touching business logic. Do not hand-roll validation with `if` checks.
-- Money is **integer cents**, never a float. Format to a currency string only
-  at the response boundary, never in storage or maths.
-```
-
-There's no special syntax to learn - Cursor reads `AGENTS.md` the way the model reads any prose: headings, terse imperative bullets, the things that bite. Every line earns its place because it's something Cursor got *wrong*, not something it could read off the source. Nothing in there says "write clean code" or transcribes the directory layout; that just burns context. Write it the way you'd brief a sharp new engineer on day one.
-
-That "earns its place" test is arithmetic you can run, not a vibe. Seven candidate lines from another project - toggle each into the file and watch the ledger decide:
-
-<RuleEconomy client:visible />
-
-The payoff is portability. Because this is the [`agents.md` open standard](https://agents.md/) - whose adopter list names Cursor alongside Codex, OpenCode, and others - the same file is in force whether your teammate clones `budgetcli` into Cursor, Codex, or OpenCode. One file, every tool, no per-tool translation.
-
-Nested `AGENTS.md` files extend that into subtrees. If `budgetcli`'s payment code has quirks that only matter inside `src/payments/`, a `src/payments/AGENTS.md` is applied automatically when Cursor works with files in that directory or below - the per-module rule enters context only when it's relevant, instead of bloating every session. Cursor doesn't *replace* the root file with the nested one; it concatenates them, layering the deeper, more specific instructions on top of the root's, with the specific ones winning any conflict.
-
-## Project Rules: .mdc frontmatter and the four rule types
-
-`AGENTS.md` is always on. That's its strength and its limit - there's no way to say "load this rule *only* when editing API handlers" or "let the agent decide whether this is relevant." That control is exactly what Cursor's native `.mdc` format adds.
-
-A Project Rule is a Markdown file with YAML frontmatter, living under `.cursor/rules/`:
-
-```text
-budgetcli/
-├── AGENTS.md                    ← always-on, portable, cross-tool
-├── .cursor/
-│   └── rules/
-│       ├── api-validation.mdc   ← attaches when editing API files
-│       ├── commit-style.mdc     ← agent decides relevance
-│       └── migrations.mdc       ← invoked by hand: @migrations
-└── src/...
-```
-
-The frontmatter carries three control fields - `description`, `globs`, and `alwaysApply` - and the combination you set determines one of **four rule types** (Always Apply, Apply Intelligently, Apply to Specific Files, Apply Manually):
-
-```markdown title=".cursor/rules/api-validation.mdc"
----
-description: Validate every API request body with a Zod schema
-globs: ["src/api/**"]
-alwaysApply: false
----
-
-All handlers under src/api/ validate input with a Zod schema before any
-business logic. Reject invalid bodies at the boundary; never hand-roll
-validation with if-checks.
-```
-
-The four types map to those fields like this:
-
-- **Always** - `alwaysApply: true`. The rule is loaded into every request in this project, the same posture as `AGENTS.md`. Use it for repo-wide truths that must never be missed.
-- **Apply Intelligently** - `alwaysApply: false` with a `description` and no `globs`. The agent reads the `description` and *decides* whether the rule is relevant to the current task. In Cursor's earlier naming this type was called **Agent Requested** - the description-driven, model-judged type. (Don't confuse it with the old **Auto Attached** name, which was the glob/file-pattern type, not this one; that's the former name of "Apply to Specific Files" below.)
-- **Apply to Specific Files** - a `globs:` pattern. The rule is meant to attach when a file matching the glob enters context - e.g. `["src/api/**"]` for the validation rule above. In Cursor's earlier naming, this glob-driven type was called **Auto Attached**.
-- **Apply Manually** - no auto-attach at all. You pull the rule in on demand by typing `@RuleName` in chat (e.g. `@migrations`). Good for heavyweight procedures you only want loaded when you ask.
-
-This is the divergence from Codex and OpenCode in one paragraph: there, a rule is on or it isn't. Here, a rule can be always-on, model-judged, file-scoped, or hand-invoked - and you choose per rule with two lines of frontmatter.
-
-:::note[Which file for which rule]
-Reach for `AGENTS.md` when the rule is a flat, always-true fact you'd happily share with another tool. Reach for a `.mdc` Project Rule when you need *conditional* attachment - scoped to certain files, judged by the model, or invoked by hand. They live side by side; most repos end up with both.
-:::
-
-## The sharp edge: globbed rules can be silently skipped
-
-Here's the one that surprises people, and it's worth internalising before it costs you a debugging session. You'd reasonably assume that **Apply to Specific Files** is deterministic - that a rule with `globs: ["src/api/**"]` *will* load whenever an `src/api/` file is in context, the way a build tool's glob is mechanical. It isn't quite that.
-
-The behaviour reported by the community is that a glob-scoped rule (`alwaysApply: false`) can fail to load even when you'd expect it to. The precise trigger, as the forum thread clarified, is narrower than "the model ignored it": in Cursor 2.0.x, a glob rule only attaches when the matching file actually enters the *agent's context* - pulled in by an `@`-mention or a file the agent itself decides to read - not merely by being open in your editor. That's a behaviour change from Cursor 1.x, where having the file open was enough. So you can have a perfectly written `api-validation.mdc`, scoped to exactly the right files, watch yourself edit a handler in `src/api/`, and still get hand-rolled `if`-validation back - because the file was open in the editor but never entered the agent's working context, so the rule never attached. This is the "glob rules not auto-loaded" friction, and it's a recurring report on the Cursor forum.
-
-[forum.cursor.com/t/140641](https://forum.cursor.com/t/cursor-2-0-project-rule-mdc-files-with-glob-patterns-not-auto-loaded-in-conversations/140641)
-
-The practical lesson for `budgetcli`: **if a rule is load-bearing - a convention you cannot afford the agent to miss - don't trust a glob to deliver it.** Promote it. A non-negotiable like "API handlers validate with Zod" is safer as an **Always** rule (`alwaysApply: true`) or as a line in `AGENTS.md`, where it's loaded unconditionally, than as a glob-scoped rule that only attaches if the matching file happens to enter the agent's context. Save **Apply to Specific Files** for guidance that's *helpful when it fires but not catastrophic when it doesn't* - style preferences, module-local hints - and keep the bugs-you-keep-reintroducing in an always-on layer.
-
-## The legacy path: .cursorrules
-
-If you've used Cursor for a while, or you're looking at an older repo, you'll meet a single `.cursorrules` file at the project root - the original, pre-`.mdc` format. It's a plain file of instructions with no frontmatter and no per-file attachment: one undifferentiated blob, always applied.
-
-Cursor still honours `.cursorrules` for backward compatibility, so an old repo keeps working. Worth knowing where this status comes from: Cursor's current rules documentation no longer mentions `.cursorrules` at all - it's been dropped from the docs entirely, consistent with "legacy, no longer recommended," and community reports line up, describing it as deprecated-but-still-working since Project Rules landed around v0.45. So treat the "still honoured for backward compatibility" line as the well-understood legacy status, not a sentence you'll find quoted on the docs page. Either way, it is **no longer the recommended path** - new work belongs in `.cursor/rules/*.mdc` (for Cursor-specific power) or `AGENTS.md` (for portability), both of which give you scoping `.cursorrules` never had. If you inherit a `.cursorrules`, the clean migration is to move its always-true lines into `AGENTS.md` and split anything conditional into scoped `.mdc` rules.
-
-:::caution[Don't assume .cursorrules is going away]
-It's tempting to treat the legacy file as deprecated-and-doomed, but whether Cursor will ever *remove* `.cursorrules` support is not something to state as fact. The current primary docs give no removal timeline; some secondary blogs assert one, but that isn't confirmable, so don't bank on it.
-:::
-
-## What you've built
-
-`budgetcli`'s conventions now live with the code instead of in your memory:
-
-- The flat, portable truths - UTC, integer cents - sit in `AGENTS.md`, in force on Cursor and on any teammate's Codex or OpenCode.
-- The conditional ones live as `.mdc` Project Rules, each with frontmatter that picks its moment: always-on, model-judged, file-scoped, or `@`-invoked by hand.
-- Your personal habits sit in **User Rules** and follow you across every repo; if `budgetcli` is a team project, shared mandates can be pushed as **Team Rules** with no local file.
-- And the one trap that would have bitten you - a load-bearing rule hidden behind a glob that only attaches when the matching file enters the agent's context - you've defused by promoting it to an always-on layer.
-
-The agent isn't getting smarter. It just stopped having to guess at `budgetcli`'s rules every session, because now it can read them. The next time you ask for a new handler, the Zod validation and the UTC timestamp are simply there - and you never review that same mistake again.
+The arc runs from the map to the mechanism to the trap. The first lesson lays out all four layers so you know which one a given fact belongs in before you write a line. The second takes the portable layer first, because it's the cheapest to learn and the one that follows the repo to every other tool. The third opens up Cursor's own format, where a rule stops being simply on or off and starts having a *moment* it attaches. The fourth is the one that saves you a debugging session: the most precise-looking rule type in the system is the least reliable, and knowing that changes where you put the conventions you cannot afford to lose. The person who's merely *installed* Cursor re-explains the same convention every session and re-reviews the same mistake. By the end of this chapter you'll be the other kind of user - the one whose repo briefs the agent before you type a word.

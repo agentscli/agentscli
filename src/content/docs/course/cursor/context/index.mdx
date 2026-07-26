@@ -6,106 +6,20 @@ sidebar:
 ---
 
 import { Aside } from '@astrojs/starlight/components';
-import SessionXray from '../../../../../components/interactive/SessionXray.tsx';
 
 An agent is only ever as good as what it's looking at. Give Cursor the wrong three files and the right model will still write a confident, wrong patch - because from inside the window, the wrong files *are* the codebase. So before any chapter about prompting or models pays off, you need the one underneath it: steering what the agent sees. That's two skills braided together. One is pointing - `@`-tagging the exact file, folder, or doc you want in the window. The other is *knowing when not to point* - letting Cursor 2.0 gather its own context, and recognising the cases where that auto-retrieval quietly picks the wrong material and you have to take the wheel back.
 
 This chapter works on the single running project of the course: `budgetcli`, the inherited budgeting/finance API - a TypeScript monorepo with an API surface, a worker that fetches and parses incoming transaction feeds, and shared utilities. It's big enough that "just let the agent figure it out" sometimes works and sometimes lands you in the wrong package entirely, which is exactly the tension this chapter is about.
 
 <Aside type="caution" title="Cursor moves fast - verify before you rely">
-Cursor 2.0 shipped Composer (Cursor's first agentic coding model) and agent self-gathering in late 2025, and the surface is still shifting - the 2.0 release pruned several `@`-menu items that older tutorials still reference. The `@`-menu inventory below reflects the post-2.0 docs; anything genuinely unsettled carries an inline `VERIFY:` note with a source URL. Treat those as "confirm against the live docs," not settled fact. ([source](https://cursor.com/changelog/2-0))
+Cursor 2.0 shipped Composer (Cursor's first agentic coding model) and agent self-gathering in late 2025, and the surface is still shifting - the 2.0 release pruned several `@`-menu items that older tutorials still reference. The `@`-menu inventory in this chapter reflects the post-2.0 docs; anything genuinely unsettled carries an inline `VERIFY:` note with a source URL. Treat those as "confirm against the live docs," not settled fact. ([source](https://cursor.com/changelog/2-0))
 </Aside>
 
-## The substrate: codebase indexing
+## The four moves of this chapter
 
-Before you tag anything, understand what Cursor already knows. When you open a workspace, Cursor builds a **semantic index** of the codebase automatically - it breaks your files into chunks and converts each chunk into a vector embedding, so the agent can retrieve relevant code by *meaning*, not just by filename match. This index is the substrate underneath both `@`-tagging and self-gathering: when you `@`-tag a folder, or when the agent gathers its own context, the index is what makes "find the code that handles transaction-date parsing" resolve to the right files without you naming them.
+- **The index** - Cursor embeds your workspace automatically, and that index is what makes both pointing and self-gathering resolve to real files - [The substrate: codebase indexing](/course/cursor/context/indexing/)
+- **Pointing** - the post-2.0 `@`-menu inventory: files and folders, `@Docs`, manual rules, and the worked fix where two attachments beat a search - [Pointing with @: the attach menu](/course/cursor/context/at-mentions/)
+- **Not pointing** - agentic retrieval finds files your mental map of the repo would have missed, which on inherited code is usually the better move - [Self-gathering: when you don't point](/course/cursor/context/self-gathering/)
+- **Taking the wheel back** - the two cases where retrieval reliably guesses wrong, plus the chat-as-session habit that keeps each window sharp - [When hand-pinning still wins](/course/cursor/context/pinning-and-continuity/)
 
-Two things about the index are worth knowing for your own repo:
-
-- **It's on by default, and it skips your ignore files.** Indexing begins automatically when you open a workspace and indexes everything *except* what your ignore files exclude - it respects both `.gitignore` and `.cursorignore`, so secrets and build artefacts stay out of the embedding store. On a work machine with sensitive code, confirm what's actually being indexed before you assume privacy. ([source](https://cursor.com/docs/context/codebase-indexing))
-- **Your code stays private.** Per Cursor's docs, code content is never stored in plaintext: embeddings are created without storing filenames or source code, file paths are encrypted, and chunks are decrypted client-side. That's the load-bearing detail for anyone on a sensitive repo - the index is built from obfuscated embeddings, not a remote copy of your source. ([source](https://cursor.com/docs/context/codebase-indexing))
-
-The index isn't something you operate day to day. It's the thing that makes everything below *work* - and the thing to sanity-check once, on a sensitive repo, before you trust any retrieval at all.
-
-## Pointing with `@`: the attach menu
-
-In the Agent chat, typing `@` opens a menu of things you can **attach to the prompt**. The `@`-attaches / `/`-runs split - `@` pulls material *into* the context window, `/` invokes an action - is the grammar you already drilled in the daily-edit-loop chapter; this chapter assumes it and owns the authoritative `@`-mention inventory. Skills are the clearest example of `/`-as-action: shipped in Cursor 2.4, they're either auto-selected by the agent or manually invoked by typing `/` in Agent chat and searching the skill name. {/* VERIFY: a clean "@skill attaches a skill's content without invoking it" syntax is appealing but NOT documented - Cursor's skills docs describe only slash invocation (auto-selected or "manually invoked by typing / in Agent chat and searching for the skill name"). Don't assert @skill-as-attach as fact. Source: https://cursor.com/docs/skills */}
-
-Here's the inventory of `@`-mention targets - what you can pull into the window. Note that Cursor 2.0 *removed* several older menu items (`@Web`, `@Definitions`, `@Link`, `@Linter Errors`) on the logic that the agent self-gathers that material now; if a tutorial tells you to `@Web` something, it predates 2.0. The current menu centres on:
-
-- **`@Files & Folders`** - attach a specific file, or a directory. A file puts *that file*, in full (within read limits), into the window - the most precise tool you have, for the moment you know exactly which file matters. A folder pulls in the folder's relevant contents via the index rather than dumping every byte, so it's your "this feature lives somewhere in `apps/worker/`, figure out where" move on `budgetcli`. (After selecting a folder you can type `/` to navigate deeper.) Files and folders share one menu entry - there is no separate top-level `@File` vs. `@Folder`. ([source](https://cursor.com/docs/context/mentions))
-- **`@Docs`** - search indexed documentation, including your own. Cursor lets you add doc sources (a library's docs site) that it indexes, then `@Docs` pulls the relevant pages into the window - so the agent reasons about, say, the Next.js App Router from the *actual* current docs instead of its training-cutoff memory of them. ([source](https://cursor.com/docs/context/mentions))
-- **`@<rule-name>`** - attach a *manual* rule on demand. Rules have four modes (Always Apply, Apply Intelligently by description, Apply to Specific Files by glob, and Apply Manually); a rule authored as "Apply Manually" sits dormant until you `@`-mention it in chat (e.g. `@my-rule`). This is the one `@`-target that overlaps the rules system from the rules chapter - `@`-mentioning a manual rule is how you fire it into *this* prompt. ([source](https://cursor.com/docs/context/rules))
-
-A worked example on `budgetcli`. You've decided the date-parsing bug lives in how the worker normalises an incoming transaction's posting date, and you've found the docs you'll need:
-
-```text
-> the worker stores some transaction dates as the wrong year. fix the
-  normaliser. @apps/worker/src/normalise.ts @Docs date-fns
-
-  • Reading apps/worker/src/normalise.ts
-  • Pulling date-fns docs: parseISO, parse
-
-  normalise.ts calls parse() with the format string 'yyyy' but feeds
-  it a full ISO timestamp, so anything past January reads back as the
-  current year. Switching to parseISO() for ISO inputs and reserving
-  parse() for the known non-ISO feeds fixes it. Here's the diff…
-```
-
-Two hand-pinned attachments - the exact file, the exact library docs - and the agent never had to *guess* where the bug lived or how `date-fns` behaves. That's pointing at its best: when you already know, telling the agent is faster and more reliable than making it search.
-
-## Self-gathering: when you *don't* point
-
-The headline change in Cursor 2.0 is that you often don't have to do any of the above. **Self-gathering context** (agentic retrieval) means the agent pulls its own context - it searches the codebase, reads the files it decides are relevant, and follows references on its own, rather than waiting for you to `@`-tag everything up front. The 2.0 changelog puts it directly: the agent "can now self-gather context without needing to manually attach it in the prompt input" - which is exactly why the older `@Web`, `@Definitions`, `@Link`, and `@Linter Errors` menu items were retired. ([source](https://cursor.com/changelog/2-0))
-
-What this looks like in practice: you describe the *problem* in plain language and let the agent find the *code*.
-
-```text
-> transactions from one feed show up with no merchant name. everything
-  else gets one. find why and fix it.
-
-  • Searching: merchant, payee, counterparty
-  • Reading apps/worker/src/extract.ts, apps/worker/src/fetch.ts
-  • Reading packages/shared/src/transaction.ts
-
-  The extractor reads the payee field, but this feed serves it under the
-  key "counterparty" instead of the spec's "merchant". The selector only
-  matches merchant=, so the merchant name is dropped…
-```
-
-No `@`-tags. You named a symptom; the index plus agentic search found `extract.ts` - a file you might not have known to point at. On a repo you don't fully know yet (and an *inherited* `budgetcli` is exactly that), self-gathering is often *better* than hand-pinning, because the agent's search isn't limited by your incomplete mental map of the layout. The honest rule: **for "find where X happens" problems on familiar-enough code, describe the problem and let it gather.** Reaching for `@`-tags first, out of habit, can actually narrow the agent to a worse slice than it would have found itself.
-
-But "often better" is not "always," and the rest of this chapter is the *not*.
-
-## When hand-pinning still wins
-
-Self-gathering is a retrieval heuristic, and heuristics have failure modes you can predict. Two cases where you should pin context by hand rather than trust auto-gather:
-
-**1. Large or sprawling repos, where retrieval surfaces the wrong slice.** The bigger and more uniform the codebase, the more ways there are for semantic search to land in a plausible-but-wrong neighbourhood. `budgetcli` has three packages that all have a `client.ts`; a query about "the API client" can pull the *API surface's* fetch wrapper when you meant the *worker's* upstream HTTP client. The agent then reasons fluently about the wrong file. Symptom to watch for: the agent's edits touch a package you didn't expect. The fix is to stop describing and start pointing - `@`-attach the folder `apps/worker/` or the file `apps/worker/src/http.ts` - to fence retrieval into the right subtree.
-
-**2. Ambiguous symbols, where a name resolves to the wrong definition.** This is the sharpest case. `budgetcli` defines `parse()` in the worker's feed extractor *and* re-exports a different `parse()` from a shared util. Ask the agent to "fix `parse`" and self-gathering has to *guess* which one you mean from surrounding context - and it can guess wrong, confidently, because both are real. Cursor used to offer a by-name symbol attachment (`@Code`) for exactly this, but that menu entry was removed around the 2.0 release, so the durable disambiguation move today is to pin the *file* that holds the right definition and name the symbol in prose - the file scope rules out the other `parse()` even though you can't pin the function directly:
-
-```text
-> the feed extractor's parse() drops the amount field on pending rows.
-  fix parse() in @apps/worker/src/extract.ts - not the shared util's parse.
-
-  • Reading apps/worker/src/extract.ts
-
-  Fixing the pending-row branch in this file's parse()…
-```
-
-{/* VERIFY: by-name symbol attachment (the old @Code) is no longer in the @-menu - the @Code docs page now 308-redirects to /docs and symbol autocomplete on "@" broke/was removed with Cursor 2.0 (Cursor staff folded the bug report into a known-issue thread). If a symbol-pinning UX has since returned, re-derive it from the live docs before reinstating any "@Code file > symbol" gesture. Sources: https://cursor.com/docs/context/mentions and https://forum.cursor.com/t/code-stopped-working-for-me-after-cursor-2-0-upgrade/141488 */}
-
-The pattern under both: **auto-gather is a guess; hand-pinning is a constraint.** When the cost of the agent guessing wrong is high - a big repo where wrong means "edited the wrong package," or an ambiguous symbol where wrong means "fixed the wrong function" - spend the two seconds to pin and remove the guess. When the cost is low and your map of the code is incomplete, let it gather. That judgement, not a rule about always- or never-tagging, is the skill.
-
-## Continuity: the chat *is* your session
-
-Everything above lives inside a **chat**, and in the editor the chat is also your continuity layer - Cursor keeps a **history** of past conversations you can reopen, so context you built up doesn't vanish when you switch tasks or close the window. The deliberate move that matters here is the *opposite* of resuming: **start a new chat when you switch tasks.** A fresh chat gives the agent a clean window with none of the previous task's material - which both improves output and delays hitting the context limit. Cursor can compact a conversation to free up space in the context window (the CLI exposes this as `/summarize`, with `/compress` as an alias), but compaction is lossy, so you'd rather not lean on it for unrelated work. Riding one long thread across three different bugs is how the agent goes hazy; a new chat per task is how you keep each window sharp. {/* VERIFY: the specific claim that compaction runs on a *smaller* model is not confirmed on Cursor's docs - chat history and /summarize ("free up space in the context window") are documented, but keep the smaller-model phrasing out unless re-confirmed. Source: https://cursor.com/docs/cli/reference/slash-commands */}
-
-Here's that judgment made visible - a session playing out with its context window x-rayed, pausing where you'd have to decide. The commands wear generic names; in Cursor, `/compact` is the CLI's `/summarize` (`/compress` is an alias), and `/clear` is starting a new chat:
-
-<SessionXray client:visible />
-
-This is also where the editor and the CLI differ in ergonomics - though less than you'd expect. The Cursor CLI's current invocation is **`agent`** (`cursor-agent` is the legacy alias you'll still see in mixed sources; the [CLI chapter](/course/cursor/cli-headless-ci/) writes the longer `cursor-agent` form on purpose for disambiguation, while noting `agent` is now the first-party name). It does *not* trade the `@` primitive for flags: its docs say you "select files and folders to include in context with `@`," the same attach gesture as the editor. What the CLI adds is a set of terminal-native slash commands for session continuity - `/new-chat`, `/resume <chat>`, `/fork`, and `/summarize` (`/compress` alias) - driven from the prompt instead of a GUI history pane. So the honest editor-vs-CLI contrast is "same `@` attach primitive, plus slash commands, in a terminal surface," not "commands and flags *instead of* `@`." ([source](https://cursor.com/docs/cli/using))
-
-If you want the spec-level view of how any of these primitives are defined across tools, that's [Foundations: context window management](/foundations/context-management/). This chapter was the muscle memory: see the substrate once, point when you know, let it gather when you don't, and take the wheel back the moment the stakes of a wrong guess go up.
+The arc runs from what Cursor already knows, out to the two gestures, and back to the judgment that picks between them. The first lesson is the one you read once and rarely operate again - but on a sensitive repo it's the one you check before trusting any retrieval at all. The second gives you the precise instrument for the moment you already know which file matters. The third takes it away again, because on an inherited `budgetcli` your map of the layout is the weakest part of the loop and the agent's search isn't limited by it. The fourth is where the skill actually lives: naming the cases where a wrong guess is expensive, and spending two seconds to remove the guess. The person who's merely *installed* Cursor either `@`-tags everything out of habit or trusts auto-retrieval blindly. By the end of this chapter you'll be the other kind of user - the one who knows which of those two the task in front of them deserves.

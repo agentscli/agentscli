@@ -1,0 +1,70 @@
+---
+title: "Headless: the agent as a command, its key, and its config"
+description: "Run the agent non-interactively: output formats, the force flag, the beta caveat, the API key that authenticates a script, and the global-only config rule."
+sidebar:
+  label: "Headless · command, key, config"
+---
+
+## Headless: the agent as a command
+
+`cursor-agent -p "<prompt>"` (long form `--print`) runs the agent **non-interactively**: it takes the prompt, runs the task to completion, prints the result, and exits. No TUI, no back-and-forth, no one at the keyboard. The docs call `-p, --print` the "print mode for non-interactive scripting and automation" - which is exactly the surface this chapter is built on.
+
+```text
+$ cursor-agent -p "Run the categoriser over last month's transactions and
+  report any category whose total moved more than 20% from the prior month."
+```
+
+If you watched the loop in [Getting started](/course/cursor/getting-started/), nothing in *what the agent does* is new here - it reads, it reasons, it acts. What's gone is you. There's no approval pause, because in a headless run there's no one to approve. That single fact is what the rest of this chapter has to design around, and it's why Cursor flags this mode the way it does (more on that in a moment).
+
+Because it's an ordinary command-line program, it composes with everything a shell can do - redirect it to a file, drop it in a cron entry, pipe it into the next command, gate a CI step on its exit. That composability is the whole point of headless mode: the categoriser check that was a thing you *did* in the editor becomes a thing your repo *runs*.
+
+### Output formats: text, json, stream-json
+
+The default output is `text` - formatted for a human reading a terminal, which is fine for a check you run by hand. But a script wants something it can act on, not prose to scrape. Headless mode takes an output format for exactly that:
+
+- **`text`** - the default; "clean, final-answer-only responses," formatted for a human reading a terminal.
+- **`json`** - the run as a single structured JSON result for "structured analysis" a script can parse.
+- **`stream-json`** - "message-level progress tracking": the run as a stream of JSON events as they happen, rather than one blob at the end.
+
+You select the format with the `--output-format` flag (`--output-format json`). All three format names and the flag spelling are straight from the headless docs.
+
+Paired with `stream-json` there's a `--stream-partial-output` flag that provides "incremental streaming of deltas" as they're produced rather than waiting for each event to complete - useful when you want to surface progress from a long run instead of staring at a blank pipe.
+
+The `json` format is the one you'll reach for first when wiring `budgetcli` into a script: ask the agent a question, get a parseable answer back, branch on it.
+
+```text
+$ cursor-agent -p "Did any account go negative last month? Answer with the
+  account names." --output-format json \
+    | jq -r '.result'
+```
+
+That `--output-format json` and the `.result` field it produces are both documented - the headless JSON output carries a `.result` field, which is what `jq -r '.result'` is pulling here. The *shape* of the move is stable; just re-read the schema at publish time, since the exact field set can grow.
+
+### `--force`: writing without the confirmation
+
+In the editor, when the agent wants to write a file or run a command, you see it and you approve it - that's the leash from the permissions chapter. Headless, there's no one to click *Run*. The `--force` flag is how you tell a non-interactive run to act without waiting on a confirmation that will never come: the docs say `--force` "allows the agent to make direct file changes without confirmation," and that without it "changes are only proposed, not applied." So the default for a `-p` run is *propose, don't apply* - `--force` is the switch that lets it actually write. (The docs also list `--yolo` as a synonym for `--force`; they do the same thing.)
+
+This is the headless equivalent of flipping auto-run to *Always run everything* in the editor - and it carries the same warning, sharpened, because there's no human watching. A `cursor-agent -p ... --force` run does what it decides to do, to the files in front of it, with no pause. The discipline from [Permissions, auto-run & the sandbox](/course/cursor/permissions/) doesn't soften here; it becomes the only thing you've got. Run `--force` against a throwaway clone or inside an isolated environment, not against your live `budgetcli` working tree, until you trust exactly what the prompt can reach.
+
+### The beta caveat - read it, don't skip it
+
+Cursor's CLI launch **blog post** flags the CLI as **in beta**, with the explicit note that its **"security safeguards are still evolving."** Worth being precise about where that comes from: the quote is from Cursor's blog (cursor.com/blog/cli), not the current docs pages - the headless and installation docs no longer foreground a "beta" designation at all, which suggests the status may be maturing. {/* VERIFY: the "still in beta / security safeguards are still evolving" quote is from cursor.com/blog/cli, NOT the docs pages, which carry no beta framing. Attribute to the blog and re-check currency at publish - the CLI may have gone GA. Source: https://cursor.com/blog/cli */} That is not boilerplate to scroll past. It's Cursor telling you that the containment around a headless run is less mature than the editor's, at exactly the moment you're handing the agent the ability to act with no one watching. The takeaway isn't "don't use it" - the docs recommend headless mode for batch processing, code-review scripts, and CI pipelines - it's "don't treat the flags as a security boundary." The boundary is *where you run it*: a sandbox, a CI container, a Cloud Agent's isolated VM. We come back to that with every later section.
+
+## Authentication: `CURSOR_API_KEY`
+
+Interactively, `cursor-agent` can log you in through the browser the first time you run it. Headless, there's no browser and no you - so authentication comes from an environment variable, **`CURSOR_API_KEY`**. The headless docs show exactly this: `export CURSOR_API_KEY=your_api_key_here` to authenticate in scripts.
+
+```text
+$ export CURSOR_API_KEY="$(cat ~/.config/budgetcli/cursor-key)"
+$ cursor-agent -p "summarise the open TODOs in internal/categorise/" --output-format json
+```
+
+You generate the key from the Cursor dashboard and treat it like any other credential: out of the repo, in a secret store, scoped as tightly as your plan allows. In CI it lives as an encrypted secret, never inline in the workflow file. One thing worth knowing: `CURSOR_API_KEY` is named on the headless docs page, but the CLI configuration reference doesn't list it among the env vars it documents (which are `CURSOR_CONFIG_DIR`, `XDG_CONFIG_HOME`, the proxy variables, and `NODE_EXTRA_CA_CERTS`) - so don't reach for an invented `CURSOR_*` sibling on a hunch. The auth variable is real; the surrounding family isn't yours to guess at. If you need to configure something beyond auth, check the actual config surface, which has a constraint worth knowing.
+
+## The CLI config constraint
+
+Here's a sharp edge that surprises people coming from the editor, where everything is configurable per-project. For the **CLI**, the configuration model is inverted, and the docs state it flatly: "Only permissions can be configured at the project level. All other CLI settings must be set globally." Concretely, the per-project slice is just `permissions.allow` / `permissions.deny` in `<project>/.cursor/cli.json`; everything else - model, vim mode, attribution, network - lives in the global `~/.cursor/cli-config.json`.
+
+Concretely: your model choice, your default output preferences, your CLI-level behaviour - those are settings on *you*, not on `budgetcli`. What you *can* pin to the repo is the permission posture - what the agent is allowed to touch when it runs against this project. That asymmetry is deliberate and it's the right shape for headless work: the thing that matters most about an unattended run - its blast radius - is the thing you're allowed to scope to the project, while the cosmetic preferences ride along globally. Don't fight it by trying to commit a per-project model setting and wondering why it's ignored.
+
+Those are the levers a script gets. Sit back down in the interactive TUI and there's a second control surface - one you type rather than pass as a flag. [Next: the CLI's own slash commands](/course/cursor/cli-headless-ci/slash-commands/).

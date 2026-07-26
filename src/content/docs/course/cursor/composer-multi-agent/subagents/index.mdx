@@ -1,0 +1,48 @@
+---
+title: "Flavour two - delegated Subagents"
+description: "A worker you define ahead of time, with its own context window. Delegate a scoped, noisy job and get back only the conclusion, not the file dumps."
+sidebar:
+  label: "Subagents · Delegated work"
+---
+
+The sidebar fan-out is a blunt, one-shot instrument: you point a fleet at a prompt and compare what comes back. **Subagents** are the opposite - a scalpel. Introduced in Cursor 2.4, a subagent is a worker you *define ahead of time*, with its own context window, that the main agent delegates a scoped job to and gets back only the conclusion. The hundreds of file reads it did to reach that conclusion never enter your main thread.
+
+A subagent is a markdown file with YAML frontmatter, discovered from project and user paths:
+
+- **Project:** `.cursor/agents/`, `.claude/agents/`, or `.codex/agents/`
+- **User:** `~/.cursor/agents/`, `~/.claude/agents/`, or `~/.codex/agents/`
+
+Project-level files take precedence on a name collision, and within a level `.cursor/` wins over the `.claude/` and `.codex/` fallback paths. (Those fallbacks exist so a repo already carrying Claude Code or Codex agent files gets picked up without a rewrite.)
+
+The frontmatter is a small, scoped set:
+
+```yaml
+---
+name: verifier
+description: Read-only checker - confirms a change does what it claims, runs tests, reports pass/fail with evidence
+model: inherit
+readonly: true
+is_background: false
+---
+You are a verification agent. Read the change under review, run the
+relevant tests, and report PASS or FAIL with the exact evidence. Do
+not edit files. Do not fix what you find - only report it.
+```
+
+The fields, each earning its place:
+
+- `name` - the handle you invoke it by; defaults to the filename if omitted.
+- `description` - the agent reads this to decide *when* to delegate to this subagent automatically. Write it as a trigger, not a title.
+- `model` - which model the subagent runs; defaults to inheriting the parent's. A read-only scanner doesn't need your most expensive model, so this is a cost lever.
+- `readonly` - when true, the subagent can read and reason but not write. This is the lock that makes a `verifier` or an `explorer` safe to let run unattended.
+- `is_background` - whether the subagent runs in the background rather than blocking the main thread; defaults to false.
+
+Invocation is threefold:
+
+- **Automatic delegation** - the main agent reads each subagent's `description` and routes a matching task to it without you asking. This is why the `description` is a trigger sentence, not a label.
+- **Explicit `/name`** - `/verifier check the new caching branch` routes the rest of the line straight to that subagent.
+- **Natural-language mention** - "have the verifier confirm the auth flow" does the same thing in prose.
+
+The isolation is the same idea as the worktree fan-out, but applied to *context* rather than *files*: the subagent works in its own context window, so the noise it generates - the greps, the file dumps, the test logs - lands in *its* memory and never crowds your main thread. Where the sidebar fan-out isolates the filesystem so cooperating agents don't corrupt each other, a subagent isolates the conversation so a noisy job doesn't bury your decisions. On `budgetcli`, that's the difference between "scan every endpoint for the float-handling bug" filling your main thread with a hundred file reads, versus a read-only subagent doing the scan in its own window and handing back only the list of offenders.
+
+Worktrees isolate files; a subagent isolates the conversation. Both still run on your laptop, and both still want your attention while they work. The third flavour gives up that last tie and moves the work off your machine entirely. [Next: remote Cloud Agents](/course/cursor/composer-multi-agent/cloud-agents/).
