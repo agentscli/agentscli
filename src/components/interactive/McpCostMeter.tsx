@@ -48,14 +48,14 @@ export default function McpCostMeter() {
         <span
           className="mcm-block mcm-block-builtin"
           style={{ width: `${(MCM_BUILTIN_TOKENS / MCM_WINDOW_TOKENS) * 100}%` }}
-          title={`Built-in tools — ${MCM_BUILTIN_TOKENS}k`}
+          title={`Built-in tools - ${MCM_BUILTIN_TOKENS}k`}
         />
         {active.map((s) => (
           <span
             key={s.id}
             className="mcm-block mcm-block-mcp"
             style={{ width: `${(costOf(s.tokens) / MCM_WINDOW_TOKENS) * 100}%` }}
-            title={`${s.label} — ${fmt(costOf(s.tokens))}k`}
+            title={`${s.label} - ${fmt(costOf(s.tokens))}k`}
           />
         ))}
       </div>
@@ -78,7 +78,7 @@ export default function McpCostMeter() {
           onChange={() => setDeferred(!deferred)}
         />
         <span>
-          <strong>Defer schemas until first use</strong> — each server shrinks to
+          <strong>Defer schemas until first use</strong> - each server shrinks to
           a ~{MCM_DEFERRED_STUB_TOKENS}k stub (name + description); the full
           schema loads only when a tool is actually called. Claude Code ships
           this (tool search, on by default); the other tools in scope load

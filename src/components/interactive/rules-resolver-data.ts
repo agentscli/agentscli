@@ -1,5 +1,5 @@
 /**
- * Rules layering resolver — which rules files load for a given working
+ * Rules layering resolver - which rules files load for a given working
  * location, per tool. Outcomes are hand-authored from the verified
  * tool-instructions content (rules chapter per tool), NOT simulated:
  * keep them in sync with src/content/tool-instructions/<tool>/rules.mdx.
@@ -44,7 +44,7 @@ export const rlrTools: RlrTool[] = [
     slug: 'claude-code',
     label: 'Claude Code',
     model:
-      'Additive — every applicable file loads; more specific guidance wins on conflict.',
+      'Additive - every applicable file loads; more specific guidance wins on conflict.',
     results: {
       root: {
         outcomes: [
@@ -68,7 +68,7 @@ export const rlrTools: RlrTool[] = [
           {
             path: '.claude/rules/api-validation.md',
             status: 'skipped',
-            note: 'paths: ["packages/api/**"] — no match for this file.',
+            note: 'paths: ["packages/api/**"] - no match for this file.',
           },
         ],
         summary:
@@ -92,13 +92,13 @@ export const rlrTools: RlrTool[] = [
             path: 'packages/api/CLAUDE.md',
             status: 'loaded',
             order: 3,
-            note: 'Nested file — loads because the agent is touching packages/api/.',
+            note: 'Nested file - loads because the agent is touching packages/api/.',
           },
           {
             path: '.claude/rules/api-validation.md',
             status: 'loaded',
             order: 4,
-            note: 'Path-scoped rule — its paths: glob matches this file.',
+            note: 'Path-scoped rule - its paths: glob matches this file.',
           },
         ],
         summary:
@@ -121,16 +121,16 @@ export const rlrTools: RlrTool[] = [
           {
             path: 'packages/api/CLAUDE.md',
             status: 'skipped',
-            note: 'Different subtree — the api guidance never enters the window.',
+            note: 'Different subtree - the api guidance never enters the window.',
           },
           {
             path: '.claude/rules/api-validation.md',
             status: 'skipped',
-            note: 'paths: ["packages/api/**"] — no match for this file.',
+            note: 'paths: ["packages/api/**"] - no match for this file.',
           },
         ],
         summary:
-          'Only the always-on layers load. The packages/api guidance stays out of the window entirely — nested rules are also a context-cost optimisation.',
+          'Only the always-on layers load. The packages/api guidance stays out of the window entirely - nested rules are also a context-cost optimisation.',
       },
     },
   },
@@ -138,7 +138,7 @@ export const rlrTools: RlrTool[] = [
     slug: 'codex',
     label: 'Codex',
     model:
-      'Concatenation — applicable AGENTS.md files join into one prompt, root-down; deeper files appear later and override positionally.',
+      'Concatenation - applicable AGENTS.md files join into one prompt, root-down; deeper files appear later and override positionally.',
     results: {
       root: {
         outcomes: [
@@ -181,11 +181,11 @@ export const rlrTools: RlrTool[] = [
             path: 'packages/api/AGENTS.md',
             status: 'loaded',
             order: 3,
-            note: 'Closest to the working directory — appended last, positionally strongest.',
+            note: 'Closest to the working directory - appended last, positionally strongest.',
           },
         ],
         summary:
-          'All three concatenate root-down, joined by blank lines. Nothing is dropped — but the deepest file speaks last, so its guidance wins where they conflict.',
+          'All three concatenate root-down, joined by blank lines. Nothing is dropped - but the deepest file speaks last, so its guidance wins where they conflict.',
       },
       web: {
         outcomes: [
@@ -216,7 +216,7 @@ export const rlrTools: RlrTool[] = [
     slug: 'opencode',
     label: 'opencode',
     model:
-      'First match wins — opencode walks up from the working directory and the first AGENTS.md found REPLACES the others. No merging.',
+      'First match wins - opencode walks up from the working directory and the first AGENTS.md found REPLACES the others. No merging.',
     results: {
       root: {
         outcomes: [
@@ -224,7 +224,7 @@ export const rlrTools: RlrTool[] = [
             path: 'AGENTS.md',
             status: 'loaded',
             order: 1,
-            note: 'First match walking up from src/ — this file wins.',
+            note: 'First match walking up from src/ - this file wins.',
           },
           {
             path: 'packages/api/AGENTS.md',
@@ -238,7 +238,7 @@ export const rlrTools: RlrTool[] = [
           },
         ],
         summary:
-          'One file wins. The root AGENTS.md is the entire rules layer here — the global file is skipped, not merged in.',
+          'One file wins. The root AGENTS.md is the entire rules layer here - the global file is skipped, not merged in.',
       },
       api: {
         outcomes: [
@@ -246,12 +246,12 @@ export const rlrTools: RlrTool[] = [
             path: 'packages/api/AGENTS.md',
             status: 'loaded',
             order: 1,
-            note: 'First match walking up from packages/api/ — this file wins.',
+            note: 'First match walking up from packages/api/ - this file wins.',
           },
           {
             path: 'AGENTS.md',
             status: 'replaced',
-            note: 'Replaced, not merged — everything in the root file is invisible for this work.',
+            note: 'Replaced, not merged - everything in the root file is invisible for this work.',
           },
           {
             path: '~/.config/opencode/AGENTS.md',
@@ -282,7 +282,7 @@ export const rlrTools: RlrTool[] = [
           },
         ],
         summary:
-          'No file in packages/web, so the walk up lands on the root AGENTS.md — and that single file is all the agent sees.',
+          'No file in packages/web, so the walk up lands on the root AGENTS.md - and that single file is all the agent sees.',
       },
     },
   },
@@ -290,7 +290,7 @@ export const rlrTools: RlrTool[] = [
     slug: 'pi',
     label: 'Pi',
     model:
-      'Walk + concatenate — global, then each ancestor down to cwd; closest file wins where guidance overlaps.',
+      'Walk + concatenate - global, then each ancestor down to cwd; closest file wins where guidance overlaps.',
     results: {
       root: {
         outcomes: [
@@ -333,7 +333,7 @@ export const rlrTools: RlrTool[] = [
             path: 'packages/api/AGENTS.md',
             status: 'loaded',
             order: 3,
-            note: 'Closest file on the walk — wins where it conflicts with the root file.',
+            note: 'Closest file on the walk - wins where it conflicts with the root file.',
           },
         ],
         summary:
@@ -360,7 +360,7 @@ export const rlrTools: RlrTool[] = [
           },
         ],
         summary:
-          'Global + root only — no nested file under packages/web, so the root AGENTS.md is the most specific project voice.',
+          'Global + root only - no nested file under packages/web, so the root AGENTS.md is the most specific project voice.',
       },
     },
   },

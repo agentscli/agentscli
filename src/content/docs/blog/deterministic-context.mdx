@@ -1,31 +1,31 @@
 ---
 title: "When you know where the context lives, stop letting the agent guess."
-description: "Agent-driven file discovery burns turns and fills the window with wrong guesses. A parameterized priming command loads exactly the right files in one deterministic shot — reserve probabilistic search for when you genuinely don't know where to look."
+description: "Agent-driven file discovery burns turns and fills the window with wrong guesses. A parameterized priming command loads exactly the right files in one deterministic shot - reserve probabilistic search for when you genuinely don't know where to look."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, slash-commands, rules, configuration]
 draft: false
 ---
 
-You open a fresh session, paste the ticket, and the agent starts grepping. It reads the wrong service first. Then a test file. Then a config it didn't need. Three tool calls in, it finally lands on the module you knew it needed before you hit enter — and now the window is half-full of dead ends it has to reason around for the rest of the task.
+You open a fresh session, paste the ticket, and the agent starts grepping. It reads the wrong service first. Then a test file. Then a config it didn't need. Three tool calls in, it finally lands on the module you knew it needed before you hit enter - and now the window is half-full of dead ends it has to reason around for the rest of the task.
 
-This is the default mode of every coding agent: **probabilistic discovery.** Hand it a goal, and it figures out which files matter by guessing, reading, correcting. For an unfamiliar codebase, that's the right behavior — it's literally the thing agents are good at. But you weren't unfamiliar. You knew exactly which four files this task touches. You just had no way to say so without typing them out by hand.
+This is the default mode of every coding agent: **probabilistic discovery.** Hand it a goal, and it figures out which files matter by guessing, reading, correcting. For an unfamiliar codebase, that's the right behavior - it's literally the thing agents are good at. But you weren't unfamiliar. You knew exactly which four files this task touches. You just had no way to say so without typing them out by hand.
 
 So here's the question worth holding onto: **if you already know where the context lives, why are you paying the agent to rediscover it every single time?**
 
 ## Discovery is a search cost, and you keep re-paying it
 
-Steel-man the default first. "Let the agent figure it out" is genuinely powerful — it's why you can drop into a repo you've never seen and get a useful answer. Autonomy over file selection is a feature, not a bug.
+Steel-man the default first. "Let the agent figure it out" is genuinely powerful - it's why you can drop into a repo you've never seen and get a useful answer. Autonomy over file selection is a feature, not a bug.
 
-But autonomy has a price, and the price is **turns plus pollution.** Every exploratory read is a round-trip that spends latency and tokens. Worse, the wrong reads don't vanish — they sit in the [context window](/foundations/context-management/) as noise the model has to actively discount on every subsequent step. An agent that read three irrelevant files isn't neutral; it's an agent reasoning *against* its own clutter.
+But autonomy has a price, and the price is **turns plus pollution.** Every exploratory read is a round-trip that spends latency and tokens. Worse, the wrong reads don't vanish - they sit in the [context window](/foundations/context-management/) as noise the model has to actively discount on every subsequent step. An agent that read three irrelevant files isn't neutral; it's an agent reasoning *against* its own clutter.
 
-That second cost is the one people underweight. Tokens you can see on a usage meter; attention dilution you can't. When the window fills with the wrong service and a config the task never needed, the relevant lines don't get *deleted* — they get *diluted*. The model's attention is finite and spread across everything in the window, so every irrelevant file it pulled in is competing for focus with the four that actually matter. The well-documented failure mode where models lose track of facts buried in the middle of a long context isn't a quirk you avoid by being careful; it's the tax you pay for a window full of dead ends. Discovery doesn't just cost the turns it took — it degrades every turn that follows.
+That second cost is the one people underweight. Tokens you can see on a usage meter; attention dilution you can't. When the window fills with the wrong service and a config the task never needed, the relevant lines don't get *deleted* - they get *diluted*. The model's attention is finite and spread across everything in the window, so every irrelevant file it pulled in is competing for focus with the four that actually matter. The well-documented failure mode where models lose track of facts buried in the middle of a long context isn't a quirk you avoid by being careful; it's the tax you pay for a window full of dead ends. Discovery doesn't just cost the turns it took - it degrades every turn that follows.
 
 And you re-pay this on every new session. The knowledge of "this feature lives in these files" is stable. The agent's memory of it is not. You're funding the same search over and over for context you could have pinned once.
 
 ## A priming command makes the right context deterministic
 
-The fix is to encode the file set you already know into a [slash command](/foundations/slash-commands/) that loads it in one shot. No guessing, no exploratory reads — the command *is* the answer to "which files."
+The fix is to encode the file set you already know into a [slash command](/foundations/slash-commands/) that loads it in one shot. No guessing, no exploratory reads - the command *is* the answer to "which files."
 
 Make it parameterized so one command serves a whole class of tasks. A command file is just a prompt template with argument interpolation:
 
@@ -47,13 +47,13 @@ Summarize the module's responsibilities and public surface in
 three bullets. Do not modify anything yet. Wait for the task.
 ```
 
-Now `/prime-feature billing` loads the billing module's exact context set — implementation, service, tests, and design doc — as one deterministic operation. The agent starts the *actual* task already grounded, with a clean window and zero wasted round-trips. Swap `billing` for `auth` and you've reused the same primer for a different module.
+Now `/prime-feature billing` loads the billing module's exact context set - implementation, service, tests, and design doc - as one deterministic operation. The agent starts the *actual* task already grounded, with a clean window and zero wasted round-trips. Swap `billing` for `auth` and you've reused the same primer for a different module.
 
 The shape generalizes. A `/prime-bug` command might pull the error-handling layer plus the relevant log config. A `/prime-migration` might load the schema, the latest migration, and the ORM models. Each one is a piece of codebase knowledge you held in your head, now executable.
 
 ## Watch the cost flip
 
-The difference is easiest to feel on a recurring task. Say you fix a class of bug every week — a failing background job. You know the shape cold: the job runs in `src/jobs/`, the queue config lives in `src/queue/config.ts`, and the retry logic that's usually the culprit sits in `src/queue/retry.ts`.
+The difference is easiest to feel on a recurring task. Say you fix a class of bug every week - a failing background job. You know the shape cold: the job runs in `src/jobs/`, the queue config lives in `src/queue/config.ts`, and the retry logic that's usually the culprit sits in `src/queue/retry.ts`.
 
 **Without a primer**, a fresh session looks like this. You paste "the nightly export job is failing." The agent greps for `export`, gets a dozen hits, reads the route handler that *triggers* the job (wrong layer), reads a test fixture, reads a utility file, and somewhere on the fourth or fifth read finally opens `retry.ts`. By the time it's looking at the right code, the window already carries three files of scaffolding it now has to reason past. The diagnosis it gives you is competing with its own warm-up noise.
 
@@ -80,13 +80,13 @@ likely failure points. Then wait for the symptom.
 
 ## "Isn't this just @-mentioning the files?"
 
-A fair objection: most agents let you drop files into context by hand — an `@`-mention, a drag, a paste. If you know the four files, why not just name them?
+A fair objection: most agents let you drop files into context by hand - an `@`-mention, a drag, a paste. If you know the four files, why not just name them?
 
-Because a manual mention is a keystroke you re-spend every session, and it doesn't compose. The primer is *parameterized* — one `/prime-feature` serves every module, where a manual mention serves one. It's *documented* — `argument-hint` tells you and your teammates what it expects. It's *versioned* — it lives in the repo and travels with the code. And it's *shared* — a colleague who's never touched the billing module gets your exact grounding for free. Hand-mentioning files is the right move exactly once; the moment the same file set comes up a second time, you're re-typing knowledge you could have committed.
+Because a manual mention is a keystroke you re-spend every session, and it doesn't compose. The primer is *parameterized* - one `/prime-feature` serves every module, where a manual mention serves one. It's *documented* - `argument-hint` tells you and your teammates what it expects. It's *versioned* - it lives in the repo and travels with the code. And it's *shared* - a colleague who's never touched the billing module gets your exact grounding for free. Hand-mentioning files is the right move exactly once; the moment the same file set comes up a second time, you're re-typing knowledge you could have committed.
 
 ## Rules carry the context that's true for every task
 
-Some context isn't task-specific — it's true no matter what the agent is doing. The build command. The fact that all dates are stored UTC. That `legacy/` is frozen and must never be edited. Pinning *that* into a priming command would be redundant; it belongs one level up, in your [rules](/foundations/rules/) file, where the agent reads it on every session automatically.
+Some context isn't task-specific - it's true no matter what the agent is doing. The build command. The fact that all dates are stored UTC. That `legacy/` is frozen and must never be edited. Pinning *that* into a priming command would be redundant; it belongs one level up, in your [rules](/foundations/rules/) file, where the agent reads it on every session automatically.
 
 ```markdown
 # AGENTS.md
@@ -101,26 +101,26 @@ Some context isn't task-specific — it's true no matter what the agent is doing
 - Use `/prime-feature <name>` before working in one.
 ```
 
-That last line is the hinge. Rules describe the **standing context** and point to the priming commands that load the **situational context.** Together they replace probabilistic discovery with a two-tier deterministic system: always-on facts in rules, on-demand file sets in commands. Both live in your repo as plain files, version-controlled alongside the code they describe — and because `AGENTS.md` has hardened from a single tool's convention into a cross-vendor standard, that grounding travels. OpenAI introduced the format in 2025; by the end of that year it had been donated to the Linux Foundation's Agentic AI Foundation, sitting alongside the Model Context Protocol, and it's now read natively by Claude Code, Codex, Cursor, Copilot, Gemini CLI, Aider, Windsurf, Zed, and a couple dozen others. A teammate's agent inherits the same grounding the moment they pull, whichever tool they run. (For where these files resolve per tool, see [Configuration](/foundations/configuration/).)
+That last line is the hinge. Rules describe the **standing context** and point to the priming commands that load the **situational context.** Together they replace probabilistic discovery with a two-tier deterministic system: always-on facts in rules, on-demand file sets in commands. Both live in your repo as plain files, version-controlled alongside the code they describe - and because `AGENTS.md` has hardened from a single tool's convention into a cross-vendor standard, that grounding travels. OpenAI introduced the format in 2025; by the end of that year it had been donated to the Linux Foundation's Agentic AI Foundation, sitting alongside the Model Context Protocol, and it's now read natively by Claude Code, Codex, Cursor, Copilot, Gemini CLI, Aider, Windsurf, Zed, and a couple dozen others. A teammate's agent inherits the same grounding the moment they pull, whichever tool they run. (For where these files resolve per tool, see [Configuration](/foundations/configuration/).)
 
 ## The failure mode: a primer that rots
 
-Here's the catch, and it's the honest cost of the technique. A priming command hardcodes paths, and hardcoded paths drift. You rename `retry.ts` to `backoff.ts`, you split `billing.service.ts` into three files, you move a module — and the primer keeps confidently loading what's no longer there. Now it's worse than nothing: it either errors out or, more insidiously, primes the agent with a *partial* set and a false sense of completeness, which is exactly the polluted-window problem the primer was supposed to prevent.
+Here's the catch, and it's the honest cost of the technique. A priming command hardcodes paths, and hardcoded paths drift. You rename `retry.ts` to `backoff.ts`, you split `billing.service.ts` into three files, you move a module - and the primer keeps confidently loading what's no longer there. Now it's worse than nothing: it either errors out or, more insidiously, primes the agent with a *partial* set and a false sense of completeness, which is exactly the polluted-window problem the primer was supposed to prevent.
 
-The discipline is to treat the command as code that describes code, and keep them adjacent. When you refactor a module's layout, the primer is part of the blast radius — update it in the same commit. The advantage of these living as plain files in the repo is precisely that they show up in review: a teammate who sees `src/features/$module/$module.service.ts` in the diff next to a service file you just deleted has a shot at catching the rot. A primer you never revisit decays into a liability, the same way a stale comment does. The technique earns its keep only if the map stays true to the territory.
+The discipline is to treat the command as code that describes code, and keep them adjacent. When you refactor a module's layout, the primer is part of the blast radius - update it in the same commit. The advantage of these living as plain files in the repo is precisely that they show up in review: a teammate who sees `src/features/$module/$module.service.ts` in the diff next to a service file you just deleted has a shot at catching the rot. A primer you never revisit decays into a liability, the same way a stale comment does. The technique earns its keep only if the map stays true to the territory.
 
 ## Reserve discovery for when you're actually lost
 
-Here's where the contrarian frame earns itself: this is not "never let the agent explore." Probabilistic discovery is the *correct* tool when you genuinely don't know where the context is — a bug in code you've never touched, a dependency you're seeing for the first time, an integration whose seams you can't predict. In that regime, the agent's ability to grep, read, and self-correct is exactly what you want. Forcing a deterministic primer there would just be guessing badly in advance.
+Here's where the contrarian frame earns itself: this is not "never let the agent explore." Probabilistic discovery is the *correct* tool when you genuinely don't know where the context is - a bug in code you've never touched, a dependency you're seeing for the first time, an integration whose seams you can't predict. In that regime, the agent's ability to grep, read, and self-correct is exactly what you want. Forcing a deterministic primer there would just be guessing badly in advance.
 
-The error is using discovery as the *default* — paying full search cost on tasks where the search was already solved. The discipline is knowing which regime you're in:
+The error is using discovery as the *default* - paying full search cost on tasks where the search was already solved. The discipline is knowing which regime you're in:
 
 - **You know the files** → deterministic primer. One shot, clean window.
 - **You don't** → let the agent discover. Spend the turns, that's what they're for.
 
-Most of your daily work is the first case wearing the costume of the second. You touch the same modules, the same layers, the same handful of files, week after week. And this is the whole game of context engineering in miniature. The agent is capable but contextless — it can read anything, but it doesn't know *your* repo, your conventions, which four files this recurring task touches. You're the opposite: narrow, but you know exactly where the bodies are buried. The primer is how that asymmetric knowledge crosses the gap. Probabilistic discovery makes the agent re-earn your map from scratch every session; a priming command hands it over directly. You're not making the agent smarter — you're stopping it from rediscovering, at search-cost, the one thing you already knew for free.
+Most of your daily work is the first case wearing the costume of the second. You touch the same modules, the same layers, the same handful of files, week after week. And this is the whole game of context engineering in miniature. The agent is capable but contextless - it can read anything, but it doesn't know *your* repo, your conventions, which four files this recurring task touches. You're the opposite: narrow, but you know exactly where the bodies are buried. The primer is how that asymmetric knowledge crosses the gap. Probabilistic discovery makes the agent re-earn your map from scratch every session; a priming command hands it over directly. You're not making the agent smarter - you're stopping it from rediscovering, at search-cost, the one thing you already knew for free.
 
-Discovery is for the unknown. For everything you already know, stop making the agent guess — hand it the map.
+Discovery is for the unknown. For everything you already know, stop making the agent guess - hand it the map.
 
 ---
 

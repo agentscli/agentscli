@@ -1,0 +1,233 @@
+---
+title: Video with agents
+description: "Ask a model for a video and you get footage you can only re-roll. Route it through code and you get an artifact you can diff, fix one word of, and re-render identically."
+---
+
+import RenderCheck from '../../../components/interactive/RenderCheck.tsx';
+import FlowDiagram from '../../../components/FlowDiagram.astro';
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+You need a sixty-second explainer: a release demo, an onboarding clip, a conference teaser. You describe it to a video model and get something beautiful and unusable - the product name spelled two different ways across four seconds, a URL that reads `http` where you wrote `https`, and a chart whose axis labels are confident nonsense. You ask for one word to change. You get a different video.
+
+| | |
+| --- | --- |
+| **Use when** | The video is text-dense: a demo, an explainer, a changelog clip, anything with code, UI, numbers, or brand on screen |
+| **You'll have** | A video whose source is a file in your repo - diffable, re-renderable byte-identically, fixable one line at a time |
+| **Costs** | Setup is one scaffold command plus a 43s install, then seconds per check. Our 3-second render took 3.1s |
+| **Needs** | Node, and a repo. No ffmpeg or Chrome install - both are bundled |
+| **Skip if** | You want live action, faces, or emotional b-roll. That's what the pixel models are genuinely good at |
+
+<Aside type="tip" title="In a hurry?">
+  ```bash
+  npx create-video@latest --yes --blank my-video
+  npx skills add remotion-dev/skills      # the vendor's own agent skills, as of mid-2026
+  ```
+
+  Then, before you render anything: `npx remotion still src/index.ts <CompId> out/frame.png --frame=45` and *look at the file*. That one command is the whole play.
+</Aside>
+
+## The substrate decision
+
+This is a capability play, and like every capability play it turns on one question: **can the agent write the artifact as text, and does the same text always render the same picture?** If yes, route through that text. If no, you have bought a slot machine.
+
+The reason isn't taste. It's that an agent works in a loop of act, check, adjust - and a pixel model breaks the *check*:
+
+| | Ask a video model | Write a composition in code |
+| --- | --- | --- |
+| Fix one wrong word | Re-roll the whole clip and hope | Edit a string; everything else is untouched |
+| Review it | Watch it, repeatedly, with your eyes | Read a diff |
+| Regenerate it next quarter | A different video | The same video, deterministically |
+| Can the agent check itself? | No - it can't see what it produced | Yes - render one frame and look |
+| Dense on-screen text | The known weak point | Whatever the browser renders |
+
+That last row is the one that decides most real work. Text-heavy video is exactly where pixel generation is least reliable, and text is on screen in most of what an engineering team has reason to commission: the demo, the changelog clip, the onboarding walkthrough.
+
+<Aside type="caution" title="Be honest about the evidence here">
+  The published comparisons of text fidelity in generated video test *signage and short captions*, not code-density text - nobody has benchmarked the case this page is about. So treat the strong version of the claim as reasoned rather than measured: a browser has a glyph-rendering primitive and a diffusion model does not. The verified half is below, and it's ours.
+</Aside>
+
+## What we actually ran
+
+Everything in this section was executed on 2026-07-26, not read off a README. That matters more than usual here, because this genre rots fast.
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Scaffold | `npx create-video@latest --yes --blank remotion-verify` | Non-interactive. Remotion 4.0.499, React 19.2.3 |
+| Install | `npm install` | 432 packages, 43s |
+| Cheap check | `npx remotion still src/index.ts MyComp out/frame45.png --frame=45` | 1280x720 PNG, **17.8s cold** (includes the bundle; it caches after) |
+| Full render | `npx remotion render src/index.ts MyComp out/video.mp4` | 90 frames at 30fps, H.264, 235 kB, **3.1s warm** |
+
+Two things fell out of that run that no documentation told us:
+
+**Dense text renders exactly.** The test frame carried `https://example.com/pricing?plan=team&seats=12` and a full shell command. Both came out character-perfect at 22px - the `https`, the query string, the `?`, the `&`. That is the precise class of content the pixel route corrupts.
+
+**The rendered frame caught something reading the source could not.** The monospace font's ligatures silently turned the literal `--frame` into one long dash, and `->` into an arrow glyph. The source string was correct. The *picture* was wrong. We only found it by opening the PNG - which is the entire argument for the inspection step, arrived at by accident on the first try.
+
+That defect, and the three checks you could run against it, played out:
+
+<RenderCheck client:visible />
+
+## The pipeline
+
+<FlowDiagram
+  caption="the loop the agent can actually close"
+  steps={[
+    { node: 'describe the shots as data', note: 'you - a list of scenes, not a paragraph of vibes' },
+    { group: 'the agent works', loop: 'until the frame looks right', steps: [
+      { node: 'write the composition', sub: 'plain React - components, props, timing' },
+      { node: 'render ONE still', note: 'seconds, not minutes' },
+      { node: 'look at the frame', sub: 'the check a pixel model cannot do' },
+    ]},
+    { node: 'render the video', note: 'only once the stills are right' },
+  ]}
+/>
+
+<Steps>
+
+1. **Write the script as data before you write any component.** A video is a list of shots with timings, and that list is the thing you'll argue about. Keep it in one file the agent edits:
+
+   ```ts
+   // src/script.ts
+   export const shots = [
+     { at: 0,  secs: 3, title: 'Your tests pass', body: 'npm test  ->  42 passed' },
+     { at: 3,  secs: 4, title: 'But do they check anything?', body: "expect(user).toBeDefined()" },
+   ];
+   ```
+
+   Separating script from rendering is what lets you fix "the URL is wrong in shot 3" without touching animation code. *What the frame has to prove: a stranger could read `script.ts` and know what the video says.*
+
+2. **Hand over the composition, with the frame size and duration fixed.** The agent is writing ordinary React. Say the constraints once:
+
+   ```text
+   > build a Remotion composition from src/script.ts. 1280x720, 30fps.
+     one <Sequence> per shot, timed from `at` and `secs`.
+     don't invent copy - every word on screen comes from script.ts.
+   ```
+
+   The last line matters more than it looks. Left unconstrained, a model will improve your wording on the way past.
+
+3. **Render one still and look at it. Do not skip to the video.** This is the step the play exists for:
+
+   ```bash
+   $ npx remotion still src/index.ts MyComp out/frame45.png --frame=45
+   ```
+
+   Seconds, not minutes - and the bundle caches, so the second check is faster than the first. Then somebody opens the PNG. Ligatures, clipped descenders, a line that overflows its box at a length you didn't test, a font that silently fell back: none of these are visible in the source.
+
+   **Who "somebody" is depends on your tool, and it is worth knowing before you delegate this.** If your agent can read an image back into the session, hand it the frame and let it close its own loop - that is the whole reason this play works. If it can't, the render step still runs unattended but the *looking* is yours, and the play degrades into "the agent renders, you inspect." Both are fine; a run that quietly does neither is not. Check which one you're in by asking your agent to describe something only visible in the frame, once, before you trust it to check its own work.
+
+   This is the section's move in its most literal form - route the agent's claim through a check that can say no. Here the check is a picture, and the thing that can say no is your own eye on a rendered frame. *What the frame has to prove: the text on screen is the text in `script.ts`, character for character.*
+
+4. **Only then render the video, and watch it once.** Stills verify typography and layout; they cannot verify *timing*. A caption that appears one beat late looks perfect in every still and wrong in motion:
+
+   ```bash
+   $ npx remotion render src/index.ts MyComp out/video.mp4
+   ```
+
+   *What the render has to prove: nothing appears before the thing it's responding to, and nothing is still on screen after the moment it belongs to.*
+
+</Steps>
+
+## When the preview lies
+
+The recurring failure in programmatic video is that the studio preview and the headless render are two different renderers. The preview uses your ordinary browser; the render uses headless Chrome. These are documented in Remotion's own troubleshooting pages and issue tracker - we did not reproduce them:
+
+| The tell | What's happening | Fix |
+| --- | --- | --- |
+| Font looks right while editing, generic in the output | A font loaded without gating on `delayRender()`/`continueRender()` silently falls back during the render | Gate the font load; verify in a rendered still, never in the preview |
+| "Timed out evaluating page function" | The browser didn't answer within the timeout (30s by default) - usually CPU or memory pressure | Lower `--concurrency`, raise `--timeout`, or fix a runaway loop in the composition |
+| A long render dies partway, or a render server degrades over hours | Memory pressure under sustained rendering | Lower concurrency; restart between batches |
+| Audio drifts when a clip is trimmed | `playbackRate` combined with `startFrom`/`endAt` behaves differently in preview and render | Check trimmed audio in the rendered file, not the preview |
+
+The pattern behind all four: **never accept a preview as evidence.** The artifact you're shipping is the render, so the check has to run on the render.
+
+<Aside type="note" title="Current picks - verified 2026-07-26, and the fastest-rotting part of this page">
+  **Remotion** 4.0.499 is what we ran. 5.0 is announced with a migration guide but not shipped, and it changes licensing terms - re-check before you commit a company to it.
+
+  **Licensing shape:** free for individuals, non-profits, and small for-profit companies (the threshold is employee-count based), paid above that, with a separate per-render tier for automation. The published dollar figures were changing as of this writing, so read [remotion.pro/license](https://www.remotion.pro/license) rather than trusting a number quoted here.
+
+  **Driving it with an agent:** Remotion **deprecated its own MCP server** in favour of skills - `npx skills add remotion-dev/skills`. Their stated reasons are worth reading, because they generalize: MCP data goes stale against the docs, the vendor pays the token cost, and "installing MCP servers is difficult, and agents do not invoke them reliably." One filed issue has their MCP answering a client's `initialize` eleven seconds after that client had already timed out and given up.
+
+  **If Remotion isn't the fit:** Motion Canvas (3.17.2) for hand-choreographed vector animation with tight audio sync; Revideo (0.11.0) for server-side templated generation at scale; Manim CE (0.20.1) for mathematical explainers. Slidev (52.18.0) is the same idea aimed at slides.
+</Aside>
+
+## When not to route through code
+
+Skip this play entirely for live action, faces, landscapes, or any footage whose job is to make someone feel something. A diffusion model is genuinely better at those than any composition you'll write, and "can I diff it" is not a question you're asking about a drone shot of a coastline.
+
+The line is sharp and it's the same one the [architecture diagrams](/playbooks/architecture-diagrams/) chapter draws for pictures: **code-shaped substrates win where the artifact carries information; pixel models win where it carries mood.** A product demo with a URL on screen is information. A ten-second emotional opener is mood. Plenty of real videos are both - so make the mood shots with the model, the information shots in code, and cut them together.
+
+## When the video isn't the standard case
+
+Four situations bend the pipeline without breaking it. In each, the still-inspection step survives unchanged - what moves is where the copy comes from and what the last check has to prove.
+
+**Every release, same shape.** The moment you're making this video for the third time, `script.ts` stops being a file and becomes an input. Take the shots list as a parameter, drive it from your changelog, and the quarterly video costs one command. This is the case that pays for the whole setup, and it's worth building toward even if today's clip is a one-off - the first version costs the same either way.
+
+**There's a voiceover.** Audio is where stills stop helping: a frame can't be early or late. Keep the narration text in `script.ts` next to the shot it belongs to so the words on screen and the words spoken can't drift apart, and accept that the final check here is watching the render with sound. Trimmed audio in particular is a known preview-versus-render divergence - see the table above.
+
+**The copy ships in five languages.** This is the strongest argument for the whole play, because the pixel route simply cannot do it: five locales means five re-rolls and five proofreads. Here it means one `script.<locale>.ts` per language and a render loop. Check a still per locale, not per shot - what breaks is layout, not spelling. Expect the longer languages to overflow a box that English fit comfortably, and check those first.
+
+**It also needs to be vertical.** Two compositions over one script, not two projects. The trap is that a layout tuned for 1280x720 silently degrades at 1080x1920 rather than erroring - text that was comfortable becomes a four-line wrap. Render a still at each aspect ratio; that's the same check, run twice.
+
+## Questions that come up in practice
+
+**Can the agent actually see the frame it rendered?** Depends on your tool, and it's the single question that decides how much of this you can delegate. Covered in step 3 - test it once, deliberately, rather than assuming.
+
+**Isn't this a lot of setup for one sixty-second video?** For exactly one video that you will never revise, yes - and the honest answer is to reach for a pixel model or a screen recording instead. The play earns out on the second revision, which arrives more often than anyone plans for. "Legal wants one word changed" is the normal case, not the edge case.
+
+**What about a screen recording of the actual product?** Record it. This play isn't competing with a real capture of real software - it's competing with *generated* footage. The common shape is a recording with programmatic titles, callouts and transitions composited over it, which is a composition with a video layer in it, not a different technique.
+
+**How long can a video get before this stops being pleasant?** Length isn't the constraint; shot count is. A ten-minute video that's forty shots is a long script file and a slow render. The thing that actually degrades is your ability to hold the timing in your head, which is why the script-as-data step is first rather than convenient.
+
+**Does the agent need to know the tool, or will it flail?** This is what the vendor skills are for. The risk they address is the ordinary one with any framework narrow enough to be thin in training data: an API that looks right and isn't. Install the skill, or paste the docs. Either beats hoping - and the still-inspection step catches what neither did.
+
+## What this generalizes to
+
+The play isn't about video. It's the capability-genre move: when you want a non-text artifact out of an agent, look for the code-shaped route that keeps the loop closeable.
+
+| You want | The pixel route | The code route |
+| --- | --- | --- |
+| A slide deck | Ask for PPTX or images | Markdown-and-components (Slidev), diffable per slide |
+| A PDF or report | Ask for a rendered document | HTML and CSS, printed to PDF |
+| A word-dense diagram | An image model | Mermaid or SVG - see [architecture diagrams](/playbooks/architecture-diagrams/) |
+| A video | A video model | A composition in code |
+
+Same test every time: can the agent write it as text, and does that text render the same picture twice? When a new tool ships next quarter, that question is what tells you whether it belongs in your pipeline - which is the point of learning the decision rather than the tool.
+
+## The pipeline, assembled
+
+**Scaffold and skills:**
+
+```bash
+npx create-video@latest --yes --blank <name>
+npx skills add remotion-dev/skills
+```
+
+**The kickoff prompt:**
+
+```text
+> build a Remotion composition from src/script.ts. <width>x<height>, 30fps.
+  one <Sequence> per shot, timed from `at` and `secs`.
+  don't invent copy - every word on screen comes from script.ts.
+```
+
+**The check that makes the loop work** (run it before every render, and after every copy change):
+
+```bash
+npx remotion still src/index.ts <CompId> out/frame.png --frame=<n>
+```
+
+**Rules-file lines**, so the discipline survives a fresh session:
+
+```md
+## Video
+- Never change copy that appears on screen; it comes from src/script.ts.
+- Render a still and inspect it before rendering video.
+- Preview is not evidence. Fonts and audio timing only tell the truth in a render.
+```
+
+The kit renders the video. The judgment it can't carry: which shots are information and which are mood, and how much of the frame's meaning survives at the size people will actually watch it.
+
+---
+
+The compounding part isn't the video. It's that next quarter's version is a diff: change four strings in `script.ts`, re-render, ship. The artifact stopped being something you commission and became something your repo builds - which is the same trade [architecture diagrams](/playbooks/architecture-diagrams/) makes for pictures, one substrate over.

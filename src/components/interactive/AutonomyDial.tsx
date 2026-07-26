@@ -54,7 +54,7 @@ export default function AutonomyDial() {
   return (
     <div className={useWidgetFrame('adl-root')}>
       <p className="adl-lead">
-        Two questions decide how much leash a task earns — neither of them is
+        Two questions decide how much leash a task earns - neither of them is
         “how hard is it.” Set both for the work in front of you and read the
         rung it lands on.
       </p>
@@ -106,7 +106,7 @@ export default function AutonomyDial() {
       <p className="adl-reading">{withCode(cell.reading)}</p>
 
       <p className="adl-footnote">
-        The rung names are generic on purpose — every tool spells its own
+        The rung names are generic on purpose - every tool spells its own
         versions of them, and most let you set different rungs for different
         categories of action. The judgment underneath is the same two
         questions, asked per task, never answered once for all time.

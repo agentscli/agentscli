@@ -1,6 +1,6 @@
 import type { ToolData } from './config-explorer-types';
 
-// Facts sourced from src/content/tool-instructions/<tool>/*.mdx — the same
+// Facts sourced from src/content/tool-instructions/<tool>/*.mdx - the same
 // verified content that renders in the foundations chapters. If a chapter
 // changes, this file needs the matching update.
 // Pi facts: keep in sync with src/content/tool-instructions/pi/ and the
@@ -48,7 +48,7 @@ export const configExplorerTools: ToolData[] = [
             oneLiner: 'Project-scoped MCP servers, shared with the team.',
             when: 'Servers connect at session start.',
             description:
-              'Registers the MCP servers this repo depends on — database adapters, issue trackers, browsers. Scope precedence is local > project > user. Servers can fail silently mid-session; use `/mcp` to inspect what is actually connected.',
+              'Registers the MCP servers this repo depends on - database adapters, issue trackers, browsers. Scope precedence is local > project > user. Servers can fail silently mid-session; use `/mcp` to inspect what is actually connected.',
             chapter: CHAPTER.mcp,
           },
           {
@@ -68,7 +68,7 @@ export const configExplorerTools: ToolData[] = [
                 oneLiner: 'Shared project settings: permissions, hooks, model defaults.',
                 when: 'Read at session start; changes take effect next session.',
                 description:
-                  'The team\'s enforced configuration — unlike CLAUDE.md, which Claude reads as guidance, these settings are applied by the harness. Layering order: managed > user > project local > project shared. Hooks defined here fire on events like tool use and session start, and every matching hook from every config level runs.',
+                  'The team\'s enforced configuration - unlike CLAUDE.md, which Claude reads as guidance, these settings are applied by the harness. Layering order: managed > user > project local > project shared. Hooks defined here fire on events like tool use and session start, and every matching hook from every config level runs.',
                 exampleIntro:
                   'A PreToolUse hook that vets shell commands before they run:',
                 example: `{
@@ -102,7 +102,7 @@ export const configExplorerTools: ToolData[] = [
                 oneLiner: 'Path-scoped rules that load only when Claude touches matching files.',
                 when: 'A rule loads when Claude accesses a file matching its `paths:` globs.',
                 description:
-                  'Markdown rule files with `paths:` frontmatter — the pressure valve that keeps CLAUDE.md small. A rule scoped to `src/api/**` costs zero context until Claude actually edits an API file.',
+                  'Markdown rule files with `paths:` frontmatter - the pressure valve that keeps CLAUDE.md small. A rule scoped to `src/api/**` costs zero context until Claude actually edits an API file.',
                 exampleIntro: 'A rule that only loads for API code:',
                 exampleTitle: '.claude/rules/api.md',
                 example: `---
@@ -138,7 +138,7 @@ context: fork
                 oneLiner: 'Legacy single-file slash commands.',
                 when: 'Indexed at session start; invoked as `/name`.',
                 description:
-                  'The older form of user-defined commands. Still works, but superseded by skills — same `/name` invocation, plus skills can bundle supporting files. Put new workflows in `skills/` instead.',
+                  'The older form of user-defined commands. Still works, but superseded by skills - same `/name` invocation, plus skills can bundle supporting files. Put new workflows in `skills/` instead.',
                 chapter: CHAPTER.slashCommands,
               },
               {
@@ -193,7 +193,7 @@ skills: [security-checklist]
                 oneLiner: 'Personal rules applied to every session, in every project.',
                 when: 'Loaded at session start alongside the project CLAUDE.md.',
                 description:
-                  'Your cross-project preferences — style, tone, habits. Layers additively with project rules; the project file wins on conflict by specificity.',
+                  'Your cross-project preferences - style, tone, habits. Layers additively with project rules; the project file wins on conflict by specificity.',
                 chapter: CHAPTER.rules,
               },
               {
@@ -237,7 +237,7 @@ skills: [security-checklist]
             oneLiner: 'Project rules following the open agents.md spec.',
             when: 'Read at session start, every invocation.',
             description:
-              'Codex implements the open `agents.md` spec. Files are concatenated from the repo root downward — nested AGENTS.md files appear later in context and override earlier guidance positionally. No `@path` import directives are supported.',
+              'Codex implements the open `agents.md` spec. Files are concatenated from the repo root downward - nested AGENTS.md files appear later in context and override earlier guidance positionally. No `@path` import directives are supported.',
             chapter: CHAPTER.rules,
           },
           {
@@ -254,10 +254,10 @@ skills: [security-checklist]
                 label: 'config.toml',
                 type: 'file',
                 badge: 'committed',
-                oneLiner: 'Project settings and named profiles — Codex\'s signature feature.',
+                oneLiner: 'Project settings and named profiles - Codex\'s signature feature.',
                 when: 'Read on invocation; applies only in trusted directories.',
                 description:
-                  'TOML config with feature flags, MCP server tables (`[mcp_servers.<name>]`, stdio or streamable HTTP), and named profiles — separate config bundles you swap with `codex --profile <name>` at launch. No other tool in scope has profiles.',
+                  'TOML config with feature flags, MCP server tables (`[mcp_servers.<name>]`, stdio or streamable HTTP), and named profiles - separate config bundles you swap with `codex --profile <name>` at launch. No other tool in scope has profiles.',
                 exampleIntro: 'Two profiles: a sandboxed work setup and a full-access one:',
                 example: `[profiles.work]
 model = "gpt-5-..."
@@ -373,7 +373,7 @@ model = "gpt-5.4"`,
                 oneLiner: 'Custom prompt templates, invoked as `/name`.',
                 when: 'Indexed at session start; invoked from the TUI by filename.',
                 description:
-                  'Markdown templates with placeholder support: `$1`–`$9` positional, `$ARGUMENTS` for the full tail, named placeholders like `$FILE`. Simpler than skills — and now flagged as deprecated by OpenAI in favor of skills.',
+                  'Markdown templates with placeholder support: `$1`–`$9` positional, `$ARGUMENTS` for the full tail, named placeholders like `$FILE`. Simpler than skills - and now flagged as deprecated by OpenAI in favor of skills.',
                 chapter: CHAPTER.slashCommands,
               },
               {
@@ -411,7 +411,7 @@ command = "scripts/check-bash-command.sh"`,
             oneLiner: 'Personal skills in the cross-tool standard, available everywhere.',
             when: 'Descriptions at session start; body on invocation.',
             description:
-              'Your user-level skill repository in the Agent Skills open standard — portable between Codex, Claude Code, and opencode.',
+              'Your user-level skill repository in the Agent Skills open standard - portable between Codex, Claude Code, and opencode.',
             chapter: CHAPTER.skills,
           },
         ],
@@ -433,7 +433,7 @@ command = "scripts/check-bash-command.sh"`,
             oneLiner: 'The repo-wide rules file, applied to every Copilot request.',
             when: 'Always on, for every chat and agent request in this repo.',
             description:
-              'Copilot\'s flagship rules surface — and the only customization layer that reaches every surface Copilot runs on: VS Code, JetBrains, Visual Studio, chat on GitHub.com, the cloud coding agent, and code review. Layers combine rather than override; on conflict, precedence is personal > repository > organization.',
+              'Copilot\'s flagship rules surface - and the only customization layer that reaches every surface Copilot runs on: VS Code, JetBrains, Visual Studio, chat on GitHub.com, the cloud coding agent, and code review. Layers combine rather than override; on conflict, precedence is personal > repository > organization.',
             tips: [
               'Run `/init` in chat to scaffold this file from your codebase.',
               'Gated by the VS Code setting `github.copilot.chat.codeGeneration.useInstructionFiles`.',
@@ -448,7 +448,7 @@ command = "scripts/check-bash-command.sh"`,
             oneLiner: 'Path-scoped rules that apply only where their glob matches.',
             when: 'A file applies when files matching its `applyTo` glob are in play.',
             description:
-              '`*.instructions.md` files with an `applyTo` glob in frontmatter — the pressure valve that keeps the repo-wide file small. Optional `excludeAgent` opts a file out of surfaces like code review. One catch: these are read in the IDE and by cloud agents, but not by chat on GitHub.com.',
+              '`*.instructions.md` files with an `applyTo` glob in frontmatter - the pressure valve that keeps the repo-wide file small. Optional `excludeAgent` opts a file out of surfaces like code review. One catch: these are read in the IDE and by cloud agents, but not by chat on GitHub.com.',
             exampleIntro: 'A rule scoped to model code:',
             exampleTitle: '.github/instructions/models.instructions.md',
             example: `---
@@ -462,10 +462,10 @@ Use Active Record validations; never raw SQL in models.`,
             label: 'AGENTS.md',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'The cross-tool rules standard — Copilot reads it natively.',
+            oneLiner: 'The cross-tool rules standard - Copilot reads it natively.',
             when: 'Read when the `chat.useAgentsMdFile` setting is enabled.',
             description:
-              'The same AGENTS.md that Codex, opencode, and Cursor read works here unchanged. Copilot also reads `CLAUDE.md` (repo root, `.claude/CLAUDE.md`, or `CLAUDE.local.md` — gated by `chat.useClaudeMdFile`), so a team already invested in another tool\'s rules file keeps it. Nested AGENTS.md support exists but is experimental.',
+              'The same AGENTS.md that Codex, opencode, and Cursor read works here unchanged. Copilot also reads `CLAUDE.md` (repo root, `.claude/CLAUDE.md`, or `CLAUDE.local.md` - gated by `chat.useClaudeMdFile`), so a team already invested in another tool\'s rules file keeps it. Nested AGENTS.md support exists but is experimental.',
             chapter: CHAPTER.rules,
           },
           {
@@ -473,10 +473,10 @@ Use Active Record validations; never raw SQL in models.`,
             label: '.github/prompts/',
             type: 'folder',
             badge: 'committed',
-            oneLiner: 'Reusable prompts invoked as `/name` — Copilot\'s slash commands.',
+            oneLiner: 'Reusable prompts invoked as `/name` - Copilot\'s slash commands.',
             when: 'On invocation only: `/name` in chat, or "Chat: Run Prompt".',
             description:
-              'One `<name>.prompt.md` file per command. Frontmatter picks what runs it — `agent: ask | agent | plan`, or a custom agent\'s name — plus `model` and `tools`. When a prompt file and a custom agent both set `tools`, the prompt file\'s list wins.',
+              'One `<name>.prompt.md` file per command. Frontmatter picks what runs it - `agent: ask | agent | plan`, or a custom agent\'s name - plus `model` and `tools`. When a prompt file and a custom agent both set `tools`, the prompt file\'s list wins.',
             exampleIntro: 'A prompt that runs in agent mode with scoped tools:',
             exampleTitle: '.github/prompts/add-tests.prompt.md',
             example: `---
@@ -496,7 +496,7 @@ Write unit tests covering edge cases for the selected file.`,
             oneLiner: 'Custom agents: a persona with its own model, tools, and subagents.',
             when: 'Loaded when you select the agent or another agent hands off to it.',
             description:
-              'One `<name>.agent.md` per agent — note the extension: these were `.chatmode.md` before a rename, the single biggest churn trap in Copilot content. Frontmatter: `tools`, `model` (one name or a prioritized list), `agents` (which subagents it may call), and `handoffs` for sequential workflows.',
+              'One `<name>.agent.md` per agent - note the extension: these were `.chatmode.md` before a rename, the single biggest churn trap in Copilot content. Frontmatter: `tools`, `model` (one name or a prioritized list), `agents` (which subagents it may call), and `handoffs` for sequential workflows.',
             exampleIntro: 'A reviewer agent:',
             exampleTitle: '.github/agents/db-reviewer.agent.md',
             example: `---
@@ -516,7 +516,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             oneLiner: 'Agent Skills in the cross-tool open standard.',
             when: 'Descriptions indexed up front; a skill\'s body loads on match or `/name`.',
             description:
-              'Each skill is a folder with a SKILL.md — the same format the other tools on this page read, so a skill written for Claude Code drops in unchanged. Copilot also reads `.claude/skills/` and `.agents/skills/` in the repo. `disable-model-invocation: true` makes a skill user-only; custom locations via `chat.agentSkillsLocations`.',
+              'Each skill is a folder with a SKILL.md - the same format the other tools on this page read, so a skill written for Claude Code drops in unchanged. Copilot also reads `.claude/skills/` and `.agents/skills/` in the repo. `disable-model-invocation: true` makes a skill user-only; custom locations via `chat.agentSkillsLocations`.',
             chapter: CHAPTER.skills,
           },
           {
@@ -545,7 +545,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             label: '.github/workflows/copilot-setup-steps.yml',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'Environment prep for the cloud coding agent — not a hook.',
+            oneLiner: 'Environment prep for the cloud coding agent - not a hook.',
             when: 'Runs once per cloud-agent task, before the agent starts.',
             description:
               'Despite the name, this is not a lifecycle hook: it is a GitHub Actions workflow that installs dependencies and preps the sandbox the cloud coding agent works in. It never runs for local VS Code sessions.',
@@ -563,27 +563,27 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             oneLiner: 'The switchboard: `chat.*` settings decide which files Copilot reads.',
             when: 'Always on, across every workspace.',
             description:
-              'Copilot has no dotfile of its own — your personal layer is VS Code\'s user settings. The keys that matter for this map: `chat.useAgentsMdFile`, `chat.useClaudeMdFile`, `chat.instructionsFilesLocations`, `chat.promptFilesLocations`, `chat.agentFilesLocations`, `chat.agentSkillsLocations`, and the `chat.tools.*.autoApprove` permission family.',
+              'Copilot has no dotfile of its own - your personal layer is VS Code\'s user settings. The keys that matter for this map: `chat.useAgentsMdFile`, `chat.useClaudeMdFile`, `chat.instructionsFilesLocations`, `chat.promptFilesLocations`, `chat.agentFilesLocations`, `chat.agentSkillsLocations`, and the `chat.tools.*.autoApprove` permission family.',
             chapter: CHAPTER.configuration,
           },
           {
             id: 'personal-instructions',
             label: 'Personal instructions  (github.com)',
             type: 'file',
-            oneLiner: 'Your account-level rules — a setting on github.com, not a file.',
+            oneLiner: 'Your account-level rules - a setting on github.com, not a file.',
             when: 'Always on, in every repo; the top of the precedence order.',
             description:
-              'Set at github.com/settings/copilot and applied to your sessions everywhere. When layers conflict, personal beats repository beats organization — but all applicable layers are concatenated, not replaced.',
+              'Set at github.com/settings/copilot and applied to your sessions everywhere. When layers conflict, personal beats repository beats organization - but all applicable layers are concatenated, not replaced.',
             chapter: CHAPTER.rules,
           },
           {
             id: 'org-instructions',
             label: 'Org instructions  (github.com)',
             type: 'file',
-            oneLiner: 'Org-wide rules — with a catch almost everyone misses.',
+            oneLiner: 'Org-wide rules - with a catch almost everyone misses.',
             when: 'Applied only in chat on GitHub.com, the cloud coding agent, and code review.',
             description:
-              'Organization custom instructions do not apply in your IDE — not VS Code, not JetBrains. A rule that must hold in the editor has to live in the repository file instead. Orgs also control model allow-lists, content exclusions, and MCP policy from here.',
+              'Organization custom instructions do not apply in your IDE - not VS Code, not JetBrains. A rule that must hold in the editor has to live in the repository file instead. Orgs also control model allow-lists, content exclusions, and MCP policy from here.',
             chapter: CHAPTER.rules,
           },
           {
@@ -600,7 +600,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             id: 'cp-home-claude-md',
             label: '~/.claude/CLAUDE.md',
             type: 'file',
-            oneLiner: 'Your user-level Claude Code rules — Copilot reads them too.',
+            oneLiner: 'Your user-level Claude Code rules - Copilot reads them too.',
             when: 'Read when `chat.useClaudeMdFile` is enabled.',
             description:
               'Part of Copilot\'s convergence on the shared specs: rules you already maintain for Claude Code apply here without duplication.',
@@ -625,7 +625,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             oneLiner: 'Always-on portable rules; nested files stack, they don\'t replace.',
             when: 'Root file always; a nested AGENTS.md joins in for work in its subtree.',
             description:
-              'Plain markdown, no frontmatter — the cross-tool standard shared with Codex, opencode, and Copilot. Nested files concatenate with their ancestors, and the deeper file wins on direct conflict. When you need rules that load conditionally instead of always, you graduate to `.cursor/rules/`.',
+              'Plain markdown, no frontmatter - the cross-tool standard shared with Codex, opencode, and Copilot. Nested files concatenate with their ancestors, and the deeper file wins on direct conflict. When you need rules that load conditionally instead of always, you graduate to `.cursor/rules/`.',
             chapter: CHAPTER.rules,
           },
           {
@@ -633,7 +633,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             label: '.cursorrules',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'The legacy single-file rules format — still honored, no longer recommended.',
+            oneLiner: 'The legacy single-file rules format - still honored, no longer recommended.',
             when: 'Always loaded if present, as one undifferentiated block.',
             description:
               'Cursor\'s original rules file, from before `.cursor/rules/` existed; current docs no longer mention it. Migration path: always-true lines move to AGENTS.md, conditional lines become scoped `.mdc` rules.',
@@ -645,7 +645,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             type: 'folder',
             oneLiner: 'Everything Cursor reads that is specific to this repo.',
             description:
-              'Rules, skills, commands, subagents, MCP servers, and hooks — all committed so the whole team shares them. User Rules and Team Rules have no file here: those live in Cursor Settings and the team dashboard.',
+              'Rules, skills, commands, subagents, MCP servers, and hooks - all committed so the whole team shares them. User Rules and Team Rules have no file here: those live in Cursor Settings and the team dashboard.',
             chapter: CHAPTER.configuration,
             children: [
               {
@@ -656,9 +656,9 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
                 oneLiner: 'Structured `.mdc` rules whose frontmatter controls when they attach.',
                 when: 'Per rule: always, glob-matched, agent-judged, or manual via `@RuleName`.',
                 description:
-                  'Three frontmatter fields — `description`, `globs`, `alwaysApply` — combine into four rule types: Always, Apply Intelligently (the agent judges by description), Apply to Specific Files (globs), and Apply Manually. The glob type is not deterministic: it attaches when a matching file enters the agent\'s context, not merely when it\'s open in the editor.',
+                  'Three frontmatter fields - `description`, `globs`, `alwaysApply` - combine into four rule types: Always, Apply Intelligently (the agent judges by description), Apply to Specific Files (globs), and Apply Manually. The glob type is not deterministic: it attaches when a matching file enters the agent\'s context, not merely when it\'s open in the editor.',
                 tips: [
-                  'Never trust a glob rule for a non-negotiable convention — promote it to `alwaysApply: true` or into AGENTS.md.',
+                  'Never trust a glob rule for a non-negotiable convention - promote it to `alwaysApply: true` or into AGENTS.md.',
                 ],
                 exampleIntro: 'A glob-scoped rule:',
                 exampleTitle: '.cursor/rules/api-validation.mdc',
@@ -676,10 +676,10 @@ schema before any business logic.`,
                 label: 'skills/',
                 type: 'folder',
                 badge: 'committed',
-                oneLiner: 'Agent Skills — procedures the agent loads when the work matches.',
+                oneLiner: 'Agent Skills - procedures the agent loads when the work matches.',
                 when: 'Auto-loaded when the task matches the description, or invoked as `/skill-name`.',
                 description:
-                  'Folders with a SKILL.md; `paths` globs scope when a skill is a candidate, and `disable-model-invocation: true` makes it manual-only. Cursor also reads `.agents/skills/` plus legacy `.claude/skills/` and `.codex/skills/` — a skill authored for another tool works unchanged.',
+                  'Folders with a SKILL.md; `paths` globs scope when a skill is a candidate, and `disable-model-invocation: true` makes it manual-only. Cursor also reads `.agents/skills/` plus legacy `.claude/skills/` and `.codex/skills/` - a skill authored for another tool works unchanged.',
                 chapter: CHAPTER.skills,
               },
               {
@@ -690,7 +690,7 @@ schema before any business logic.`,
                 oneLiner: 'Fixed prompt templates fired as `/name` in chat.',
                 when: 'On invocation; the filename is the command name.',
                 description:
-                  'Plain markdown, one file per command. Argument passing is limited — no `$ARGUMENTS`-style templating — so write commands that act on current context (the staged diff, the open file) rather than expecting parameters. Team Commands can also be distributed from the dashboard with no local file.',
+                  'Plain markdown, one file per command. Argument passing is limited - no `$ARGUMENTS`-style templating - so write commands that act on current context (the staged diff, the open file) rather than expecting parameters. Team Commands can also be distributed from the dashboard with no local file.',
                 exampleIntro: 'A command that works on the staged diff:',
                 exampleTitle: '.cursor/commands/commit-msg.md',
                 example: `Write a conventional-commits message for the currently
@@ -713,10 +713,10 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 label: 'mcp.json',
                 type: 'file',
                 badge: 'committed',
-                oneLiner: 'MCP servers for this repo — stdio, SSE, or streamable HTTP.',
+                oneLiner: 'MCP servers for this repo - stdio, SSE, or streamable HTTP.',
                 when: 'Servers connect at session start; every enabled server\'s tool schemas load into context.',
                 description:
-                  'stdio servers get `command`, `args`, and `env`; remote servers get `url` and `headers`. The project file resolves before your user file. One-click installs from the MCP Marketplace or cursor.directory write into an mcp.json for you — check which scope it landed in.',
+                  'stdio servers get `command`, `args`, and `env`; remote servers get `url` and `headers`. The project file resolves before your user file. One-click installs from the MCP Marketplace or cursor.directory write into an mcp.json for you - check which scope it landed in.',
                 exampleIntro: 'A local database server:',
                 example: `{
   "mcpServers": {
@@ -736,10 +736,10 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 label: 'hooks.json',
                 type: 'file',
                 badge: 'committed',
-                oneLiner: 'Deterministic gates on the agent lifecycle — the broadest event surface in scope.',
+                oneLiner: 'Deterministic gates on the agent lifecycle - the broadest event surface in scope.',
                 when: 'Fires at the named lifecycle event, every time, whatever the model decided.',
                 description:
-                  'Around 21 events across agent, Tab, and app lifecycle. `beforeShellExecution`, `beforeReadFile`, and `beforeMCPExecution` are the policy workhorses — and the latter two have no analog in Claude Code or Codex. Hooks read JSON on stdin and answer with `permission: allow | deny | ask`; exit 2 blocks, other non-zero exits fail open, so test the deny path.',
+                  'Around 21 events across agent, Tab, and app lifecycle. `beforeShellExecution`, `beforeReadFile`, and `beforeMCPExecution` are the policy workhorses - and the latter two have no analog in Claude Code or Codex. Hooks read JSON on stdin and answer with `permission: allow | deny | ask`; exit 2 blocks, other non-zero exits fail open, so test the deny path.',
                 exampleIntro: 'A gate on shell commands:',
                 example: `{
   "version": 1,
@@ -764,7 +764,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
             type: 'folder',
             oneLiner: 'Your personal Cursor setup across every project.',
             description:
-              'User-level counterparts of the project files. Note what\'s absent: there is no `~/.cursor/rules/` — personal rules are settings-managed, not a dotfile.',
+              'User-level counterparts of the project files. Note what\'s absent: there is no `~/.cursor/rules/` - personal rules are settings-managed, not a dotfile.',
             chapter: CHAPTER.configuration,
             children: [
               {
@@ -774,7 +774,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 oneLiner: 'Personal MCP servers, available in every repo.',
                 when: 'Servers connect at session start; resolved after the project file.',
                 description:
-                  'Same schema as the project file — the home for tools that are your habit rather than the repo\'s business. On Linux the path is `~/.config/cursor/mcp.json`.',
+                  'Same schema as the project file - the home for tools that are your habit rather than the repo\'s business. On Linux the path is `~/.config/cursor/mcp.json`.',
                 chapter: CHAPTER.mcp,
               },
               {
@@ -812,10 +812,10 @@ staged diff. Subject under 60 characters, imperative mood.`,
             id: 'cu-user-rules',
             label: 'User Rules  (in-app, no file)',
             type: 'file',
-            oneLiner: 'Personal working-style rules, set in Cursor Settings — not a dotfile.',
+            oneLiner: 'Personal working-style rules, set in Cursor Settings - not a dotfile.',
             when: 'Always on, in every project.',
             description:
-              'Your personal rules layer lives in Cursor Settings → Rules; there is no home-directory file for it. Team Rules and Team Commands are the same idea at org scope, distributed from the Cursor dashboard on Team and Enterprise plans. All rule layers are additive — none cancels another.',
+              'Your personal rules layer lives in Cursor Settings → Rules; there is no home-directory file for it. Team Rules and Team Commands are the same idea at org scope, distributed from the Cursor dashboard on Team and Enterprise plans. All rule layers are additive - none cancels another.',
             chapter: CHAPTER.rules,
           },
         ],
@@ -837,9 +837,9 @@ staged diff. Subject under 60 characters, imperative mood.`,
             oneLiner: 'The primary config file: MCP, LSP, instructions, agents.',
             when: 'Read on invocation; project config has highest precedence.',
             description:
-              'JSON config declaring MCP servers (`mcp`, with `type: "local"` or `type: "remote"`), LSP servers (`lsp` — the agent gets diagnostics as feedback without an MCP wrapper), extra rule file paths or globs (`instructions`), and agent customization. Sources merge rather than replace; project values win where they overlap.',
+              'JSON config declaring MCP servers (`mcp`, with `type: "local"` or `type: "remote"`), LSP servers (`lsp` - the agent gets diagnostics as feedback without an MCP wrapper), extra rule file paths or globs (`instructions`), and agent customization. Sources merge rather than replace; project values win where they overlap.',
             tips: [
-              'The `instructions` field is the workaround for AGENTS.md not supporting `@path` imports — list extra rule files here.',
+              'The `instructions` field is the workaround for AGENTS.md not supporting `@path` imports - list extra rule files here.',
               '`OPENCODE_CONFIG` / `OPENCODE_CONFIG_DIR` env vars override the default locations, useful in CI.',
             ],
             chapter: CHAPTER.configuration,
@@ -849,10 +849,10 @@ staged diff. Subject under 60 characters, imperative mood.`,
             label: 'AGENTS.md',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'The rules layer — opencode has no separate rules file.',
+            oneLiner: 'The rules layer - opencode has no separate rules file.',
             when: 'Read at session start, every invocation.',
             description:
-              'Follows the open `agents.md` spec and is portable from Codex unchanged. Nesting uses a first-win strategy: a subdirectory\'s AGENTS.md replaces a parent\'s rather than merging with it — the opposite of Claude Code\'s additive layering.',
+              'Follows the open `agents.md` spec and is portable from Codex unchanged. Nesting uses a first-win strategy: a subdirectory\'s AGENTS.md replaces a parent\'s rather than merging with it - the opposite of Claude Code\'s additive layering.',
             chapter: CHAPTER.rules,
           },
           {
@@ -861,7 +861,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
             type: 'folder',
             oneLiner: 'Project-scoped skills, commands, and agents.',
             description:
-              'opencode\'s native asset directory. Note that opencode also cross-reads `.claude/skills/` and `.agents/skills/` from the same repo — see those entries below.',
+              'opencode\'s native asset directory. Note that opencode also cross-reads `.claude/skills/` and `.agents/skills/` from the same repo - see those entries below.',
             chapter: CHAPTER.configuration,
             children: [
               {
@@ -872,7 +872,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 oneLiner: 'Native opencode skills, loaded on demand via the `skill` tool.',
                 when: 'Names and descriptions at session start; the body loads on demand.',
                 description:
-                  'Frontmatter requires `name` (must match the directory) and `description`. There is no equivalent to Claude Code\'s `disable-model-invocation` or `context: fork` — the agent sees every skill and loads bodies as needed.',
+                  'Frontmatter requires `name` (must match the directory) and `description`. There is no equivalent to Claude Code\'s `disable-model-invocation` or `context: fork` - the agent sees every skill and loads bodies as needed.',
                 chapter: CHAPTER.skills,
               },
               {
@@ -880,7 +880,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 label: 'commands/',
                 type: 'folder',
                 badge: 'committed',
-                oneLiner: 'Slash commands — a separate primitive from skills here.',
+                oneLiner: 'Slash commands - a separate primitive from skills here.',
                 when: 'Indexed at session start; invoked as `/name`.',
                 description:
                   'Markdown files with optional frontmatter. Commands are the user-triggered slash surface; skills are the agent-loaded procedure surface. Supports `$ARGUMENTS` and positional `$1`, `$2`, … tokens.',
@@ -960,10 +960,10 @@ permission:
                 id: 'home-oc-agents-md',
                 label: 'AGENTS.md',
                 type: 'file',
-                oneLiner: 'Personal rules — skipped entirely when a project has its own.',
+                oneLiner: 'Personal rules - skipped entirely when a project has its own.',
                 when: 'Read at session start only if the project has no AGENTS.md (first-win).',
                 description:
-                  'Because of opencode\'s first-win strategy, this file does not merge with a project AGENTS.md — it is only used when no project file exists.',
+                  'Because of opencode\'s first-win strategy, this file does not merge with a project AGENTS.md - it is only used when no project file exists.',
                 chapter: CHAPTER.rules,
               },
               {
@@ -1013,17 +1013,17 @@ permission:
             label: 'AGENTS.md',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'Project context collected on a directory walk — closest file wins.',
+            oneLiner: 'Project context collected on a directory walk - closest file wins.',
             when: 'Collected at startup: global first, then each parent directory down to your cwd.',
             description:
-              'Injected into the system prompt\'s project-context block as guidance — deliberately weaker than `APPEND_SYSTEM.md`, which is for rules the model must not treat as optional. Layering works like `.gitignore`: every file on the walk contributes and the closest wins on overlap. Disable with `--no-context-files`.',
+              'Injected into the system prompt\'s project-context block as guidance - deliberately weaker than `APPEND_SYSTEM.md`, which is for rules the model must not treat as optional. Layering works like `.gitignore`: every file on the walk contributes and the closest wins on overlap. Disable with `--no-context-files`.',
             chapter: CHAPTER.rules,
           },
           {
             id: 'dot-pi',
             label: '.pi/',
             type: 'folder',
-            oneLiner: 'Everything project-specific — and Pi loads none of it until you trust the repo.',
+            oneLiner: 'Everything project-specific - and Pi loads none of it until you trust the repo.',
             description:
               'The project mirror of `~/.pi/agent/`. Because a project\'s settings, extensions, and skills can execute code the moment they load, Pi stops and asks before honoring any of it the first time you open the repo; the answer persists in your global `trust.json`.',
             chapter: CHAPTER.configuration,
@@ -1036,7 +1036,7 @@ permission:
                 oneLiner: 'Project overrides, deep-merged key-by-key into your global settings.',
                 when: 'Read at startup, once the project is trusted.',
                 description:
-                  'The project file doesn\'t replace the global one — it deep-merges into it, key by key, on every nested object. Declare only what this repo overrides; everything else falls through from `~/.pi/agent/settings.json`. This is the mechanism behind the "I changed the project file and nothing happened" afternoon: you edited a key that wasn\'t the one winning.',
+                  'The project file doesn\'t replace the global one - it deep-merges into it, key by key, on every nested object. Declare only what this repo overrides; everything else falls through from `~/.pi/agent/settings.json`. This is the mechanism behind the "I changed the project file and nothing happened" afternoon: you edited a key that wasn\'t the one winning.',
                 exampleIntro: 'A project file that only tightens one nested key:',
                 example: `// ~/.pi/agent/settings.json
 { "compaction": { "enabled": true, "reserveTokens": 16384 } }
@@ -1053,10 +1053,10 @@ permission:
                 label: 'APPEND_SYSTEM.md',
                 type: 'file',
                 badge: 'committed',
-                oneLiner: 'Rules appended to the system prompt itself — Pi\'s strongest rules layer.',
+                oneLiner: 'Rules appended to the system prompt itself - Pi\'s strongest rules layer.',
                 when: 'Appended at the start of every session in this repo.',
                 description:
-                  'Where AGENTS.md is helpful context, this file lands inside the system prompt and is stated with full force — while keeping everything the default prompt does well. Its sibling `SYSTEM.md` replaces the default prompt wholesale instead: that\'s for building a fundamentally different agent, at the cost of rewriting the built-in tool guidance yourself.',
+                  'Where AGENTS.md is helpful context, this file lands inside the system prompt and is stated with full force - while keeping everything the default prompt does well. Its sibling `SYSTEM.md` replaces the default prompt wholesale instead: that\'s for building a fundamentally different agent, at the cost of rewriting the built-in tool guidance yourself.',
                 chapter: CHAPTER.rules,
               },
               {
@@ -1065,11 +1065,11 @@ permission:
                 type: 'folder',
                 badge: 'committed',
                 oneLiner: 'TypeScript extensions: custom tools, commands, and hooks in one API.',
-                when: 'Scanned at startup — but only after the project is trusted.',
+                when: 'Scanned at startup - but only after the project is trusted.',
                 description:
-                  'Each extension is a `.ts` file (or a directory with an `index.ts`) exporting a function over `ExtensionAPI` — no build step; Pi transpiles on load. This one surface carries what other tools split across MCP configs, hook files, and command directories. An untrusted clone skips the folder silently.',
+                  'Each extension is a `.ts` file (or a directory with an `index.ts`) exporting a function over `ExtensionAPI` - no build step; Pi transpiles on load. This one surface carries what other tools split across MCP configs, hook files, and command directories. An untrusted clone skips the folder silently.',
                 tips: [
-                  '`pi -e ./file.ts` loads one extension for a single run — the fast way to try an idea.',
+                  '`pi -e ./file.ts` loads one extension for a single run - the fast way to try an idea.',
                   '`/reload` picks up extension edits without losing the conversation.',
                 ],
                 exampleIntro: 'The smallest useful extension:',
@@ -1099,7 +1099,7 @@ export default function (pi: ExtensionAPI) {
                 label: 'prompts/',
                 type: 'folder',
                 badge: 'committed',
-                oneLiner: 'Prompt templates fired as `/name` — manual only, never model-invoked.',
+                oneLiner: 'Prompt templates fired as `/name` - manual only, never model-invoked.',
                 when: 'Discovered at startup (trust-gated); invoked by typing `/` plus the filename.',
                 description:
                   'Markdown with positional `$1`/`$2` arguments, `$ARGUMENTS`, and default fallbacks. The dividing line from a skill: a template\'s description is read by you, in autocomplete; a skill\'s description is read by the model to decide invocation. If it should fire on its own, it wanted to be a skill.',
@@ -1132,7 +1132,7 @@ next step (retry, skip, or needs a new source adapter).`,
             label: '.agents/skills/  (cross-read)',
             type: 'folder',
             badge: 'committed',
-            oneLiner: 'The cross-tool skills standard — the same directories the other tools read.',
+            oneLiner: 'The cross-tool skills standard - the same directories the other tools read.',
             when: 'Checked alongside `.pi/skills/`, plus ancestor directories up to the repo root.',
             description:
               'One skills directory can serve Pi, Claude Code, Codex, Cursor, opencode, and Copilot at once. Pi\'s relaxed name-matching rule exists partly for this: a shared skills repo doesn\'t need renaming per tool.',
@@ -1147,16 +1147,16 @@ next step (retry, skip, or needs a new source adapter).`,
             id: 'home-pi',
             label: '~/.pi/agent/',
             type: 'folder',
-            oneLiner: 'Your entire personal Pi setup — settings, models, credentials, trust.',
+            oneLiner: 'Your entire personal Pi setup - settings, models, credentials, trust.',
             description:
-              'The global tier of Pi\'s two-tier config. Notably absent from this map: no `mcp.json` and no `agents/` directory — MCP arrives via community extensions, and a subagent is just `pi` spawning `pi`. Mirrored `prompts/` and `themes/` directories work exactly like their project copies.',
+              'The global tier of Pi\'s two-tier config. Notably absent from this map: no `mcp.json` and no `agents/` directory - MCP arrives via community extensions, and a subagent is just `pi` spawning `pi`. Mirrored `prompts/` and `themes/` directories work exactly like their project copies.',
             chapter: CHAPTER.configuration,
             children: [
               {
                 id: 'home-pi-settings',
                 label: 'settings.json',
                 type: 'file',
-                oneLiner: 'Global defaults for every project — the base of the deep merge.',
+                oneLiner: 'Global defaults for every project - the base of the deep merge.',
                 when: 'Read at startup, in every project.',
                 description:
                   'The fields worth knowing on sight: `defaultProvider` and `defaultModel`, `defaultThinkingLevel` (`off` through `xhigh`), `enabledModels` (the allow-list `Ctrl+P` cycles through), resource-path arrays (`packages`, `extensions`, `skills`, `prompts`, `themes`), retry policy, and `defaultProjectTrust`.',
@@ -1169,24 +1169,24 @@ next step (retry, skip, or needs a new source adapter).`,
                 oneLiner: 'Provider and model definitions: base URLs, API shapes, cost metadata.',
                 when: 'Reloads live; changes apply the next time you open `/model`.',
                 description:
-                  'Where custom and local providers live — the file that makes Pi provider-agnostic. Per-model overrides and context metadata sit alongside each definition.',
+                  'Where custom and local providers live - the file that makes Pi provider-agnostic. Per-model overrides and context metadata sit alongside each definition.',
                 chapter: CHAPTER.configuration,
               },
               {
                 id: 'home-pi-auth',
                 label: 'auth.json',
                 type: 'file',
-                oneLiner: 'Stored credentials — the one pure-secret file, kept at 0600.',
+                oneLiner: 'Stored credentials - the one pure-secret file, kept at 0600.',
                 when: 'Written by `/login` for OAuth; consulted whenever a provider needs a key.',
                 description:
-                  'Pi splits config into settings you tweak often, credentials you never want on screen, and trust decisions made once per repo — three files, so a stray `cat` of your config doesn\'t also dump your API keys.',
+                  'Pi splits config into settings you tweak often, credentials you never want on screen, and trust decisions made once per repo - three files, so a stray `cat` of your config doesn\'t also dump your API keys.',
                 chapter: CHAPTER.configuration,
               },
               {
                 id: 'home-pi-trust',
                 label: 'trust.json',
                 type: 'file',
-                oneLiner: 'Which project directories you\'ve agreed to trust. Global only — no project mirror.',
+                oneLiner: 'Which project directories you\'ve agreed to trust. Global only - no project mirror.',
                 when: 'Consulted the first time Pi finds project-local settings, extensions, or skills.',
                 description:
                   'Project-local config can execute code the moment it loads, so Pi stops and asks once per repo and records the answer here. `defaultProjectTrust` and the `--approve`/`--no-approve` flags skip the prompt on purpose for scripted runs.',
@@ -1197,7 +1197,7 @@ next step (retry, skip, or needs a new source adapter).`,
                 label: 'extensions/',
                 type: 'folder',
                 oneLiner: 'Personal extensions loaded in every project.',
-                when: 'Scanned at startup; not trust-gated — you put them here yourself.',
+                when: 'Scanned at startup; not trust-gated - you put them here yourself.',
                 description:
                   'Same shape as project extensions. A tool you build for one repo belongs in that repo\'s `.pi/extensions/` instead, so it doesn\'t clutter every other session.',
                 chapter: CHAPTER.hooks,
@@ -1221,7 +1221,7 @@ next step (retry, skip, or needs a new source adapter).`,
             oneLiner: 'Personal skills in the cross-tool standard, shared with the other tools.',
             when: 'Descriptions at startup; body on demand.',
             description:
-              'The same user-level directory Codex, Cursor, opencode, and Copilot read — author a skill once, use it everywhere.',
+              'The same user-level directory Codex, Cursor, opencode, and Copilot read - author a skill once, use it everywhere.',
             chapter: CHAPTER.skills,
           },
         ],

@@ -1,10 +1,10 @@
 /**
- * Tasks for the model-economy widget. Evergreen — no vendor facts, no model
+ * Tasks for the model-economy widget. Evergreen - no vendor facts, no model
  * names, no prices. Encodes the per-task spend judgment from the course
  * models chapters (claude-code/models-thinking/cost.mdx,
  * codex/models-effort/cost-aware.mdx, copilot/models/credits.mdx,
  * cursor/models/index.mdx, opencode/providers-models/per-agent-model.mdx):
- * two independent dials — which model answers, how hard it thinks — with the
+ * two independent dials - which model answers, how hard it thinks - with the
  * matched corners on the diagonal and both off-diagonal corners leaking.
  * The cost model is deliberately coarse: a capable model bills ~5× per
  * token, high effort generates ~3× the tokens, and an underpowered hard
@@ -70,14 +70,14 @@ export const mdeTasks: MdeTask[] = [
     id: 'copy',
     label: 'copy tweaks',
     cadence: 'mechanical · five today',
-    text: 'Fix the onboarding typo, reword two error strings, update the footer year — one obvious answer each.',
+    text: 'Fix the onboarding typo, reword two error strings, update the footer year - one obvious answer each.',
     count: 5,
     size: 1,
     hard: false,
     best: 'light/low',
     verdicts: {
       'light/low': {
-        chip: 'matched — cheapest corner that works',
+        chip: 'matched - cheapest corner that works',
         tone: 'good',
         why: 'One obvious answer per tweak. Extra reasoning can’t improve a typo fix; it can only make it cost more and arrive later.',
       },
@@ -87,7 +87,7 @@ export const mdeTasks: MdeTask[] = [
         why: 'High effort makes the model generate three times the thinking for a task with nothing to think about. Same one-line diff, triple the tokens, slower.',
       },
       'capable/low': {
-        chip: 'overpowered — ~5× for the same diff',
+        chip: 'overpowered - ~5× for the same diff',
         tone: 'warn',
         why: 'The capable model bills ~5× per token to produce the identical tweak. Five times today, that’s a habit, not a splurge.',
       },
@@ -109,9 +109,9 @@ export const mdeTasks: MdeTask[] = [
     best: 'light/low',
     verdicts: {
       'light/low': {
-        chip: 'matched — the pattern does the reasoning',
+        chip: 'matched - the pattern does the reasoning',
         tone: 'good',
-        why: 'The file next door already answered every design question. The model’s job is transcription with fresh names — light and shallow covers it.',
+        why: 'The file next door already answered every design question. The model’s job is transcription with fresh names - light and shallow covers it.',
       },
       'light/high': {
         chip: 'thinking the task doesn’t need',
@@ -121,7 +121,7 @@ export const mdeTasks: MdeTask[] = [
       'capable/low': {
         chip: 'a brain you’re idling',
         tone: 'warn',
-        why: 'It ships fine — capable models do boilerplate beautifully. But it’s ~5× per token for the same four routes, three times today.',
+        why: 'It ships fine - capable models do boilerplate beautifully. But it’s ~5× per token for the same four routes, three times today.',
       },
       'capable/high': {
         chip: 'premium for boilerplate',
@@ -141,14 +141,14 @@ export const mdeTasks: MdeTask[] = [
     best: 'capable/high',
     verdicts: {
       'light/low': {
-        chip: 'underpowered — flails, then you escalate',
+        chip: 'underpowered - flails, then you escalate',
         tone: 'bad',
-        why: 'It pattern-matches a plausible fix, the test still flakes, twice more, and you hand it to the big model anyway. The redo tax beats starting there — and you read every wrong answer along the way.',
+        why: 'It pattern-matches a plausible fix, the test still flakes, twice more, and you hand it to the big model anyway. The redo tax beats starting there - and you read every wrong answer along the way.',
       },
       'light/high': {
         chip: 'thinking a light brain can’t cash',
         tone: 'bad',
-        why: 'Triple the thinking tokens buys deliberation, not capability. The model deliberates its way to the same wrong fix — the most expensive way to fail.',
+        why: 'Triple the thinking tokens buys deliberation, not capability. The model deliberates its way to the same wrong fix - the most expensive way to fail.',
       },
       'capable/low': {
         chip: 'a coin flip',
@@ -156,7 +156,7 @@ export const mdeTasks: MdeTask[] = [
         why: 'The right brain without the reasoning budget to search the interleavings. You get a confident answer fast; whether it found the race or a race is what your review has to catch.',
       },
       'capable/high': {
-        chip: 'matched — spend it here',
+        chip: 'matched - spend it here',
         tone: 'good',
         why: 'A genuine reasoning problem: timing-dependent, cause far from symptom, no pattern to copy. This corner exists for exactly this task.',
       },
@@ -166,16 +166,16 @@ export const mdeTasks: MdeTask[] = [
     id: 'fork',
     label: 'the design fork',
     cadence: 'hard · once',
-    text: 'Choose how rule conflicts resolve in the categorisation engine — several defensible designs, one gets built on.',
+    text: 'Choose how rule conflicts resolve in the categorisation engine - several defensible designs, one gets built on.',
     count: 1,
     size: 8,
     hard: true,
     best: 'capable/high',
     verdicts: {
       'light/low': {
-        chip: 'underpowered — picks without weighing',
+        chip: 'underpowered - picks without weighing',
         tone: 'bad',
-        why: 'It commits to the first workable-looking option. A design fork answered wrong isn’t a retry — it’s a rewrite after you’ve built on the answer.',
+        why: 'It commits to the first workable-looking option. A design fork answered wrong isn’t a retry - it’s a rewrite after you’ve built on the answer.',
       },
       'light/high': {
         chip: 'deliberate, still shallow',
@@ -188,7 +188,7 @@ export const mdeTasks: MdeTask[] = [
         why: 'Capable but shallow means the first defensible design, argued confidently. Forks are precisely where you want the alternatives actually explored before one wins.',
       },
       'capable/high': {
-        chip: 'matched — the wrong call costs a rewrite',
+        chip: 'matched - the wrong call costs a rewrite',
         tone: 'good',
         why: 'Several reasonable designs, and whichever wins gets built on. The delta between corners here is noise next to the cost of unpicking a bad choice later.',
       },

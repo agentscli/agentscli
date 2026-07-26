@@ -11,30 +11,30 @@ You have an incantation. Every time you start a fresh session in this repo, you 
 
 > *"Read the latest PR description from the `release` branch, summarise what changed, list any TODOs that have piled up, and check if there's a migration we forgot to run."*
 
-It's eight lines. You've typed it forty times. You've copy-pasted it from a Notion doc thirty of those times. The other ten times you re-typed it from memory and got it slightly wrong. The instructions aren't complex — they're just *yours*, and the CLI has no way to know you keep wanting this exact thing.
+It's eight lines. You've typed it forty times. You've copy-pasted it from a Notion doc thirty of those times. The other ten times you re-typed it from memory and got it slightly wrong. The instructions aren't complex - they're just *yours*, and the CLI has no way to know you keep wanting this exact thing.
 
 A skill could pull this in when relevant, but the model has to *decide* it's relevant. Sometimes you just want to *say*, deterministically, "run the release-check thing." Type `/release-check`, the prompt gets expanded, the agent does the thing. No describing, no remembering, no waiting for the model to infer intent.
 
-That's the gap slash commands close: turning a thing you keep typing into a thing you keep *invoking*. A **slash command** is exactly that — a named, user-invokable shortcut: you type `/<name>` (or sometimes `$<name>`) mid-session and the CLI runs a predefined prompt, workflow, or built-in action, without you having to retype the whole thing.
+That's the gap slash commands close: turning a thing you keep typing into a thing you keep *invoking*. A **slash command** is exactly that - a named, user-invokable shortcut: you type `/<name>` (or sometimes `$<name>`) mid-session and the CLI runs a predefined prompt, workflow, or built-in action, without you having to retype the whole thing.
 
-Each tool ships a set of bundled commands (`/model`, `/mcp`, `/diff`, etc.) and lets you author your own. In Claude Code, the slash-command surface and the [skills](/foundations/skills/) surface have largely merged in 2026 — every user-defined skill is also a slash command. In Codex, OpenCode, Cursor, and Copilot they're still distinct primitives, though they overlap in use.
-
-## From keystroke to prompt
-
-One custom command — `/security-review` — traced from what you type, through the file that defines it, to the prompt the model actually receives. Watch where the arguments land (and where they can't):
-
-<CommandExpander client:visible />
+Each tool ships a set of bundled commands (`/model`, `/mcp`, `/diff`, etc.) and lets you author your own. Whether the one you author is a separate primitive from a [skill](/foundations/skills/) or literally the same file depends on the tool - see [Name collisions](#name-collisions) below.
 
 **Real-world examples of user-defined slash commands:**
 
-- **Repo-specific check-ins** — `/release-check`, `/pre-merge`, `/morning-status`. Same prompt, same shape, every time.
-- **Personal habits** — `/tldr` ("summarise what we've done this session in three bullets"), `/sanity-check` ("look at the diff and tell me what would break in prod").
-- **Standardised reviews** — `/security-review <file>`, `/perf-review <file>`. Argument substitution does the targeting.
-- **Workflow shortcuts** — `/spike <idea>` ("scaffold a throwaway prototype for this idea"), `/ship` ("run the team's full pre-ship checklist").
-- **Tone or persona switches** — `/skeptic` ("from here on, push back hard on any decision that seems convenient"), `/junior` ("explain the next change as if I've never seen this codebase").
-- **Side-effect commands** (Claude Code, with `disable-model-invocation: true`) — things the model shouldn't auto-trigger but you want one keystroke away: `/deploy-dry-run`, `/db-snapshot`.
+- **Repo-specific check-ins** - `/release-check`, `/pre-merge`, `/morning-status`. Same prompt, same shape, every time.
+- **Personal habits** - `/tldr` ("summarise what we've done this session in three bullets"), `/sanity-check` ("look at the diff and tell me what would break in prod").
+- **Standardised reviews** - `/security-review <file>`, `/perf-review <file>`. Argument substitution does the targeting.
+- **Workflow shortcuts** - `/spike <idea>` ("scaffold a throwaway prototype for this idea"), `/ship` ("run the team's full pre-ship checklist").
+- **Tone or persona switches** - `/skeptic` ("from here on, push back hard on any decision that seems convenient"), `/junior` ("explain the next change as if I've never seen this codebase").
+- **Side-effect commands** (Claude Code, with `disable-model-invocation: true`) - things the model shouldn't auto-trigger but you want one keystroke away: `/deploy-dry-run`, `/db-snapshot`.
 
 The test: if it's a prompt you've typed (or pasted) more than five times, it's a slash command.
+
+## Where your arguments land
+
+One custom command - `/security-review` - traced from what you type, through the file that defines it, to the prompt the model actually receives. Placeholder syntax differs per tool, and not every tool substitutes at all. Watch where the arguments land (and where they can't):
+
+<CommandExpander client:visible />
 
 ## Why this and not...
 
@@ -44,10 +44,10 @@ The test: if it's a prompt you've typed (or pasted) more than five times, it's a
 | Have the agent reach for instructions on its own when the situation matches | [Skill](/foundations/skills/) | Slash command |
 | Inject context on *every* turn of *every* session | [Rules](/foundations/rules/) | Slash command |
 | Run automatically on a CLI lifecycle event | [Hook](/foundations/hooks/) | Slash command |
-| Pass arguments and have them substituted into the prompt | **Slash command** with `$ARGUMENTS` / `$1`–`$9` | Plain skill |
+| Pass arguments and have them substituted into the prompt | **Slash command** with `$ARGUMENTS` / `$1`-`$9` | Plain skill |
 | Bundle a command + its skills + its MCP servers to share | [Plugin](/foundations/plugins/) | Slash command alone |
 
-In Claude Code the line is fuzzy — your user-defined skill *is* the slash command. Decide by intent: if the model should be able to invoke it on its own, you wrote a skill; if you want it to fire only on your keystroke, set `disable-model-invocation: true` and treat it as a slash-command-first artefact.
+In Claude Code the first two rows collapse into one artefact, so the table can't settle it for you. Decide by intent: if the model should be able to invoke it on its own, you wrote a skill; if you want it to fire only on your keystroke, set `disable-model-invocation: true` and treat it as a slash-command-first artefact.
 
 ## How it works in each tool
 
@@ -59,17 +59,19 @@ In Claude Code the line is fuzzy — your user-defined skill *is* the slash comm
 |---|---|---|---|---|---|---|
 | User-defined slash commands | Skills (`/<name>`) | Custom prompts + Skills | `commands/` | `.cursor/commands/` (1.6+) | `.github/prompts/*.prompt.md` | Prompt templates (`/name`) + `/skill:name` + extension-registered commands |
 | Bundled commands | Yes (`/simplify`, `/batch`, …) | Yes (`/model`, `/review`, …) | Yes | Yes (CLI built-ins + chat picker) | Yes (`/explain`, `/fix`, `/tests`, …) | Yes (built-ins) |
-| Plugin/namespaced | `/plugin:cmd` | — | No (plugins can't register slash commands today) | — | Via Copilot Extensions | Via Pi packages/extensions |
-| Arguments | `$ARGUMENTS` | `$1`–`$9`, `$ARGUMENTS`, named (`$FILE`) | `$ARGUMENTS`, `$1`, `$2`, … | Limited (*Unverified*) | Prompt-file frontmatter + body | — (*Unverified* — check current docs) |
-| Queueable for next turn | No | **Yes** | No (executes immediately) | — | — | — |
-| Centrally managed for teams | Plugins / managed settings | — | — | Team Commands (Enterprise) | Org-level prompt files (*Unverified*) | — |
+| Plugin/namespaced | `/plugin:cmd` | - | No (plugins can't register slash commands today) | - | Via Copilot Extensions | Via Pi packages/extensions |
+| Arguments | `$ARGUMENTS` | `$1`-`$9`, `$ARGUMENTS`, named (`$FILE`) | `$ARGUMENTS`, `$1`, `$2`, … | Limited (*Unverified*) | Prompt-file frontmatter + body | - (*Unverified* - check current docs) |
+| Queueable for next turn | No | **Yes** | No (executes immediately) | - | - | - |
+| Centrally managed for teams | Plugins / managed settings | - | - | Team Commands (Enterprise) | Org-level prompt files (*Unverified*) | - |
 
 ## Name collisions
 
-- In Claude Code, **slash commands and skills are nearly the same thing** — every user-invokable skill is reachable as a slash command. In Codex, OpenCode, Cursor, and Copilot they're separate primitives that overlap in use.
+- In Claude Code, **slash commands and skills are nearly the same thing** - the two surfaces largely merged through 2026, and every user-invokable skill is reachable as a slash command. In Codex, OpenCode, Cursor, Copilot, and Pi they stay separate primitives that overlap in use. Codex and Pi split them in the syntax itself: Codex fires a custom prompt with `/prompts:<name>` and a skill with `$<skill-name>`; Pi uses `/templatename` for a prompt template and `/skill:name` for a skill.
 - "Commands" in OpenCode ≠ "commands" in Claude Code's old `.claude/commands/` (now mostly superseded by skills).
-- Cursor's `/` (run something) vs `@` (attach context) is a deliberate split — don't confuse the two surfaces.
+- Cursor's `/` (run something) vs `@` (attach context) is a deliberate split - don't confuse the two surfaces.
 - Copilot's **prompt files** are the custom-command primitive; "chat participants" (`@workspace`, `@vscode`) are a different surface for scoping context.
+
+The cheapest first command is one you have already written. Take the prompt you most recently pasted in from a scratch file, drop it in your tool's command directory from the table above, and swap the part that changes each run for that tool's placeholder. Then check the intent test: if you want the agent reaching for it unprompted, you wanted a [skill](/foundations/skills/) instead.
 
 <UpstreamRefs
   links={[

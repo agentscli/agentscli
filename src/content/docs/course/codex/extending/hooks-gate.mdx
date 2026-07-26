@@ -1,23 +1,23 @@
 ---
 title: Gate a risky move with a hook
-description: "A hook is a deterministic shell command Codex runs at a fixed point in its lifecycle. Here we wire one up to refuse any write to the real ledger database, and another to run the tests after the money math changes — walls the model can't reason its way around."
+description: "A hook is a deterministic shell command Codex runs at a fixed point in its lifecycle. Here we wire one up to refuse any write to the real ledger database, and another to run the tests after the money math changes - walls the model can't reason its way around."
 sidebar:
   label: "Hooks · the determinism gate"
 ---
 
-There's one move in `budgetcli` you treat as sacred: **Codex must never write to your real ledger database.** It can read it, reason about it, generate a migration for you to review — but the live table where your actual account balances are counted is off-limits to automated writes. An accidental `UPDATE` there isn't a bug you find in code review; it's wrong numbers in your own money. You could put this in `AGENTS.md` and ask the agent to honor it, and most of the time it would. But "most of the time" is precisely the wrong guarantee for the one thing that must never slip. You want a wall that fires every single time, no matter what the model decided.
+There's one move in `budgetcli` you treat as sacred: **Codex must never write to your real ledger database.** It can read it, reason about it, generate a migration for you to review - but the live table where your actual account balances are counted is off-limits to automated writes. An accidental `UPDATE` there isn't a bug you find in code review; it's wrong numbers in your own money. You could put this in `AGENTS.md` and ask the agent to honor it, and most of the time it would. But "most of the time" is precisely the wrong guarantee for the one thing that must never slip. You want a wall that fires every single time, no matter what the model decided.
 
-That's a **hook**: a shell command Codex runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason around it. It's deterministic code on a rail — *always runs, model-independent* — and that property is the entire reason it exists. Hooks ship with Codex and are on by default; the full event list and payload detail are on the [Codex hooks docs](https://developers.openai.com/codex/hooks).
+That's a **hook**: a shell command Codex runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason around it. It's deterministic code on a rail - *always runs, model-independent* - and that property is the entire reason it exists. Hooks ship with Codex and are on by default; the full event list and payload detail are on the [Codex hooks docs](https://developers.openai.com/codex/hooks).
 
 ## The right moment to fire
 
-Hooks attach to lifecycle **events**. Codex documents a family of them — `SessionStart` when a session opens, `UserPromptSubmit` when you send a message, `PreToolUse` before a tool runs, `PostToolUse` after, `PreCompact`/`PostCompact` around compaction, `PermissionRequest` when the agent asks to do something gated, and `Stop` when the session ends. Picking the right one is most of the design.
+Hooks attach to lifecycle **events**. Codex documents a family of them - `SessionStart` when a session opens, `UserPromptSubmit` when you send a message, `PreToolUse` before a tool runs, `PostToolUse` after, `PreCompact`/`PostCompact` around compaction, `PermissionRequest` when the agent asks to do something gated, and `Stop` when the session ends. Picking the right one is most of the design.
 
 For our wall we want **`PreToolUse`**: it fires *before* a tool call runs, which is the only moment you can stop a write from ever happening. We'll inspect the command Codex is about to run and refuse it if it touches the live ledger.
 
 ## Wire it up
 
-Hooks are configured next to your active config layers — a `hooks.json` file at `~/.codex/` or in the repo's `.codex/`, or inline as `[hooks]` tables in `config.toml`. You name the event, a **matcher** that narrows which tool calls trigger the hook, and the command to run. The config below is *illustrative* — confirm the exact key names and nesting against the [hooks docs](https://developers.openai.com/codex/hooks) before you rely on it. *Unverified*:
+Hooks are configured next to your active config layers - a `hooks.json` file at `~/.codex/` or in the repo's `.codex/`, or inline as `[hooks]` tables in `config.toml`. You name the event, a **matcher** that narrows which tool calls trigger the hook, and the command to run. The config below is *illustrative* - confirm the exact key names and nesting against the [hooks docs](https://developers.openai.com/codex/hooks) before you rely on it. *Unverified*:
 
 ```text
 // .codex/hooks.json
@@ -33,15 +33,15 @@ Hooks are configured next to your active config layers — a `hooks.json` file a
 }
 ```
 
-The matcher narrows this to shell tool calls — `psql`, a migration runner, anything that could touch the database — so the hook isn't woken for every file read.
+The matcher narrows this to shell tool calls - `psql`, a migration runner, anything that could touch the database - so the hook isn't woken for every file read.
 
-Codex hands a hook a **JSON payload** describing the call and the session. Verified fields include `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `model`, and `permission_mode`; turn-scoped hooks also receive a `turn_id`. The exact field that carries the *command string* for a `PreToolUse` Bash call (the thing the script below greps) is not something I could confirm from the docs — treat the `tool_input.command` path as a placeholder and verify it. *Unverified*:
+Codex hands a hook a **JSON payload** describing the call and the session. Verified fields include `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `model`, and `permission_mode`; turn-scoped hooks also receive a `turn_id`. The exact field that carries the *command string* for a `PreToolUse` Bash call (the thing the script below greps) is not something I could confirm from the docs - treat the `tool_input.command` path as a placeholder and verify it. *Unverified*:
 
 ```text
 #!/bin/bash
 # .codex/hooks/protect-ledger.sh
 input=$(cat)
-# Field path below is illustrative — verify against the hooks payload schema.
+# Field path below is illustrative - verify against the hooks payload schema.
 command=$(echo "$input" | jq -r '.tool_input.command')
 
 # Refuse any write that targets the live ledger database.
@@ -53,7 +53,7 @@ fi
 exit 0
 ```
 
-The verdict is signalled through the **exit code**. The contract that matters: **exit 2 blocks the action**, and whatever the script wrote to stderr is fed back to the agent as the reason; any other code lets the call proceed. (The exit-code semantics are the standard hook contract, but confirm the block-on-`2` behavior for your installed version. *Unverified*.) Everything in that script is plain shell — nothing here is AI, which is the whole point.
+The verdict is signalled through the **exit code**. The contract that matters: **exit 2 blocks the action**, and whatever the script wrote to stderr is fed back to the agent as the reason; any other code lets the call proceed. (The exit-code semantics are the standard hook contract, but confirm the block-on-`2` behavior for your installed version. *Unverified*.) Everything in that script is plain shell - nothing here is AI, which is the whole point.
 
 ## Watch the wall hold
 
@@ -68,21 +68,21 @@ Codex finishes some balance-reconciliation work and reaches for the database:
     Blocked: writes to the production ledger are not allowed from an
     agent session. Generate a migration for review instead.
 
-  Understood — I can't write the live ledger directly. I'll emit the
+  Understood - I can't write the live ledger directly. I'll emit the
   corrections as a reviewed migration instead.
 
   ● Write  migrations/0007_reconcile_balances.sql
     -- review and apply this yourself
 ```
 
-Watch what the agent did with the rejection. It didn't get stuck — it read the stderr the hook fed back, understood *why*, and rerouted to the safe path: a migration you apply by hand. The gate didn't just stop a bad action; it steered Codex toward the right one. And it would have fired identically with approvals set to `never`, in a headless run, at 2am with nobody watching.
+Watch what the agent did with the rejection. It didn't get stuck - it read the stderr the hook fed back, understood *why*, and rerouted to the safe path: a migration you apply by hand. The gate didn't just stop a bad action; it steered Codex toward the right one. And it would have fired identically with approvals set to `never`, in a headless run, at 2am with nobody watching.
 
 ## The other shape: run the tests after the money math changes
 
-`PreToolUse` blocks; its sibling **`PostToolUse`** observes *after* a tool runs and can't block — perfect for "do this every time the agent edits a file." The money math in `budgetcli` is the part you least trust to a silent edit, so wire a `PostToolUse` hook on file edits to run the test suite:
+`PreToolUse` blocks; its sibling **`PostToolUse`** observes *after* a tool runs and can't block - perfect for "do this every time the agent edits a file." The money math in `budgetcli` is the part you least trust to a silent edit, so wire a `PostToolUse` hook on file edits to run the test suite:
 
 ```text
-// .codex/hooks.json  (illustrative — verify keys)
+// .codex/hooks.json  (illustrative - verify keys)
 {
   "PostToolUse": [
     {
@@ -95,6 +95,6 @@ Watch what the agent did with the rejection. It didn't get stuck — it read the
 }
 ```
 
-Now every edit Codex makes is immediately followed by the money tests, deterministically, whether or not the agent thought to run them. A regression in the cents math surfaces the instant it's introduced instead of three edits later. (Matcher names like `apply_patch` and the post-tool payload shape are version-sensitive — check the [hooks docs](https://developers.openai.com/codex/hooks). *Unverified*.)
+Now every edit Codex makes is immediately followed by the money tests, deterministically, whether or not the agent thought to run them. A regression in the cents math surfaces the instant it's introduced instead of three edits later. (Matcher names like `apply_patch` and the post-tool payload shape are version-sensitive - check the [hooks docs](https://developers.openai.com/codex/hooks). *Unverified*.)
 
-You've now built something categorically different from the MCP servers earlier in this chapter. A server *widened* what Codex can do; a hook *overrules* it. That difference is sharp enough to name precisely — because knowing when to reach for a hook instead of a rule or an approval setting is its own skill, and it's [the next lesson](/course/codex/extending/hooks-vs/).
+You've now built something categorically different from the MCP servers earlier in this chapter. A server *widened* what Codex can do; a hook *overrules* it. That difference is sharp enough to name precisely - because knowing when to reach for a hook instead of a rule or an approval setting is its own skill, and it's [the next lesson](/course/codex/extending/hooks-vs/).

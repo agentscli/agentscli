@@ -1,6 +1,6 @@
 ---
 title: Rules
-description: How each CLI loads persistent, human-authored context into every session — CLAUDE.md, AGENTS.md, and per-path rule files.
+description: How each CLI loads persistent, human-authored context into every session - CLAUDE.md, AGENTS.md, and per-path rule files.
 ---
 
 import ToolTabs from '../../../components/ToolTabs.astro';
@@ -9,22 +9,22 @@ import RulesResolver from '../../../components/interactive/RulesResolver.tsx';
 
 You've started a fresh session on the same repo for the fifth time this week. The first three messages of every session are always the same: *"we use pnpm, not npm. Tests are in `__tests__/`, not next to source. Don't auto-run the dev server, it conflicts with the one I already have open. Use the `dev-stack` branch as base, not `main`."*
 
-You're not telling the agent anything new. You're telling *this session* something you already told *last session*, because sessions don't remember each other. The agent reads files, runs greps, can find anything in the codebase — but it still doesn't know the unwritten conventions of the team that owns it. So every session starts at zero on the same five facts.
+You're not telling the agent anything new. You're telling *this session* what you already told *last session*, because sessions don't remember each other. It can read any file and grep anything; what it can't do is know the unwritten conventions of the team that owns the repo. So every session starts at zero on the same five facts.
 
-That's the gap **rules** close. Rules are the persistent, human-authored context each CLI reads automatically at session start and injects into the model's context — a file (or set of files) you write and check into the repo: build commands, naming conventions, "we use pnpm not npm," "the API lives in `services/api`," "never edit migrations after they've been merged." Write the facts down once and they're loaded before your first message. The agent walks in already knowing.
+**Rules** are how you stop re-teaching. They are the persistent, human-authored context each CLI reads at session start and injects into the model's context: a file (or set of files) you write and check into the repo, holding the facts you would otherwise repeat - "we use pnpm not npm," "never edit migrations after they've been merged." Write them down once and they load before your first message. The agent walks in already knowing.
 
-There's a cross-tool convention here. Codex, OpenCode, Cursor, and Copilot all read [`AGENTS.md`](https://agents.md/) natively (Copilot also reads `CLAUDE.md` and `GEMINI.md` from the repo root). Claude Code reads `CLAUDE.md` but can import `@AGENTS.md` for interop. The clean pattern is one `AGENTS.md` at your repo root, imported into `CLAUDE.md` — a single source of truth that every major tool will load.
+The file format has largely converged. Every tool in scope reads [`AGENTS.md`](https://agents.md/) natively except Claude Code, which reads `CLAUDE.md` and pulls the other in with an `@AGENTS.md` import. So the clean pattern is one `AGENTS.md` at your repo root, imported into `CLAUDE.md` - a single source of truth every major tool will load. The [Comparison](#comparison) table has the per-tool filenames.
 
-Rules are *declarative* — **you** write them, the agent reads them. That's the distinction from agent-managed memory (where the agent decides what to remember about a session or a user); memory is a separate primitive, not covered here. This chapter is about the static, version-controlled context you author.
+Rules are *declarative*: **you** write them, the agent reads them. That is the whole line between rules and agent-managed memory, a separate primitive this chapter doesn't cover - see [Name collisions](#name-collisions).
 
 **Real-world examples of what teams put in `CLAUDE.md` / `AGENTS.md`:**
 
-- **Stack and tooling** — package manager, test runner, linter, build commands. The first thing the agent gets wrong without this.
-- **Project layout** — where things live ("API code is in `services/api`, web is in `apps/web`"). Saves it from grepping the whole tree to find a file you could've named.
-- **Conventions the linter can't catch** — "use the `Logger` class, not `console.log`," "all DB calls go through `db/repo/`," "feature flags read from `flags.ts`, never inline."
-- **Workflow rules** — "never push to `main`," "run `pnpm validate` before declaring done," "write tests in the same PR as the feature."
-- **Domain context** — what your product *is*, who uses it, what the core nouns mean. Especially useful for non-obvious domains (insurance, logistics, ad-tech).
-- **Pointers to deeper docs** — "for the auth flow, read `docs/auth.md`," so the file stays small but the breadcrumbs are there.
+- **Stack and tooling** - package manager, test runner, linter, build commands. The first thing the agent gets wrong without this.
+- **Project layout** - where things live ("API code is in `services/api`, web is in `apps/web`"). Saves it grepping the tree for a file you could have named.
+- **Conventions the linter can't catch** - "use the `Logger` class, not `console.log`," "all DB calls go through `db/repo/`," "feature flags read from `flags.ts`, never inline."
+- **Workflow rules** - "never push to `main`," "run `pnpm validate` before declaring done," "write tests in the same PR as the feature."
+- **Domain context** - what your product *is*, who uses it, what the core nouns mean. Especially for non-obvious domains (insurance, logistics, ad-tech).
+- **Pointers to deeper docs** - "for the auth flow, read `docs/auth.md`," so the file stays small but the breadcrumbs are there.
 
 The test: if you've corrected the agent on the same thing twice across sessions, it belongs in your rules.
 
@@ -38,7 +38,9 @@ The test: if you've corrected the agent on the same thing twice across sessions,
 | Apply guidance only when working in a specific path/subdir | Path-scoped rules (see below) | Bloating root `CLAUDE.md` |
 | Share knowledge across multiple repos | User-global rules file | Per-repo rules |
 
-Rules are *always loaded, every turn*. That makes them powerful — and expensive on context. Anything that doesn't need to be present every single turn belongs in a skill instead. Anything that needs to *enforce* (not just inform) belongs in a hook.
+Rules are *always loaded, every turn*. That makes them powerful - and expensive on context. Anything that doesn't need to be present every single turn belongs in a skill instead. Anything that needs to *enforce* (not just inform) belongs in a hook.
+
+The tabs won't tell you which files win when several apply at once. That needs the per-tool paths first, so it waits until [after the tabs](#which-files-load-and-in-what-order).
 
 ## How it works in each tool
 
@@ -46,7 +48,7 @@ Rules are *always loaded, every turn*. That makes them powerful — and expensiv
 
 ## Which files load, and in what order
 
-The three tools agree on *where* rules files live but not on *how they combine* — and the differences bite in monorepos. Same repo, same files, three different answers: pick where the agent is working and see exactly which files each tool loads. Watch the OpenCode tab: it **replaces** rather than merges.
+Tools agree on *where* rules files live but not on *how they combine* - and the differences bite in monorepos. Same repo, same files, a different answer per tool: pick where the agent is working and see exactly which files each one loads. Watch the OpenCode tab: it **replaces** rather than merges.
 
 <RulesResolver client:visible />
 
@@ -57,18 +59,32 @@ The three tools agree on *where* rules files live but not on *how they combine* 
 | Default project file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` | `.cursor/rules/*.mdc` or `AGENTS.md` | `.github/copilot-instructions.md` or `AGENTS.md` | `AGENTS.md` / `CLAUDE.md` (+ `APPEND_SYSTEM.md` / `SYSTEM.md`) |
 | Cross-tool standard | Via `@AGENTS.md` import | Native (`agents.md`) | Native (`agents.md`) | Native (`AGENTS.md`) | Native (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) | Native (`agents.md`) |
 | User-global file | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | `~/.config/opencode/AGENTS.md` | User Rules (UI; no local file) | Personal instructions (github.com) | `~/.pi/agent/` |
-| Path-scoped rules | `.claude/rules/` with `paths:`¹ | — | `instructions:` in `opencode.json` | `globs:` in `.mdc` frontmatter | `.instructions.md` with `applyTo:` | — (nested walk only, no glob targeting) |
+| Path-scoped rules | `.claude/rules/` with `paths:`¹ | - | `instructions:` in `opencode.json` | `globs:` in `.mdc` frontmatter | `.instructions.md` with `applyTo:` | - (nested walk only, no glob targeting) |
 | Nested files per subdir | Concatenated (additive) | Concatenated; deeper files override by appearing later | First match wins (no merging) | Nested `AGENTS.md` auto-applied in subtree | Nearest `AGENTS.md` takes precedence | Nested walk, concatenated; closest file wins |
 | `@path` imports | Yes (bare `@path`) | No | No | `@RuleName` only (manual invocation) | No | No |
-| Managed/org override | Yes | Yes | Yes | Yes (Team Rules) | Yes (Business / Enterprise) | — (project resources are trust-gated, not org-policy-gated) |
+| Managed/org override | Yes | Yes | Yes | Yes (Team Rules) | Yes (Business / Enterprise) | - (project resources are trust-gated, not org-policy-gated) |
 
-¹ `paths:` is the documented, current key — not `globs:` (that's Cursor's). As of 2026-07 it has open reliability bugs: user-level (`~/.claude/rules/`) scoping can be silently ignored, and a rule may load on read but not on write. See the Claude Code tab above for detail.
+¹ `paths:` is the documented, current key - not `globs:` (that's Cursor's). As of 2026-07 it has open reliability bugs: user-level (`~/.claude/rules/`) scoping can be silently ignored, and a rule may load on read but not on write. See the Claude Code tab above for detail.
 
 ## Name collisions
 
-- **"Rules"** means different things across tools. In **Claude Code** it's path-scoped Markdown files in `.claude/rules/` (a subset of the rules layer). In **OpenCode** there is no separate "Rules" file — `AGENTS.md` carries that role, supplemented by the `instructions` field in `opencode.json`. In **Cursor**, "Rules" is the umbrella name for the whole layer (`.cursor/rules/*.mdc`, User Rules, Team Rules, plus `AGENTS.md`). **Copilot** calls the same concept "instructions" (`copilot-instructions.md`, `.instructions.md`, personal and org instructions). In this chapter, "rules" is the cross-tool umbrella term.
-- **`AGENTS.md` vs `CLAUDE.md`** — same purpose, different filenames. Don't write conflicting copies of both in one repo; have one import the other.
-- **"Memory"** is *not* the same as rules. Rules are human-authored, declarative, version-controlled. Memory (in the strict sense) is agent-managed — the agent itself decides what facts to remember about a user or project across sessions, often without you seeing the write. They solve different problems and live in different places. This chapter covers rules only.
+"Rules" is the least portable word in this chapter. It names a different slice of the layer in every tool:
+
+| Tool | What the word points at there |
+|---|---|
+| Claude Code | The path-scoped Markdown files in `.claude/rules/` only - a subset. The main file is `CLAUDE.md`. |
+| Codex | No separate "Rules" concept; `AGENTS.md` is the entire layer. |
+| OpenCode | No separate "Rules" file; `AGENTS.md` carries the role, supplemented by the `instructions` field in `opencode.json`. |
+| Cursor | The umbrella name for the whole layer: `.cursor/rules/*.mdc`, User Rules, Team Rules, plus `AGENTS.md`. |
+| Copilot | Called "instructions" throughout: `copilot-instructions.md`, `.instructions.md`, personal and org instructions. |
+| Pi | No "Rules" concept; `AGENTS.md` / `CLAUDE.md` is the context layer, with `APPEND_SYSTEM.md` / `SYSTEM.md` as a stronger layer above it. |
+
+In this chapter, "rules" is the cross-tool umbrella term. Two more collisions worth knowing:
+
+- **`AGENTS.md` vs `CLAUDE.md`** - same purpose, different filenames. Don't write conflicting copies of both in one repo; have one import the other.
+- **"Memory"** is *not* the same as rules. Rules are human-authored, declarative, version-controlled. Memory (in the strict sense) is agent-managed - the agent itself decides what facts to remember about a user or project across sessions, often without you seeing the write. They solve different problems and live in different places. This chapter covers rules only.
+
+Start with one `AGENTS.md` at the repo root and let corrections fill it: the second time you tell the agent the same thing, that line goes in the file. When it stops fitting - the Claude Code tab suggests holding it under ~200 lines - the overflow has somewhere to go. Procedures move to [skills](/foundations/skills/), path-specific guidance to path-scoped rule files, and anything that has to be enforced rather than remembered to [hooks](/foundations/hooks/).
 
 <UpstreamRefs
   links={[

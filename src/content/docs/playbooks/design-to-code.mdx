@@ -1,0 +1,470 @@
+---
+title: Design-to-code
+description: "An image drops everything except looks. Here's the ledger of what it dropped, and one compensation per loss."
+---
+
+import BindingsCheck from '../../../components/interactive/BindingsCheck.tsx';
+import { Aside, Tabs, TabItem, FileTree } from '@astrojs/starlight/components';
+
+You pasted an image, typed "build this," and got back roughly the right layout, a blue that isn't in your palette, and a hand-rolled toggle when your codebase has a `<Toggle>` three folders over. The agent saw the picture fine. It had no idea it was looking at *your* design system.
+
+| | |
+| --- | --- |
+| **Use when** | A design has to become a component in your codebase, not merely render |
+| **You'll have** | A component that passes review from whoever owns the design system: named primitives reused, every value bound to a token, zero raw hex in the diff, the hidden states covered |
+| **Costs** | One pass to write the anchors down. The second screen costs one sentence |
+| **Needs** | Tokens and components findable on disk - a tokens file, a `ui/` folder |
+| **Skip if** | It's a throwaway prototype, or the change is a tweak to a component that already exists ("make the CTA full-width on mobile" beats a screenshot of the same idea) |
+
+<Aside type="tip" title="In a hurry?">
+  ```text
+  > Build [image] as src/components/X.tsx. Use the existing components in
+    src/components/ui/ - don't create new primitives. Colors and spacing
+    from [tokens file], not values read off the image. States: default,
+    hover, disabled. Mirror the structure of [best sibling component].
+  ```
+
+  ```bash
+  $ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/X.tsx   # zero hits = wired right
+  ```
+</Aside>
+
+## What the image carries, and what it drops
+
+An image carries looks, never bindings. That single fact organizes this whole page: below is the ledger of what a mockup hands over and what it silently keeps to itself, and every section after it is one compensation for one row.
+
+A human developer fills these gaps from memory. The agent starts every session without one.
+
+| What the mockup carries | What survives the handoff | What you do about it |
+| --- | --- | --- |
+| **Looks** - layout, hierarchy, proportion | Survives. The one row that mostly works | Compare rendered output and mockup side by side, once |
+| **Token names** | Collapse to guesses. A hex is a hex; nothing in the image says `brand-600` | [A usage table, not a token dump](#values-bind-by-usage-not-by-name) |
+| **Spacing** | Becomes literal pixels. `13px` is what the screenshot measured, not what the scale allows | [The same usage table](#values-bind-by-usage-not-by-name), then [the grep](#the-check-the-eye-cannot-run) |
+| **Component identity** | Never present at all. A picture of a toggle is not a `<Toggle>` | ["Don't create new primitives," plus the sibling by name](#parts-name-the-sibling-ban-new-primitives) |
+| **States** - hover, disabled, loading, error | Gone. A mockup is one frozen moment | [Enumerate them in the prompt, then budget a punch list](#states-and-breakpoints-one-moment-one-viewport) |
+| **Responsive behavior** | Gone. A mockup is one viewport | [Enumerate the breakpoints the same way](#states-and-breakpoints-one-moment-one-viewport) |
+| **Style / art direction** | Carried by the image, then discarded the moment you retype it as an adjective | [Reference screenshots, not adjectives](#style-it-travels-in-examples-not-adjectives) |
+
+Running example throughout: a pricing card from a mockup, into a React + Tailwind codebase.
+
+**How the design gets in decides which rows you still owe.** The ledger above describes the worst case, a flat image. A better input path pre-pays some of it:
+
+| Input path | What it carries | What it still drops | Reach for it when |
+| --- | --- | --- | --- |
+| Pasted or dragged image | Looks, at one state and one size | Every row below the first | The default. One screen, static mockup. Every tool in scope takes it, though a few want a specific key combo - find yours before you're fumbling mid-session |
+| A live Figma frame over [MCP](/foundations/mcp-servers/), disciplined file | Component hierarchy, bound variables, and layout as structured data instead of pixels to reverse-engineer | States and breakpoints nobody drew | The file has every numeric value as a bound variable and every frame on auto-layout |
+| The same connection, undisciplined file | Hand-typed numbers wearing a structured wrapper | Everything a screenshot drops, at higher setup cost | Never knowingly. People blame the integration for what is source-file hygiene; fix the file, not the plumbing |
+| A narrated screen recording | Every state, empty state, error toast and transition the narrator walks through | Measurement. It's video, not a measured frame | The target is a whole flow rather than one screen |
+| A vibe-coded prototype's source | The working UI *and* its accidents - a stubbed auth check, a global mutable store - all read as intent | Nothing, which is the problem | Never as a spec. Screenshot the working UI, pair it with a plain-text list of what was validated versus what was a shortcut, build from those two artifacts. The prototype gets deleted |
+
+One permissions trap on the MCP rows: an account with read-only access to the design file pulls designs fine but can't push back, so the returning half of the workflow just never fires. Reads work, write-back "does nothing." Check file permissions before you debug the integration.
+
+## The anchor: the drops, written down
+
+Four names, none optional, all in the same turn as the image. This is the umbrella compensation - each name covers a ledger row, and the sections after this one go deep on the rows that fail most.
+
+| Anchor | The ledger row it covers | What it looks like in the prompt |
+| --- | --- | --- |
+| **Target** | None. It just stops the agent guessing where the file lands | `Build it as src/components/PricingCard.tsx` |
+| **Parts to reuse, plus the states nobody drew** | Component identity, and states | `Use the existing Card and Button from src/components/ui/ - don't create new primitives. States: default, hover, ...` |
+| **Tokens, with usage** | Token names, and spacing | `Match colors and spacing to the tokens in tailwind.config.ts, not values you read off the image` |
+| **Conventions** | Style and structure, via the nearest good neighbor | `Mirror the structure of src/components/FeatureCard.tsx` |
+
+Filled in, with each clause labelled by the anchor it carries:
+
+```text
+> Here's the pricing card mockup [image attached].
+  Build it as src/components/PricingCard.tsx.               # target
+  Use the existing Card and Button components from
+  src/components/ui/ - don't create new primitives.         # parts
+  Match colors and spacing to the tokens in
+  tailwind.config.ts, not values you read off the image.    # tokens
+  States: default, hover, and a highlighted
+  "recommended" variant.                                    # parts
+  Mirror the structure of src/components/FeatureCard.tsx.   # conventions
+```
+
+If a sibling component does it right, point at it. One good neighbor teaches more than a paragraph of convention.
+
+## Values: bind by usage, not by name
+
+This is where anchoring quietly fails even when you remember it. A tokens file gives the agent names and raw values, and if the names are even slightly vague it can't tell *when* to apply which. What works is a usage table, not a token dump. Copy this shape, swap in your own values, paste it into the prompt - or better, into the file the prompt points back to once you've made [the anchor durable](#make-the-anchor-durable):
+
+```text
+| Token             | Value     | Use it for                                   | Never for                              |
+|-------------------|-----------|-----------------------------------------------|-----------------------------------------|
+| `brand-600`       | `#7c69f7` | primary CTA background, active nav, badges    | body text (fails contrast on light bg) |
+| `brand-500`       | `#8f7ffa` | hover states, secondary accents, focus rings   | page backgrounds                        |
+| `surface-raised`  | `#ffffff` | cards, popovers, modals                        | page backgrounds                        |
+| `surface-sunken`  | `#f4f4f6` | inputs, wells, code blocks                     | cards                                    |
+| `text-primary`    | `#18181b` | headings, body copy                            | disabled text                           |
+| `text-muted`      | `#71717a` | captions, placeholders, disabled text          | primary CTAs                            |
+| `border-default`  | `#e4e4e7` | dividers, input borders                        | focus rings (use `brand-500`)          |
+| `p-2` / `gap-2` / `mt-2`  | `8px`  | icon-to-label gap, chip padding        | card padding                            |
+| `p-4` / `gap-4` / `mt-4`  | `16px` | card padding, form-field gaps          | page margins                            |
+| `p-6` / `gap-6` / `mt-6`  | `24px` | section gaps                           | inline gaps                             |
+| `rounded-lg`      | `8px`     | cards, buttons, inputs                         | pills, avatars                          |
+```
+
+The usage column is the part a raw `tailwind.config.ts` can't carry and the agent can't infer. It's the difference between "here are eleven values" and "here's when a fresh hire would reach for each one."
+
+*The ledger row now says: token names and spacing arrive as names with rules attached, not as numbers to match.*
+
+## Parts: name the sibling, ban new primitives
+
+**The tell:** a hand-rolled component sitting where the design system already has one three folders over.
+
+Skip the parts clause and the mockup's billing toggle - annual versus monthly, say - gets built from nothing. The agent has no way to know one already exists. It isn't a bad guess; it's the only guess available.
+
+<Tabs>
+  <TabItem label="Unanchored">
+```tsx
+// invented from the pixels alone
+function BillingToggle({ annual, onChange }) {
+  return (
+    <button
+      onClick={() => onChange(!annual)}
+      style={{
+        background: annual ? '#7c69f7' : '#d4d4d8',
+        borderRadius: 999,
+        width: 44,
+        height: 24,
+      }}
+    >
+      <span style={{ background: '#fff', borderRadius: '50%' /* ... */ }} />
+    </button>
+  );
+}
+```
+  </TabItem>
+  <TabItem label="Anchored">
+```tsx
+// "don't create new primitives" was in the prompt
+import { Toggle } from 'src/components/ui/Toggle';
+// ...
+<Toggle checked={annual} onChange={setAnnual} aria-label="Bill annually" />
+```
+  </TabItem>
+</Tabs>
+
+Today the two render pixel-for-pixel identical - which is exactly why looking right can't tell you which one you got. What differs is everything the picture never showed:
+
+| | Hand-rolled `BillingToggle` | Reused `<Toggle>` |
+| --- | --- | --- |
+| Focus ring | None | Inherited |
+| Disabled state | None | Inherited |
+| Reduced-motion handling | None | Inherited |
+| Brand color | `#7c69f7`, which matches `brand-600` right now | Bound, so it tracks the rebrand |
+
+The reused one got all of that the day someone else built it once and never has to again. Note where this failure hides: [the grep](#the-check-the-eye-cannot-run) catches wrong *values*, and it would pass this file clean. Only reading the diff catches an unreused *part*.
+
+Naming the sibling works better than describing the convention because the sibling is already on disk. This is the neighbourhood the agent has to bind to:
+
+<FileTree>
+
+- src
+  - components
+    - ui
+      - Card.tsx
+      - Button.tsx
+      - Badge.tsx
+      - Toggle.tsx the one the mockup's toggle is a picture of
+      - Input.tsx
+    - FeatureCard.tsx the sibling to mirror
+    - **PricingCard.tsx** the file about to be written
+- tailwind.config.ts the values, without the judgment
+
+</FileTree>
+
+*The ledger row now says: component identity arrives by name, from a folder the agent was told to look in first.*
+
+## States and breakpoints: one moment, one viewport
+
+**The tell:** hover, disabled and error states missing from the first pass, and a layout that only works at the width the mockup was drawn at.
+
+The compensation is the same move for both rows: enumerate what the frame couldn't show, in the prompt, every time. Then make the plan say the resize story back to you - "stacks below `md`, the price row wraps first" - before any code exists. If the design tool has real breakpoint frames, attach more than one. Two frames anchor an interpolation; one frame anchors a guess.
+
+Enumerating covers the states you knew about. The second half of this row's compensation is a punch list for the ones neither you nor the mockup did. From a corrected plan onward, the build is an ordinary [agentic loop](/foundations/how-agents-work/):
+
+```text
+⏵ Read   src/components/ui/Card.tsx
+⏵ Read   src/components/ui/Badge.tsx
+⏵ Read   src/components/FeatureCard.tsx
+⏵ Read   tailwind.config.ts
+⏵ Write  src/components/PricingCard.tsx
+⏵ Bash   npm run dev  →  compiled, no errors
+```
+
+Even a corrected plan ships surface gaps, because fidelity degrades with design complexity no matter how good the anchors are. Walk away from the first build with a list, not a verdict:
+
+```text
+- [ ] focus ring on the CTA missing - the mockup never showed a
+      focused state, so nothing anchored one
+- [ ] "Recommended" badge sits 2px higher than the badge slot in
+      FeatureCard - right component, wrong offset
+- [ ] the annual/monthly toggle updates its own label but the price
+      below it doesn't re-render
+- [ ] no disabled / "current plan" state - not in the mockup, but
+      the real page needs one for the plan the user is already on
+```
+
+None of these is "wrong component" or "wrong token." The anchors already caught those. These are the ordinary residue of a still image.
+
+*The ledger row now says: the states and widths that were never drawn are written down, and the ones nobody predicted have a list waiting for them.*
+
+## Style: it travels in examples, not adjectives
+
+**The tell:** output that is correct by every anchor you gave it, and forgettable anyway.
+
+This is the one loss the image genuinely carried and the prompt threw away. "Clean and modern" is what's left of a reference after you retype it as an adjective.
+
+<Tabs>
+  <TabItem label="Style by adjective">
+```text
+> Build a settings page for account preferences. Make it clean
+  and modern.
+```
+Technically on-system - right tokens, right components - and the result still reads generic: safe defaults, no point of view, the aesthetic equivalent of a placeholder. Anchors say what to build *with*, not what good looks like.
+  </TabItem>
+  <TabItem label="Style by reference">
+```text
+> Build a settings page for account preferences, same components
+  and tokens as before. Style reference: [screenshot A] and
+  [screenshot B] - match their card density, the label-above-input
+  pattern, and how muted the section headers are relative to body
+  text.
+```
+Two or three screenshots of comparable screens, plus a named list of what to copy. They carry density, rhythm and restraint the way the mockup carried layout.
+  </TabItem>
+</Tabs>
+
+**Style travels in examples, not adjectives.**
+
+*The ledger row now says: the art direction arrives as pixels a second time, instead of as a word that gestures at them.*
+
+## Make the plan say it back
+
+Every anchor above is a claim about your codebase that the agent may have misread. One prompt tests all of them at once, and a misread surfaces in three lines of plan far cheaper than in three hundred lines of component:
+
+```text
+> Tell me exactly how you'll build this - which components, which
+  tokens - before writing code.
+```
+
+Two of the six lines that come back are wrong:
+
+```text
+⏵ Plan
+  1. New file src/components/PricingCard.tsx, structured like
+     FeatureCard.tsx - a Card wrapping a header, a price row, a
+     feature list, and a footer.
+  2. Outer wrapper: <Card variant="raised"> from ui/.
+  3. Price: text-3xl font-bold, color text-primary; period
+     text-sm, color text-muted.
+  4. CTA: <Button variant="primary" className="w-full">.
+✗ 5. "Recommended" badge: a <span> with a custom background      ← invents a
+     (#7c69f7) and rounded-full - I don't see an existing badge      primitive
+     component in ui/.                                               that exists
+✗ 6. Hover state: scale(1.02) on the whole card via a CSS        ← invents a state
+     transform.                                                      the tokens
+                                                                     don't define
+```
+
+Line 5 is the component-identity row failing out loud; line 6 is the states row. Both cost one sentence here:
+
+```text
+> Two corrections before you build: we do have a badge component -
+  Badge, in src/components/ui/ - use variant="brand" instead of a
+  custom span. And drop the hover-scale; the tokens don't define a
+  hover elevation for cards. Check how FeatureCard handles hover
+  instead of inventing one.
+
+⏵ Read   src/components/ui/Badge.tsx
+⏵ Read   src/components/FeatureCard.tsx
+⏵ Plan (revised)
+  5. "Recommended" badge: <Badge variant="brand">Recommended</Badge>.
+  6. Hover state: FeatureCard applies hover:border-brand-500 and
+     hover:shadow-md - same treatment on PricingCard.
+```
+
+Caught here, the badge cost one sentence. Caught after the build, it costs a diff. Left uncorrected, it ships as a hand-rolled badge whose color matches `brand-600` today and drifts at the next rebrand - the component-identity and token rows failing together, invisibly.
+
+If the spec itself is fuzzy rather than the plan, flip the interview: "ask me what you need to know, one question at a time." An agent that asks about the empty state before building is saving you a rework cycle.
+
+*The ledger row now says: every anchor has been read back to you in your own component and token names.*
+
+## The check the eye cannot run
+
+The eye runs one of these two checks well. Put the rendered output and the mockup literally side by side, and you catch four pixels of padding or a font-weight of 500 where the design says 600 - the errors that make a page feel *almost* right in a way users notice before they can articulate.
+
+The eye cannot run the second one at all. An element can render the correct color as a hardcoded hex while ignoring the token: invisible today, wrong the day the brand color changes. So route the agent's claim through a check that can say no - a grep, not a squint, because the checks that get run every time are the ones a machine can run.
+
+```bash
+$ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/PricingCard.tsx
+9:  <Card className={cn('p-4', highlighted && 'border-[#8b7af8]')}>
+14: <h3 className="mt-[13px] font-semibold">Pro</h3>
+29: <Button className="w-full bg-[#7c69f7]">Start free trial</Button>
+```
+
+Three hits, three different failures, none of them visible in the render:
+
+| Line | What it is | Why the eye missed it | Fix |
+| --- | --- | --- | --- |
+| 9 - `border-[#8b7af8]` | A lookalike shade read off the mockup. Not `brand-500` (`#8f7ffa`), not `brand-600` (`#7c69f7`) | Four hex digits apart from a real token. Close enough that the side-by-side passed | `border-brand-500` |
+| 14 - `mt-[13px]` | A number typed straight off the image. Not on the spacing scale at all; the nearest steps are `mt-2` at 8px and `mt-4` at 16px | Three pixels | `mt-4` |
+| 29 - `bg-[#7c69f7]` | `brand-600`'s exact value, today | Nothing missed it. This is the one that fools a reviewer, because it's pixel-identical to the correct answer right up until the brand color changes and it isn't | `bg-brand-600` |
+
+<Aside type="caution" title="Visual fidelity decays gracefully; a hardcoded palette decays all at once">
+  Line 29's hex is correct *today* - the render looks identical to the token version, and no reviewer catches it by eye. It stays invisible until the brand color changes, and then every hardcoded copy is a rebrand bug the token version never has.
+</Aside>
+
+The fix is a token swap, not a rebuild. Play the same hunt yourself - this card passed the looks check, and half its values are lookalikes:
+
+<BindingsCheck client:visible />
+
+Two more places the same check pays. If the design round-trips into your design tool, spot-check a few layers in its inspector: a bound fill shows as a named variable (`Fill → brand/600`), a hardcoded one shows only the swatch and hex, no name attached.
+
+And dark mode is this check wearing different clothes. If the grep comes back clean, a second theme is a token-set swap; every surviving hex is a place dark mode will visibly break. Binding debt is invisible until the day something forces a second theme, which is why it tends to be discovered all at once rather than gradually.
+
+**The tell that matters most on this page:** you're about to call it done and the grep hasn't been run.
+
+*The ledger row now says: every value in the file resolves to a name, and you know it from output rather than from looking.*
+
+## Make the anchor durable
+
+The first pass earned an artifact. Don't let it evaporate with the session. Simplest version, a section in the [rules file](/foundations/rules/):
+
+```md
+## Design system
+- Components live in `src/components/ui/` - Card, Button, Badge,
+  Toggle, Input. Never hand-roll one of these; extend or compose
+  the existing component instead.
+- Colors and spacing bind to the tokens in `tailwind.config.ts`,
+  not raw hex or px. See the usage table in `design-system.json`.
+- New screens mirror the structure of the nearest sibling
+  component (FeatureCard, PricingCard) rather than starting from
+  a blank file.
+```
+
+More durable: have the agent generate the usage table itself, as data every later prompt points back to instead of prose you maintain by hand.
+
+```json
+{
+  "colors": {
+    "brand-600": { "value": "#7c69f7", "use": "primary CTA, active nav, badges" },
+    "brand-500": { "value": "#8f7ffa", "use": "hover states, focus rings" },
+    "surface-raised": { "value": "#ffffff", "use": "cards, popovers, modals" },
+    "text-muted": { "value": "#71717a", "use": "captions, disabled text" }
+  },
+  "spacing": {
+    "4": { "value": "16px", "use": "card padding, form-field gaps" }
+  },
+  "components": {
+    "Card": "src/components/ui/Card.tsx",
+    "Button": "src/components/ui/Button.tsx",
+    "Badge": "src/components/ui/Badge.tsx",
+    "Toggle": "src/components/ui/Toggle.tsx"
+  },
+  "doNotCreate": ["custom badges", "custom toggles", "custom buttons"]
+}
+```
+
+Either way the second screen's prompt collapses from four anchors to one sentence: "build this like the pricing card - same rules." Or capture the working *procedure* as a [skill](/foundations/skills/), if it's the steps rather than the facts you want to hand off.
+
+*The ledger now lives on disk, so the next screen inherits it instead of re-earning it.*
+
+## When the starting state is different
+
+Everything above assumes a design system already on disk and one screen to build. Three starting states bend that, and none of them move the ledger - only what you anchor *to*. The anchors still have to exist in text before the screen that depends on them.
+
+| Starting state | What replaces the anchor | What the check becomes |
+| --- | --- | --- |
+| **Redesign of a screen that exists** | The current component. It already carries the bindings and the states, which makes it a stronger anchor than any mockup. Prompt for a *diff*, not a rebuild | A visual-change checklist you approve before code. Bindings survive by default instead of by re-verification, and your review shrinks to the checklist |
+| **A whole flow, not one screen** | A phased text spec the agent transcribes from the recording: screens, states, transitions, every empty state and error toast it saw | Review the spec first - a misheard transition is three words to fix there - then run the pass per screen against one shared anchor. The spec doubles as the definition of "the flow is done" |
+| **No design system at all** | Nothing yet. The first screen has to bootstrap one - see below | Inverted: the check *produces* the tokens instead of enforcing them |
+
+For the redesign case, the prompt does the narrowing:
+
+```text
+> Update PricingCard to match [new mockup] - keep the existing tokens,
+  components, and states; list what will visually change as a
+  checklist before touching code.
+```
+
+### Where the anchors come from when there are none
+
+You can't anchor to what isn't on disk. If the palette lives only in a design tool nobody exported, the prerequisite fails outright - and the fix isn't to export harder, it's to invert the play. Let the first screen seed the system.
+
+Build it unanchored, accept the guesses, then extract them into the artifact you were missing:
+
+```text
+> List every color, spacing value, radius, and font treatment you used
+  in this component. Propose a token name for each, plus a one-line
+  "use it for / never for" - as a table I can correct.
+```
+
+You correct the judgment column, which is the part only you have. Commit the table, then rebuild the first screen against its own extracted tokens - cheap, because it's the same token swap the grep asks for. From screen two onward the normal ledger runs. The system didn't precede the screen; the screen bootstrapped the system.
+
+## Cross-tool notes
+
+The ledger is identical everywhere. What differs is how the image gets in, and whether a structured design connection exists at all. This table is the most volatile thing on the page - it is dated mid-2026, and the surface names move faster than the ledger does:
+
+| Tool | Image input | Structured design connection |
+| --- | --- | --- |
+| Claude Code | Drag-and-drop or paste directly into the prompt | Figma [MCP server](/foundations/mcp-servers/), when the file is disciplined enough to be worth it |
+| Codex | Attach in the ChatGPT and IDE surfaces alike | MCP configured like any other server |
+| Cursor | Pasted or dragged in chat | MCP config is per-project: `.cursor/mcp.json` |
+| Copilot | Pasted or dragged in chat | Depends on the surface (VS Code vs. Coding Agent) - check which one your Figma connection actually reaches before assuming it's live everywhere you work |
+| opencode | Supported in the TUI | MCP servers configure in `opencode.json` |
+| Pi | Whatever the harness supports | None - no native [MCP](/foundations/mcp-servers/), so every ledger row has to be carried by the anchor text |
+
+## Off the shelf
+
+If your designs live in Figma, some of the plumbing already ships. Figma's official [skills for MCP](https://help.figma.com/hc/en-us/articles/39166810751895-Figma-skills-for-MCP) (verified mid-2026) come bundled with the official Figma plugin: `figma-generate-design` builds full screens from your design system, `figma-code-connect` wires components to their code counterparts.
+
+They automate the mechanics of getting the design in and much of the anchoring. They inherit the source-file discipline caveat above, and they don't do the two things that decide the outcome: reading the plan before code, and the binding check after.
+
+## What the ledger doesn't settle
+
+**Do I really have to write the usage table by hand?** Author the judgment, not the table. Have the agent draft it:
+
+```text
+> Read tailwind.config.ts and grep how each token is actually used
+  across src/components/. Produce the usage table, flagging any
+  token used inconsistently.
+```
+
+Then correct the *use it for / never for* columns. Correcting is minutes; authoring from scratch is the reason most teams never have this artifact. The inconsistencies it flags are free lint: three files using `brand-500` for body text is a bug report the table generated on the way in.
+
+**How pixel-perfect should I chase?** To the design system's own tolerance, not to zero. If sibling production screens vary a couple of pixels in the same slot, grinding the new one to exactness is false precision. The exit bar is "passes review from whoever owns the design system," which is a bindings-and-states bar, not an overlay-diff bar. Spend the leftover attention on the states the mockup never showed; that's where users actually notice.
+
+**Can I hand it a screenshot of another product?** As a *style* reference only, exactly as above: name what to copy - density, label placement, header restraint. The values still come from your tokens and the parts from your components. Inheriting another product's actual hex values and spacing gives you a lookalike that fails the grep by construction, because every value is a literal - none of it had your system to bind to.
+
+## The ledger, assembled
+
+The generic versions, ready to swap names into. The worked ones stay in the sections above.
+
+**Anchored kickoff** - the skeleton in the *In a hurry?* box at the top of this page, with one clause added once you know the design: `plus <states the mockup hides>` on the states line.
+
+**Plan gate** (before any code):
+
+```text
+> Tell me exactly how you'll build this - which components, which
+  tokens - before writing code.
+```
+
+**Binding check** (after every build, against exactly the new file):
+
+```bash
+$ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/<Name>.tsx   # zero hits = wired right
+```
+
+Two artifacts are too long to repeat and live once, above: the [token usage table](#values-bind-by-usage-not-by-name) and the [rules-file block](#make-the-anchor-durable).
+
+The kit runs the procedure. The judgment it can't carry is this page's actual subject: which existing component is the right sibling to mirror, whether a colour that isn't in your palette is a mistake or a deliberate exception, and which of the states the mockup hides actually matter enough to specify.
+
+---
+
+Each anchored pass leaves the next one cheaper. The token table, the named sibling and the captured skill accumulate into a system prompt your design system effectively wrote for itself - a design system that explains itself in a usage table needs less explaining every time, which is the same bet [AI-ready code](/playbooks/ai-ready-code/) makes about the rest of the codebase.
+
+What holds the whole ledger up, though, is the least impressive line on the page. A mockup is a picture of a result, and a picture cannot tell you whether the blue on screen came from your token or from a literal somebody typed. Your eye can't either - the two are pixel-identical, which is exactly why this failure survives review. The grep can. Run it against the new file, read zero hits, and every row of the ledger is settled at once; read one hit and you have found the thing that would otherwise have shipped looking correct. That is the whole trade this play makes: give up the satisfaction of judging by eye, and get back a check that can say no.

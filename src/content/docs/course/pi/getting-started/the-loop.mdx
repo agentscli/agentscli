@@ -1,17 +1,17 @@
 ---
 title: Understand one turn of the Pi loop
-description: "Read, act, repeat — no approve step in between. Watch the whole loop once on a harmless question before you trust it with a real fix in stash."
+description: "Read, act, repeat - no approve step in between. Watch the whole loop once on a harmless question before you trust it with a real fix in stash."
 sidebar:
   label: "The loop · gather → act → repeat, no gate"
 ---
 
 import LoopStepper from '../../../../../components/interactive/LoopStepper.tsx';
 
-You're authenticated, sitting at a live prompt inside `stash`, and the feed-date bug is right there. Hold off for two minutes anyway. If you've spent any time with Claude Code or Codex, you already have a mental model of "the agent loop" — read, propose a plan, wait for you to say yes, then apply. Pi's loop looks almost the same from a distance, and is meaningfully different up close, in a way you want to see once before it matters.
+You're authenticated, sitting at a live prompt inside `stash`, and the feed-date bug is right there. Hold off for two minutes anyway. If you've spent any time with Claude Code or Codex, you already have a mental model of "the agent loop" - read, propose a plan, wait for you to say yes, then apply. Pi's loop looks almost the same from a distance, and is meaningfully different up close, in a way you want to see once before it matters.
 
 ## Make your first turn a question
 
-`stash` is new to Pi too — it knows nothing about the codebase it hasn't read yet. A read-only question costs you nothing and shows you exactly how the loop behaves before you ever ask it to change something:
+`stash` is new to Pi too - it knows nothing about the codebase it hasn't read yet. A read-only question costs you nothing and shows you exactly how the loop behaves before you ever ask it to change something:
 
 ```text
 > what does this service do, and where do saved articles get their dates from?
@@ -24,7 +24,7 @@ You're authenticated, sitting at a live prompt inside `stash`, and the feed-date
 
   read: app/worker/extract.py
 
-  stash is a self-hosted read-it-later service — you save a URL, a
+  stash is a self-hosted read-it-later service - you save a URL, a
   background worker fetches it, strips the page down to readable
   article text, and indexes it for full-text search. Saved-at and
   published dates both get set in the worker: extract.py parses
@@ -33,26 +33,26 @@ You're authenticated, sitting at a live prompt inside `stash`, and the feed-date
   almost certainly where your feed-date bug lives.
 ```
 
-Watch what one turn actually bought you. Pi didn't guess from the prompt — it ran a real shell command to find files that mention dates, read the one that looked most relevant, and came back with an answer *and* a lead on your bug. That's the whole loop, once: gather context, then answer. Nothing was written, nothing ran that could touch your data — you just watched the model think out loud using the same two tools it'll use for the real fix.
+Watch what one turn actually bought you. Pi didn't guess from the prompt - it ran a real shell command to find files that mention dates, read the one that looked most relevant, and came back with an answer *and* a lead on your bug. That's the whole loop, once: gather context, then answer. Nothing was written, nothing ran that could touch your data - you just watched the model think out loud using the same two tools it'll use for the real fix.
 
 ## The loop, stripped to its mechanism
 
-That's genuinely the entire loop, described in the plainest terms its own author uses: **the model responds, any tool calls it made get executed, the results go back into the conversation, and the model responds again** — repeating for as long as it keeps calling tools, and stopping the moment a response comes back with none. There's no step counter, no built-in ceiling on how many times that can repeat. A five-line fix might close in one round trip; a gnarlier bug might take a dozen tool calls before the model has enough to work with.
+That's genuinely the entire loop, described in the plainest terms its own author uses: **the model responds, any tool calls it made get executed, the results go back into the conversation, and the model responds again** - repeating for as long as it keeps calling tools, and stopping the moment a response comes back with none. There's no step counter, no built-in ceiling on how many times that can repeat. A five-line fix might close in one round trip; a gnarlier bug might take a dozen tool calls before the model has enough to work with.
 
-Compare that to the four-beat shape you may already know — read, propose, approve, apply. Pi's loop has three of those beats, not four:
+Compare that to the four-beat shape you may already know - read, propose, approve, apply. Pi's loop has three of those beats, not four:
 
-1. **Gather** — the model calls a tool (`bash`, `read`) to see what it needs to see.
-2. **Act** — it calls a tool that changes something (`write`, `edit`, or a `bash` command that mutates state).
-3. **Verify** — often another tool call, checking the result of the last act — and if verification fails, straight back to gather, not a dead end.
+1. **Gather** - the model calls a tool (`bash`, `read`) to see what it needs to see.
+2. **Act** - it calls a tool that changes something (`write`, `edit`, or a `bash` command that mutates state).
+3. **Verify** - often another tool call, checking the result of the last act - and if verification fails, straight back to gather, not a dead end.
 
-The missing beat is **approve**. Nothing in that list stops and waits for your yes. By default, Pi has no permission gate at all — every tool call it decides to make, including ones that write files or run arbitrary shell commands, executes immediately, without asking. Here's that same shape traced on a different small fix, one step at a time, so you can see gather → act → verify → (loop back on a failed verify) → done, without spending it on `stash` yet:
+The missing beat is **approve**. Nothing in that list stops and waits for your yes. By default, Pi has no permission gate at all - every tool call it decides to make, including ones that write files or run arbitrary shell commands, executes immediately, without asking. Here's that same shape traced on a different small fix, one step at a time, so you can see gather → act → verify → (loop back on a failed verify) → done, without spending it on `stash` yet:
 
 <LoopStepper client:visible />
 
-:::caution[Pi is YOLO by default — there is no permission prompt]
-Out of the box, Pi does not ask before it writes a file or runs a shell command. Every tool call in the loop above — reads, writes, edits, arbitrary `bash` — executes the instant the model decides to make it. This is a deliberate design choice, not a bug or an oversight: Pi's stance is that a confirm-before-run gate mostly slows you down without stopping much, and that if you want guardrails, you should build the specific ones you actually want rather than click through a generic one every time.
+:::caution[Pi is YOLO by default - there is no permission prompt]
+Out of the box, Pi does not ask before it writes a file or runs a shell command. Every tool call in the loop above - reads, writes, edits, arbitrary `bash` - executes the instant the model decides to make it. This is a deliberate design choice, not a bug or an oversight: Pi's stance is that a confirm-before-run gate mostly slows you down without stopping much, and that if you want guardrails, you should build the specific ones you actually want rather than click through a generic one every time.
 
-For this lesson that's fine — you only ran a read-only question. It stops being fine the moment you hand Pi something that touches real data, which is exactly what the next lesson does. You'll build a real damage-control gate a few modules from now; until then, the only thing standing between a bad instruction and your filesystem is you reading what you're about to ask for.
+For this lesson that's fine - you only ran a read-only question. It stops being fine the moment you hand Pi something that touches real data, which is exactly what the next lesson does. You'll build a real damage-control gate a few modules from now; until then, the only thing standing between a bad instruction and your filesystem is you reading what you're about to ask for.
 :::
 
-You've now watched the loop close once, cleanly, with nothing at stake. You know its shape — gather, act, verify, repeat until it's done — and you know the one beat it doesn't have. That's exactly the two things you need before you hand it something real. [Next: ship your first fix](/course/pi/getting-started/first-change/).
+You've now watched the loop close once, cleanly, with nothing at stake. You know its shape - gather, act, verify, repeat until it's done - and you know the one beat it doesn't have. That's exactly the two things you need before you hand it something real. [Next: ship your first fix](/course/pi/getting-started/first-change/).

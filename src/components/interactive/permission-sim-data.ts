@@ -1,5 +1,5 @@
 /**
- * Permission decision simulator — three tools, three genuinely different
+ * Permission decision simulator - three tools, three genuinely different
  * models, one question: "will this run?". Facts sourced from the verified
  * tool-instructions content (permissions chapter per tool): keep in sync
  * with src/content/tool-instructions/<tool>/permissions.mdx.
@@ -52,7 +52,7 @@ export const ccScenarios: CcScenario[] = [
       {
         list: 'allow',
         matched: 'Bash(npm run test:*)',
-        text: 'Allow rule matches — the command runs without a prompt.',
+        text: 'Allow rule matches - the command runs without a prompt.',
       },
     ],
   },
@@ -65,7 +65,7 @@ export const ccScenarios: CcScenario[] = [
       {
         list: 'ask',
         matched: 'Bash(git push:*)',
-        text: 'Ask rule matches — you get a prompt before anything is pushed.',
+        text: 'Ask rule matches - you get a prompt before anything is pushed.',
       },
     ],
   },
@@ -77,7 +77,7 @@ export const ccScenarios: CcScenario[] = [
       {
         list: 'deny',
         matched: 'Bash(rm -rf:*)',
-        text: 'Deny rule matches — evaluation stops here. Deny beats everything.',
+        text: 'Deny rule matches - evaluation stops here. Deny beats everything.',
       },
     ],
   },
@@ -89,7 +89,7 @@ export const ccScenarios: CcScenario[] = [
       {
         list: 'deny',
         matched: 'Edit(.env)',
-        text: 'Deny rule matches — the file is untouchable regardless of other rules.',
+        text: 'Deny rule matches - the file is untouchable regardless of other rules.',
       },
     ],
   },
@@ -103,7 +103,7 @@ export const ccScenarios: CcScenario[] = [
       { list: 'allow', text: 'No allow rule matches either.' },
       {
         list: 'default',
-        text: 'Nothing matched — falls through to the default: ask you.',
+        text: 'Nothing matched - falls through to the default: ask you.',
       },
     ],
   },
@@ -125,7 +125,7 @@ export const cxSandboxes = [
   {
     id: 'danger-full-access',
     label: 'danger-full-access',
-    blurb: 'no sandbox — deliberate use only',
+    blurb: 'no sandbox - deliberate use only',
   },
 ];
 

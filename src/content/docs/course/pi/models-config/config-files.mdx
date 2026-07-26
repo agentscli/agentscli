@@ -1,66 +1,66 @@
 ---
 title: Two files, one merge
-description: "Pi's whole configuration story is two settings.json files — one for you, one for this repo — deep-merged, plus the sibling files that hold your models, your credentials, and which projects you've trusted. Find them before you route anything."
+description: "Pi's whole configuration story is two settings.json files - one for you, one for this repo - deep-merged, plus the sibling files that hold your models, your credentials, and which projects you've trusted. Find them before you route anything."
 sidebar:
   label: "config-files · global vs project"
 ---
 
 import ConfigExplorer from '../../../../../components/interactive/ConfigExplorer.tsx';
 
-Before you can decide *which* model does the re-extraction sweep, you need to know *where* that decision actually lives — and with Pi there are exactly two places, which is the whole point of a minimal core. No managed policy layer, no org-wide overrides, no five-deep precedence chain to memorize. Just yours, and this repo's.
+Before you can decide *which* model does the re-extraction sweep, you need to know *where* that decision actually lives - and with Pi there are exactly two places, which is the whole point of a minimal core. No managed policy layer, no org-wide overrides, no five-deep precedence chain to memorize. Just yours, and this repo's.
 
 ## The two settings.json files
 
 ```
-~/.pi/agent/settings.json      global — every project, every session
-.pi/settings.json              project — this repo only
+~/.pi/agent/settings.json      global - every project, every session
+.pi/settings.json              project - this repo only
 ```
 
-Both are plain JSON. Both hold the same shape of thing: default model, default reasoning depth, which extensions/skills/prompts/themes to load, retry policy, theme. The project file **doesn't replace** the global one — it **deep-merges** into it, key by key, on every nested object. Pi's own docs give the example that makes this concrete: say your global settings turn compaction on with a generous reserve —
+Both are plain JSON. Both hold the same shape of thing: default model, default reasoning depth, which extensions/skills/prompts/themes to load, retry policy, theme. The project file **doesn't replace** the global one - it **deep-merges** into it, key by key, on every nested object. Pi's own docs give the example that makes this concrete: say your global settings turn compaction on with a generous reserve -
 
 ```json
 // ~/.pi/agent/settings.json
 { "compaction": { "enabled": true, "reserveTokens": 16384 } }
 ```
 
-— and stash's project settings only want a tighter reserve, because stash sessions run long and you'd rather compact earlier:
+- and stash's project settings only want a tighter reserve, because stash sessions run long and you'd rather compact earlier:
 
 ```json
 // .pi/settings.json
 { "compaction": { "reserveTokens": 8192 } }
 ```
 
-The effective config for a stash session is `{ "enabled": true, "reserveTokens": 8192 }` — `enabled` survives from global because the project file never mentioned it, `reserveTokens` comes from the project file because it's more specific. That's deep-merge: the project settings win on anything they actually declare, and everything else falls through from global. It's a small mechanical fact, but it's the one that'll save you from the "I changed the project file and nothing happened" afternoon — you didn't change the key that was actually winning.
+The effective config for a stash session is `{ "enabled": true, "reserveTokens": 8192 }` - `enabled` survives from global because the project file never mentioned it, `reserveTokens` comes from the project file because it's more specific. That's deep-merge: the project settings win on anything they actually declare, and everything else falls through from global. It's a small mechanical fact, but it's the one that'll save you from the "I changed the project file and nothing happened" afternoon - you didn't change the key that was actually winning.
 
 ## The fields worth knowing on sight
 
 A non-exhaustive tour of what actually lives in `settings.json`, because you'll be editing several of these before this module is over:
 
-- **`defaultProvider`, `defaultModel`** — what Pi reaches for when you don't say otherwise.
-- **`defaultThinkingLevel`** — one of `off | minimal | low | medium | high | xhigh`, the reasoning-depth dial the next lesson is about.
-- **`thinkingBudgets`** — override the token allocation for any of those levels, if the defaults don't fit your provider.
-- **`enabledModels`** — a pattern-based allow-list; this is what `Ctrl+P` cycles through mid-session, so it's worth curating down to the handful you actually reach for on stash instead of leaving it at everything your providers expose.
-- **`packages`, `extensions`, `skills`, `prompts`, `themes`** — arrays of extra paths/globs to load, on top of the convention directories.
-- **`retry.enabled` / `retry.maxRetries` / `retry.baseDelayMs`** — transient-error retry policy, worth tightening if a flaky provider is chewing through your session.
-- **`enableSkillCommands`** — toggles whether `/skill:name` shows up as a slash command at all.
-- **`defaultProjectTrust`** — `ask | always | never`, the default answer to the next thing on this list.
+- **`defaultProvider`, `defaultModel`** - what Pi reaches for when you don't say otherwise.
+- **`defaultThinkingLevel`** - one of `off | minimal | low | medium | high | xhigh`, the reasoning-depth dial the next lesson is about.
+- **`thinkingBudgets`** - override the token allocation for any of those levels, if the defaults don't fit your provider.
+- **`enabledModels`** - a pattern-based allow-list; this is what `Ctrl+P` cycles through mid-session, so it's worth curating down to the handful you actually reach for on stash instead of leaving it at everything your providers expose.
+- **`packages`, `extensions`, `skills`, `prompts`, `themes`** - arrays of extra paths/globs to load, on top of the convention directories.
+- **`retry.enabled` / `retry.maxRetries` / `retry.baseDelayMs`** - transient-error retry policy, worth tightening if a flaky provider is chewing through your session.
+- **`enableSkillCommands`** - toggles whether `/skill:name` shows up as a slash command at all.
+- **`defaultProjectTrust`** - `ask | always | never`, the default answer to the next thing on this list.
 
 ## The three files config splits across
 
 `settings.json` isn't alone in `~/.pi/agent/` (or its project mirror, `.pi/`). Three siblings do one job each:
 
-- **`models.json`** — the provider and model definitions themselves: base URLs, API shapes, cost/context metadata, per-model overrides. This is the file the next lesson lives in.
-- **`auth.json`** — stored credentials, written automatically by `/login` for OAuth logins and holding plain API keys for everything else. Pi keeps it at `0600` permissions on purpose — it's the one file in this directory that's pure secret.
-- **`trust.json`** — global only, no project mirror. It's the record of which project directories you've actually agreed to trust. The first time Pi finds a project-local `settings.json`, or extensions, or skills sitting in a repo, it stops and asks before loading any of it — because all three can execute code the moment they load. Say yes once and the decision persists here; `defaultProjectTrust` and the `--approve`/`--no-approve` flags are how you skip that prompt on purpose, in either direction, for non-interactive runs.
+- **`models.json`** - the provider and model definitions themselves: base URLs, API shapes, cost/context metadata, per-model overrides. This is the file the next lesson lives in.
+- **`auth.json`** - stored credentials, written automatically by `/login` for OAuth logins and holding plain API keys for everything else. Pi keeps it at `0600` permissions on purpose - it's the one file in this directory that's pure secret.
+- **`trust.json`** - global only, no project mirror. It's the record of which project directories you've actually agreed to trust. The first time Pi finds a project-local `settings.json`, or extensions, or skills sitting in a repo, it stops and asks before loading any of it - because all three can execute code the moment they load. Say yes once and the decision persists here; `defaultProjectTrust` and the `--approve`/`--no-approve` flags are how you skip that prompt on purpose, in either direction, for non-interactive runs.
 
 That split is deliberate: settings you tweak often, credentials you never want printed to a screen, and trust decisions you only want to make once per repo, live in three files instead of one, so a stray `cat` of your config doesn't also dump your API keys.
 
 ## Compare the shape, then hold it against Pi's
 
-Every agent CLI you might have used draws roughly this same line — a personal setup that follows you everywhere, and a project setup that ships with the repo. This explorer walks that split file by file, Pi included:
+Every agent CLI you might have used draws roughly this same line - a personal setup that follows you everywhere, and a project setup that ships with the repo. This explorer walks that split file by file, Pi included:
 
 <ConfigExplorer client:visible initialTool="pi" />
 
-Click through the neighbors and the shape rhymes: a project file the team commits, a home-directory file that's yours alone, and the more-specific one winning where they overlap. Then flip back to Pi's tab and count the files — two `settings.json`, deep-merged, the three siblings above, and a handful of resource directories. No `mcp.json`, no `agents/`, no hooks file; one `extensions/` folder carries all three jobs. Less to memorize is the trade Pi is making everywhere, and config is where you feel it first.
+Click through the neighbors and the shape rhymes: a project file the team commits, a home-directory file that's yours alone, and the more-specific one winning where they overlap. Then flip back to Pi's tab and count the files - two `settings.json`, deep-merged, the three siblings above, and a handful of resource directories. No `mcp.json`, no `agents/`, no hooks file; one `extensions/` folder carries all three jobs. Less to memorize is the trade Pi is making everywhere, and config is where you feel it first.
 
-You now know exactly where the model default lives and which file wins when you change it. Time to actually change it — on purpose, per task, instead of once and forever. [Route the cheap work to the cheap model](/course/pi/models-config/routing/).
+You now know exactly where the model default lives and which file wins when you change it. Time to actually change it - on purpose, per task, instead of once and forever. [Route the cheap work to the cheap model](/course/pi/models-config/routing/).

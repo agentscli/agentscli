@@ -1,0 +1,395 @@
+---
+title: AI-ready code
+description: "Audit how a fresh agent actually navigates your codebase, then fix the structure - not the docs - where it fails."
+---
+
+import FreshEyes from '../../../components/interactive/FreshEyes.tsx';
+import { Aside, Tabs, TabItem, FileTree } from '@astrojs/starlight/components';
+
+The agent keeps making wide, wrong edits in one corner of your codebase, and every session burns its first stretch of tokens rediscovering the same layout. Nothing it did was unreasonable - it read the code that was there. The codebase just never told it where the edit lived, or what else was listening.
+
+| | |
+| --- | --- |
+| **Use when** | One area of the repo eats wrong edits and re-discovery, session after session |
+| **You'll have** | Four rerunnable probes with a pass bar each, and a seam a cold session can navigate on its first search |
+| **Costs** | An afternoon per seam. Each rerun is four prompts |
+| **Needs** | A way to open a genuinely fresh session - no rules file, no memory |
+| **Skip if** | Agents rarely touch that code, or this is turning into a repo-wide beautification project |
+
+## Start from the symptom
+
+The four probes are independent measurements, not a sequence. Find your symptom, run that probe, ignore the rest until it passes.
+
+| What you're seeing | Run |
+| --- | --- |
+| A fresh session takes three-plus file-opens to answer "where does X live?" | [Probe 1: naming](#probe-1-naming) |
+| A ten-line edit reads five files first | [Probe 2: context budget](#probe-2-context-budget) |
+| Its predicted blast radius names one file and misses the two that actually break | [Probe 3: blast radius](#probe-3-blast-radius) |
+| "Looks right to me" is as far as a fresh session gets on a PR you reported as done | [Probe 4: verification](#probe-4-verification) |
+| A rules-file line reads like a general essay about the codebase | [Write down only what structure can't say](#write-down-only-what-structure-cant-say) |
+
+<Aside type="tip" title="In a hurry?">
+  Score the repo, then run the cheapest probe yourself in a fresh session, in your team's own words:
+
+  ```bash
+  $ npx github:microsoft/agentrc readiness
+  ```
+
+  ```text
+  > Where do we decide which customers get billed?
+  ```
+
+  Whatever that costs is your baseline - [the four probes](#the-four-probes) say what passes, and [the probes, assembled](#the-probes-assembled) has all four ready to copy.
+</Aside>
+
+## The reader changed, not the advice
+
+Honest names, contained side effects, tests as spec: none of this is new advice. What changed is who reads it. The codebase is the manual, and the agent re-reads it from nothing every session.
+
+| | A new hire | An agent |
+| --- | --- | --- |
+| **Reads the layout** | Absorbs it once, badly | Reconstructs it from disk, every session, forever |
+| **Over time** | Builds tolerance through repetition | No grace period - it never repeats a session |
+| **What it costs** | Invisible, carried silently for years | Visible, on a token bill, per session |
+
+That table answers both of the questions this play usually gets - "isn't this just write clean code?" and "am I optimizing for the agent or for humans?" - with one answer: same optimization, different feedback speed. Clean-code advice argues in adjectives, which is why teams argue about it forever; a probe is a measurement, in front of everyone.
+
+Structure is context you pay for once. Every convention the code makes self-evident is a [rule](/foundations/rules/) you never have to write, maintain, or load into a session again.
+
+## Pick the seam
+
+Evidence first. Pull up the recent session where the agent went wrong and note where the wrong turns happened - the search that missed, the file it shouldn't have touched. Don't restructure ahead of demonstrated failure; this play runs per seam, on evidence, not as a quarter-long project.
+
+A readiness scorer, like the one below, can give you a starting direction. Only the probes tell you what a score can't: how *your* agent, asked in *your* team's words, actually navigates.
+
+<Aside type="note" title="Current picks - dated mid-2026">
+  [microsoft/agentrc](https://github.com/microsoft/agentrc) is the readiness scorer referenced on this page: `npx github:microsoft/agentrc readiness`. Its docs describe a rating across nine pillars with a maturity level for each - that's the project's own description of itself, not a benchmark we ran, so use it to point your attention rather than as a grade to report.
+</Aside>
+
+Running example throughout: a billing area split three ways, each file holding a fragment of the same decision - who gets billed this cycle. You ask for something small, and it touches a fistful of files, edits a shared helper two other jobs depend on, and quietly breaks the dunning emails. In a transcript, not in the retelling:
+
+```text
+> skip archived customers in the nightly billing run
+
+  ⏵ Grep   "billing" src/                →  9 matches across controllers/, services/, models/, validators/, jobs/
+  ⏵ Read   services/billing.ts           # runBilling() filters by due date - adds the archived check here
+  ⏵ Edit   services/billing.ts
+  ⏵ Bash   npm test                       →  2 failing: dunning.test.ts, reports.test.ts
+  ⏵ Read   validators/billing.ts         # a second, competing exclusion rule this edit didn't know existed
+  ⏵ Edit   validators/billing.ts
+  ⏵ Bash   npm test                       →  1 failing: dunning.test.ts
+  ⏵ Read   jobs/nightly-run.ts           # a third, hardcoded filter - `status !== 'trial'` - never
+                                            mentioned by either file it just touched
+  ⏵ Edit   jobs/nightly-run.ts
+  ⏵ Bash   npm test                       →  green - after three edits, three re-reads, and a diff that
+                                            now touches every layer billing has a folder for
+```
+
+Nothing here is a reasoning failure. Three files each hold a piece of "who gets billed," and nothing on disk says so - the agent found the fragments the only way it could, one test failure at a time. Keep that transcript; you'll want it again [once the fix is in](#the-same-request-after) and the same request lands differently.
+
+*Pass bar: one target area, and one transcript showing the failure.*
+
+## The four probes
+
+Each probe is one prompt into a genuinely fresh session - no rules file, no memory, because prior context contaminates what the *structure* alone says. Each has a pass bar, a diagnosis when it fails, and one prescribed fix. They don't stack: a repo can pass naming and fail blast radius.
+
+Same move as everywhere in this section - route the agent's claim through a check that can say no. The twist here is that the claim under test is also yours: that the code is fine and the agent is just careless.
+
+### Probe 1: naming
+
+```text
+> Where do we decide which customers get billed?
+```
+
+| | |
+| --- | --- |
+| **Ask** | A real domain question, phrased exactly how a teammate would say it over Slack, internal nicknames included. An agent can't infer synonyms for jargon that only exists in your standups |
+| **Pass bar** | The session lands in two greps or fewer |
+| **A fail means** | More than two greps, or three-plus file-opens, before it converges: the answer is smeared across files and nothing on disk says so. The agent has to *discover* the fragmentation by testing its way through it - [the transcript in Pick the seam](#pick-the-seam) |
+| **The fix** | Go domain-first over layer-first: organize by what the code is about, not by technical stratum |
+| **If you can't fix it yet** | One glossary line mapping slang to path ("the sync layer" → `telemetry-bridge/`) |
+
+The judgment the bar is actually testing is when you've seen enough to answer. Run the probe yourself against both structures below, paying for each file you open, and watch how much of the answer you can hold before you're willing to commit to one.
+
+<FreshEyes client:visible />
+
+<Tabs>
+<TabItem label="Layer-first - four folders, one question">
+
+<FileTree>
+
+- src
+  - controllers
+    - billing.ts
+  - services
+    - billing.ts
+  - models
+    - billing.ts
+  - validators
+    - billing.ts
+
+</FileTree>
+
+Every folder is a technical stratum, so "billing" appears in all of them and none of them owns the decision. The name that fails the probe is the one that answers "what layer is this?" instead of "what is this about?"
+
+</TabItem>
+<TabItem label="Domain-first - one folder, one answer">
+
+<FileTree>
+
+- src
+  - billing
+    - select.ts who gets billed
+    - invoice.ts how much
+    - notify.ts side effects: email, audit
+
+</FileTree>
+
+One grep for `billing/` and the decision is a single file with a name that says what it decides. Nothing about the code changed - only where a cold reader has to look for it.
+
+</TabItem>
+</Tabs>
+
+**Where this fix goes wrong: a glossary instead of a rename.** A name a newcomer has to look up in a glossary is still a name that failed the probe, just with a cheaper workaround attached. Better, when you can afford it, to rename toward the words people actually say - the glossary line is what you write down while that's still a bigger job than today's ticket. A glossary of aliases growing instead of renames happening is workaround debt, not legibility paid down.
+
+### Probe 2: context budget
+
+```text
+> Add a $5 minimum invoice amount to the billing run - anything below
+  that rolls over to next cycle instead of getting billed.
+```
+
+| | |
+| --- | --- |
+| **Ask** | One small, real change request - small enough that you already know which file owns it. Then watch what it opens, not what it writes |
+| **Pass bar** | What it opens is proportional to the edit: the file that owns the decision, maybe one caller, then the change |
+| **A fail means** | A ten-line change drags a thousand-line file and everything that file imports into context just to be safe. Long-context evaluations consistently report accuracy falling as context fills, which is the reasoning behind treating each unnecessary file as making the agent *worse* at the change, not just slower |
+| **The fix** | Split along the seam it had to reason across - the file's job, not an arbitrary line count |
+| **If you can't fix it yet** | Give it structural eyes instead of asking it to read more text: a syntax-aware navigation layer over [MCP](/foundations/mcp-servers/) |
+
+<Aside type="caution" title="Don't invent a line-limit rule">
+  No tool vendor publishes a source-file-size threshold - "keep files under 300 lines" in a rules file borrows authority that doesn't exist, and a specific number reads as fact even when it's a guess. A file is wrong to drag into context because a small edit shouldn't need the whole thing, not because it crossed a line count nobody actually measured.
+
+  The tell that the rule is doing damage: mechanical splits that leave concerns tangled - a 250-line file still owning three unrelated decisions passes the rule and fails the reader.
+</Aside>
+
+**The recovery principle:** where the repo is what it is today - mid-migration, a vendor dependency, a rename too large to review in one sitting - stop asking the agent to read more text and give it the same structural eyes your IDE has.
+
+A layer built on the language-server protocol behind "go to definition" and "rename symbol" turns "grep the name, open every match, hope none is a comment or an unrelated method" into a few exact operations: where a symbol is defined, every real reference to it, rename it everywhere at once.
+
+<Aside type="note" title="Current picks - verified mid-2026">
+  [Serena](https://github.com/oraios/serena) is the best-known example of that pattern: an MCP server wrapping language servers for 40-plus languages. `uv tool install -p 3.13 serena-agent`, then `serena init`.
+
+  Its own published evaluation quotes an agent saying cross-file renames and reference lookups that would otherwise cost "8-12 careful, error-prone steps collapse into one atomic call." That's a vendor's own selected quote, not an independent benchmark - treat it as directionally honest, not as a number to cite as fact. It makes a codebase you can't reshape yet more navigable; it doesn't make the fragmentation disappear.
+</Aside>
+
+### Probe 3: blast radius
+
+```text
+> Before changing anything - if I ask you to add a $5 minimum invoice
+  threshold, which other files will that change affect?
+```
+
+| | |
+| --- | --- |
+| **Ask** | A prediction, made *before* any edit. The same change as probe 2 works fine - you're measuring foresight now, not reading |
+| **Pass bar** | Its list roughly matches what a careful human on the team would name |
+| **A fail means** | It names one obvious file and misses the two that actually break, or names files with no real connection. The gap *is* the finding: the coupling is tribal knowledge, invisible in the code and therefore invisible to the agent |
+| **The fix** | Make the decision a pure function and move side effects to the caller. Aim for a few *deep* modules: a narrow public surface, cheap to read, hiding a lot of implementation |
+| **If you can't fix it yet** | The same navigation layer answers "what actually calls this?" structurally, instead of by grepping for a name |
+
+Deep is not the same as small, and the wrong cure is worth seeing once. All three tabs below are the same four responsibilities:
+
+<Tabs>
+<TabItem label="The tangle - fails the probe">
+
+```ts
+// one function, four responsibilities, invisible coupling
+export function process(items, opts) {
+  const cfg = Config.current()           // hidden dependency
+  const filtered = applyRules(items, cfg)
+  Cache.invalidate('billing')            // side effect
+  Audit.write('billing.run', filtered)   // side effect
+  Mailer.queueDunning(filtered)          // side effect - the surprise
+  return filtered
+}
+```
+
+Nothing on the surface says that calling this queues dunning email, so nothing warns the agent that the mail path is downstream of a filter change.
+
+</TabItem>
+<TabItem label="Confetti - fails it exactly as badly">
+
+```ts
+// five files, four responsibilities, the SAME coupling, plus new indirection
+// billing/getConfig.ts
+export function getConfig() { return Config.current() }
+
+// billing/applyFilter.ts
+export function applyFilter(items, cfg) { return applyRules(items, cfg) }
+
+// billing/invalidateCache.ts
+export function invalidateCache() { Cache.invalidate('billing') }
+
+// billing/writeAudit.ts
+export function writeAudit(filtered) { Audit.write('billing.run', filtered) }
+
+// billing/queueDunning.ts
+export function queueDunning(filtered) { Mailer.queueDunning(filtered) }
+
+// billing/run.ts - still has to know all five exist, and in what order
+export function process(items, opts) {
+  const cfg = getConfig()
+  const filtered = applyFilter(items, cfg)
+  invalidateCache()
+  writeAudit(filtered)
+  queueDunning(filtered)
+  return filtered
+}
+```
+
+Nothing shrank. `run.ts` still holds all five collaborators in mind, in the same order, with the same hidden dependency on global config - spread across six files and a set of one-line indirections. This version fails the probe exactly as badly as the tangle, now with more files to open first.
+
+</TabItem>
+<TabItem label="Deep - passes">
+
+```ts
+// the decision is a pure function; side effects live at the caller
+export function selectBillableItems(items, now) {
+  return items.filter(i => !i.archived && i.dueBefore(now))
+}
+```
+
+One pure decision, side effects pushed up, a surface small enough that `selectBillableItems(items, now)` *is* the whole interface. There is nothing left to spread out, which is the difference between deep and merely split.
+
+</TabItem>
+</Tabs>
+
+**Where this fix goes wrong: over-fragmenting.** Many shallow pieces are collectively harder to reason about than one deep one, because the reader has to reassemble the story from fragments *and* trace which fragment calls which. Tell: this probe or probe 2 still fails after the split, now across six files instead of one. Optimize for how much must be read to understand a change, not for lines per file: **deep modules, not confetti.**
+
+That narrow surface is also the delegation contract this whole site keeps circling: you keep taste over the interface; the agent owns the implementation behind it, held in place by tests. Decide the boundary at planning time, when a ticket becomes tasks - not at review time, after the coupling already leaked into a diff you now have to unwind.
+
+### Probe 4: verification
+
+```text
+> Here's a PR where I reported this feature as done. Using only the
+  existing test suite and your own exploration - not me - verify that
+  it actually works. What's your verdict, and what did you check?
+```
+
+| | |
+| --- | --- |
+| **Ask** | A recent "done," handed to a session that wasn't there when it was written and can't ask you anything |
+| **Pass bar** | It reaches a verdict - pass or fail - from the suite and the code alone, and can point to what it ran |
+| **A fail means** | There is nothing checkable to run. The agent's read-act-verify [loop](/foundations/how-agents-work/#the-agentic-loop) only closes if the verify step has something real in it |
+| **The fix** | Tests from somewhere the agent didn't write them - the [TDD playbook](/playbooks/tdd-with-agents/): a failing test committed before the fix, so "done" means "satisfies a spec that predates the implementation" |
+| **If you can't fix it yet** | For long unattended stretches, a machine-checkable status format beats a prose checklist - a JSON pass/fail list is harder for a stuck agent to quietly soften than a Markdown line it can edit into agreeing with itself |
+
+**Where this fix goes wrong: verification theater.** A green suite that never touched the change - tests asserting on the wrong layer, mocking out the exact thing that broke, or simply not covering the seam the edit ran through. Tell: the suite is green, but a fresh session asked to verify can't explain *why* it's green in terms of the specific change. This probe only catches it if the session actually tries to break the claim rather than skimming for a pass.
+
+## The same request, after
+
+Same words, same model, the structural fix in. Read it against the transcript in [Pick the seam](#pick-the-seam):
+
+```text
+> skip archived customers in the nightly billing run
+
+  ⏵ Grep   "billing" src/billing/       →  1 file: billing/select.ts - the one function that decides
+  ⏵ Read   billing/select.ts
+  ⏵ Edit   billing/select.ts            # adds the archived check to the one filter that owns it
+  ⏵ Bash   npm test                      →  green, first try
+```
+
+One file, one edit, no re-discovery. Nothing about the request changed between the two transcripts - only the structure it landed on.
+
+## Write down only what structure can't say
+
+After the structural fixes, residue remains: the one folder whose name truly can't explain itself, the team slang you didn't rename toward, one recurring mistake the codebase keeps inviting. Those go in your [rules file](/foundations/rules/) as narrow, example-bound notes - never as a paragraph of general advice:
+
+```md
+## Lint: no-floating-promises in billing/          <- one error class, one folder
+
+Bad - the promise is fired and forgotten; a failed charge disappears silently:
+  chargeCustomer(id)                              <- one bad example
+
+Good - awaited, and the failure has somewhere to go:
+  await chargeCustomer(id).catch(err => Audit.write('charge.failed', { id, err }))
+                                                  <- one good example
+
+This class of error recurs in billing/ because most calls here used to be
+synchronous. When you see a bare async call with no `await` or `.catch`,
+fix it to the pattern above - don't just silence the lint rule.
+                                                  <- one sentence on why it recurs HERE
+```
+
+A note this narrow is small enough to stay true and specific enough to change behavior; a general "write clean async code" line in the same file would do neither. Practitioners who've tried this report a real jump in fix rate on the exact error the note names - treat the *shape* of that result as trustworthy and any specific number you hear quoted as unverified until you measure it on your own repo.
+
+**Where this goes wrong: docs instead of structure.** In any real repo the code is the freshest layer and prose about the code is the stalest, because keeping it current is nobody's job - and an agent will trust a stale claim *confidently*, which is worse than no doc at all. Tell: a sprawling "how this codebase works" file, months old, describing a layout that moved.
+
+*Pass bar: every note covers one folder or one error class - nothing titled "how this codebase works."*
+
+## When the repo isn't the standard case
+
+The probes assume one repo you own, with history to fail against. The invariant that survives every variation: they measure what the structure says to a reader with no tenure, whatever that structure is.
+
+| Starting condition | What you probe instead | What "pass" still means |
+| --- | --- | --- |
+| **Greenfield** - nothing to fail against yet | Paste the planned tree into a fresh session and ask probe 1's question against it: "given this layout, where would you look for the code that decides which customers get billed?" | The same bar, on paper. A structure that misdirects a cold reader in a proposal will misdirect one in code - and the rename costs nothing the week before the folders exist. This is the cheapest the audit will ever be |
+| **A monorepo** | Every probe per package, plus one the single-repo version doesn't need - the routing layer above them: "which package owns invoicing?" | The same bars, package by package. Cross-package naming fails more often than in-package naming, because each team named their own package sensibly and nobody owned the map. A one-line-per-package manifest at the root - name, one sentence, spoken-word aliases - is the narrow-note discipline applied where monorepos actually lose agents |
+| **Code you can't restructure** - vendor SDK, generated code, a rename freeze | The same four asks, now measuring your workarounds: wire the navigation layer, write the glossary lines, then rerun | The same bars, no discount. If a fresh session still can't converge with the workarounds in place, you've measured that the debt is real and unpatched - which is the evidence a restructure proposal needs anyway |
+
+## Getting a genuinely cold session
+
+The four asks are plain prompts - the same words work in any chat surface. What differs is how you get a session with no memory of the answer.
+
+| Tool | How to start cold |
+| --- | --- |
+| Claude Code | `/clear` between probes, or a fresh [subagent](/foundations/subagents/) for the audit itself, so the main session can't leak an answer the structure didn't earn |
+| Codex | A new session, not `/compact` - compaction carries forward exactly the contamination the probes are designed to catch |
+| Cursor / Copilot | A new chat, not a continued one; the history panel makes it easy to confirm you're actually starting cold |
+| opencode | The `explore` agent is a reasonable stand-in for probes 1 and 2, since it's already scoped to read-only reconnaissance |
+| Pi | A fresh session with no `SYSTEM.md` loaded - the probes measure what the repo says with no standing context helping it along |
+
+The navigation layer in probe 2 is client-agnostic: it wires into any MCP-capable tool the same way, so the recovery path never gates which tool you audit from.
+
+## Questions that come up in practice
+
+**Can rules files substitute for restructuring?** They trade a one-time cost for rent. A rules line is loaded into every session forever and drifts from the code the day someone forgets to update it; a structural fix is paid once and can't be out of date, because it *is* the code. Rules are for the residue structure genuinely can't say - the moment a rules file starts reading like a map of the maze, the maze was the problem.
+
+**Can I automate the probes?** Partly, and it's worth doing once they pass reliably: the probes are plain prompts, so a [headless](/foundations/headless/) run can ask probe 1's question on a schedule and flag when the tool-call count crosses the bar. Treat that as a smoke alarm, not a gate - the judgment ("is that where a teammate would say it lives?") still needs you. The manual audit finds the seam; the automated version tells you when it reopens.
+
+**The team disagrees about where things should live. Who wins?** Run the probe with each side's phrasing - the structure that lets a cold session converge in two greps wins, whoever proposed it. That's the quiet gift of this audit: "where should this live" stops being a taste argument between senior people and becomes a measurement either of them can rerun. Legibility is checkable; taste isn't.
+
+## The probes, assembled
+
+The four asks live with their pass bars in [the probes](#the-four-probes) - copy them from there, swapping your team's own words into the brackets. What's left has no other home:
+
+**Baseline score**, before the manual probes, to help pick the seam:
+
+```bash
+$ npx github:microsoft/agentrc readiness    # verified mid-2026
+```
+
+**Recovery layer**, when the restructure isn't feasible yet:
+
+```bash
+$ uv tool install -p 3.13 serena-agent && serena init    # verified mid-2026
+```
+
+**The narrow rules-note template** - one error class, never an essay:
+
+```md
+## <Lint or mistake name> in <folder>/
+Bad:  <one real bad example>
+Good: <one real good example>
+Why it recurs here: <one sentence>. When you see it, fix to the
+pattern above - don't just silence the warning.
+```
+
+## Rerun it: legibility as a regression suite
+
+A structure that passed once decays the way a rules file goes stale - a new file dropped into the domain folder without a clear name, a fast-follow PR that reintroduces a shared helper. So don't file the probes as a one-time audit. Rerun them after any merge that touches the seam, before handing the area to a new teammate or a fresh agent session, and on a rolling cadence if it sees steady churn.
+
+Four prompts and a few minutes turn that decay into a failed probe today, instead of next month's version of the transcript you started with. Every fix underneath them is prepaid context - the folder that explains itself, the boundary that predicts its own blast radius, the suite that answers "does it work?" - inherited for free by every future session: yours, a teammate's, an agent's, without anyone having to re-explain it.
+
+Which leaves the one habit worth keeping past this page. Legibility is the rare codebase quality you can't assess by looking, because you already know where everything is - your own familiarity is precisely the instrument that can't measure it. So don't assess it. Ask a session that knows nothing, in your team's own words, and count. More than two greps to find where billing is decided and the seam has decayed again, whatever the folder structure looks like to you. That number is the check that can say no, and it is the only opinion in this whole play that isn't yours.

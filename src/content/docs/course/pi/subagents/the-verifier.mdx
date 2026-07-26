@@ -1,19 +1,19 @@
 ---
 title: "Build a verifier that doesn't trust the builder"
-description: "A second agent, spawned after the first, scoped to read-only tools, that decomposes a builder's self-report into falsifiable claims and checks each one against the real data — and because it can't chat back, the only way to fix what it misses is to edit its rules."
+description: "A second agent, spawned after the first, scoped to read-only tools, that decomposes a builder's self-report into falsifiable claims and checks each one against the real data - and because it can't chat back, the only way to fix what it misses is to edit its rules."
 sidebar:
   label: "The verifier · trust nothing self-reported"
 ---
 
 import NightShift from '../../../../../components/interactive/NightShift.tsx';
 
-Every child in the last lesson finished with some version of "done — re-extracted, index updated." You read that, moved on, and closed the backlog ticket. But notice what actually happened: you accepted a claim from the one party in this whole exchange with every incentive to report success — the agent that just did the work. `stash`'s extractor still mangles *some* sites even after your fix; the full-text search still drops accented characters sometimes. A child that ran `stash reextract` and got a clean exit code has no way of knowing whether the text it just indexed is actually readable, or whether "café" made it into the search index as "caf." It reported what it did. It didn't verify what it produced.
+Every child in the last lesson finished with some version of "done - re-extracted, index updated." You read that, moved on, and closed the backlog ticket. But notice what actually happened: you accepted a claim from the one party in this whole exchange with every incentive to report success - the agent that just did the work. `stash`'s extractor still mangles *some* sites even after your fix; the full-text search still drops accented characters sometimes. A child that ran `stash reextract` and got a clean exit code has no way of knowing whether the text it just indexed is actually readable, or whether "café" made it into the search index as "caf." It reported what it did. It didn't verify what it produced.
 
-That's a structural problem, not a prompting one — no amount of "please double-check your work" fixes an agent checking its own homework. The fix is a second, independent agent, spawned separately, whose only job is to distrust the first one's report on principle and go look for itself.
+That's a structural problem, not a prompting one - no amount of "please double-check your work" fixes an agent checking its own homework. The fix is a second, independent agent, spawned separately, whose only job is to distrust the first one's report on principle and go look for itself.
 
 ## Spawn the verifier against the builder's own transcript, not its summary
 
-You already have everything the verifier needs, for free: every Pi session persists its full, uncompacted history to a JSONL file on disk, regardless of what got summarized into context along the way. Point the verifier at that file instead of at the builder's closing message, and it isn't reading a summary — it's reading exactly what happened, tool call by tool call:
+You already have everything the verifier needs, for free: every Pi session persists its full, uncompacted history to a JSONL file on disk, regardless of what got summarized into context along the way. Point the verifier at that file instead of at the builder's closing message, and it isn't reading a summary - it's reading exactly what happened, tool call by tool call:
 
 ```text
 pi --mode json -p "Read the builder's session log at
@@ -23,35 +23,35 @@ pi --mode json -p "Read the builder's session log at
   confirm it contains no nav/ad boilerplate, (2) query the search index
   directly and confirm the entry changed and preserves accented
   characters where the source had them. Report per-claim: verified,
-  failed, or could-not-verify — with the specific mismatch for anything
+  failed, or could-not-verify - with the specific mismatch for anything
   that fails." \
   --no-session \
   --tools read,bash \
   --model openai/gpt-4o
 ```
 
-Two choices here matter more than they look. First, **the toolset**: `read,bash` only — no `write`, no `edit`. The verifier's whole job is to look, not to touch; giving it a narrower surface than the builder is the same instinct as the damage-control gate from an earlier module, just applied by omission instead of by rule. Second, **a different model than the builder used**. A verifier that shares the builder's blind spots will miss exactly what the builder missed; a genuinely independent second opinion is worth more when it isn't the same model checking its own reasoning twice.
+Two choices here matter more than they look. First, **the toolset**: `read,bash` only - no `write`, no `edit`. The verifier's whole job is to look, not to touch; giving it a narrower surface than the builder is the same instinct as the damage-control gate from an earlier module, just applied by omission instead of by rule. Second, **a different model than the builder used**. A verifier that shares the builder's blind spots will miss exactly what the builder missed; a genuinely independent second opinion is worth more when it isn't the same model checking its own reasoning twice.
 
 ## Decompose "done" into claims that can actually be checked
 
-The instruction above already does the important part: it doesn't ask "did this work?" — it asks the verifier to break "done" into pieces, each one either true or false against something real. "Re-extracted" isn't one claim, it's at least two: *the stored text changed*, and *the new text is actually clean*. "Index updated" is a separate claim from either of those. A verifier that checks "did it run" is worthless; a verifier that checks each falsifiable piece of what the builder implied is the whole mechanism.
+The instruction above already does the important part: it doesn't ask "did this work?" - it asks the verifier to break "done" into pieces, each one either true or false against something real. "Re-extracted" isn't one claim, it's at least two: *the stored text changed*, and *the new text is actually clean*. "Index updated" is a separate claim from either of those. A verifier that checks "did it run" is worthless; a verifier that checks each falsifiable piece of what the builder implied is the whole mechanism.
 
-That decomposition belongs in a durable file, not a one-off prompt — put it in the verifier's own system prompt (`.pi/agents/verifier.md`, or handed in via `--append-system-prompt`), the same way `.pi/SYSTEM.md` captures `stash`'s conventions so you stop re-typing them every session. And that's not incidental — it's the whole reason this pattern is worth building at all.
+That decomposition belongs in a durable file, not a one-off prompt - put it in the verifier's own system prompt (`.pi/agents/verifier.md`, or handed in via `--append-system-prompt`), the same way `.pi/SYSTEM.md` captures `stash`'s conventions so you stop re-typing them every session. And that's not incidental - it's the whole reason this pattern is worth building at all.
 
 ## Why "no chat input" is the point, not a limitation
 
-Look again at the flag you already know from the last two lessons: **`-p`**. Print mode. One prompt, one run, exit. You've been using it because it's the natural way to spawn a headless child — but for the verifier specifically, that constraint does something you haven't needed yet: it removes your ability to argue with it.
+Look again at the flag you already know from the last two lessons: **`-p`**. Print mode. One prompt, one run, exit. You've been using it because it's the natural way to spawn a headless child - but for the verifier specifically, that constraint does something you haven't needed yet: it removes your ability to argue with it.
 
-Sit with what that means in practice. If the verifier wrongly flags a clean re-extraction as broken, or worse, waves through one that's actually still full of nav cruft — you can't just reply "no, that one's fine, ignore it" and move on. There's no follow-up turn to send it. The only lever you have is the file: open `.pi/agents/verifier.md` and change what it checks, or how. That's a real constraint, and it's a good one. It's the exact same discipline behind writing `.pi/SYSTEM.md` instead of re-explaining `stash`'s conventions in every session — except here it isn't a convenience, it's *enforced*. A chat-shaped reviewer lets you patch a bad judgment call in the moment and forget it by next week. A verifier with no chat surface forces every fix to become a durable rule the first time, because a durable rule is the only kind of fix it's capable of receiving.
+Sit with what that means in practice. If the verifier wrongly flags a clean re-extraction as broken, or worse, waves through one that's actually still full of nav cruft - you can't just reply "no, that one's fine, ignore it" and move on. There's no follow-up turn to send it. The only lever you have is the file: open `.pi/agents/verifier.md` and change what it checks, or how. That's a real constraint, and it's a good one. It's the exact same discipline behind writing `.pi/SYSTEM.md` instead of re-explaining `stash`'s conventions in every session - except here it isn't a convenience, it's *enforced*. A chat-shaped reviewer lets you patch a bad judgment call in the moment and forget it by next week. A verifier with no chat surface forces every fix to become a durable rule the first time, because a durable rule is the only kind of fix it's capable of receiving.
 
-Here's that same shape, made concrete. Nine chores went out overnight; only the worker's own report comes back unless you've wired something in to check it. Watch the night play out, then choose what gets wired into the re-run — and what the morning report is actually worth:
+Here's that same shape, made concrete. Nine chores went out overnight; only the worker's own report comes back unless you've wired something in to check it. Watch the night play out, then choose what gets wired into the re-run - and what the morning report is actually worth:
 
 <NightShift client:visible />
 
-Notice the ceiling even at full wiring. A verifier that checks the code compiles, the tests pass, and the full path runs still can't catch the one failure mode nobody encoded as a check — because a verifier can only verify a claim somebody already wrote down as falsifiable. That's not an argument against building one. It's the argument for building the *right* claims into it, and for treating "what should this verifier check" as a question that gets revisited every time something slips through, not answered once and forgotten.
+Notice the ceiling even at full wiring. A verifier that checks the code compiles, the tests pass, and the full path runs still can't catch the one failure mode nobody encoded as a check - because a verifier can only verify a claim somebody already wrote down as falsifiable. That's not an argument against building one. It's the argument for building the *right* claims into it, and for treating "what should this verifier check" as a question that gets revisited every time something slips through, not answered once and forgotten.
 
 ## What you've actually built
 
-Two agents, neither one trusting the other by default. A builder that does the work and reports on itself, and a verifier that reads the builder's real transcript, breaks its claims into pieces small enough to check, and can only ever push back by having its rules edited — never by being talked out of a finding. That's a genuinely different relationship between agents than "one delegates to another." It's closer to the relationship you'd want between a contributor and a reviewer who's never met them: assume nothing, check everything falsifiable, and write down what you learn so the next review doesn't have to relearn it.
+Two agents, neither one trusting the other by default. A builder that does the work and reports on itself, and a verifier that reads the builder's real transcript, breaks its claims into pieces small enough to check, and can only ever push back by having its rules edited - never by being talked out of a finding. That's a genuinely different relationship between agents than "one delegates to another." It's closer to the relationship you'd want between a contributor and a reviewer who's never met them: assume nothing, check everything falsifiable, and write down what you learn so the next review doesn't have to relearn it.
 
-Two agents working a job neither fully trusts the other on — that's already more than one context can comfortably hold at once. The next scale-up isn't "more of the same kind of pair." It's a structure: someone who plans, several someones who execute, and a rule about who's allowed to touch code directly. [Next: build a small team, and learn honestly when it's not worth the overhead](/course/pi/teams/).
+Two agents working a job neither fully trusts the other on - that's already more than one context can comfortably hold at once. The next scale-up isn't "more of the same kind of pair." It's a structure: someone who plans, several someones who execute, and a rule about who's allowed to touch code directly. [Next: build a small team, and learn honestly when it's not worth the overhead](/course/pi/teams/).

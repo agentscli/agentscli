@@ -3,8 +3,8 @@ import './widget-frame.css';
 
 /**
  * Class list for an interactive-widget root. Flips on `ac-widget--live`
- * after hydration — with `client:visible` that means first scroll into
- * view — which runs the one-shot border trace (see widget-frame.css).
+ * after hydration - with `client:visible` that means first scroll into
+ * view - which runs the one-shot border trace (see widget-frame.css).
  */
 export function useWidgetFrame(rootClass: string): string {
   const [live, setLive] = useState(false);

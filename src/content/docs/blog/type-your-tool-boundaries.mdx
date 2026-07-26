@@ -1,13 +1,13 @@
 ---
 title: "Your agent says the delete worked. The only proof is a sentence it wrote itself."
-description: "Give every consequential tool a declared output schema and validate the result against it at the boundary, so the UI gates on a real success boolean instead of trusting the agent's prose — and a malformed result fails loud instead of rendering a lie."
+description: "Give every consequential tool a declared output schema and validate the result against it at the boundary, so the UI gates on a real success boolean instead of trusting the agent's prose - and a malformed result fails loud instead of rendering a lie."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, mcp-servers, permissions]
 draft: false
 ---
 
-The agent calls `delete_customer`, the function returns, and the model writes: "Done — I've removed the customer record." Your UI renders a green checkmark. The record is still there. The API timed out, returned a 502, and the agent — reading its own tool's stringified response — pattern-matched "looks fine" and narrated a success that never happened.
+The agent calls `delete_customer`, the function returns, and the model writes: "Done - I've removed the customer record." Your UI renders a green checkmark. The record is still there. The API timed out, returned a 502, and the agent - reading its own tool's stringified response - pattern-matched "looks fine" and narrated a success that never happened.
 
 The mistake everyone makes is treating the tool's *return value* as the source of truth. It isn't. By the time the model has summarized it into prose, success and failure have blurred into the same shape: confident English. **The agent doesn't know the action worked. It knows the response didn't obviously look broken.** Those are not the same fact, and the gap between them is where false confirmations live.
 
@@ -15,13 +15,13 @@ So here's the question: if the agent's words can't be trusted, what *can* the UI
 
 ## Free text is where success and failure look identical
 
-Picture the workflow everyone starts with. A tool runs, returns a blob — maybe JSON, maybe a stack trace, maybe an empty `200 OK` body — and the model folds it into the conversation as narration. The interface downstream has two options, both bad: parse the model's prose for the word "success," or trust the model to have parsed the blob correctly. Both put a language model in charge of a boolean that has real consequences.
+Picture the workflow everyone starts with. A tool runs, returns a blob - maybe JSON, maybe a stack trace, maybe an empty `200 OK` body - and the model folds it into the conversation as narration. The interface downstream has two options, both bad: parse the model's prose for the word "success," or trust the model to have parsed the blob correctly. Both put a language model in charge of a boolean that has real consequences.
 
-This is the part the mainstream framing gets wrong. **Structured output is sold as ergonomics** — "nice, now I get typed JSON instead of regex-ing a string." That's true and it undersells the point. The real payoff isn't convenience. It's that a declared schema turns the agent's freest, least-trustworthy medium — generated text — into a typed fact you can gate behavior on. Ergonomics is the side effect. Trust at the boundary is the product.
+This is the part the mainstream framing gets wrong. **Structured output is sold as ergonomics** - "nice, now I get typed JSON instead of regex-ing a string." That's true and it undersells the point. The real payoff isn't convenience. It's that a declared schema turns the agent's freest, least-trustworthy medium - generated text - into a typed fact you can gate behavior on. Ergonomics is the side effect. Trust at the boundary is the product.
 
-It helps to be precise about *why* the text can't be trusted. A model doesn't have two different procedures for "narrate a success" and "narrate a failure." It has one: predict the most plausible next token given everything in context. When the tool response is a clean `{deleted: true}`, the plausible continuation is "Done." When the response is a truncated 502 body, a timeout the SDK swallowed, or an empty `200 OK`, the plausible continuation is *also* "Done" — because nothing in the bytes screams failure, and the surrounding conversation primed a successful outcome. The narration is optimized for coherence with the prompt, not for correspondence with reality. Success and failure don't just *look* alike in free text; they're produced by the identical mechanism, so the medium itself can't carry the distinction.
+It helps to be precise about *why* the text can't be trusted. A model doesn't have two different procedures for "narrate a success" and "narrate a failure." It has one: predict the most plausible next token given everything in context. When the tool response is a clean `{deleted: true}`, the plausible continuation is "Done." When the response is a truncated 502 body, a timeout the SDK swallowed, or an empty `200 OK`, the plausible continuation is *also* "Done" - because nothing in the bytes screams failure, and the surrounding conversation primed a successful outcome. The narration is optimized for coherence with the prompt, not for correspondence with reality. Success and failure don't just *look* alike in free text; they're produced by the identical mechanism, so the medium itself can't carry the distinction.
 
-The obvious objection: modern models are good, and they rarely fabricate a flat-out success. Mostly true, and beside the point. You're not defending against the common case; you're defending against the expensive tail. The failure that costs you is the one-in-a-thousand call where an upstream service half-died, returned an ambiguous payload, and the model — behaving exactly as designed — smoothed it into confident prose. Reliability engineering has always been about the tail, and "the model is usually right" is precisely the reasoning that lets a false confirmation through on the day it matters.
+The obvious objection: modern models are good, and they rarely fabricate a flat-out success. Mostly true, and beside the point. You're not defending against the common case; you're defending against the expensive tail. The failure that costs you is the one-in-a-thousand call where an upstream service half-died, returned an ambiguous payload, and the model - behaving exactly as designed - smoothed it into confident prose. Reliability engineering has always been about the tail, and "the model is usually right" is precisely the reasoning that lets a false confirmation through on the day it matters.
 
 And the boundary is exactly where it matters, because the boundary is where consequences happen. A read that returns garbage is annoying. A `delete` or `transfer_funds` that *reports* success while silently failing is a lie your user acts on.
 
@@ -50,7 +50,7 @@ DELETE_CUSTOMER = {
 }
 ```
 
-Now the contract is explicit: a successful delete *must* return `deleted: true` with a timestamp. There is no English to interpret. The tool either produces a value matching that shape, or it doesn't — and "doesn't" is no longer ambiguous.
+Now the contract is explicit: a successful delete *must* return `deleted: true` with a timestamp. There is no English to interpret. The tool either produces a value matching that shape, or it doesn't - and "doesn't" is no longer ambiguous.
 
 The enforcement is the half people skip. Returning structured content isn't enough; you have to **reject anything that fails the schema before it reaches the model or the UI.**
 
@@ -66,7 +66,7 @@ def finish_tool(name, raw_result, schema):
     return {"isError": False, "structuredContent": raw_result}
 ```
 
-A 502 that yields `{}` doesn't match `required: ["deleted", ...]`, so it fails *here*, loud, at the boundary — instead of becoming a green checkmark three layers up. The malformed result hits an error path by construction, not by the model's good judgment.
+A 502 that yields `{}` doesn't match `required: ["deleted", ...]`, so it fails *here*, loud, at the boundary - instead of becoming a green checkmark three layers up. The malformed result hits an error path by construction, not by the model's good judgment.
 
 ## The UI gates on the boolean, never on the narration
 
@@ -78,13 +78,13 @@ Once the result is typed, the interface stops guessing. The verified-success sta
   : <ActionFailed detail={result.content} />}
 ```
 
-Notice what changed. The checkmark is no longer downstream of "the model said done." It's downstream of `deleted === true`, a value that could only exist if the real result matched the real contract. **A shape mismatch can't render as success — it has nowhere to go but the error boundary.** The human never sees a false confirmation, because the only path to the success UI runs through a validated fact.
+Notice what changed. The checkmark is no longer downstream of "the model said done." It's downstream of `deleted === true`, a value that could only exist if the real result matched the real contract. **A shape mismatch can't render as success - it has nowhere to go but the error boundary.** The human never sees a false confirmation, because the only path to the success UI runs through a validated fact.
 
-This is the same instinct that drives [permissions](/foundations/permissions/): you don't trust the agent's intent on a consequential action, you put a deterministic gate in front of it. A schema check is that gate on the *way back* — input permissions ask "should this run?", output validation asks "did it actually do what it claims?" Both replace a judgment call with a rule. Both are context engineering: the agent is broad and fast but contextless about whether *this* call truly succeeded, so you encode the success criterion once, in a shape, and let the boundary hold the line the model can't.
+This is the same instinct that drives [permissions](/foundations/permissions/): you don't trust the agent's intent on a consequential action, you put a deterministic gate in front of it. A schema check is that gate on the *way back* - input permissions ask "should this run?", output validation asks "did it actually do what it claims?" Both replace a judgment call with a rule. Both are context engineering: the agent is broad and fast but contextless about whether *this* call truly succeeded, so you encode the success criterion once, in a shape, and let the boundary hold the line the model can't.
 
-## Failure isn't binary — give the failures a shape too
+## Failure isn't binary - give the failures a shape too
 
-A delete is the easy case because it's nearly binary. Most consequential actions aren't. A deploy can succeed, partially succeed, get queued, or roll itself back; a payment can settle, get held for review, or hard-decline. If your schema only encodes the happy path, you've solved half the problem — the "did it work" half — while leaving "what exactly happened when it didn't" back in the prose where you started.
+A delete is the easy case because it's nearly binary. Most consequential actions aren't. A deploy can succeed, partially succeed, get queued, or roll itself back; a payment can settle, get held for review, or hard-decline. If your schema only encodes the happy path, you've solved half the problem - the "did it work" half - while leaving "what exactly happened when it didn't" back in the prose where you started.
 
 So make the failure modes first-class typed values, not an afterthought. The schema is the right place to enumerate them:
 
@@ -104,26 +104,26 @@ So make the failure modes first-class typed values, not an afterthought. The sch
 }
 ```
 
-Now `rolled_back` is exactly as legible to the UI as `live`. The interface can render a distinct state for each — a green banner for `live`, an amber "rolled back to previous build" for `rolled_back`, a spinner for `queued` — and none of those states depends on the model having correctly characterized a deploy log it skimmed. The general move: an output schema isn't just an assertion that the action *worked*. It's the declared, exhaustive vocabulary of *every outcome the caller is allowed to act on*. Anything outside that vocabulary is, by construction, an error — and that's the behavior you want.
+Now `rolled_back` is exactly as legible to the UI as `live`. The interface can render a distinct state for each - a green banner for `live`, an amber "rolled back to previous build" for `rolled_back`, a spinner for `queued` - and none of those states depends on the model having correctly characterized a deploy log it skimmed. The general move: an output schema isn't just an assertion that the action *worked*. It's the declared, exhaustive vocabulary of *every outcome the caller is allowed to act on*. Anything outside that vocabulary is, by construction, an error - and that's the behavior you want.
 
 ## The serialized copy is a quiet trap
 
-Here's the edge case that bites teams who think the schema alone saved them. The 2025-06-18 spec says that for backwards compatibility a tool returning structured content **should also return the serialized JSON in a `TextContent` block**. That's sensible — older clients that predate `structuredContent` can still read *something*. But it means the same payload now exists twice in the result: once as the typed `structuredContent` you validate, and once as a plain string sitting in `content`, which is exactly the kind of text a model will happily read and narrate from.
+Here's the edge case that bites teams who think the schema alone saved them. The 2025-06-18 spec says that for backwards compatibility a tool returning structured content **should also return the serialized JSON in a `TextContent` block**. That's sensible - older clients that predate `structuredContent` can still read *something*. But it means the same payload now exists twice in the result: once as the typed `structuredContent` you validate, and once as a plain string sitting in `content`, which is exactly the kind of text a model will happily read and narrate from.
 
-That redundancy is where the gap sneaks back in, because not every client handles the two fields the same way. Some host frameworks have shipped bugs that drop `structuredContent` entirely and forward only the text block to the model and the UI. Others swung the other way and started prioritizing `structuredContent` while dropping the `TextContent` the model used to see. The lesson isn't "the spec is broken" — it's that *which field your render path actually reads* is a decision you have to make on purpose. If your UI falls back to `content` when `structuredContent` is missing, you've quietly reintroduced prose-parsing on exactly the malformed responses you built this to catch. Gate the success UI specifically on validated `structuredContent`, and treat its **absence** as a failure to surface — never as a cue to go read the string instead. The fallback path is the unsafe path; don't let it render a checkmark.
+That redundancy is where the gap sneaks back in, because not every client handles the two fields the same way. Some host frameworks have shipped bugs that drop `structuredContent` entirely and forward only the text block to the model and the UI. Others swung the other way and started prioritizing `structuredContent` while dropping the `TextContent` the model used to see. The lesson isn't "the spec is broken" - it's that *which field your render path actually reads* is a decision you have to make on purpose. If your UI falls back to `content` when `structuredContent` is missing, you've quietly reintroduced prose-parsing on exactly the malformed responses you built this to catch. Gate the success UI specifically on validated `structuredContent`, and treat its **absence** as a failure to surface - never as a cue to go read the string instead. The fallback path is the unsafe path; don't let it render a checkmark.
 
 ## A schema checks shape, not truth
 
 Be honest about the boundary of the technique, because it has one. Validating against an `outputSchema` guarantees the result *conforms* to the contract. It does not guarantee the result is *true*. A buggy or compromised server can return a perfectly schema-valid `{deleted: true, deleted_at: "..."}` while the row sits untouched in the database. The schema check will pass, the UI will render green, and you'll have a typed lie instead of a prose one.
 
-What output validation actually closes is the gap where the *model* invents success from ambiguous bytes. Closing the gap where the *server itself* is wrong is a different job, and it lives on the server: derive `deleted` from the real effect (`rows_affected == 1`), not from the absence of a thrown exception; make the operation idempotent; read the post-condition back before reporting. The schema gives you a trustworthy channel from server to UI — it can't make the server honest about what it put in that channel. This is why output validation pairs with, rather than replaces, the deterministic [permissions](/foundations/permissions/) and [subagent](/foundations/subagents/) isolation you already use: each closes a different gap between a capable-but-contextless agent and the ground truth it can't see.
+What output validation actually closes is the gap where the *model* invents success from ambiguous bytes. Closing the gap where the *server itself* is wrong is a different job, and it lives on the server: derive `deleted` from the real effect (`rows_affected == 1`), not from the absence of a thrown exception; make the operation idempotent; read the post-condition back before reporting. The schema gives you a trustworthy channel from server to UI - it can't make the server honest about what it put in that channel. This is why output validation pairs with, rather than replaces, the deterministic [permissions](/foundations/permissions/) and [subagent](/foundations/subagents/) isolation you already use: each closes a different gap between a capable-but-contextless agent and the ground truth it can't see.
 
-There's also a way to overdo it. A schema tuned too tight — marking every optional field `required`, pinning enums you're still evolving — converts valid-but-changed payloads into false *failures*, which is just the original error wearing the opposite mask. A user staring at "action failed" on an action that worked learns to ignore your error states, and a dismissed error boundary is no boundary at all. Keep `required` scoped to the literal definition of "this worked," version the schema when the contract genuinely changes, and let everything non-load-bearing stay optional. The goal is a gate that fails loud when reality diverges from the contract — not one that fails loud whenever the contract drifts an inch.
+There's also a way to overdo it. A schema tuned too tight - marking every optional field `required`, pinning enums you're still evolving - converts valid-but-changed payloads into false *failures*, which is just the original error wearing the opposite mask. A user staring at "action failed" on an action that worked learns to ignore your error states, and a dismissed error boundary is no boundary at all. Keep `required` scoped to the literal definition of "this worked," version the schema when the contract genuinely changes, and let everything non-load-bearing stay optional. The goal is a gate that fails loud when reality diverges from the contract - not one that fails loud whenever the contract drifts an inch.
 
 ## Type the consequential tools first
 
-You don't need a schema on every read. Type the tools where a false success is expensive: anything that writes, deletes, charges, deploys, or notifies. For each, write the `outputSchema` as the literal definition of "this worked" — the fields that *must* be present and true for the action to be real — and validate against it before the result is allowed to mean anything.
+You don't need a schema on every read. Type the tools where a false success is expensive: anything that writes, deletes, charges, deploys, or notifies. For each, write the `outputSchema` as the literal definition of "this worked" - the fields that *must* be present and true for the action to be real - and validate against it before the result is allowed to mean anything.
 
-The agent will still be confident. It will still narrate. That's fine — let it talk. Just stop letting it vote.
+The agent will still be confident. It will still narrate. That's fine - let it talk. Just stop letting it vote.
 
 Make the contract the authority, and the sentence becomes decoration over a fact you already trust.

@@ -1,5 +1,5 @@
 /**
- * Hook event timeline — every lifecycle event each tool exposes, in firing
+ * Hook event timeline - every lifecycle event each tool exposes, in firing
  * order, with gate vs reactive semantics. Facts sourced from the verified
  * tool-instructions content (hooks chapter per tool): keep in sync with
  * src/content/tool-instructions/<tool>/hooks.mdx.
@@ -45,7 +45,7 @@ export const hookTools: HookTool[] = [
         phase: 'Session opens',
         kind: 'reactive',
         fires:
-          'Once, when the session opens. Classic use: inject context the agent should start with — `git status`, recent log, current branch.',
+          'Once, when the session opens. Classic use: inject context the agent should start with - `git status`, recent log, current branch.',
       },
       {
         id: 'cc-user-prompt',
@@ -62,7 +62,7 @@ export const hookTools: HookTool[] = [
         fires:
           'Before a tool call executes. The enforcement point: block `rm -rf`, protect `.env`, stop pushes to main.',
         blocking:
-          'Returns a decision — allow, deny, or modify the arguments. A deny feeds its reason back to the model.',
+          'Returns a decision - allow, deny, or modify the arguments. A deny feeds its reason back to the model.',
         exampleTitle: '.claude/settings.json',
         example: `{
   "hooks": {
@@ -89,7 +89,7 @@ export const hookTools: HookTool[] = [
         phase: 'Special moments',
         kind: 'reactive',
         fires:
-          'Before the context window is compacted — a chance to snapshot the conversation before the summary flattens it.',
+          'Before the context window is compacted - a chance to snapshot the conversation before the summary flattens it.',
       },
       {
         id: 'cc-subagent-stop',
@@ -174,9 +174,9 @@ matcher = "Bash"
     slug: 'opencode',
     label: 'opencode',
     configNote:
-      'No declarative config — hooks live inside JS/TS plugins. The plugin receives `project`, `client`, `$` (shell), `directory`, `worktree`, and returns an object keyed by event name.',
+      'No declarative config - hooks live inside JS/TS plugins. The plugin receives `project`, `client`, `$` (shell), `directory`, `worktree`, and returns an object keyed by event name.',
     orderNote:
-      'opencode exposes event families rather than a fixed pipeline — which events fire, and when, depends on what the session does.',
+      'opencode exposes event families rather than a fixed pipeline - which events fire, and when, depends on what the session does.',
     phases: ['Files', 'Commands', 'Permissions', 'Session & messages'],
     events: [
       {
@@ -204,7 +204,7 @@ matcher = "Bash"
         name: 'command.executed',
         phase: 'Commands',
         kind: 'reactive',
-        fires: 'After a command runs — log it, react to it.',
+        fires: 'After a command runs - log it, react to it.',
       },
       {
         id: 'oc-permission-asked',
@@ -228,7 +228,7 @@ matcher = "Bash"
         phase: 'Session & messages',
         kind: 'reactive',
         fires:
-          'Session lifecycle, server, message, and TUI event families — the richest taxonomy of the three tools, at the cost of writing code instead of config.',
+          'Session lifecycle, server, message, and TUI event families - the richest taxonomy of the three tools, at the cost of writing code instead of config.',
       },
     ],
   },
@@ -236,7 +236,7 @@ matcher = "Bash"
     slug: 'pi',
     label: 'Pi',
     configNote:
-      'No hooks.json — hooks are TypeScript extensions via ExtensionAPI (`pi.on(...)`). Global: `~/.pi/agent/extensions/`. Project: `.pi/extensions/` (trust-gated).',
+      'No hooks.json - hooks are TypeScript extensions via ExtensionAPI (`pi.on(...)`). Global: `~/.pi/agent/extensions/`. Project: `.pi/extensions/` (trust-gated).',
     orderNote:
       'Pi exposes a large ExtensionAPI event surface. The events below are the ones that map cleanest onto the hooks primitive; many more exist for turns, messages, and UI.',
     phases: ['Project trust', 'Session opens', 'Each tool call', 'Compaction', 'Session ends'],
@@ -275,14 +275,14 @@ export default function (pi: ExtensionAPI) {
         fires:
           'Before a tool runs. The enforcement point for permission gates and protected paths.',
         blocking:
-          'Can block or reshape the call — the stock pattern for hand-rolling approval prompts Pi does not ship by default.',
+          'Can block or reshape the call - the stock pattern for hand-rolling approval prompts Pi does not ship by default.',
       },
       {
         id: 'pi-compact',
         name: 'session_before_compact / session_compact',
         phase: 'Compaction',
         kind: 'reactive',
-        fires: 'Around context compaction — customize summarization or observe what was dropped.',
+        fires: 'Around context compaction - customize summarization or observe what was dropped.',
       },
       {
         id: 'pi-session-shutdown',

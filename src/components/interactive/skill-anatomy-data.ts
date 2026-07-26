@@ -1,8 +1,8 @@
 /**
- * SKILL.md anatomy explorer — click a part of the file, see what it
+ * SKILL.md anatomy explorer - click a part of the file, see what it
  * controls and which tools honor it. Behavioral claims are extracted
  * from src/content/tool-instructions/<tool>/skills.mdx and the
- * cross-tool table in src/content/docs/foundations/skills.mdx — keep
+ * cross-tool table in src/content/docs/foundations/skills.mdx - keep
  * in sync. The example skill itself is illustrative.
  */
 
@@ -35,7 +35,7 @@ export const skaParts: SkaPart[] = [
   {
     id: 'folder',
     title: 'The skill folder',
-    what: 'A skill is a directory with a `SKILL.md` inside. Where the directory lives decides who gets it — every tool reads its own paths, and most also read the shared ones.',
+    what: 'A skill is a directory with a `SKILL.md` inside. Where the directory lives decides who gets it - every tool reads its own paths, and most also read the shared ones.',
     support: {
       'claude-code': {
         status: 'yes',
@@ -47,22 +47,22 @@ export const skaParts: SkaPart[] = [
       },
       opencode: {
         status: 'yes',
-        note: '`.opencode/skills/` — and reads `.claude/skills/` + `.agents/skills/` natively',
+        note: '`.opencode/skills/` - and reads `.claude/skills/` + `.agents/skills/` natively',
       },
       cursor: {
         status: 'yes',
-        note: '`.cursor/skills/` + `.agents/skills/` — plus legacy `.claude/skills/`, `.codex/skills/`',
+        note: '`.cursor/skills/` + `.agents/skills/` - plus legacy `.claude/skills/`, `.codex/skills/`',
       },
       copilot: {
         status: 'yes',
-        note: '`.github/skills/` — plus `.claude/skills/`, `.agents/skills/`; extra paths via `chat.agentSkillsLocations`',
+        note: '`.github/skills/` - plus `.claude/skills/`, `.agents/skills/`; extra paths via `chat.agentSkillsLocations`',
       },
     },
   },
   {
     id: 'name',
     title: 'name',
-    what: 'The skill’s identifier — how you invoke it and how the model refers to it. Lowercase-hyphenated by convention (required by the stricter tools).',
+    what: 'The skill’s identifier - how you invoke it and how the model refers to it. Lowercase-hyphenated by convention (required by the stricter tools).',
     constraints:
       'Cursor and opencode require it to match the folder name; Copilot and opencode cap it at 64 characters.',
     support: {
@@ -76,7 +76,7 @@ export const skaParts: SkaPart[] = [
   {
     id: 'description',
     title: 'description',
-    what: 'The trigger. Every skill’s description is loaded into context at session start; the model matches your intent against it to decide when to pull the body in. It’s the most important line in the file — write it as a "use when…" hint, not a summary.',
+    what: 'The trigger. Every skill’s description is loaded into context at session start; the model matches your intent against it to decide when to pull the body in. It’s the most important line in the file - write it as a "use when…" hint, not a summary.',
     constraints: 'Capped at 1024 characters where a limit is documented (opencode, Copilot).',
     support: {
       'claude-code': { status: 'yes', note: 'required · drives auto-invocation' },
@@ -89,7 +89,7 @@ export const skaParts: SkaPart[] = [
   {
     id: 'disable-model-invocation',
     title: 'disable-model-invocation',
-    what: 'Hides the skill from the model: it can only fire when you invoke it explicitly. The standard move for skills with side effects — deploys, releases, anything you never want auto-triggered.',
+    what: 'Hides the skill from the model: it can only fire when you invoke it explicitly. The standard move for skills with side effects - deploys, releases, anything you never want auto-triggered.',
     support: {
       'claude-code': { status: 'yes', note: '`/<name>` still works' },
       codex: {
@@ -107,7 +107,7 @@ export const skaParts: SkaPart[] = [
   {
     id: 'context-fork',
     title: 'context: fork',
-    what: 'Runs the skill in a forked subagent context instead of inline — its reading and tool calls happen in a separate window and only the result returns to your conversation.',
+    what: 'Runs the skill in a forked subagent context instead of inline - its reading and tool calls happen in a separate window and only the result returns to your conversation.',
     support: {
       'claude-code': { status: 'yes', note: '`inline` (default) or `fork`' },
       codex: { status: 'no', note: 'ignored' },
@@ -115,14 +115,14 @@ export const skaParts: SkaPart[] = [
       cursor: { status: 'no', note: 'ignored' },
       copilot: {
         status: 'partial',
-        note: 'mentioned in docs but behavior isn’t detailed — don’t rely on it',
+        note: 'mentioned in docs but behavior isn’t detailed - don’t rely on it',
       },
     },
   },
   {
     id: 'extras',
     title: 'Tool-specific keys',
-    what: 'Beyond the shared core, each tool reads a few keys of its own. Unrecognized keys are silently ignored — which is exactly why one SKILL.md stays portable across all five tools.',
+    what: 'Beyond the shared core, each tool reads a few keys of its own. Unrecognized keys are silently ignored - which is exactly why one SKILL.md stays portable across all five tools.',
     support: {
       'claude-code': {
         status: 'no',
@@ -140,7 +140,7 @@ export const skaParts: SkaPart[] = [
   {
     id: 'body',
     title: 'The body',
-    what: 'Whatever the agent needs to actually do the thing: a checklist, a procedure, domain knowledge. Loaded only when the skill fires — descriptions are always in context, bodies cost nothing until invoked. That progressive disclosure is what makes skills cheap to keep around.',
+    what: 'Whatever the agent needs to actually do the thing: a checklist, a procedure, domain knowledge. Loaded only when the skill fires - descriptions are always in context, bodies cost nothing until invoked. That progressive disclosure is what makes skills cheap to keep around.',
     support: {
       'claude-code': { status: 'yes', note: 'auto by description, or `/<name>`' },
       codex: { status: 'yes', note: 'auto · `/skills` to browse · `$<name>` to mention' },
@@ -155,9 +155,9 @@ export const skaParts: SkaPart[] = [
   {
     id: 'files',
     title: 'Bundled files',
-    what: 'Scripts, reference docs, and assets ride along in the folder; the body points at them and the agent reads or runs them on demand. They cost zero context until touched — the second layer of progressive disclosure.',
+    what: 'Scripts, reference docs, and assets ride along in the folder; the body points at them and the agent reads or runs them on demand. They cost zero context until touched - the second layer of progressive disclosure.',
     constraints:
-      'Keep references simple — paths relative to the skill folder. How each tool resolves them isn’t exhaustively documented.',
+      'Keep references simple - paths relative to the skill folder. How each tool resolves them isn’t exhaustively documented.',
     support: {
       'claude-code': { status: 'yes', note: 'bundled scripts and assets' },
       codex: {

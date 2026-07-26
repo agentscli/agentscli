@@ -1,15 +1,15 @@
 ---
 title: Delegate a noisy recategorisation to an isolated subagent context
-description: "Hand a scoped, high-volume task to a subagent: it reads, classifies, and dumps in its own context window, then returns only the conclusion to your main thread — so the noise never touches your session."
+description: "Hand a scoped, high-volume task to a subagent: it reads, classifies, and dumps in its own context window, then returns only the conclusion to your main thread - so the noise never touches your session."
 sidebar:
   label: "Delegate · isolated context"
 ---
 
-The recategorisation is exactly the kind of task that should never run in your main thread. It's high-volume — thousands of rows, the same classification judgement applied over and over, pages of output you'll skim once and never reference again — and self-contained: you don't need the journey through every row, only the destination, the set of recategorised transactions and a summary of what changed. That shape, *verbose work whose output you'll never look at again*, is the textbook case for delegating to a subagent.
+The recategorisation is exactly the kind of task that should never run in your main thread. It's high-volume - thousands of rows, the same classification judgement applied over and over, pages of output you'll skim once and never reference again - and self-contained: you don't need the journey through every row, only the destination, the set of recategorised transactions and a summary of what changed. That shape, *verbose work whose output you'll never look at again*, is the textbook case for delegating to a subagent.
 
 ## Why isolation is the point
 
-A subagent runs as a **separate session with its own context window**. It doesn't inherit your full conversation transcript or the files you've already opened — it gets a scoped delegation message describing the task, and works from there. That separation is the whole value, and it's worth seeing the cost you avoid.
+A subagent runs as a **separate session with its own context window**. It doesn't inherit your full conversation transcript or the files you've already opened - it gets a scoped delegation message describing the task, and works from there. That separation is the whole value, and it's worth seeing the cost you avoid.
 
 Run the recategorisation inline and your window fills with the raw material:
 
@@ -23,17 +23,17 @@ the review you came here to do…        the review you came here to do…
    ↑ buried under row dumps              ↑ still right there, in reach
 ```
 
-Same answer, wildly different footprint. The work you actually came to do — reviewing the changes, signing off — stays the most recent, most prominent thing in your context, instead of being pushed three thousand rows into the past where the agent half-forgets it. The parent pays only for the **aggregated summary**, never the full transcript of the worker. That's the cleanest tie to the thesis this whole course is built on: you close the gap — get the categorisation done against your real history — without bloating the window you're reasoning in.
+Same answer, wildly different footprint. The work you actually came to do - reviewing the changes, signing off - stays the most recent, most prominent thing in your context, instead of being pushed three thousand rows into the past where the agent half-forgets it. The parent pays only for the **aggregated summary**, never the full transcript of the worker. That's the cleanest tie to the thesis this whole course is built on: you close the gap - get the categorisation done against your real history - without bloating the window you're reasoning in.
 
 ## Scope it before you hand it over
 
-A subagent is only as good as the brief, because it starts without your context. So the delegation message has to carry everything the worker needs and nothing it doesn't. For the recategorisation that means: the corrected category list (which lives in your `AGENTS.md` from the [rules chapter](/course/codex/rules/) — children inherit the in-scope `AGENTS.md`, so the taxonomy travels with them), the rule that money is integer cents, and a sharp definition of *done*.
+A subagent is only as good as the brief, because it starts without your context. So the delegation message has to carry everything the worker needs and nothing it doesn't. For the recategorisation that means: the corrected category list (which lives in your `AGENTS.md` from the [rules chapter](/course/codex/rules/) - children inherit the in-scope `AGENTS.md`, so the taxonomy travels with them), the rule that money is integer cents, and a sharp definition of *done*.
 
 ```text
 > Delegate this to a subagent. Recategorise every transaction in the
   imported history against the category list in AGENTS.md. For each row
   that changes category, record the old and new category and the rule that
-  fired. Do not touch amounts — they're integer cents and stay untouched.
+  fired. Do not touch amounts - they're integer cents and stay untouched.
   Return a summary table: count per category before and after, plus any
   rows you couldn't classify confidently.
 ```
@@ -42,14 +42,14 @@ Notice what the brief asks back for: *a summary, not the rows*. "Return a summar
 
 ## Give the worker only the trust it needs
 
-Because a subagent is its own session, it can run under its **own approval and sandbox settings**, independent of your main thread — the two-axis model from the [approvals & sandbox chapter](/course/codex/approvals-sandbox/) applies per worker. The recategoriser is reading your transaction history and writing classification changes back; it has no business hitting the network or touching anything outside the data directory. So you'd run it read-mostly, scoped to the workspace, with network off — the default — and keep tighter approval on any worker that writes to the real ledger. Different trust levels for different workers is a security primitive, not an afterthought: the summariser can run loose, the writer stays gated.
+Because a subagent is its own session, it can run under its **own approval and sandbox settings**, independent of your main thread - the two-axis model from the [approvals & sandbox chapter](/course/codex/approvals-sandbox/) applies per worker. The recategoriser is reading your transaction history and writing classification changes back; it has no business hitting the network or touching anything outside the data directory. So you'd run it read-mostly, scoped to the workspace, with network off - the default - and keep tighter approval on any worker that writes to the real ledger. Different trust levels for different workers is a security primitive, not an afterthought: the summariser can run loose, the writer stays gated.
 
-Codex caps how many subagents run at once and how deeply they nest — sensible defaults that stop a runaway spawn from exhausting your rate budget. The exact concurrency and depth knobs, and the config block that sets them, are the kind of thing that shifts between releases, so pin those to the [official Codex configuration reference](https://developers.openai.com/codex/) rather than to a number in your head. *Unverified:* the precise config keys and their defaults — confirm against the live docs before relying on a specific value.
+Codex caps how many subagents run at once and how deeply they nest - sensible defaults that stop a runaway spawn from exhausting your rate budget. The exact concurrency and depth knobs, and the config block that sets them, are the kind of thing that shifts between releases, so pin those to the [official Codex configuration reference](https://developers.openai.com/codex/) rather than to a number in your head. *Unverified:* the precise config keys and their defaults - confirm against the live docs before relying on a specific value.
 
 ## When to keep it in the main thread instead
 
-Delegation isn't free. Keep the work in your main conversation when it needs frequent back-and-forth, when several phases share real context — planning into implementation into testing — or when it's a quick, targeted change where spinning up a fresh worker that has to re-gather context just adds latency. For a tiny clarifying detour ("does this bank export use `DD/MM` or `MM/DD`?"), a lightweight in-session side conversation is cheaper than a full subagent spawn; isolation is a cost you opt into, not a default.
+Delegation isn't free. Keep the work in your main conversation when it needs frequent back-and-forth, when several phases share real context - planning into implementation into testing - or when it's a quick, targeted change where spinning up a fresh worker that has to re-gather context just adds latency. For a tiny clarifying detour ("does this bank export use `DD/MM` or `MM/DD`?"), a lightweight in-session side conversation is cheaper than a full subagent spawn; isolation is a cost you opt into, not a default.
 
-The test is the same one as delegating to a person: *would I hand this off, get back a paragraph, and be happy?* The recategorisation, yes — you want the result and the summary, not the reading. A delicate money refactor you'll be steering line by line, no — the context the worker throws away is exactly the context you need.
+The test is the same one as delegating to a person: *would I hand this off, get back a paragraph, and be happy?* The recategorisation, yes - you want the result and the summary, not the reading. A delicate money refactor you'll be steering line by line, no - the context the worker throws away is exactly the context you need.
 
-One subagent could grind through the whole history in sequence. But notice the history splits cleanly — by account, by year, by import batch — into slices that don't depend on each other. When a problem decomposes like that, one worker working serially is leaving speed on the table. [Next we fan the work out](/course/codex/subagents/fan-out/).
+One subagent could grind through the whole history in sequence. But notice the history splits cleanly - by account, by year, by import batch - into slices that don't depend on each other. When a problem decomposes like that, one worker working serially is leaving speed on the table. [Next we fan the work out](/course/codex/subagents/fan-out/).

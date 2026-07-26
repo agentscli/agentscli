@@ -1,5 +1,5 @@
 /**
- * Homepage gap demo — the site thesis as a live trace. The same agent runs
+ * Homepage gap demo - the site thesis as a live trace. The same agent runs
  * the same task twice: once bare, once with the project's context mounted
  * (rules, skills, MCP). Evergreen: encodes the context-engineering thesis,
  * no vendor facts. The scenario is illustrative; keep the bad outcome
@@ -12,7 +12,7 @@ export type GapLineKind = 'tool' | 'ask';
 
 export interface GapLine {
   kind: GapLineKind;
-  /** Mono lead line — a tool call, or the agent asking you a question */
+  /** Mono lead line - a tool call, or the agent asking you a question */
   call: string;
   /** Dim result line under the call */
   result: string;
@@ -38,11 +38,11 @@ export const gapRuns: Record<GapMode, GapRun> = {
       {
         kind: 'tool',
         call: 'grep -r "rateLimit" src/',
-        result: 'no matches — no house pattern found',
+        result: 'no matches - no house pattern found',
       },
       {
         kind: 'ask',
-        call: 'Which limiter do you use — `express-rate-limit`, or a Redis bucket?',
+        call: 'Which limiter do you use - `express-rate-limit`, or a Redis bucket?',
         result: 'you’re in a meeting. It guesses.',
       },
       {
@@ -58,7 +58,7 @@ export const gapRuns: Record<GapMode, GapRun> = {
     ],
     outcome: {
       ok: false,
-      text: 'PR bounced — wrong library, wrong layer, made-up spec. Six comments to relay what you already knew.',
+      text: 'PR bounced - wrong library, wrong layer, made-up spec. Six comments to relay what you already knew.',
     },
   },
   ctx: {
@@ -68,7 +68,7 @@ export const gapRuns: Record<GapMode, GapRun> = {
       {
         kind: 'tool',
         call: 'read AGENTS.md',
-        result: '“rate limits live in `src/middleware/rateLimiter` — never inline”',
+        result: '“rate limits live in `src/middleware/rateLimiter` - never inline”',
       },
       {
         kind: 'tool',
@@ -83,12 +83,12 @@ export const gapRuns: Record<GapMode, GapRun> = {
       {
         kind: 'tool',
         call: 'npm test -- invite',
-        result: 'PASS — 2 new tests, matching the existing suite',
+        result: 'PASS - 2 new tests, matching the existing suite',
       },
     ],
     outcome: {
       ok: true,
-      text: 'Approved first pass. Same model, same prompt — it just knew what you know.',
+      text: 'Approved first pass. Same model, same prompt - it just knew what you know.',
     },
   },
 };

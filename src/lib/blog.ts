@@ -4,7 +4,7 @@ import { getCollection } from 'astro:content';
 export const PAGE_SIZE = 10;
 
 // True for docs entries that are publishable blog posts: dated AND not draft.
-// Content collections do NOT auto-exclude drafts — every route that lists or
+// Content collections do NOT auto-exclude drafts - every route that lists or
 // renders posts must go through this predicate or drafts leak into prod.
 export function isPublishedPost(doc: { data: Record<string, unknown> }): boolean {
   return 'date' in doc.data && Boolean(doc.data.date) && !doc.data.draft;

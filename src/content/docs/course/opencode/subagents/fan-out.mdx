@@ -7,34 +7,34 @@ sidebar:
 
 import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
 
-The timezone bug you confirmed in the RSS adapter has a nastier implication: it might be in the others too. `feedmill` carries dozens of adapters — one per source shape — and each one parses timestamps its own way, which is exactly how a bug like this hides in some and not others. So the job isn't "fix the RSS adapter," it's "audit every adapter for the same UTC-normalisation mistake and tell me which ones have it."
+The timezone bug you confirmed in the RSS adapter has a nastier implication: it might be in the others too. `feedmill` carries dozens of adapters - one per source shape - and each one parses timestamps its own way, which is exactly how a bug like this hides in some and not others. So the job isn't "fix the RSS adapter," it's "audit every adapter for the same UTC-normalisation mistake and tell me which ones have it."
 
-Hand that to one thread and it grinds through the adapters in sequence — read, reason, move on, read the next — and two things go wrong at once. It's slow for no reason, because the Atom adapter's timestamps have nothing to do with the JSON adapter's. And worse, every file it reads and every line it reasons over piles up in the *same* context window, so by adapter fifteen the thread is dragging a landfill of earlier parsing code it no longer needs. The job has a shape that wants to be split: independent slices, the same check applied to each, one verdict per slice.
+Hand that to one thread and it grinds through the adapters in sequence - read, reason, move on, read the next - and two things go wrong at once. It's slow for no reason, because the Atom adapter's timestamps have nothing to do with the JSON adapter's. And worse, every file it reads and every line it reasons over piles up in the *same* context window, so by adapter fifteen the thread is dragging a landfill of earlier parsing code it no longer needs. The job has a shape that wants to be split: independent slices, the same check applied to each, one verdict per slice.
 
 ## Two tests before you split anything
 
 Fan-out is leverage on the right job and theatre on the wrong one. Two questions tell them apart.
 
-**The independence test.** *If two workers finished in a different order, would the result change?* For the audit, no — whether the Atom adapter mishandles UTC depends only on the Atom adapter, never on what the JSON worker concluded. That's your licence to parallelise. The moment the answer flips to yes — a slice needs another slice's output — you don't have parallel work, you have a hidden dependency, and you should chain those parts in sequence instead.
+**The independence test.** *If two workers finished in a different order, would the result change?* For the audit, no - whether the Atom adapter mishandles UTC depends only on the Atom adapter, never on what the JSON worker concluded. That's your licence to parallelise. The moment the answer flips to yes - a slice needs another slice's output - you don't have parallel work, you have a hidden dependency, and you should chain those parts in sequence instead.
 
-**Write the merge first.** Before you spawn anything, say in one sentence how the slices come back together: *"one row per adapter — name, verdict, and the offending line if any."* If you can't state the reduction that simply, your split is wrong, not your tooling. Fan-out is an aggregation problem wearing a spawning costume — decide how the answers reduce before you scatter the questions.
+**Write the merge first.** Before you spawn anything, say in one sentence how the slices come back together: *"one row per adapter - name, verdict, and the offending line if any."* If you can't state the reduction that simply, your split is wrong, not your tooling. Fan-out is an aggregation problem wearing a spawning costume - decide how the answers reduce before you scatter the questions.
 
 The audit passes both. So we split it.
 
 ## Dispatch a worker per slice
 
-In OpenCode the parent agent fans work out through the **Task tool** — the same mechanism a single `@mention` uses, but here the parent calls it once per slice and the workers run in parallel. You don't drive that by hand; you describe the partition and the per-worker brief, and the primary agent dispatches the workers.
+In OpenCode the parent agent fans work out through the **Task tool** - the same mechanism a single `@mention` uses, but here the parent calls it once per slice and the workers run in parallel. You don't drive that by hand; you describe the partition and the per-worker brief, and the primary agent dispatches the workers.
 
 ```text
 > Audit every feed adapter under internal/adapters/ for the UTC-normalisation
   bug we just fixed in the RSS adapter: a parsed timestamp stored without
-  converting to UTC. Fan this out — one worker per adapter, in parallel. Each
+  converting to UTC. Fan this out - one worker per adapter, in parallel. Each
   worker reads only its own adapter file, decides PASS or FAIL, and returns one
   line: adapter name, verdict, and the offending line number if it fails.
-  Read only — no edits. Don't fan out wider than a handful at once.
+  Read only - no edits. Don't fan out wider than a handful at once.
 ```
 
-Each worker OpenCode spins up gets its **own session** — a fresh context window, its own system prompt, its own tools, possibly even its own model. That isolation is the whole point. The thirty lines the Atom worker reads to reach its verdict land in *its* window and stay there; they never mix with the JSON worker's lines and none of them enter your main thread. You asked twenty questions and you get back twenty one-line answers, not twenty piles of parsing code.
+Each worker OpenCode spins up gets its **own session** - a fresh context window, its own system prompt, its own tools, possibly even its own model. That isolation is the whole point. The thirty lines the Atom worker reads to reach its verdict land in *its* window and stay there; they never mix with the JSON worker's lines and none of them enter your main thread. You asked twenty questions and you get back twenty one-line answers, not twenty piles of parsing code.
 
 ```text
   Dispatching 6 workers (internal/adapters/) ...
@@ -49,21 +49,21 @@ Each worker OpenCode spins up gets its **own session** — a fresh context windo
   6 of 6 returned. 3 FAIL, 3 PASS.
 ```
 
-{/* VERIFY [OPEN]: the transcript above is illustrative, not copied from a real run. opencode v1.16.2 ships a hierarchical multi-level TUI session tree for navigating concurrent subagents (clickable delegation boxes + keybinds — anomalyco/opencode PR #7756), but the exact line format it prints while parallel Task-tool workers stream is not a documented, stable surface. Keep the block as a schematic of what comes back, not a literal capture. */}
+{/* VERIFY [OPEN]: the transcript above is illustrative, not copied from a real run. opencode v1.16.2 ships a hierarchical multi-level TUI session tree for navigating concurrent subagents (clickable delegation boxes + keybinds - anomalyco/opencode PR #7756), but the exact line format it prints while parallel Task-tool workers stream is not a documented, stable surface. Keep the block as a schematic of what comes back, not a literal capture. */}
 
-When the workers finish, their results return to the parent session, and the parent does the merge you defined up front — here, the three-column table. The reduction is trivial *because* you wrote it before you spawned. Notice what you have now and what you don't: a precise list of which adapters are broken and where, without a single one of the file reads that produced it sitting in your context. The workers ate the journey; you got the map.
+When the workers finish, their results return to the parent session, and the parent does the merge you defined up front - here, the three-column table. The reduction is trivial *because* you wrote it before you spawned. Notice what you have now and what you don't: a precise list of which adapters are broken and where, without a single one of the file reads that produced it sitting in your context. The workers ate the journey; you got the map.
 
-That trade sticks better once you've counted it. Toggle this fan-out between inline and delegated and watch what actually lands in your thread in each mode — the slices are three code sweeps instead of six adapters, but the arithmetic is the audit's exactly:
+That trade sticks better once you've counted it. Toggle this fan-out between inline and delegated and watch what actually lands in your thread in each mode - the slices are three code sweeps instead of six adapters, but the arithmetic is the audit's exactly:
 
 <SubagentFanout client:visible />
 
 ## Cap each worker with `steps`
 
-A read-only audit worker shouldn't need many turns — open one file, reason, report. But "shouldn't" isn't "can't," and a worker that gets confused can churn turn after turn, each one an API call against your rate budget. The leash for that is `steps` on the worker's frontmatter:
+A read-only audit worker shouldn't need many turns - open one file, reason, report. But "shouldn't" isn't "can't," and a worker that gets confused can churn turn after turn, each one an API call against your rate budget. The leash for that is `steps` on the worker's frontmatter:
 
 ```yaml
 ---
-description: Read-only adapter auditor — checks one file for the UTC bug
+description: Read-only adapter auditor - checks one file for the UTC bug
 mode: subagent
 model: anthropic/claude-haiku-4-5
 permission:
@@ -73,15 +73,15 @@ steps: 6
 ```
 
 
-`steps` caps the maximum agentic iterations a worker can take before OpenCode forces it to stop and respond with a summary of where it got — so a stuck worker degrades into "here's what I found and what's left," never an open-ended loop. (The legacy `maxSteps` field does the same thing and is deprecated; use `steps`.)
+`steps` caps the maximum agentic iterations a worker can take before OpenCode forces it to stop and respond with a summary of where it got - so a stuck worker degrades into "here's what I found and what's left," never an open-ended loop. (The legacy `maxSteps` field does the same thing and is deprecated; use `steps`.)
 
-The sharp edge follows from the isolation itself: because each worker is its own child session with its own budget, `steps` is best understood as a **per-worker cap, not a per-fan-out one**. Set `steps: 6` and dispatch twenty workers and you've authorised on the order of a hundred and twenty iterations across the spread, each one a real call. So the cap and the width multiply — which is the practical reason to **start narrow**. Three or four workers shows real speedup with rate-limit headroom; widen only if the slowdown is genuinely the lack of concurrency and not something else. Pairing a tight `steps` with a cheap model like Haiku on the read-only workers keeps the whole fan-out cheap even when it's wide — the audit doesn't need your most expensive model to spot a missing `.UTC()`.
+The sharp edge follows from the isolation itself: because each worker is its own child session with its own budget, `steps` is best understood as a **per-worker cap, not a per-fan-out one**. Set `steps: 6` and dispatch twenty workers and you've authorised on the order of a hundred and twenty iterations across the spread, each one a real call. So the cap and the width multiply - which is the practical reason to **start narrow**. Three or four workers shows real speedup with rate-limit headroom; widen only if the slowdown is genuinely the lack of concurrency and not something else. Pairing a tight `steps` with a cheap model like Haiku on the read-only workers keeps the whole fan-out cheap even when it's wide - the audit doesn't need your most expensive model to spot a missing `.UTC()`.
 
-{/* VERIFY [OPEN]: per-worker enforcement of `steps` and the resulting multiply-by-fan-out cost are inferred from opencode's session model, not stated as a number at opencode.ai/docs/agents. Support: subagents run as child sessions and anomalyco/opencode PR #7756 ("subagent-to-subagent delegation with budgets") gives each delegated session its own configurable call budget/depth — so a budget is per child, not pooled across the fan-out. The "total calls scale with number of workers" consequence is logical, not a documented figure; verify by test before quoting a hard multiplier. */}
+{/* VERIFY [OPEN]: per-worker enforcement of `steps` and the resulting multiply-by-fan-out cost are inferred from opencode's session model, not stated as a number at opencode.ai/docs/agents. Support: subagents run as child sessions and anomalyco/opencode PR #7756 ("subagent-to-subagent delegation with budgets") gives each delegated session its own configurable call budget/depth - so a budget is per child, not pooled across the fan-out. The "total calls scale with number of workers" consequence is logical, not a documented figure; verify by test before quoting a hard multiplier. */}
 
 ## The findings are a proposal, not an instruction
 
-Three FAILs came back. The reflex is to immediately tell the parent "fix all three." Don't — at least not blind. The workers' verdicts are *claims*, produced in contexts you never saw, and fanning out multiplies the surface for a confident-but-wrong one. The audit's job ended at the table; applying anything is a separate, gated step you take with your eyes open:
+Three FAILs came back. The reflex is to immediately tell the parent "fix all three." Don't - at least not blind. The workers' verdicts are *claims*, produced in contexts you never saw, and fanning out multiplies the surface for a confident-but-wrong one. The audit's job ended at the table; applying anything is a separate, gated step you take with your eyes open:
 
 
 ```text
@@ -89,15 +89,15 @@ Three FAILs came back. The reflex is to immediately tell the parent "fix all thr
 
   • Read internal/adapters/atom.go, rdf.go, youtube.go            (3 files)
 
-  atom.go:88  — confirmed: time.Parse(...) stored directly, no .UTC().
-  rdf.go:51   — confirmed, same shape.
-  youtube.go:73 — borderline: the value is converted to UTC two lines
+  atom.go:88  - confirmed: time.Parse(...) stored directly, no .UTC().
+  rdf.go:51   - confirmed, same shape.
+  youtube.go:73 - borderline: the value is converted to UTC two lines
                   later before it's stored. Likely a false positive.
 ```
 
-There's why you gate. Two of three are real; the third is a worker that called FAIL on a pattern that's actually handled downstream. Push "fix all three" without looking and you'd have edited a correct file. The whole earlier loop — read before you edit, the edit is a proposal you approve — applies to fan-out *output* exactly as it applies to a single worker's, just multiplied: more verdicts, more surface, the same discipline. You read the findings back into the main thread, throw out the false positive, and only then dispatch the fix against the two that survive review.
+There's why you gate. Two of three are real; the third is a worker that called FAIL on a pattern that's actually handled downstream. Push "fix all three" without looking and you'd have edited a correct file. The whole earlier loop - read before you edit, the edit is a proposal you approve - applies to fan-out *output* exactly as it applies to a single worker's, just multiplied: more verdicts, more surface, the same discipline. You read the findings back into the main thread, throw out the false positive, and only then dispatch the fix against the two that survive review.
 
 So the shape that works: fan out across independent, heavy slices; brief each worker to come back terse; write the merge before you spawn; cap each with `steps` and remember it multiplies by width; and treat what returns as a proposal you review, never a result you apply. That's the difference between leverage and a faster way to break things.
 
-That closes the Subagents chapter — you can isolate noisy work, shape a worker to fit, and scatter the parallel jobs across a fleet of them. Next we leave the interactive loop behind entirely and drive feedmill against its own sync server with no TUI at all, in [the chapter on running OpenCode headless](/course/opencode/share-and-headless/headless-run/).
+That closes the Subagents chapter - you can isolate noisy work, shape a worker to fit, and scatter the parallel jobs across a fleet of them. Next we leave the interactive loop behind entirely and drive feedmill against its own sync server with no TUI at all, in [the chapter on running OpenCode headless](/course/opencode/share-and-headless/headless-run/).
 

@@ -1,0 +1,359 @@
+---
+title: AFK agents
+description: "Kick off work you won't babysit - and earn the walk-away by shrinking the blast radius, not by trusting the model more."
+---
+
+import NightShift from '../../../components/interactive/NightShift.tsx';
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+You are watching an agent do work you already knew how to describe, typing corrections you could have written down before it started. That is the tell: the task is specified, your attention is adding nothing but latency, and you are paying for it in wall-clock hours. This play is about not being there. The difficulty is that the good ending and the bad ending start from the same keystroke.
+
+| | |
+| --- | --- |
+| **Use when** | A bug with a reproduction, a refactor with clear edges - anything you could describe completely up front |
+| **You'll have** | A PR on a fresh branch, sized to one review sitting, plus a spec and its running log that get better every run |
+| **Costs** | One watched run to certify the setup. After that, zero attention between kickoff and the notification |
+| **Needs** | Somewhere isolated for it to run - sandbox, container, or cloud surface - and a credential you can scope and revoke |
+| **Skip if** | You can't write the acceptance criteria yet, or two people would be editing the spec while the run is live |
+
+<Aside type="tip" title="In a hurry?">
+  Three things, and there is no safe version with fewer:
+
+  1. A `task.md` carrying the spec, an explicit allow-list of paths, and a machine-checkable done-condition.
+  2. A permissions allow/deny block whose deny list protects its own config file ([in the kit](#the-minimum-kit)).
+  3. Output landing as a PR on a fresh branch. Never a push.
+
+  Loop mechanics prebuilt: [ralph-claude-code](https://github.com/frankbria/ralph-claude-code) (as of mid-2026).
+</Aside>
+
+## No steering wheel
+
+**An unattended run has no steering wheel, and no memory beyond what's written down.** Every correction you'd make mid-session - "no, not that file" - has to be front-loaded into the spec, a [rules file](/foundations/rules/), or [permissions](/foundations/permissions/) that make the wrong move impossible rather than merely discouraged.
+
+| It self-corrects on | It cannot see |
+| --- | --- |
+| A crashed build | An ambiguous requirement |
+| An empty result set | An assumption that's wrong but still runs green |
+| A red suite it reruns until green | A constraint [compaction](/foundations/context-management/) paraphrased into something vaguer |
+
+Newer models do the left column impressively well. A run that notices its first attempt worked on missing data and relaunches a fixed version is the loop working as designed, not a counterexample. On the right column it can't ask, so it guesses and keeps going, fluently, in the same tone either way. The gap this discipline closes isn't self-correction. It's judgment on the problems that never announce themselves.
+
+So every gate below has one shape: route the agent's claim through a check that can say no - a file, a diff, a suite it can't edit - never its own report. Here is what the gates are for:
+
+| If it goes wrong | What it costs | Which wall stops it |
+| --- | --- | --- |
+| A force-pushed branch | History other people were working on | A deny rule on force-push, plus output landing as a PR instead of a push |
+| A `.env` in a commit message | A key rotation, and an audit of everywhere that key reached | A `Read(.env)` deny rule, plus a secrets scan on the diff at review time |
+| An agent looping all night on a dependency it broke at 9 p.m. | The night, and nothing to show at breakfast | The stop-gate's iteration cap |
+| A bill instead of a PR | Currency, quietly, while the run "worked" the whole time | The cost wall: a per-run ceiling and a turn cap |
+
+**Autonomy is a dial you turn up run by run, not a switch you flip on day one.**
+
+## You may not skip a rung
+
+Each rung certifies something the next one spends. Skipping one is the whole failure mode in miniature: you get the confidence of a run you watched, applied to a run you didn't.
+
+| Rung | What you do | What it proves | What skipping it costs |
+| --- | --- | --- | --- |
+| **0 - attended** | Type every command yourself | Nothing. It's the baseline you're leaving, not a rung to linger on | - |
+| **1 - watched** | Kick off the *exact* run you intend to background, stay attached, read the live log | That the run's middle is sane, not just its summary | The failures that never reach the summary. See below |
+| **2 - corrections folded** | Write every correction you'd have typed into `task.md` or `decisions.md`, re-run clean, repeat until zero typed corrections | The spec is complete enough to survive your absence | A correction you're about to type *again*. It belongs in the spec, and unattended runs never get it at all |
+| **3 - identical invocation** | Hand the unattended run the same file that just passed Rung 2, one flag different | That what you certified is what runs | The supervised pass certified a different, better-behaved agent than the one about to run without you |
+| **4 - wider scope** | A bigger task, a longer leash, or a schedule or event trigger instead of a manual kickoff | Nothing new. It spends the trust the rungs below earned | Widening before Rung 3 is clean is how a fixed bug becomes an overnight incident |
+
+**Rung 1 is the rung people skip, and it is where the invisible failures live.** One practitioner watching a background run's live log saw the agent hit a missing dev-server dependency, install it, fail, reinstall, and circle that drain for a long stretch - invisible in the final "done" summary, which read exactly like every other final summary. You only catch that kind of thing by watching, not by reading the report afterward.
+
+Reading a live log is always allowed. The line you don't cross is *typing into it*: a mid-run correction is a spec line that doesn't exist yet, and folding it into the file is Rung 2's entire job.
+
+Rung 3 is one flag, and nothing else:
+
+```text
+supervised:   agent run --prompt task.md
+unattended:   agent run --prompt task.md --headless
+```
+
+If the two invocations read different files, the supervised pass certified something else. The same logic applies to the model, not just the flag: certify and run on the *same* tier, because a Rung-2 pass on your strongest model says nothing about how a cheaper default behaves alone at 3 a.m.
+
+**Some tasks never earn a rung.** If you can't write the acceptance criteria yet - *find out why p99 regressed*, *see if we can drop Redis* - freezing an open question into a task file just automates the guessing. Keep exploratory and taste-heavy work supervised, where your mid-course corrections are the value. And skip the play entirely when two people would be editing the same `task.md` while a run is live: that's a coordination problem no file format fixes.
+
+Size what's left from both ends: small enough on the way out that the PR fits one review sitting, small enough on the way in that the task finishes inside one context window. Past that, use the checklist shape from [Scaling up](#scaling-up), not a longer leash.
+
+## Before you detach
+
+<Steps>
+
+1. **Write the task as a spec, completely - then give it two companion files.** `task.md` is the frozen intent: context, why, acceptance criteria, edge cases, test plan, and an explicit allow-list of what it may touch - everything you'd otherwise clarify mid-session, because there is no mid-session:
+
+   ```md
+   # task.md - fix-flaky-checkout-tests
+   Fix the flaky checkout tests. Only touch files under tests/ and
+   src/**/clock.ts - never change test intent, only nondeterminism
+   (ordering, time, unseeded random, shared state). Never edit
+   migrations/ or CI config.
+
+   Done when: `npm test` passes 3x in a row, with the same test files,
+   byte-for-byte, as when you started.
+   ```
+
+   Next to it, two files the run itself keeps current - an append-only pair, never overwritten, so every entry is a receipt rather than a rewrite of history:
+
+   ```md
+   # progress.md
+   [14:02] Started. 3 failing tests identified: checkout.spec.ts:41,
+   checkout.spec.ts:88, cart-timer.spec.ts:12.
+   [14:19] :41 was ordering-dependent on a shared `cart` fixture - moved
+   to per-test setup. Suite green on isolated run, red in full run.
+   [14:41] :88 and :12 both race against `Date.now()` - installing a
+   fake clock (src/lib/clock.ts) instead of touching assertions.
+   [15:03] Full suite green x1. Re-running x2 more per done-condition.
+   ```
+
+   ```md
+   # decisions.md
+   [14:19] Chose per-test fixture setup over a shared beforeEach reset -
+   reset order still wasn't guaranteed across parallel workers.
+   [14:41] Introduced src/lib/clock.ts as the one seam for time in
+   tests, rather than patching Date.now() at each call site - matches
+   the "only touch clock.ts" boundary in task.md, and the next flaky-
+   time test gets a documented seam to use instead of another patch.
+   ```
+
+   Three files instead of one, because [compaction reliably keeps the goal, the decisions made, and which files matter - it reliably drops the exact command output and the precise sequence of steps](/foundations/context-management/). On a run long enough to compact, or one that dies and restarts from a clean session, the agent re-reads the trio off disk instead of depending on a shrinking conversation to remember what it already tried.
+
+   That is also what makes a stateless retry loop reliable at all: fresh context every cycle, durable state on disk. A GitHub issue works even better than a loose `task.md` - the PR links back to it, and when it auto-closes on merge, future-you can still see *why*. For multi-part work, make the spec a checklist where every item carries its own validation step, so a failure at item six can't be silently built on top of an unverified item three.
+
+   *Before you walk away: someone who isn't you could judge done-versus-not-done from `task.md` alone, and reconstruct what was tried - and why - from `progress.md` and `decisions.md`.*
+
+2. **Shrink the blast radius with several thin walls, not one switch.** Each one stops something the others can't, and the third column is the reason you need more than one:
+
+   | Wall | Stops | Doesn't stop | Where it lives |
+   | --- | --- | --- | --- |
+   | [Permissions](/foundations/permissions/) allow/deny | The common destructive command, cheaply, by path and command text | A dozen spellings of `rm -rf`, or the same command hidden inside a wrapper script it never reads | Your tool's settings file - full block [in the kit](#the-minimum-kit) |
+   | The sandbox | Whatever any spelling can actually *reach* | A wrong-but-plausible change inside the repo it's allowed to edit | The container, VM, or cloud surface the run happens in |
+   | A scoped credential | A leak costing more than one disposable secret: one repo, read plus PR-write, no admin, revoked when the run ends | Anything inside the scope you granted | Your git host's token settings |
+   | A blocking [hook](/foundations/hooks/) | What path-matching can't see: a secret-shaped string in a diff, a destructive SQL statement | Whatever you didn't think to write a matcher for | Per-tool hook config - see [tool notes](#tool-notes) |
+   | The cost wall | The run that works correctly, expensively, forever | Any damage that isn't measured in money | A per-run ceiling and a turn cap - step 3 |
+
+   One deny rule earns its place ahead of all the others:
+
+   ```json
+   "deny": ["Edit(.claude/settings.json)"]
+   ```
+
+   It protects the config file that defines these very rules. If the agent can edit the file that grants its own permissions, the permissions aren't a wall - they're a note it can amend.
+
+   <Aside type="caution" title="Etiquette is what it attempts; permissions are what it can do">
+     Prompted boundaries get tested, not just occasionally ignored: in one multi-agent setup, a coordinator told never to touch implementation files *tried anyway* - the story is funny instead of expensive only because its write scope was locked in config, not asked for in a paragraph. Write the boundary where the agent can't argue its way past it.
+   </Aside>
+
+   *Before you walk away: no allowed tool call can edit the walls or the file that defines them - confirmed, not assumed.*
+
+3. **Set the cost wall, in whatever units your surface bills in.** It's the easiest wall to skip, because a leaked secret feels dangerous in a way a big bill doesn't - until you're staring at one:
+
+   | How your surface bills | What the wall is | The flag or check |
+   | --- | --- | --- |
+   | Metered spend | A hard per-run dollar ceiling, plus a turn cap so a run spending slowly but never finishing still exits | A spend-ceiling flag and an iteration cap - names in [tool notes](#tool-notes) |
+   | Subscription tier | A model-tier check before a multi-hour run | Confirm which model the background job defaults to. A silent escalation to your priciest tier is the same shape of surprise as an uncapped API key |
+   | A local model, your hardware | Wall-clock and the machine. There's no dollar meter to blow | A turn cap or a timeout instead of a budget |
+
+   Two walls, not one: a ceiling stops a run that spends fast, an iteration cap stops a run that spends slowly and never finishes. Set both. Every surface has a wall worth setting and only the units change, so the question to ask your tool's docs is "what halts this run against my will," not "does it have the flag I read about somewhere."
+
+4. **Answer three questions out loud. Walk away only on three good answers:**
+
+   ```text
+   1. If this run did the single worst thing it could, what could it reach?
+   2. What would the worst hour cost, in currency?
+   3. Can any allowed tool call edit the walls or the gate's own config?
+   ```
+
+   *Before you walk away: "almost nothing," "a number I'd shrug at," and "no."*
+
+</Steps>
+
+### What goes wrong before you leave
+
+| Failure | Tell | Fix |
+| --- | --- | --- |
+| **The cost blowout** | An invoice, not a broken PR. Or, before the fact: no dollar ceiling set and you're about to background a run anyway | The wall goes on before the first unattended run, not after the first surprising bill |
+| **The wall that isn't a wall** | A settings or config file the agent's own allow-list can edit | The self-protecting deny rule in step 2, verified by question 3 |
+
+A run with no dollar ceiling doesn't fail loudly. It keeps calling the model, correctly, at your most expensive tier, for hours. Practitioners running unattended loops overnight have reported bills running into the thousands of dollars from a single unwatched session - not from a bug, but from the plain absence of a ceiling.
+
+## While it runs
+
+<Steps>
+
+1. **Give the done-condition teeth, behind a stop-gate the agent can't edit.** "Tests pass" is fine until the agent makes it true by deleting the failing assertion, so point the check at something outside its write access: a test file it can't touch, or a verifier in a separate step. Don't *prompt* for persistence ("keep going until it's really done") - wire it, on the event that fires whenever the agent tries to stop:
+
+   ```text
+   on Stop:
+     run the suite
+     if suite fails:
+       if iterations < max_iterations:
+         iterations += 1
+         block, feed the failure output back into context
+       else:
+         block, message: "iteration cap reached - stopping for a human"
+     else:
+       allow the stop
+   ```
+
+   Two parameters are mandatory: the max-iteration cap and the checkable completion condition. Omit either and you've built a loop with no exit - it will run all night, politely, expensively, forever. The gate is only a gate if the agent's own tool calls can't reach the file that defines it, which is why that deny rule belongs on the permissions list from the start rather than as an afterthought. Per-tool wiring is in [tool notes](#tool-notes).
+
+   *Before you walk away: the loop has an exit the agent can't edit, and a cap.*
+
+2. **Detach, land as a PR, and come back only on notification.** The entry point varies - chat UI, CLI flag, an assigned issue, an `@mention` - but the run leaves your session the moment it starts ([headless invocation](/foundations/headless/) underneath; closing the laptop doesn't stop it, because it isn't running on the laptop). Output lands on a new branch as a PR, never a push to anything protected. Auto-merge is an opt-in escalation, not a default.
+
+   The notification channel is the one genuinely tool-specific thing here - in-app, email, mobile push, Slack - so confirm which one your surface actually uses before you rely on it. *Before you walk away: zero attention spent between kickoff and the notification.*
+
+</Steps>
+
+### What goes wrong while you're gone
+
+| Failure | Tell | Fix |
+| --- | --- | --- |
+| **The run that outlived its instructions** | Late-run drift from the spec's exact wording, with nobody there to notice | Smaller tasks. The spec file re-read from disk beats a constraint remembered from turn one |
+| **Blaming the model for the plumbing** | A weird failure with no coherent story in the log | Background dashboards, mobile surfaces, and repo connectors are young infrastructure. Suspect the connector and retry before you re-spec |
+
+Recovery from drift, once you notice: don't keep arguing with the drifted session. It's now defending a plan it built on a paraphrase of your original constraint, not the constraint itself. Stop it, re-read `task.md` and `decisions.md` yourself to confirm they still say what you meant, and start a fresh run against those exact files. The fix is a new attempt reading the same disk state - that's the whole reason the trio exists, so restart costs "read three files" instead of "re-explain from scratch."
+
+## When it comes back
+
+A night's work comes back nine-for-nine. What that "done" has to get past before it means anything is your call:
+
+<NightShift client:visible />
+
+<Steps>
+
+1. **Review it like a stranger's PR.** The diff is testimony from something that cannot doubt itself: "all tests passing" reads identically whether the tests were fixed or quietly gutted, and the only signal that survived to your review is the one the agent chose to report. Same list, every time:
+
+   - [ ] **Read the diff, not the summary.** The summary is the agent's own account of its work. The diff is the work.
+   - [ ] **Scan for secrets before anything else.** A committed `.env`, a pasted API key in a comment, a token in a test fixture. Run `gitleaks`, `trufflehog`, or your platform's native scanning against the diff, not the whole repo, so it finishes before your coffee does.
+   - [ ] **Check scope against the spec's allow-list**, not against "does this look reasonable." A change reaching into a file `task.md` excluded is a violation even if the change itself is good.
+   - [ ] **Demand suite evidence, not a suite claim.** A green CI check, or a pasted run with a test count you'd expect. If the only evidence is the agent's own prose, the claim is unverified.
+   - [ ] *Only when behavior is meant to be identical* (a refactor or migration): **run the old and new code paths on the same inputs and diff the outputs.**
+
+   That last one earns its place for the change class where a green suite lies most easily. The suite proves the cases you thought to write; a divergence between old and new surfaces the behavior you didn't. It's the artifact principle again - the old implementation is a reference the agent can't edit, so a mismatch is one it can't explain away. Skip it for a genuine feature change, where old and new *should* differ.
+
+   Even practitioners who sell the walk-away lifestyle hardest add the same footnote: review and test before you merge. One upgrade is two independent reviewers with different lenses. In one team's setup a security-focused pass said ship it, while a QA-focused pass on the *same change* found real problems.
+
+   *Before you walk away again: you read the diff, ran a secrets scan, and confirmed the touched-files list against the spec - not just the green check.*
+
+2. **Iterate where it landed.** A PR comment, another `@mention`, a resumed session from another device. The original conversation no longer exists, and that's fine: `task.md`, `progress.md`, `decisions.md`, and the branch are the state. *Before you walk away again: follow-up requests reference the PR, not a chat history.*
+
+</Steps>
+
+### What goes wrong on the way back in
+
+| Failure | Tell | Fix |
+| --- | --- | --- |
+| **The collision** | Merge conflicts with yourself - you kept editing the same files while the run was out | Parallelize along ownership lines: one agent on the UI, another on the API, you on neither |
+| **The unreviewable green PR** | You scroll the diff instead of reading it. Or a "done" summary arrives with no diff attached at all | Upstream, not downstream: scope the spec so the artifact fits one review sitting |
+
+If the collision already happened, don't hand-merge two divergent implementations of the same function - that produces a third, untested one. Diff each branch against the common ancestor, decide whose version is the real one, and re-apply the other side's *intent* - usually a smaller, nameable change - on top of the winner, as a fresh small commit. A rebase that silently auto-resolves both sides is worse than a conflict marker that forces you to look.
+
+## Scaling up
+
+One run, kicked off by hand, on a task you wrote today is the base case. The invariant survives all three growth directions: state on disk, walls the run can't edit, output as a PR.
+
+| Scale | What changes | What new failure it invites |
+| --- | --- | --- |
+| **The recurring run** - nightly triage, weekly dependency bump | Version `task.md` and review its diffs like code. Tune the notification to *action needed*, not *run finished* | Spec drift: a "small clarification" at week three is an unreviewed behavior change multiplied by every future run. And a per-run ceiling you'd shrug at once is a monthly line item at thirty runs |
+| **The fleet** - several agents at once | Partition *before* kickoff, along ownership lines: one agent per module, one branch each, no two runs writing the same files. Decide merge order up front | The collision, invited on purpose. "Whoever finishes first merges first" is how two green branches make one red main |
+| **The run too big for one window** | Design for restart, not endurance. The spec becomes a checklist where every item ends in its own commit plus a `progress.md` entry | Nothing new, but [compaction](/foundations/context-management/) stops being a risk and becomes a certainty |
+
+A run that dies at item six restarts from a clean session, re-reads the trio, sees five committed items, and resumes at six. **The unit of survival is the checkpoint, not the conversation.**
+
+The other half of every checklist item is what counts as its validation, and that is a play of its own: [TDD with agents](/playbooks/tdd-with-agents/) is where the check gets written. An unattended run is the case that most rewards having one, because a test that predates the fix is the only reviewer awake at 3am.
+
+## Tool notes
+
+As of mid-2026 - verify against current docs before relying on exact names, they move:
+
+| Tool | Async surface(s) | Kick it off from | Where output lands | How you're notified |
+|---|---|---|---|---|
+| Claude Code | Claude Code on the web (cloud) · Routines (scheduled cloud) · Desktop scheduled tasks · session-scoped `/loop` | web/mobile session, a schedule, `/loop`, `--teleport` to reattach a cloud session locally | commits/PRs from cloud sessions; your existing local branch for `/loop` and Desktop tasks | in-app; cloud sessions can be monitored and steered from the Claude mobile app |
+| Codex | Codex cloud | ChatGPT Codex UI, IDE "cloud delegation," `@codex` on a GitHub issue/PR comment | opens a GitHub PR, or pull the diff down locally instead | GitHub notification on the issue/PR; Codex UI |
+| GitHub Copilot | Coding agent (ephemeral GitHub Actions environment) | assign a GitHub Issue, `@copilot` in a comment, the Agents panel, VS Code | draft or ready-for-review PR, never a direct commit | Agents panel, IDE, GitHub Mobile push; every commit links back to its session log |
+| Cursor | Cloud Agents (renamed from "Background Agents" - treat the old name as legacy) | chat UI, dashboard, or an event trigger (Slack message, new Linear issue, merged GitHub PR, PagerDuty incident) | PR on a new `agent/<task-slug>` branch; your working branch is untouched | email, desktop notification, Slack if connected - check the default model tier before a long run |
+| opencode | No first-party cloud/hosted surface | `opencode serve` + a remote TUI attach; background subagents alongside the primary session | your existing local working tree | none - the model is "you're still attached," not "walk away" |
+| Pi | None, by explicit design | - | - | - |
+
+opencode's own docs describe no fresh-clone or cloud-container execution model at the core-product level - that's a real gap, not an oversight to route around. The closest analog is running `opencode serve` on a remote box you already control and attaching a TUI to it, which gets you "not on my laptop" without "not my responsibility while it runs."
+
+Pi is more explicit still: its own site lists "no background bash" under what it deliberately didn't build, with the stated alternative "use tmux - full observability, direct interaction." Unattended runs on Pi are yours to build with ordinary tools, not a first-party feature you're missing by accident.
+
+**The stop-gate, tool-shaped.** The pseudocode above is the contract; the wiring is per-tool. In Claude Code it's a `Stop` hook in `settings.json` pointing at a verifier script that returns a block decision with the failure in the reason field:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "scripts/verify.sh" } ] }
+    ]
+  }
+}
+```
+
+Codex and Cursor declare the equivalent in their own hook config; opencode needs a plugin; Pi needs an extension. Same two mandatory parameters everywhere.
+
+## Off the shelf
+
+The spec-then-loop pattern has ready-made harnesses that build a version of the state-on-disk trio in for you - best known is the Ralph family. [ralph-claude-code](https://github.com/frankbria/ralph-claude-code) (as of mid-2026) wraps repeated agent runs against a PRD with exit detection, rate limiting, and a circuit breaker, spawning a fresh instance per iteration so state lives in files rather than a growing conversation. A harness handles the loop mechanics; the spec, the walls, and the worst-iteration question stay yours.
+
+## Two escalations worth naming
+
+**Is auto-merge ever OK?** As an earned escalation, narrowly: after a stretch of clean runs, with CI carrying the review checklist (suite evidence, secrets scan, scope check against the allow-list) - and only for change classes where the worst merged mistake is cheap to revert. A docs run or a lockfile bump can earn auto-merge; anything touching behavior keeps a human between green and main.
+
+**The task needs my credentials - now what?** Then the credential gets the same treatment as the file system: a scoped, disposable token - one repo, least privilege, revoked when the run ends - never your session, never an admin key. If the access genuinely can't be scoped down, the task isn't unattended-ready yet. That's the prerequisite failing, not an inconvenience to route around.
+
+## The minimum kit
+
+**`task.md` skeleton** (the frozen intent):
+
+```md
+# task.md - <slug>
+<what and why, in two sentences>
+
+Only touch: <explicit allow-list of paths>.
+Never touch: <migrations, CI config, this file's walls>.
+
+Done when: <a machine-checkable condition - a command and its
+expected output, not an adjective>.
+```
+
+**Companion files** (append-only, created empty at kickoff):
+
+```md
+# progress.md - [timestamp] what was tried, what happened
+# decisions.md - [timestamp] what was chosen over what, and why
+```
+
+**Permissions wall** (allow/deny split - the last deny rule protects the wall itself):
+
+```json
+{
+  "permissions": {
+    "allow": ["Read", "Edit(./src/**)", "Bash(npm test:*)", "Bash(git commit:*)"],
+    "deny": [
+      "Bash(rm -rf:*)", "Bash(git push --force:*)",
+      "Read(.env)", "Read(.env.*)",
+      "Edit(./migrations/**)", "Edit(<your tool's settings/config path>)"
+    ]
+  }
+}
+```
+
+**Cost wall:** a per-run ceiling and a turn cap, in your surface's units - [Before you detach, step 3](#before-you-detach) has the three billing cases.
+
+**Stop-gate:** the pseudocode in [While it runs, step 1](#while-it-runs), wired per the [tool notes](#tool-notes).
+
+**Pre-flight:** the three questions in [Before you detach, step 4](#before-you-detach). Three good answers or you don't leave.
+
+Copy all of it and you have the cage. What it can't decide for you is whether this particular task is specified enough to survive your absence, and which rung this particular run has actually earned.
+
+---
+
+The spec files become a library. Every watched run's corrections are lines you'll never type again, and the `progress.md` / `decisions.md` pair turns "what did last night's run actually try" from a mystery into a grep.
+
+The vendors' own postmortems - deleted remote branches, uploaded credentials, schema migrations attempted against production - stay other people's stories, because you asked the three questions first. When the honest answers come back "almost nothing," "a number I'd shrug at," and "no," walk away. That's the discipline working.

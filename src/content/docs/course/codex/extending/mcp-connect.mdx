@@ -1,19 +1,19 @@
 ---
 title: Connect the exchange-rate API as an MCP server
-description: "An MCP server is a bridge to a system Codex can't otherwise reach. Add the exchange-rate API as one, and the agent converts foreign transactions itself instead of working from a stale guess — once you remember to let it onto the network."
+description: "An MCP server is a bridge to a system Codex can't otherwise reach. Add the exchange-rate API as one, and the agent converts foreign transactions itself instead of working from a stale guess - once you remember to let it onto the network."
 sidebar:
   label: "MCP · connect a server"
 ---
 
 import McpCostMeter from '../../../../../components/interactive/McpCostMeter.tsx';
 
-A few of your transactions are in euros and pounds, stored at whatever rate you eyeballed when you entered them. The monthly report treats those numbers as gospel, so your real spend is off by however much the rate has drifted. The fix is obvious — convert at the actual rate — but Codex can't do it, because the rate lives at an external HTTP API the agent has no way to call. It can reason about currency all day; it just can't fetch the number.
+A few of your transactions are in euros and pounds, stored at whatever rate you eyeballed when you entered them. The monthly report treats those numbers as gospel, so your real spend is off by however much the rate has drifted. The fix is obvious - convert at the actual rate - but Codex can't do it, because the rate lives at an external HTTP API the agent has no way to call. It can reason about currency all day; it just can't fetch the number.
 
-That gap is the exact signal for an MCP server. The **Model Context Protocol** is an open standard for connecting an agent to an external tool or data source; an *MCP server* is one such connection. Wire the rate API up as a server and Codex gets a new tool — convert one currency to another — that it reaches for on its own, the way it already reaches for shell or file edits. The API stops being something you look up and paste in, and becomes something the agent touches directly.
+That gap is the exact signal for an MCP server. The **Model Context Protocol** is an open standard for connecting an agent to an external tool or data source; an *MCP server* is one such connection. Wire the rate API up as a server and Codex gets a new tool - convert one currency to another - that it reaches for on its own, the way it already reaches for shell or file edits. The API stops being something you look up and paste in, and becomes something the agent touches directly.
 
 ## Register the server
 
-Codex configures MCP servers in `config.toml`, under a `[mcp_servers.<name>]` table. The common shape is a **stdio server** — a process Codex spawns on your machine and talks to over stdin/stdout. You give it a `command` and its `args`:
+Codex configures MCP servers in `config.toml`, under a `[mcp_servers.<name>]` table. The common shape is a **stdio server** - a process Codex spawns on your machine and talks to over stdin/stdout. You give it a `command` and its `args`:
 
 ```text
 # ~/.codex/config.toml  (or .codex/config.toml in the repo)
@@ -22,7 +22,7 @@ command = "npx"
 args = ["-y", "your-exchange-rate-mcp-server", "--api-url", "https://<your-rate-api-endpoint>"]
 ```
 
-Use the real package and endpoint your rate provider publishes — the values above are placeholders, not a server that exists. The table name (`fx` here) becomes the prefix on every tool the server exposes, so the model sees something like `fx.convert` and never collides with another server's tools.
+Use the real package and endpoint your rate provider publishes - the values above are placeholders, not a server that exists. The table name (`fx` here) becomes the prefix on every tool the server exposes, so the model sees something like `fx.convert` and never collides with another server's tools.
 
 Servers that live out on the network are reached as a remote server instead, by giving a `url` in place of `command`/`args`. The transport is chosen by which key is present; the official syntax for both shapes, plus auth via named environment variables rather than secrets pasted into the file, is on the [Codex MCP docs](https://developers.openai.com/codex/mcp).
 
@@ -39,7 +39,7 @@ Read the `add` form carefully: the bare `--` separates the server name from the 
 
 ## The network-off gotcha
 
-Now you ask Codex to use it — and on a fresh `budgetcli` setup, it fails:
+Now you ask Codex to use it - and on a fresh `budgetcli` setup, it fails:
 
 ```text
 > recompute the EUR and GBP transactions at the current rate
@@ -48,10 +48,10 @@ Now you ask Codex to use it — and on a fresh `budgetcli` setup, it fails:
     ✗ network error: connection refused
 
   The rate server is registered but I can't reach the network to
-  call it — the sandbox is blocking the outbound request.
+  call it - the sandbox is blocking the outbound request.
 ```
 
-Nothing is wrong with the server. This is the same wall you met back in [approvals & sandbox](/course/codex/approvals-sandbox/network-and-dirs/): in `workspace-write`, **network access is off by default**. A stdio MCP server runs as a child process *inside* that sandbox, so when it tries to reach the rate API, the sandbox refuses the connection — exactly as it would refuse the agent's own `curl`.
+Nothing is wrong with the server. This is the same wall you met back in [approvals & sandbox](/course/codex/approvals-sandbox/network-and-dirs/): in `workspace-write`, **network access is off by default**. A stdio MCP server runs as a child process *inside* that sandbox, so when it tries to reach the rate API, the sandbox refuses the connection - exactly as it would refuse the agent's own `curl`.
 
 The fix is the one from that chapter: enable network for this workspace deliberately, knowing what you're opening.
 
@@ -60,7 +60,7 @@ The fix is the one from that chapter: enable network for this workspace delibera
 network_access = true
 ```
 
-This is worth sitting with rather than reflexively flipping on. Registering an MCP server does not by itself grant the agent the network — the sandbox still governs reach. That separation is a feature: you decide, per project, whether the convenience of a live API is worth the wider blast radius, instead of a connection silently becoming a hole. For `budgetcli`, a single read-only rate lookup is an easy yes — but it's *you* saying yes, not the server assuming it.
+This is worth sitting with rather than reflexively flipping on. Registering an MCP server does not by itself grant the agent the network - the sandbox still governs reach. That separation is a feature: you decide, per project, whether the convenience of a live API is worth the wider blast radius, instead of a connection silently becoming a hole. For `budgetcli`, a single read-only rate lookup is an easy yes - but it's *you* saying yes, not the server assuming it.
 
 ## Use what you connected
 
@@ -82,8 +82,8 @@ With the network open, the same request goes through, and the copy-paste loop co
 
 Notice what changed. You asked one question in plain language; Codex called the rate tool twice on its own, applied the [cents-not-floats rule](/course/codex/rules/) from `AGENTS.md` without being reminded, and reasoned across the result. Nothing was pasted. A live external system is now part of the agent's working context.
 
-One discipline before you add more servers: every connected server injects its full tool description into context at session start, whether or not you use it. Two or three useful servers cost little; a dozen "might need it someday" servers spend your context budget on capability descriptions before you've typed a word. Connect for a concrete gap — the rate API is one — not on spec. Here's that discipline as a meter — mount and unmount servers and watch what each one costs before your first message:
+One discipline before you add more servers: every connected server injects its full tool description into context at session start, whether or not you use it. Two or three useful servers cost little; a dozen "might need it someday" servers spend your context budget on capability descriptions before you've typed a word. Connect for a concrete gap - the rate API is one - not on spec. Here's that discipline as a meter - mount and unmount servers and watch what each one costs before your first message:
 
 <McpCostMeter client:visible />
 
-You've now given Codex reach in one direction: out to an external system. There's a second direction worth knowing about — Codex itself standing in as a server that *another* agent calls. That's [the next lesson](/course/codex/extending/mcp-serve/).
+You've now given Codex reach in one direction: out to an external system. There's a second direction worth knowing about - Codex itself standing in as a server that *another* agent calls. That's [the next lesson](/course/codex/extending/mcp-serve/).

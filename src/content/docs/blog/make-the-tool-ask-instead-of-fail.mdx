@@ -1,21 +1,21 @@
 ---
-title: "A missing parameter isn't an error — it's the agent telling you what only you know."
-description: "When a tool call lacks a parameter, the agent's two instincts — fail or guess — are both wrong. Have the server elicit the missing field against a JSON schema and turn a half-specified request into a clean, validated dialogue."
+title: "A missing parameter isn't an error - it's the agent telling you what only you know."
+description: "When a tool call lacks a parameter, the agent's two instincts - fail or guess - are both wrong. Have the server elicit the missing field against a JSON schema and turn a half-specified request into a clean, validated dialogue."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, mcp-servers, permissions]
 draft: false
 ---
 
-The user types `book me a flight`. The agent has a `book_flight` tool wired up, a calendar it can read, and exactly zero idea which city you're flying to. So it does one of two things, both bad. It returns `{error: "destination is required"}` and dumps the failure back in the user's lap. Or — worse, because it looks like it worked — it infers `SFO` from your last trip and books a ticket to the wrong coast.
+The user types `book me a flight`. The agent has a `book_flight` tool wired up, a calendar it can read, and exactly zero idea which city you're flying to. So it does one of two things, both bad. It returns `{error: "destination is required"}` and dumps the failure back in the user's lap. Or - worse, because it looks like it worked - it infers `SFO` from your last trip and books a ticket to the wrong coast.
 
-Both responses share a root cause: the tool treated a **missing parameter as a terminal condition**. Fail or fabricate. But the missing destination was never an error in the tool. It was the single piece of context the agent could not possibly hold, sitting in the only place it lives — the user's head.
+Both responses share a root cause: the tool treated a **missing parameter as a terminal condition**. Fail or fabricate. But the missing destination was never an error in the tool. It was the single piece of context the agent could not possibly hold, sitting in the only place it lives - the user's head.
 
-That's the gap this whole publication is about. Agents are broad and fast and will happily call any tool you give them; they are also contextless about your intent, your trip, your domain. The destination isn't data the agent forgot to fetch. **It's a fact only the human is the source of.** So the correct move when the tool hits that wall is neither of the agent's two instincts. It's a third one: pause, and ask — with structure.
+That's the gap this whole publication is about. Agents are broad and fast and will happily call any tool you give them; they are also contextless about your intent, your trip, your domain. The destination isn't data the agent forgot to fetch. **It's a fact only the human is the source of.** So the correct move when the tool hits that wall is neither of the agent's two instincts. It's a third one: pause, and ask - with structure.
 
 ## The fix is a handoff, not a retry
 
-Most retry logic treats a missing field as a problem to route around: re-prompt the model, re-parse the user's message, hope it volunteers the city this time. That's the agent guessing again, just with more steps. The protocol-level answer is **elicitation**, a capability the [MCP](/foundations/mcp-servers/) spec added in its June 2025 revision: the server responds to an under-specified call not with an error but with a request — *I need these fields, here is the schema, render a form*. The client shows the user a typed input. The user fills it. The original action proceeds with complete arguments.
+Most retry logic treats a missing field as a problem to route around: re-prompt the model, re-parse the user's message, hope it volunteers the city this time. That's the agent guessing again, just with more steps. The protocol-level answer is **elicitation**, a capability the [MCP](/foundations/mcp-servers/) spec added in its June 2025 revision: the server responds to an under-specified call not with an error but with a request - *I need these fields, here is the schema, render a form*. The client shows the user a typed input. The user fills it. The original action proceeds with complete arguments.
 
 Here's the server side. The tool detects what it's missing and elicits it instead of throwing:
 
@@ -35,20 +35,20 @@ async def book_flight(destination: str | None = None, date: str | None = None):
                               "required": list(missing)},
         )
         if result.action != "accept":
-            return {"status": result.action}   # decline | cancel — see below
+            return {"status": result.action}   # decline | cancel - see below
         destination = destination or result.content["destination"]
         date = date or result.content["date"]
 
     return do_booking(destination, date)
 ```
 
-The schema is the load-bearing part. `format: "date"` means the client can render a date picker and reject `"next thursdayish"` before it ever reaches your booking logic. You're not parsing free text and praying. **The validation lives in the schema, so the answer is well-formed by construction** — the same discipline a typed function signature gives you, pushed out to the human boundary. The spec deliberately keeps these schemas to flat objects of primitives — strings, numbers, booleans, enums — so there's no temptation to elicit a deeply nested config in one dialog. Ask for the few fields a human can fill in a single glance.
+The schema is the load-bearing part. `format: "date"` means the client can render a date picker and reject `"next thursdayish"` before it ever reaches your booking logic. You're not parsing free text and praying. **The validation lives in the schema, so the answer is well-formed by construction** - the same discipline a typed function signature gives you, pushed out to the human boundary. The spec deliberately keeps these schemas to flat objects of primitives - strings, numbers, booleans, enums - so there's no temptation to elicit a deeply nested config in one dialog. Ask for the few fields a human can fill in a single glance.
 
 ## "Accept" is the easy case. The other two are where tools rot
 
 Here's the open question most elicitation implementations get wrong, and I'll come back to it: what happens when the user *doesn't* fill in the form?
 
-A naive handler checks for the data and assumes its presence. But an elicitation has three outcomes, not one. **Accept** — the user submitted values. **Decline** — the user actively said no, don't book anything. **Cancel** — the user dismissed the dialog without deciding. These are semantically different and the protocol keeps them distinct on purpose. Collapse them and you get the classic bug: a user hits Escape, your code reads an empty payload as "no destination provided," loops back, and re-asks forever. Or treats a decline as a soft default and books the flight anyway.
+A naive handler checks for the data and assumes its presence. But an elicitation has three outcomes, not one. **Accept** - the user submitted values. **Decline** - the user actively said no, don't book anything. **Cancel** - the user dismissed the dialog without deciding. These are semantically different and the protocol keeps them distinct on purpose. Collapse them and you get the classic bug: a user hits Escape, your code reads an empty payload as "no destination provided," loops back, and re-asks forever. Or treats a decline as a soft default and books the flight anyway.
 
 So the handoff has to be exhaustive:
 
@@ -68,7 +68,7 @@ This is where elicitation stops being a UX nicety and becomes a [permissions](/f
 
 ## A second shape: when the agent has the options but not the choice
 
-Flights are the obvious case — the user holds a fact the agent can't see. But elicitation earns its keep just as often in the inverse situation, where the *agent* gathered the options and only the *choice* is user-held. An `apply_migration` tool that finds three pending migration files. An `edit_record` call that matches four customers named "Acme." The agent isn't missing data here; it has too much, and nothing in the request tells it which one you meant.
+Flights are the obvious case - the user holds a fact the agent can't see. But elicitation earns its keep just as often in the inverse situation, where the *agent* gathered the options and only the *choice* is user-held. An `apply_migration` tool that finds three pending migration files. An `edit_record` call that matches four customers named "Acme." The agent isn't missing data here; it has too much, and nothing in the request tells it which one you meant.
 
 An enum turns that into a one-tap decision:
 
@@ -91,11 +91,11 @@ if len(candidates) > 1:
     target = result.content["file"]
 ```
 
-The server does the work it's good at — globbing the filesystem, querying the customer table — and hands the human the one decision it can't make. That's the division of labour in miniature: capability on the agent's side, intent on the user's, a typed enum as the seam between them. Note that the agent never sees a free-text answer it has to re-interpret. The user can only return one of the candidates the server already produced, so an ambiguous match can't degrade into a wrong guess.
+The server does the work it's good at - globbing the filesystem, querying the customer table - and hands the human the one decision it can't make. That's the division of labour in miniature: capability on the agent's side, intent on the user's, a typed enum as the seam between them. Note that the agent never sees a free-text answer it has to re-interpret. The user can only return one of the candidates the server already produced, so an ambiguous match can't degrade into a wrong guess.
 
 ## Teach the agent that asking is the success path
 
-The protocol gives you the mechanism. Whether the agent *reaches for it* is a context-engineering decision, and it belongs in your [rules](/foundations/rules/). Left to default behavior, a model will often prefer to look competent — infer the missing argument and move on — because failing and asking both feel like admitting it doesn't know. You have to overwrite that instinct in writing:
+The protocol gives you the mechanism. Whether the agent *reaches for it* is a context-engineering decision, and it belongs in your [rules](/foundations/rules/). Left to default behavior, a model will often prefer to look competent - infer the missing argument and move on - because failing and asking both feel like admitting it doesn't know. You have to overwrite that instinct in writing:
 
 ```markdown
 ## Tool calls with missing parameters
@@ -103,20 +103,20 @@ The protocol gives you the mechanism. Whether the agent *reaches for it* is a co
 When a tool reports a missing or ambiguous required field, do NOT
 guess a value from prior context or conversation history. The missing
 field is user-held context. Surface the elicitation form and wait.
-A paused, asking tool call is a correct outcome — not a failure.
+A paused, asking tool call is a correct outcome - not a failure.
 ```
 
 That last line is the whole reframe. The agent's reflex equates "I had to ask" with "I failed." Your rules file says the opposite: **a half-specified request that becomes a clean dialogue is the tool working exactly as designed.** `book me a flight` was never an error. It was an opening move, and the schema is how the agent answers without inventing the rest of the sentence.
 
-The obvious objection is that a paused tool is a slow tool — that every elicitation is a round-trip the user has to service, and three of them in a row feel like a customs form. True, and it's exactly why the flat-schema constraint matters: one object, a handful of primitive fields, fillable at a glance. A well-built elicitation isn't a wizard; it's the single question the agent would have had to ask anyway, asked once in a typed box instead of guessed wrong and unwound over three correction turns. Measured end to end, asking is usually the *faster* path. It's just the one honest enough to admit it's asking.
+The obvious objection is that a paused tool is a slow tool - that every elicitation is a round-trip the user has to service, and three of them in a row feel like a customs form. True, and it's exactly why the flat-schema constraint matters: one object, a handful of primitive fields, fillable at a glance. A well-built elicitation isn't a wizard; it's the single question the agent would have had to ask anyway, asked once in a typed box instead of guessed wrong and unwound over three correction turns. Measured end to end, asking is usually the *faster* path. It's just the one honest enough to admit it's asking.
 
-The deeper pattern generalizes past flights. Any action where the agent holds the *capability* but the user holds the *specifics* — which environment to deploy to, which customer record to amend, which of three matching files you meant — is a candidate for elicitation. The agent's gap and the user's knowledge are the two halves of the same call. Structured asking is just the protocol admitting that out loud.
+The deeper pattern generalizes past flights. Any action where the agent holds the *capability* but the user holds the *specifics* - which environment to deploy to, which customer record to amend, which of three matching files you meant - is a candidate for elicitation. The agent's gap and the user's knowledge are the two halves of the same call. Structured asking is just the protocol admitting that out loud.
 
 ## Where elicitation is the wrong tool
 
-Two boundaries keep this from rotting into a nag. First, the spec draws a hard line: a server **must not** elicit sensitive information. No passwords, no API keys, no card numbers, no PII fished through a tool dialog. Elicitation collects the *shape* of an action — a city, a date, a file, an environment — never credentials. Secrets belong in the client's auth layer, where the user already trusts the boundary; routing them through an arbitrary server's form is precisely the confused-deputy move the protocol is built to prevent. A tool that pops a "please enter your password" elicitation isn't using the feature, it's abusing it.
+Two boundaries keep this from rotting into a nag. First, the spec draws a hard line: a server **must not** elicit sensitive information. No passwords, no API keys, no card numbers, no PII fished through a tool dialog. Elicitation collects the *shape* of an action - a city, a date, a file, an environment - never credentials. Secrets belong in the client's auth layer, where the user already trusts the boundary; routing them through an arbitrary server's form is precisely the confused-deputy move the protocol is built to prevent. A tool that pops a "please enter your password" elicitation isn't using the feature, it's abusing it.
 
-Second — and this is the boundary good tools quietly cross — don't elicit what the agent can find out for itself. If the missing value sits in a file the agent can read, in git history, in an environment variable, in the conversation two turns up, then asking isn't caution, it's laziness in a costume. The entire premise is that the destination lives in the user's head and *nowhere else*. The moment you start eliciting facts the agent could have fetched, you've rebuilt the click-through wizard everyone closes without reading, and the user learns to dismiss your dialogs on reflex — which is how a real `decline` ends up indistinguishable from "ugh, this thing again." Elicit the irreducibly human; fetch everything else.
+Second - and this is the boundary good tools quietly cross - don't elicit what the agent can find out for itself. If the missing value sits in a file the agent can read, in git history, in an environment variable, in the conversation two turns up, then asking isn't caution, it's laziness in a costume. The entire premise is that the destination lives in the user's head and *nowhere else*. The moment you start eliciting facts the agent could have fetched, you've rebuilt the click-through wizard everyone closes without reading, and the user learns to dismiss your dialogs on reflex - which is how a real `decline` ends up indistinguishable from "ugh, this thing again." Elicit the irreducibly human; fetch everything else.
 
 Don't catch the missing parameter and fail. Don't fill it in and lie. Hand the user a form and let them close the gap they're the only one who can.
 

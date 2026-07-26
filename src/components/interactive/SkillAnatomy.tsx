@@ -7,7 +7,7 @@ import { useWidgetFrame } from './widget-frame';
 
 const TOOL_ORDER: SkaToolId[] = ['claude-code', 'codex', 'opencode', 'cursor', 'copilot'];
 
-const STATUS_GLYPH = { yes: '✓', no: '—', partial: '~' } as const;
+const STATUS_GLYPH = { yes: '✓', no: '-', partial: '~' } as const;
 
 /** One clickable region of the mock file */
 function Region({
@@ -44,7 +44,7 @@ export default function SkillAnatomy() {
   return (
     <div className={useWidgetFrame('ska-root')}>
       <div className="ska-cols">
-        <div className="ska-file" role="group" aria-label="Example skill — click a part to inspect it">
+        <div className="ska-file" role="group" aria-label="Example skill - click a part to inspect it">
           <Region id="folder" active={is('folder')} onPick={pick} className="ska-line ska-folder">
             review-migrations/
           </Region>

@@ -26,7 +26,7 @@ export default function PrimitivePicker() {
   const mounted = useRef(false);
 
   useEffect(() => {
-    // Don't steal focus on first paint — only on step changes.
+    // Don't steal focus on first paint - only on step changes.
     if (!mounted.current) {
       mounted.current = true;
       return;
@@ -137,7 +137,7 @@ export default function PrimitivePicker() {
         ) : (
           <p className="ppk-hint">
             {cluster
-              ? 'Pick the sentence that stings — it routes to the primitive built for it, and says what not to reach for.'
+              ? 'Pick the sentence that stings - it routes to the primitive built for it, and says what not to reach for.'
               : 'Say the problem, get the primitive. Pick the complaint that sounds like yours.'}
           </p>
         )}

@@ -1,6 +1,6 @@
 ---
 title: Hooks
-description: Lifecycle event handlers — the deterministic guardrails and side effects each CLI lets you wire in.
+description: Lifecycle event handlers - the deterministic guardrails and side effects each CLI lets you wire in.
 ---
 
 import ToolTabs from '../../../components/ToolTabs.astro';
@@ -11,31 +11,31 @@ import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 
 You told the agent, in `CLAUDE.md`, *"never push to `main`."* You said it again at the start of the session: *"don't push to main, the release branch is `release/2026.04`."* Two hours later, mid-flow, you ask it to "ship the fix." It runs `git push origin main`.
 
-The agent didn't ignore you on purpose. It read the instruction, weighed it against the goal, and the goal won. That's what models do — they're persuadable, including by their own reasoning. A `CLAUDE.md` rule is a *strong suggestion to a probabilistic system*. And probabilistic systems, sometimes, push to main.
+The agent didn't ignore you on purpose. It read the instruction, weighed it against the goal, and the goal won. That's what models do - they're persuadable, including by their own reasoning. A `CLAUDE.md` rule is a *strong suggestion to a probabilistic system*. And probabilistic systems, sometimes, push to main.
 
 The only way to make a rule unbreakable is to take the decision away from the model. A hook on `PreToolUse` that pattern-matches `git push.*main` and blocks the call doesn't ask the model nicely. It just doesn't run. That's the gap hooks close: turning *"please don't"* into *"can't."*
 
-A **hook**, then, is a piece of code or a command that fires automatically when a specific lifecycle event happens inside the CLI — before a tool call, after a file edit, when a session starts, when the model wants to compact context, when a permission is requested. You declare *what event* and *what to run*, and the CLI takes it from there.
+A **hook**, then, is a piece of code or a command that fires automatically when a specific lifecycle event happens inside the CLI - before a tool call, after a file edit, when a session starts, when the model wants to compact context, when a permission is requested. You declare *what event* and *what to run*, and the CLI takes it from there.
 
 The defining property: **a hook is deterministic**. It always fires on its event. It doesn't depend on the model deciding to use it, noticing a description, or remembering a `CLAUDE.md` line. Where a memory rule is a *request* and a skill is *opt-in by the model*, a hook is *enforcement by the runtime*.
 
-## Every event, per tool
-
-Those lifecycle events, in the concrete: each tool's actual event names, where they sit in a session, and which ones can block the action they fire on. Click any event for what it fires on and a working config.
-
-<HookTimeline client:visible />
-
 **Real-world examples of what teams put in hooks:**
 
-- **Hard guardrails** — block `rm -rf`, block edits to `.env`, block writes to `/etc`, block pushes to protected branches. The model can attempt; the hook says no.
-- **Auto-run linters and formatters** — `PostToolUse` on file edits runs `prettier`/`eslint`/`ruff` and feeds errors back to the agent as context it can fix.
-- **Auto-run tests on touched modules** — when the agent edits `src/auth/*.ts`, fire the auth test suite. Catches regressions inside the session, not at PR time.
-- **Notifications and observability** — post to Slack when a long session ends, log every shell command to a file, ping yourself when the agent's been idle for 5 minutes.
-- **Context injection at session start** — `SessionStart` hook that runs `git status` / `git log -5` and feeds the output in, so the agent always knows the current branch state.
-- **Secret scanning** — `PreToolUse` on writes that scans content for API keys before they hit disk.
-- **Compaction control** — `PreCompact` hook that snapshots the conversation to a file before the model summarises it away.
+- **Hard guardrails** - block `rm -rf`, block edits to `.env`, block writes to `/etc`, block pushes to protected branches. The model can attempt; the hook says no.
+- **Auto-run linters and formatters** - `PostToolUse` on file edits runs `prettier`/`eslint`/`ruff` and feeds errors back to the agent as context it can fix.
+- **Auto-run tests on touched modules** - when the agent edits `src/auth/*.ts`, fire the auth test suite. Catches regressions inside the session, not at PR time.
+- **Notifications and observability** - post to Slack when a long session ends, log every shell command to a file, ping yourself when the agent's been idle for 5 minutes.
+- **Context injection at session start** - `SessionStart` hook that runs `git status` / `git log -5` and feeds the output in, so the agent always knows the current branch state.
+- **Secret scanning** - `PreToolUse` on writes that scans content for API keys before they hit disk.
+- **Compaction control** - `PreCompact` hook that snapshots the conversation to a file before the model summarises it away.
 
 The test: if "the agent forgot" or "the agent did the thing I told it not to" is a failure mode you can't accept, you want a hook, not a memory rule.
+
+## Every event, per tool
+
+The lifecycle events, in the concrete: each tool's actual event names, where they sit in a session, and which ones can block the action they fire on. Click any event for what it fires on and a working config.
+
+<HookTimeline client:visible />
 
 ## The lifecycle
 
@@ -64,10 +64,14 @@ Hooks fire on events along the loop. The exact event names differ across tools (
   ]}
 />
 
-Two kinds of hook live on this timeline:
+Two kinds of hook live on this timeline, and the difference is whether the hook gets a vote:
 
-- **Gating hooks** (`PreToolUse`, equivalents) intercept *before* an action runs. They can allow, modify the arguments, or block outright. This is where "make a rule unbreakable" lives.
-- **Reactive hooks** (`PostToolUse`, `SessionStart`, `Stop`) run *after* something happens. They don't decide anything; they react — lint the file you just wrote, fire a notification, append to a log.
+| | Gating hooks | Reactive hooks |
+|---|---|---|
+| Events | `PreToolUse` and equivalents | `PostToolUse`, `SessionStart`, `Stop` |
+| Fires | *Before* the action runs | *After* something happens |
+| Can it decide? | Yes - allow, modify the arguments, or block outright | No - it reacts, it doesn't decide |
+| What it's for | Making a rule unbreakable | Lint the file you just wrote, fire a notification, append to a log |
 
 A hook's superpower is being inside the loop but outside the model's reasoning. The model can want to push to main all it likes; the gating hook simply doesn't let the tool call complete.
 
@@ -110,19 +114,19 @@ Walked through one turn:
     {
       point: [
         'model:    [ sees the block + reason in its next turn ]',
-        "model:    Blocked — pushes to main aren't allowed.",
+        "model:    Blocked - pushes to main aren't allowed.",
         '          Pushing to release/2026.05 instead: git push origin release/2026.05',
       ],
     },
     {
       group: 'PreToolUse hook fires again',
-      steps: [{ point: 'regex does NOT match — release branch' }],
+      steps: [{ point: 'regex does NOT match - release branch' }],
     },
     { point: 'tool call runs normally' },
   ]}
 />
 
-Notice two things. First: the hook fires *between* "the model proposes a tool call" and "the tool actually runs." That's the only place a deterministic gate can live. Second: when the hook blocks, it returns a *reason* the model can read on its next turn. The model isn't punished or kicked out — it's told *no*, gets the reason in its context, and adapts. The combination is what makes hooks safer than just denying via [permissions](/foundations/permissions/) — permissions say no; hooks say no *and explain*.
+Notice two things. First: the hook fires *between* "the model proposes a tool call" and "the tool actually runs." That's the only place a deterministic gate can live. Second: when the hook blocks, it returns a *reason* the model can read on its next turn. The model isn't punished or kicked out - it's told *no*, gets the reason in its context, and adapts. The combination is what makes hooks safer than just denying via [permissions](/foundations/permissions/) - permissions say no; hooks say no *and explain*.
 
 The same pattern generalises. Replace the match condition and you get: block `rm -rf` outside the project, block edits to `.env`, block `npm install` without a lockfile, run prettier after every write, post to Slack on `Stop`. Same lifecycle, same shape.
 
@@ -147,20 +151,22 @@ Hooks are for *every time event X happens, do Y, no exceptions*. Skills are for 
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Where defined | `settings.json` | `config.toml` `[hooks]` table or `hooks.json` | JS/TS plugin module | `hooks.json` | Per-surface (CLI files / Coding Agent repo / VS Code preview) | TypeScript extensions (`ExtensionAPI` lifecycle) — not a separate `hooks.json` |
+| Where defined | `settings.json` | `config.toml` `[hooks]` table or `hooks.json` | JS/TS plugin module | `hooks.json` | Per-surface (CLI files / Coding Agent repo / VS Code preview) | TypeScript extensions (`ExtensionAPI` lifecycle) - not a separate `hooks.json` |
 | Declarative vs code | Declarative | Declarative | Code (JS/TS) | Declarative (commands) | Declarative | Code (TypeScript) |
 | Event taxonomy | ~10+ named events | `PreToolUse`, `PostToolUse`, `PermissionRequest`, `SessionStart`, `UserPromptSubmit`, `Stop` | Richest among the CLIs (plugin events) | **21+ events** incl. `beforeReadFile`, `beforeMCPExecution`, `beforeShellExecution` | `sessionStart`, `sessionEnd`, `userPromptSubmitted`, `preToolUse` | `ExtensionAPI` lifecycle events (tool-call, session, message) |
 | Action types | Shell / HTTP / prompt / subagent | Shell (`type = "command"`) | JS code | Subprocess (stdin/stdout JSON) | External command | TypeScript code inside the extension |
-| Output lands in context | Yes | Yes — hook script emits JSON on stdout with fields like `additionalContext` (PreToolUse) or `systemMessage`; exit 2 + stderr blocks the action | Plugin-controlled | Yes — JSON response with `user_message` / `agent_message` | Yes (where supported) | Extension-controlled |
-| Layered (project + user + managed) | Yes — all merge | Yes (user + project, managed available) | Yes (global + project + managed) | Yes (user + project + enterprise) | Per-surface | Yes (`~/.pi/agent/extensions` + `.pi/extensions`) |
-| Deterministic gate (allow/deny) | Yes (`PreToolUse`) | Yes (`PreToolUse`, exit 2) | Yes (plugin `permission.ask`) | Yes (`"permission": "allow" \| "deny" \| "ask"`) | Yes (`preToolUse`, where supported) | Yes (extension can intercept and block) |
+| Output lands in context | Yes | Yes - hook script emits JSON on stdout with fields like `additionalContext` (PreToolUse) or `systemMessage`; exit 2 + stderr blocks the action | Plugin-controlled | Yes - JSON response with `user_message` / `agent_message` | Yes (where supported) | Extension-controlled |
+| Layered (project + user + managed) | Yes - all merge | Yes (user + project, managed available) | Yes (global + project + managed) | Yes (user + project + enterprise) | Per-surface | Yes (`~/.pi/agent/extensions` + `.pi/extensions`) |
+| Deterministic gate (allow/deny) | Yes (`PreToolUse`) | Yes (`PreToolUse`, exit 2) | Yes (plugin `permission.ask`) | Yes (`"permission": "allow" \| "deny" \| "ask"`) | Not in the stable IDE surface - `preToolUse` is preview only (*Unverified*) | Yes (extension can intercept and block) |
 
 ## Name collisions
 
-- An OpenCode "hook" lives inside a [plugin](/foundations/plugins/) — you can't have a hook without writing a plugin. In Claude Code, Codex, and Cursor, hooks are a standalone primitive declared in config.
+- An OpenCode "hook" lives inside a [plugin](/foundations/plugins/) - you can't have a hook without writing a plugin. In Claude Code, Codex, and Cursor, hooks are a standalone primitive declared in config.
 - Don't confuse Claude Code's `PreCompact` (model-level context compaction) with shell-level "pre-commit" hooks. Despite the name they have nothing in common.
-- **Cursor's `beforeReadFile` and `beforeMCPExecution`** have no direct analog in any other tool in the foundations set — they let you gate file reads and individual MCP tool calls before they happen.
-- **Copilot's `copilot-setup-steps.yml`** is sometimes called a "pre-flight hook" but it isn't one. It's a GitHub Actions workflow that runs once before a Coding Agent task to prep the sandbox — not a runtime gate, not part of the hook taxonomy, and not applicable to the VS Code IDE surface.
+- **Cursor's `beforeReadFile` and `beforeMCPExecution`** have no direct analog in any other tool in the foundations set - they let you gate file reads and individual MCP tool calls before they happen.
+- **Copilot's `copilot-setup-steps.yml`** is sometimes called a "pre-flight hook" but it isn't one. It's a GitHub Actions workflow that runs once before a Coding Agent task to prep the sandbox - not a runtime gate, not part of the hook taxonomy, and not applicable to the VS Code IDE surface.
+
+Start with one. Pick the rule your agent has already broken on you - pushes to main, edits to `.env`, `rm -rf` outside the project - and wire that gate before anything else. The pseudocode above is the whole shape: an event, a match, a block with a reason. Your tool's syntax is in the tabs. Then trigger it once on purpose and read what comes back.
 
 <UpstreamRefs
   links={[

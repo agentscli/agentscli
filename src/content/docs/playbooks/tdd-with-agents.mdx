@@ -1,0 +1,396 @@
+---
+title: TDD with agents
+description: "Write the failing test first, commit it as the spec, then let the agent close the loop against it."
+---
+
+import SpecLock from '../../../components/interactive/SpecLock.tsx';
+import FlowDiagram from '../../../components/FlowDiagram.astro';
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+The agent says "done, all fixed!" and you realize you have no way to check that's true short of re-deriving the fix yourself. Run this play and the ending changes: the agent says done, you run one command - a test that existed *before* the fix - and you know. Not "looks right." Know.
+
+| | |
+| --- | --- |
+| **Use when** | Delegating a bug fix or a well-understood behavior change |
+| **You'll have** | Two commits: a failing test that pins the behavior, then the fix that turns it green |
+| **Costs** | Usually 5-10 minutes to write the test. The loop itself runs unattended |
+| **Needs** | The agent can run your tests non-interactively, with a command it can discover |
+| **Skip if** | You don't yet know what *done* is, or the diff is smaller than the test |
+
+<Aside type="tip" title="In a hurry?">
+  Commit a failing test the agent didn't write, then:
+
+  ```text
+  > the test in <file> is failing. make it pass. do not edit the test file.
+  ```
+
+  Check `git diff -- <test file>` is empty before you commit the fix. Full copy-paste version: [the kit](#the-complete-kit).
+</Aside>
+
+## The order is the technique
+
+An agent's confidence carries no information. It writes the same fluent code and reports the same cheerful "done" whether the fix is real or not, so you need a source of truth it can't charm. Its way of working is already a loop of act, check, adjust ([the agentic loop](/foundations/how-agents-work/)) - left to its defaults it just runs that ritual backwards:
+
+| | What gets written first | What the test ends up describing |
+| --- | --- | --- |
+| **Default order** | The implementation, then tests around it | What the code *does* - it passes by construction |
+| **Enforced order** | The test, committed, then the implementation | What the requirement *says* - the code has to answer to it |
+
+That's the whole play, and the purest case of the move this section repeats: route the agent's claim through a check that can say no. Everything below is the order, enforced.
+
+<FlowDiagram
+  caption="who acts, and what lands in git"
+  steps={[
+    { node: 'write the failing test', note: 'you - from the requirement, not from the code' },
+    { node: 'run it red', sub: 'must fail on the assertion, not on an import' },
+    { node: 'commit the test, alone', note: 'the spec stops being your opinion' },
+    { group: 'hand it over', loop: 'until green', steps: [
+      { node: 'edit the implementation', note: 'agent - test file off limits' },
+      { node: 'run the suite', sub: 'still red? go again' },
+    ]},
+    { node: 'audit, then commit the fix', note: 'you - green is not the same as done' },
+  ]}
+/>
+
+**Prerequisite, and it's load-bearing:** the agent must be able to run the tests itself, non-interactively. A runner that pops an HTML report and waits for a keypress stalls everything on a prompt nobody's there to answer. If running tests needs a human, fix that before Commit 1 - or run [the human-operated lane](#which-lane-youre-in) on purpose.
+
+Running example throughout: a seasonal-discount bug where, on the *last day* of the sale, customers get the old rate. A boundary off-by-one, where "fixed" and "moved" are easy to confuse.
+
+## Commit 1: the spec
+
+<Steps>
+
+1. **Write the failing test yourself, before the first prompt.** You, not the agent - a test from the author of the coming fix describes the code; a test from the requirement describes the truth:
+
+   ```ts
+   // src/pricing/discount.test.ts
+   test('applies the sale rate through the last second of the sale', () => {
+     const saleEndsAt = new Date('2026-07-15T23:59:59Z');
+     expect(discountRate(new Date('2026-07-15T23:59:59Z'), saleEndsAt)).toBe(0.30);
+     expect(discountRate(new Date('2026-07-16T00:00:01Z'), saleEndsAt)).toBe(0.10);
+   });
+   ```
+
+   Not "fix the discount thing" - the final second still counts, one second past midnight doesn't. Every ambiguity you resolve here is a question the agent won't guess at later.
+
+2. **Run it, and check that it fails for the right reason.** A test that fails for the wrong reason proves nothing when it passes:
+
+   <Tabs>
+     <TabItem label="Red that counts">
+       ```bash
+       $ npm test discount.test.ts
+       ✗ applies the sale rate through the last second of the sale
+         Expected: 0.3
+         Received: 0.1
+       ```
+       Expected-vs-received values. The boundary was exercised and the code got it wrong - this red line is now worth something.
+     </TabItem>
+     <TabItem label="Red that proves nothing">
+       ```bash
+       $ npm test discount.test.ts
+       ✗ applies the sale rate through the last second of the sale
+         Cannot find module '../pricing/discount' - did you mean './discount'?
+       ```
+       Nothing here has exercised the boundary at all. Fix the import and rerun before going further.
+     </TabItem>
+   </Tabs>
+
+   That red line survives [compaction](/foundations/context-management/) and model swaps. "Make sure the last day gets the sale rate," said in chat, does not.
+
+3. **Commit the test, alone.** The step everyone skips, and the load-bearing one:
+
+   ```bash
+   $ git add src/pricing/discount.test.ts
+   $ git commit -m "test: pin sale rate through last second of sale window"
+   ```
+
+   Committed, the test stops being your opinion and becomes a fixed target the agent can't negotiate down. *The commit that proves it: one commit, touching only the test file.*
+
+</Steps>
+
+## The handoff
+
+One sentence carries the whole constraint - say it out loud, so any violation shows up as a guilty diff:
+
+```text
+> the test in src/pricing/discount.test.ts is failing on the sale-boundary
+  case. make it pass. do not edit the test file.
+```
+
+When the agent reaches for the test file anyway, the call is yours:
+
+<SpecLock client:visible />
+
+## Commit 2: the fix
+
+A real pass looks like iteration, not a one-shot. Both tabs below are the same bug and the same test - the difference is how far the cause sits from the file the test imports.
+
+<Tabs>
+  <TabItem label="One lap (the tidy case)">
+
+The boundary is a literal in the test, and the operator is the whole story:
+
+```text
+  ⏵ Read   src/pricing/discount.ts
+  ⏵ Read   src/pricing/discount.test.ts
+  ⏵ Edit   src/pricing/discount.ts     # first try: still uses `<`
+  ⏵ Bash   npm test discount.test.ts  →  still Expected 0.3 / Received 0.1
+  ⏵ Edit   src/pricing/discount.ts     # second try: `now <= saleEndsAt`
+  ⏵ Bash   npm test discount.test.ts  →  1 passed
+
+$ git diff -- src/pricing/discount.test.ts   # empty - good
+$ git diff -- src/pricing/discount.ts
+  -  if (now < saleEndsAt) return SALE_RATE;
+  +  if (now <= saleEndsAt) return SALE_RATE;
+```
+
+Nobody told it to re-run the test. Closing the loop is its instinct; your test pointed that loop at the truth.
+
+  </TabItem>
+  <TabItem label="Three laps (the real one)">
+
+More often the boundary arrives from somewhere else - config, a database row, a third-party payload - and the fix takes real digging. Same test, same intent, but the sale window now comes from a parsing function:
+
+```ts
+// src/config/sales.ts - before
+export function getSaleWindow(raw: { endsOn: string }) {
+  return { saleEndsAt: new Date(raw.endsOn) };
+}
+```
+
+```ts
+// src/pricing/discount.test.ts - the boundary now flows in from config
+import { getSaleWindow } from '../config/sales';
+
+test('applies the sale rate through the last second of the sale', () => {
+  const { saleEndsAt } = getSaleWindow({ endsOn: '2026-07-15' });
+  expect(discountRate(new Date('2026-07-15T23:59:59Z'), saleEndsAt)).toBe(0.30);
+  expect(discountRate(new Date('2026-07-16T00:00:01Z'), saleEndsAt)).toBe(0.10);
+});
+```
+
+Committed red, same as always. Handed over with the same instruction, it takes three laps:
+
+| Lap | The theory | The diff | Why it failed |
+| --- | --- | --- | --- |
+| 1 | The operator, again | `now < saleEndsAt` → `now <= saleEndsAt` | `saleEndsAt` is already the wrong instant, so no operator on either side of it can be correct |
+| 2 | A timezone problem | `now.getTime() <= saleEndsAt.getTime()` | Cosmetic - two Date objects already compare by epoch millisecond. Plausible-sounding, zero effect: the classic second guess |
+| 3 | The parser (correct) | `new Date(raw.endsOn)` → `Date.UTC(y, m - 1, d, 23, 59, 59, 999)` | A date-only string parsed to UTC midnight at the *start* of the day, so "ends July 15" silently meant "ends the instant July 15 begins" |
+
+```bash
+$ git diff -- src/pricing/discount.test.ts   # still empty
+```
+
+The real cause was two files away from the one the agent started editing, and it took a wrong guess and a no-op guess to get there - with you in the room for none of it. That's what closing the loop is worth: not one lucky edit, but a target that refused to move through three attempts.
+
+  </TabItem>
+</Tabs>
+
+*The commit that proves it: cycles ending green, `git diff` on the test file silent, and the fix touching the file the bug actually lives in - not just the file the test imports.*
+
+## After green
+
+Green means "satisfies what you wrote down." Whether that was the whole story is still your call.
+
+**Widen the check first,** while context is warm:
+
+```text
+> run the full suite. then review the tests you touched - does each one
+  actually assert what its name claims?
+```
+
+This catches token tests that never check the token - a test named `'rejects an expired token'` whose body never constructs an expired one, so it passes against almost any implementation.
+
+**Then push on the neighbors of the case you just fixed,** one at a time, knowing what each answer should be before you ask:
+
+| Ask | What a correct answer looks like | What a wrong answer tells you |
+| --- | --- | --- |
+| "The day before the sale ends, same time - still the sale rate?" | `SALE_RATE` | A sanity check, not a real boundary. If this fails, the boundary logic is broken more broadly than the last-second case suggested |
+| "What if no end date is configured at all - an indefinite promotion?" | `SALE_RATE`, always, and no error from comparing against `undefined` | The case a hardcoded-literal test can't surface, because the test never has to construct "no end date" |
+| "Is the boundary the server's clock, or the customer's browser time zone?" | An answer, not a guess | A product question wearing a code question's clothes. "I assumed server UTC" goes in the ticket before it ships, not after a complaint from UTC+13 |
+
+Once the fix and its neighbors hold:
+
+```bash
+$ git add src/pricing/discount.ts
+$ git commit -m "fix: include saleEndsAt in the sale window (<= not <)"
+```
+
+*Exit: two commits - the spec, then the fix that satisfies it.*
+
+## Holding the line
+
+Four ways the loop decays, each with its tell and its fix.
+
+| The tell | What's happening | Fix |
+| --- | --- | --- |
+| *"Just write a test along with the fix."* | A test written after the code, by the author of the code, is a mirror - it passes by construction | The order is the technique. If the agent drafts the test, it happens before any implementation exists, runs red, and you review it |
+| Mid-fix, `git diff` on the test file isn't empty - `toBe(0.30)` quietly became `toBe(0.10)` | The quiet renegotiation: the shortest path to green runs through the test file | The enforcement ladder below |
+| *"Added a full test suite while I was at it"* - 91 tests in one edit | Backfill for a design it already committed to. Ninety-one tests reviewed in one sitting is not reviewed at all | `git restore` the slab, re-prompt narrower |
+| *"Tests pass"* with no pasted run, or green against an in-memory stand-in | Green on the wrong engine | Force the production engine before trusting green |
+
+**The mirror test, concretely.** Written after the `<=` fix already existed:
+
+```ts
+test('applies sale rate up to saleEndsAt', () => {
+  const saleEndsAt = new Date('2026-07-15T23:59:59Z');
+  expect(discountRate(new Date('2026-07-15T23:59:00Z'), saleEndsAt)).toBe(0.30);
+});
+```
+
+A minute before the boundary, not at it. The exact second the original bug lived in never gets asserted - because the edge is the uncomfortable part to write once you already know the code handles everything else fine.
+
+**The enforcement ladder.** Pick the rung that matches how much supervision the run actually gets:
+
+| Rung | Stops | Cost | Reach for it when |
+| --- | --- | --- | --- |
+| A [rules file](/foundations/rules/) line | The casual renegotiation | One line | Always. It's the cheapest thing here |
+| A pre-commit gate | Assertions leaving the diff, even if you review late | A short shell script ([in the kit](#the-complete-kit)) | It recurred after the rules line existed |
+| A `PreToolUse` [hook](/foundations/hooks/) | The edit itself, in real time | Per-tool config | The run is unattended |
+
+Rules ask; hooks enforce. The pre-commit gate is plain git, so it holds regardless of which tool drives the commit - and it catches the sneakier version too, since *commenting out* an assertion also removes the original line from the diff.
+
+**Recovering from the slab.** The discipline that made this recoverable is the same one the slab violated - the test file was committed alone, and nothing since then is committed at all:
+
+```bash
+$ git diff --stat -- src/pricing/discount.test.ts
+ discount.test.ts | 327 ++++++++++++++++++++++++++++
+$ git restore src/pricing/discount.test.ts   # discard the slab, keep nothing
+```
+
+```text
+> one behavior at a time. start with the sale-boundary case only - write
+  the test, show me it fails, then stop.
+```
+
+**Green on the wrong engine, concretely.** Scaffolding a test setup, the agent reaches for whatever's convenient - in-memory SQLite where production runs Postgres:
+
+```ts
+// src/pricing/discounts-repo.ts
+export function findByCode(code: string) {
+  return db.query('SELECT * FROM discounts WHERE code LIKE ?', [code]);
+}
+```
+
+```text
+✓ finds a discount by code, case-insensitively   (SQLite, in-memory)
+✗ finds a discount by code, case-insensitively   (Postgres, real container)
+  Expected: 1 row
+  Received: 0 rows
+```
+
+Same test, same code. SQLite's `LIKE` is case-insensitive for ASCII by default; Postgres's isn't - the query needed `ILIKE`, or the column needed normalizing at write time. Suites moved onto the real engine have a habit of immediately finding a bug the stand-in was hiding.
+
+## When the agent says the test is wrong
+
+Often enough that "never" is the wrong rule. The rules-file line says *argue the case and stop* - not "the test is infallible."
+
+**The adjudication rule: judge against the requirement, not against the code.** Re-read the ticket. Re-derive the expected value by hand. If the test really is wrong, fix it in its own commit, with the reason in the message. The spec changed - and specs change in the open, never inside a fix diff.
+
+## Which lane you're in
+
+The loop above assumes a bug fix in code that already has a runnable suite. The invariant survives all four lanes: a red test, committed, before any implementation exists.
+
+| Your situation | What changes | What stays |
+| --- | --- | --- |
+| **Greenfield** - nothing to reproduce | The agent may draft the failing test; authorship isn't the invariant, order is. Treat the draft as a spec *proposal* and review it before it's committed | The tell that a drafted test describes a plan instead of a requirement: assertions about internal shape - `expect(result._cache).toBeDefined()` - rather than observable behavior. Send those back |
+| **Legacy code, no tests** - nothing to run red against | Run a characterization pass first: pin current behavior, fix nothing, flag anything suspicious in a comment | Those tests assert behavior is *current*, not *right* - so any future red is a change somebody made on purpose. Then run the normal loop |
+| **e2e-heavy suite** - a loop too slow to live in | Keep the locked spec at the fastest layer that can express the behavior; run e2e once as the final gate, never inside the loop | A fifteen-minute suite means four laps an hour, and the harder pass above took three. If the behavior only exists end-to-end, fix the runner first |
+
+```text
+> before we change anything: write characterization tests for
+  applyDiscount() - pin its current behavior for the cases in
+  src/pricing/fixtures/. don't fix anything, even where the current
+  behavior looks wrong - flag anything suspicious in a comment instead.
+```
+
+**The human-operated lane - you run the tests, you make the commits.** Sometimes the prerequisite genuinely can't be met: a runner needing credentials you won't hand an agent, a locked-down environment. Or you *want* a hand on every checkpoint, because you're using the loop to learn testing discipline rather than to delegate.
+
+Swap the check's operator, not the check. The agent stops after each red, green, and refactor step; you run the tests and paste the output back; you make every commit. Keep the running test list in a plain file rather than in chat - your file survives a context reset, the agent's memory of "which test is next" doesn't.
+
+What you give up is the tight self-checking lap: three laps that took minutes above take a sitting here. What you buy back is line-by-line contact with every test as it's born - exactly the trade a learner, or a low-trust codebase, should want.
+
+## Where the gate lives, per tool
+
+The loop is identical everywhere. What differs is how the "don't touch the test" constraint gets enforced - as of mid-2026, and config names move faster than the idea does:
+
+| Tool | Where the runtime gate lives | Strength |
+| --- | --- | --- |
+| Claude Code | `PreToolUse` [hook](/foundations/hooks/) in `settings.json`; `/clear` between commits keeps the two intents from blending | Blocks the edit outright |
+| Codex | `config.toml` `[hooks]` table (or `hooks.json`); nonzero exit blocks the write | Blocks the edit outright |
+| Cursor | `hooks.json` declares the same before-write gate; rules in `.cursor/rules` | Blocks the edit outright |
+| Copilot | Thinner here - lean on the pre-commit hook and repo custom instructions | Commit-time only |
+| opencode | A plugin's tool-call hook - you must write the plugin, unlike the declarative config elsewhere | Blocks, with work |
+| Pi | No declarative `hooks.json`; a TypeScript extension lifecycle hook instead | Blocks, code not config |
+
+The pre-commit gate and the rules-file line work identically under all six.
+
+<Aside type="note" title="Off the shelf - verified mid-2026">
+  You don't have to hand-roll the discipline. [superpowers](https://github.com/obra/superpowers) ships a `test-driven-development` skill enforcing the red-green-refactor order (`/plugin install superpowers@claude-plugins-official`; the skill format is portable across tools). [mattpocock/skills](https://github.com/mattpocock/skills) has a leaner `/tdd` that builds one vertical slice at a time (`npx skills add mattpocock/skills`). A skill encodes the procedure; this page is the judgment.
+</Aside>
+
+## Questions that come up in practice
+
+**How much mocking is too much?** Mock the boundaries you don't own (the payment provider's API); run the real thing for everything you do - your database, your clock behind an injected seam, not a patched global. A test needing five mocks is usually coupling surfacing in the test layer: that's [AI-ready code](/playbooks/ai-ready-code/)'s problem wearing a test's clothes.
+
+**My suite is flaky. Can I still run this?** No - fix that first. The play rests on red meaning something; a suite that fails randomly teaches everyone to re-run until green, which is the exact reflex that lets a real failure through. Quarantining flaky tests is itself a well-shaped agent task - it's the [AFK](/playbooks/afk-agents/) chapter's running example.
+
+**Does this work for UI?** For behavior, yes: "clicking Save disables the button until the request resolves" spec-locks like anything else. For looks, no - if a human has to see it to judge it, it isn't spec-lockable. The pixel side is [design-to-code](/playbooks/design-to-code/)'s territory.
+
+**One behavior at a time - does that scale to a whole feature?** A feature is a sequence of behaviors, locked one at a time. It feels slower than one big prompt; what it buys is that at every point, everything behind you is pinned and nothing ahead of you is faked. When the feature is big enough to hand off entirely, that sequence becomes the checklist in an [AFK](/playbooks/afk-agents/) task file.
+
+**Won't better models make this unnecessary?** It gets *more* valuable as models get more fluent. Fluency raises the cost of eyeballing a diff - everything reads right - while the price of a red test stays constant.
+
+## The complete kit
+
+**Rules-file lines** (`CLAUDE.md`, `AGENTS.md`, or equivalent):
+
+```md
+## Testing discipline
+- Never edit an existing test's assertions to make it pass.
+- If a test looks wrong, argue the case in chat and stop - don't fix it silently.
+- Run tests non-interactively: `npm test <file>`. No watch mode.
+```
+
+**Kickoff prompt** (after the red test is committed, alone):
+
+```text
+> the test in <path/to/test> is failing on <the case>. make it pass.
+  do not edit the test file.
+```
+
+**Mid-fix check** (yours, any time, free):
+
+```bash
+$ git diff -- <path/to/test>    # must stay empty until the fix commit
+```
+
+**Test-audit prompt** (after green, while context is warm):
+
+```text
+> run the full suite. then review the tests you touched - does each one
+  actually assert what its name claims?
+```
+
+**Pre-commit gate** (`.git/hooks/pre-commit` - plain git, works under every tool; catches deleted *and* commented-out assertions):
+
+```bash
+#!/usr/bin/env sh
+LOCKED="<path/to/test>"
+removed=$(git diff --cached -- "$LOCKED" | grep -c '^-\s*expect(')
+if [ "${removed:-0}" -gt 0 ]; then
+  echo "BLOCKED: this commit removes $removed expect(...) call(s) from $LOCKED."
+  echo "If the assertion is genuinely wrong, argue the case in chat first."
+  exit 1
+fi
+```
+
+**Runtime gate**, for unattended runs: block edits to the locked file at the tool-call layer - per-tool syntax in the table above.
+
+The kit runs the procedure. The judgment it can't carry: which boundary to pin, when the agent's objection is right, and when green still isn't done.
+
+---
+
+Run this for every fix you delegate and the economics of review shift. A red-to-green transition you witnessed is evidence, so you skim test titles and spend your reading budget on the diff. Every so often, test the tests - break something that works on purpose and confirm the suite screams. A suite that can't fail is decoration.
+
+What accumulates is worth more than any single fix: a suite where each test is a requirement written down at the moment it was clearest, which is the working half of [a codebase that teaches agents how to work in it](/playbooks/ai-ready-code/). Prose instructions fade one session at a time. `expect(discountRate(...)).toBe(0.30)` never forgets what it's for.

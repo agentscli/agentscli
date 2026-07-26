@@ -107,7 +107,7 @@ function CodexPanel() {
   if (!sandboxOk) {
     verdict = 'blocked';
     explanation =
-      'The sandbox rejects this before the approval policy is ever consulted. Two gates, in sequence — the sandbox is the outer one.';
+      'The sandbox rejects this before the approval policy is ever consulted. Two gates, in sequence - the sandbox is the outer one.';
   } else if (approval === 'untrusted') {
     verdict = 'ask';
     explanation =
@@ -119,7 +119,7 @@ function CodexPanel() {
   } else {
     verdict = 'allow';
     explanation =
-      'The sandbox permits it and `never` means no prompts — the sandbox boundary is your only guardrail.';
+      'The sandbox permits it and `never` means no prompts - the sandbox boundary is your only guardrail.';
   }
 
   return (
@@ -177,7 +177,7 @@ function OpenCodePanel() {
   return (
     <div>
       <p className="psim-intro">
-        opencode scopes permissions <strong>per tool, per agent</strong> — each
+        opencode scopes permissions <strong>per tool, per agent</strong> - each
         primary agent carries its own allow/ask/deny map, so switching agents
         (Tab) switches policies. Example config:
       </p>
@@ -209,7 +209,7 @@ function OpenCodePanel() {
           <code>
             {toolId}: {verdict}
           </code>
-          . Same repo, same command — the other agent may answer differently.
+          . Same repo, same command - the other agent may answer differently.
         </p>
       </div>
     </div>

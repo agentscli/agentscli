@@ -1,37 +1,37 @@
 ---
 title: The three built-in subagents
-description: "You're about to burn your main context on a hundred-file scan you'll never reread. Hand it to a read-only worker instead — @explore for codebase scans, @scout for docs and dependencies, @general for full-access work — each in its own isolated context so your thread stays clean."
+description: "You're about to burn your main context on a hundred-file scan you'll never reread. Hand it to a read-only worker instead - @explore for codebase scans, @scout for docs and dependencies, @general for full-access work - each in its own isolated context so your thread stays clean."
 sidebar:
   label: "Built-ins · general, explore, scout"
 ---
 
-You have the dedupe-hash question in front of you: *which adapters across `feedmill` feed into the dedupe hash, and where?* It's a real question — you're about to touch that hash and you need the call sites before you do — but answering it means reading the better part of a hundred adapter files. Ask it in your main thread and every one of those reads lands in your context window: grep output, file dumps, the whole noisy trawl, sitting there for the rest of the session crowding out the actual work. And you will never reread a line of it. You want the *map*, not the trawl that produced it.
+You have the dedupe-hash question in front of you: *which adapters across `feedmill` feed into the dedupe hash, and where?* It's a real question - you're about to touch that hash and you need the call sites before you do - but answering it means reading the better part of a hundred adapter files. Ask it in your main thread and every one of those reads lands in your context window: grep output, file dumps, the whole noisy trawl, sitting there for the rest of the session crowding out the actual work. And you will never reread a line of it. You want the *map*, not the trawl that produced it.
 
-That gap — between the reading a job takes and the reading you actually need back — is exactly what a subagent closes. It's a separate session with its own context window that does the scoped job off to the side and reports back, so the noisy intermediate reads stay in the child rather than landing in your thread.{/* VERIFY: opencode docs (opencode.ai/docs/agents) confirm the isolated child-session model — the subagent runs in its own context and the parent gets its result — but do not spell out whether the parent receives a summary-only payload or the full child transcript. Prose hedged to "reports back" rather than asserting "hands back only the conclusion." */} OpenCode ships three of them ready to use, no setup, invoked by `@mention` right in your prompt.
+That gap - between the reading a job takes and the reading you actually need back - is exactly what a subagent closes. It's a separate session with its own context window that does the scoped job off to the side and reports back, so the noisy intermediate reads stay in the child rather than landing in your thread.{/* VERIFY: opencode docs (opencode.ai/docs/agents) confirm the isolated child-session model - the subagent runs in its own context and the parent gets its result - but do not spell out whether the parent receives a summary-only payload or the full child transcript. Prose hedged to "reports back" rather than asserting "hands back only the conclusion." */} OpenCode ships three of them ready to use, no setup, invoked by `@mention` right in your prompt.
 
 ## The three, and what separates them
 
 ```text
-  @general   full tool access — reads, edits, runs commands
-  @explore   read-only — scans your codebase, can't write
-  @scout     read-only — external docs & dependency research
+  @general   full tool access - reads, edits, runs commands
+  @explore   read-only - scans your codebase, can't write
+  @scout     read-only - external docs & dependency research
 ```
 
 The line that matters is **what each can touch**:
 
-- **`@general`** is a full-access worker. It has the same tools your `build` agent does — read, edit, bash — so it can actually *change* things. Reach for it when the side job is real work that needs to write, not just look: a self-contained fix you want done in its own context so it doesn't clutter the main thread.
-- **`@explore`** is read-only by construction, tuned for one thing: scanning *your* codebase fast. The docs describe it as "a fast, read-only agent for exploring codebases" that "cannot modify files" — you reach for it to find files by pattern, search code for a keyword, or answer a question about the repo. It reads; it can't edit. That's not a setting you trust the agent to respect; it's the agent's permission profile. You can hand it a hundred-file scan and know with certainty the worst it can do is tell you something wrong, never write something wrong.
-- **`@scout`** is also read-only, but its job points *outward* — external docs and dependency research. Where `explore` knows your repo, `scout` goes and looks at the libraries you depend on: it can clone a dependency's source into OpenCode's managed cache and read it, so you can cross-check your code against what upstream actually does.
+- **`@general`** is a full-access worker. It has the same tools your `build` agent does - read, edit, bash - so it can actually *change* things. Reach for it when the side job is real work that needs to write, not just look: a self-contained fix you want done in its own context so it doesn't clutter the main thread.
+- **`@explore`** is read-only by construction, tuned for one thing: scanning *your* codebase fast. The docs describe it as "a fast, read-only agent for exploring codebases" that "cannot modify files" - you reach for it to find files by pattern, search code for a keyword, or answer a question about the repo. It reads; it can't edit. That's not a setting you trust the agent to respect; it's the agent's permission profile. You can hand it a hundred-file scan and know with certainty the worst it can do is tell you something wrong, never write something wrong.
+- **`@scout`** is also read-only, but its job points *outward* - external docs and dependency research. Where `explore` knows your repo, `scout` goes and looks at the libraries you depend on: it can clone a dependency's source into OpenCode's managed cache and read it, so you can cross-check your code against what upstream actually does.
 
-Three workers, two of them read-only, one full-access. Most of the time on `feedmill` you'll want one of the read-only two — because most of the noise you want out of your thread is *reading*, not writing.
+Three workers, two of them read-only, one full-access. Most of the time on `feedmill` you'll want one of the read-only two - because most of the noise you want out of your thread is *reading*, not writing.
 
 ## Send the scan to @explore
 
-The dedupe-hash question is a pure read job, so it goes to `@explore`. You don't switch agents or open anything — you just mention it in the prompt, and the rest of the sentence is the task:
+The dedupe-hash question is a pure read job, so it goes to `@explore`. You don't switch agents or open anything - you just mention it in the prompt, and the rest of the sentence is the task:
 
 ```text
 > @explore find every place across the feed adapters that feeds into the
-  dedupe hash — every call site, with file and function — and list them.
+  dedupe hash - every call site, with file and function - and list them.
   Don't change anything.
 ```
 
@@ -57,22 +57,22 @@ OpenCode spins the work off into a **child session**. The trawl happens *there*,
   • internal/adapter/shared.go→ dedupeKey()    the hash itself (FNV-1a of the args)
 
   All three adapters set DedupeHash in buildItem(); the JSON adapter is
-  the odd one out — it hashes `url`, where the others hash `link`.
+  the odd one out - it hashes `url`, where the others hash `link`.
 ```
 
-Look at what came back versus what it cost. Your thread got five call sites and one genuinely useful observation — the JSON adapter hashing a different field. What it *didn't* get is the forty-one file reads and the grep dump that produced them. Those happened in the child session and stayed there. The job that would have buried your context in trawl handed you back only the answer.
+Look at what came back versus what it cost. Your thread got five call sites and one genuinely useful observation - the JSON adapter hashing a different field. What it *didn't* get is the forty-one file reads and the grep dump that produced them. Those happened in the child session and stayed there. The job that would have buried your context in trawl handed you back only the answer.
 
-If you want to *watch* the worker rather than just read its result, the child session is right there in the TUI. From the parent, `<Leader>+Down` (`session_child_first`) drops you into the first child session; from inside a child, the bare arrow keys take over — `right`/`left` (`session_child_cycle` / `_reverse`) move between children if you've spawned more than one, and bare `up` (`session_parent`) returns you to the parent thread.
+If you want to *watch* the worker rather than just read its result, the child session is right there in the TUI. From the parent, `<Leader>+Down` (`session_child_first`) drops you into the first child session; from inside a child, the bare arrow keys take over - `right`/`left` (`session_child_cycle` / `_reverse`) move between children if you've spawned more than one, and bare `up` (`session_parent`) returns you to the parent thread.
 
 ## Why isolation is the whole point
 
-The instinct is to read "separate session" as a UI detail. It isn't — it's the mechanism. The subagent runs on its own context window, so the volume of reading it does has *no effect* on yours. A scan that would have eaten thirty percent of your main thread's budget eats thirty percent of a throwaway one instead, and your thread comes out exactly as clean as it went in, plus an answer.
+The instinct is to read "separate session" as a UI detail. It isn't - it's the mechanism. The subagent runs on its own context window, so the volume of reading it does has *no effect* on yours. A scan that would have eaten thirty percent of your main thread's budget eats thirty percent of a throwaway one instead, and your thread comes out exactly as clean as it went in, plus an answer.
 
-That's what makes this a habit worth building rather than a party trick. Every time you're about to ask your main agent something that's mostly *gathering* — find all the call sites, where does X get set, does any other adapter have this shape — you're about to trade context you'll want later for reading you'll never reread. Routing it through `@explore` is how you stop paying that tax.
+That's what makes this a habit worth building rather than a party trick. Every time you're about to ask your main agent something that's mostly *gathering* - find all the call sites, where does X get set, does any other adapter have this shape - you're about to trade context you'll want later for reading you'll never reread. Routing it through `@explore` is how you stop paying that tax.
 
 ## Run the read-only scouts cheap
 
-There's a second lever, and it's the one that makes a read-only worker genuinely cheap to lean on. Because OpenCode is provider-agnostic, every agent can carry its own `model` — so a worker whose only job is to grep and report doesn't need to run on your most expensive reasoning model. The cleanest place to pull that lever is a *custom* subagent (the next lesson), where you define the agent and pin its model in one block:
+There's a second lever, and it's the one that makes a read-only worker genuinely cheap to lean on. Because OpenCode is provider-agnostic, every agent can carry its own `model` - so a worker whose only job is to grep and report doesn't need to run on your most expensive reasoning model. The cleanest place to pull that lever is a *custom* subagent (the next lesson), where you define the agent and pin its model in one block:
 
 ```json
 // opencode.json
@@ -88,14 +88,14 @@ There's a second lever, and it's the one that makes a read-only worker genuinely
 }
 ```
 
-Now the noisy scans run on the cheap model and your main `build` loop keeps the expensive one for the work that actually needs reasoning. Scanning for call sites is pattern-matching, not deep thought — match the model to the job and a read-only worker costs you almost nothing to reach for. {/* VERIFY: the config key `agent.<name>.model` is documented (opencode.ai/docs/agents) and the slug `anthropic/claude-haiku-4-5` is correct (models.dev / OpenRouter). BUT applying `model` to the *built-in* subagents (general/explore/scout) is reported not to take effect — the built-in inherits the invoking primary's model — per GitHub issue #21952 (anomalyco/opencode) plus the related cluster #21632, #18615, #22130. #21952 is marked Closed with no visible fix/PR, and the related issues remain active, so whether built-in overrides work in v1.16.2 is UNCONFIRMED. Example therefore reframed onto a custom subagent (`scan`), where the model pin is the documented, reliable path; do not rewrite this around `agent.explore.model` until the built-in path is re-verified on the installed release. */}
+Now the noisy scans run on the cheap model and your main `build` loop keeps the expensive one for the work that actually needs reasoning. Scanning for call sites is pattern-matching, not deep thought - match the model to the job and a read-only worker costs you almost nothing to reach for. {/* VERIFY: the config key `agent.<name>.model` is documented (opencode.ai/docs/agents) and the slug `anthropic/claude-haiku-4-5` is correct (models.dev / OpenRouter). BUT applying `model` to the *built-in* subagents (general/explore/scout) is reported not to take effect - the built-in inherits the invoking primary's model - per GitHub issue #21952 (anomalyco/opencode) plus the related cluster #21632, #18615, #22130. #21952 is marked Closed with no visible fix/PR, and the related issues remain active, so whether built-in overrides work in v1.16.2 is UNCONFIRMED. Example therefore reframed onto a custom subagent (`scan`), where the model pin is the documented, reliable path; do not rewrite this around `agent.explore.model` until the built-in path is re-verified on the installed release. */}
 
 ## When each one fits
 
 The built-ins cover three clean cases, and naming them is most of knowing which to reach for:
 
-- A **codebase scan** — call sites, where something's defined, which files match a shape — goes to `@explore`. Read-only, fast, your repo.
-- A **docs or dependency question** — what does this version of the library actually do, does upstream handle this case — goes to `@scout`. Read-only, but pointed outward.
-- A **self-contained piece of work that needs to write** — a fix you want done in its own context, off your main thread — goes to `@general`. Full access, so the same review discipline from chapter one applies to what it hands back.
+- A **codebase scan** - call sites, where something's defined, which files match a shape - goes to `@explore`. Read-only, fast, your repo.
+- A **docs or dependency question** - what does this version of the library actually do, does upstream handle this case - goes to `@scout`. Read-only, but pointed outward.
+- A **self-contained piece of work that needs to write** - a fix you want done in its own context, off your main thread - goes to `@general`. Full access, so the same review discipline from chapter one applies to what it hands back.
 
-That covers the common shapes. But the dedupe scan exposed the limit too: `@explore` is read-only and cheap, which is right, but its leash and its model are whatever OpenCode shipped — you don't get to scope it to *exactly* the job. When the built-in is close but not quite the worker you want, you write your own. [Next: write a custom subagent](/course/opencode/subagents/custom-subagent/).
+That covers the common shapes. But the dedupe scan exposed the limit too: `@explore` is read-only and cheap, which is right, but its leash and its model are whatever OpenCode shipped - you don't get to scope it to *exactly* the job. When the built-in is close but not quite the worker you want, you write your own. [Next: write a custom subagent](/course/opencode/subagents/custom-subagent/).

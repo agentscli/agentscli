@@ -42,12 +42,12 @@ export default function RuleEconomy() {
   let reading: string;
   if (picked.length === 0) {
     reading =
-      'An empty file costs nothing — and teaches nothing. Add a line and watch the ledger.';
+      'An empty file costs nothing - and teaches nothing. Add a line and watch the ledger.';
   } else if (net > 0 && bloatCount === 0) {
     reading =
       'Every line pays rent. This is what a lean rules file looks like: durable, project-specific facts and nothing else.';
   } else if (net > 0) {
-    reading = `Net positive — but ${bloatCount} ${
+    reading = `Net positive - but ${bloatCount} ${
       bloatCount === 1 ? 'line is' : 'lines are'
     } paying rent with the durable facts’ savings. Cut the amber ones; the ledger only improves.`;
   } else {
@@ -131,7 +131,7 @@ export default function RuleEconomy() {
       </div>
 
       <p className="rle-footnote">
-        Numbers are illustrative — the ratios are the point: a re-teach cycle
+        Numbers are illustrative - the ratios are the point: a re-teach cycle
         (wrong attempt, correction, redo) dwarfs the line that prevents it.
         Assumes {RLE_SESSIONS_PER_WEEK} sessions a week, the file loaded at the
         start of each.

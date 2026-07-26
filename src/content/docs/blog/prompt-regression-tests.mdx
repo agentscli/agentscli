@@ -9,31 +9,31 @@ draft: false
 
 You edited the prompt. Ran it once. The output looked right, so you shipped it. "It worked when I tried it."
 
-For a system that returns a different answer to the same input twice, that sentence means nothing. You sampled one draw from a distribution and called it a proof. You wouldn't merge a payments change because the unit test passed *once* on your laptop — but you'll merge a change to the agent's instructions on a single happy-path glance, because the agent isn't "code," it's "the prompt," and the prompt feels like prose you're allowed to wing.
+For a system that returns a different answer to the same input twice, that sentence means nothing. You sampled one draw from a distribution and called it a proof. You wouldn't merge a payments change because the unit test passed *once* on your laptop - but you'll merge a change to the agent's instructions on a single happy-path glance, because the agent isn't "code," it's "the prompt," and the prompt feels like prose you're allowed to wing.
 
 It isn't prose. It's the program. And right now you're shipping it without tests.
 
 ## The edit that fixes one case and breaks three
 
-Here's the shape of the failure. A teammate notices the agent keeps generating REST handlers that bypass your repository layer. They open `AGENTS.md`, add a line — *"never call the ORM directly from route handlers; go through `db/repo/`"* — try it on the one endpoint that was broken, see it work, and merge.
+Here's the shape of the failure. A teammate notices the agent keeps generating REST handlers that bypass your repository layer. They open `AGENTS.md`, add a line - *"never call the ORM directly from route handlers; go through `db/repo/`"* - try it on the one endpoint that was broken, see it work, and merge.
 
 What they didn't re-test: the migration script the agent now refuses to write inline, the seed file it overcomplicates routing through a repo that doesn't exist yet, the two background jobs where the direct call was correct. One line of context fixed one case and quietly degraded three. Nobody noticed, because nobody re-ran the three.
 
-**This is the tax of a non-deterministic, global input.** A prompt or a rules file isn't a local change — it's a parameter on every future generation. Editing it is closer to changing a compiler flag than fixing a function. You cannot reason about its blast radius by inspection, and you cannot verify it by trying the one case you had in mind.
+**This is the tax of a non-deterministic, global input.** A prompt or a rules file isn't a local change - it's a parameter on every future generation. Editing it is closer to changing a compiler flag than fixing a function. You cannot reason about its blast radius by inspection, and you cannot verify it by trying the one case you had in mind.
 
 So you learn about the regression the way everyone learns about it: from a trace, after a user hit it, a week later, when you've forgotten which of the eleven prompt edits that sprint caused it.
 
 ## Tracing is an autopsy. The golden dataset is a vaccine.
 
-When teams get burned by this, they reach for observability. Wire up tracing, ship an eval dashboard, watch the LLM calls stream by. All useful. None of it prevents the regression you just shipped — it *describes* it. A dashboard tells you what broke after it broke. A trace is a body on a table; you're now doing the postmortem.
+When teams get burned by this, they reach for observability. Wire up tracing, ship an eval dashboard, watch the LLM calls stream by. All useful. None of it prevents the regression you just shipped - it *describes* it. A dashboard tells you what broke after it broke. A trace is a body on a table; you're now doing the postmortem.
 
 The thing that actually stops the regression is older and far more boring: **a checked-in dataset of known-good behavior that runs before the merge and fails the build when the score drops.** Not a dashboard you have to remember to look at. A gate that won't let the bad change through.
 
-This is the same move we make everywhere else in engineering and somehow suspend the moment the word "AI" appears. You don't trust that the refactor preserved behavior because you eyeballed it — you trust the test suite that's red until it does. The agent's context deserves the same suite. The recipe combines three primitives you already have: [headless](/foundations/headless/) execution to run the agent without a human, [rules](/foundations/rules/) versioned like the source they are, and a [hook](/foundations/hooks/) that turns the score into a gate.
+This is the same move we make everywhere else in engineering and somehow suspend the moment the word "AI" appears. You don't trust that the refactor preserved behavior because you eyeballed it - you trust the test suite that's red until it does. The agent's context deserves the same suite. The recipe combines three primitives you already have: [headless](/foundations/headless/) execution to run the agent without a human, [rules](/foundations/rules/) versioned like the source they are, and a [hook](/foundations/hooks/) that turns the score into a gate.
 
-## Step 1 — Write down the known-good behavior as data
+## Step 1 - Write down the known-good behavior as data
 
-Your SME knowledge — *which* endpoint should go through the repo, *which* migration is correctly inline — is exactly the context the agent lacks. The gap this whole site is about. A golden dataset is that knowledge, frozen into checkable form: an input, and the behavior you know is correct for it.
+Your SME knowledge - *which* endpoint should go through the repo, *which* migration is correctly inline - is exactly the context the agent lacks. The gap this whole site is about. A golden dataset is that knowledge, frozen into checkable form: an input, and the behavior you know is correct for it.
 
 Keep it dead simple. A JSONL file in the repo, one case per line:
 
@@ -43,15 +43,15 @@ Keep it dead simple. A JSONL file in the repo, one case per line:
 {"id":"pnpm-001","input":"Add the date-fns dependency and show the install command","assert":{"must_match":"pnpm add date-fns","must_not_match":"npm install|yarn add"}}
 ```
 
-These aren't trick questions. They're the corrections you've already typed into chat twice — promoted from throwaway corrections into permanent, executable expectations. Every time the agent gets something wrong in a way a *rule* should have caught, that wrong becomes a new line in this file. The dataset grows with your scars.
+These aren't trick questions. They're the corrections you've already typed into chat twice - promoted from throwaway corrections into permanent, executable expectations. Every time the agent gets something wrong in a way a *rule* should have caught, that wrong becomes a new line in this file. The dataset grows with your scars.
 
-## Step 2 — Run it headless and score it
+## Step 2 - Run it headless and score it
 
-[Headless](/foundations/headless/) mode is the agent without the chat window — you pipe in a prompt, you get structured output back, no human in the loop. That's what lets the dataset run in CI. The exact invocation differs per tool — Claude Code's `claude -p`, Codex's `codex exec`, opencode's `opencode run` — but the shape is identical: one process per case, capture the output, check it against the assertions. Ask for structured output rather than scraping raw text where you can — Claude Code's `--output-format json` and Codex's `codex exec --json` both hand back a parseable blob instead of a wall of console text.
+[Headless](/foundations/headless/) mode is the agent without the chat window - you pipe in a prompt, you get structured output back, no human in the loop. That's what lets the dataset run in CI. The exact invocation differs per tool - Claude Code's `claude -p`, Codex's `codex exec`, opencode's `opencode run` - but the shape is identical: one process per case, capture the output, check it against the assertions. Ask for structured output rather than scraping raw text where you can - Claude Code's `--output-format json` and Codex's `codex exec --json` both hand back a parseable blob instead of a wall of console text.
 
 ```bash
 #!/usr/bin/env bash
-# scripts/eval.sh — run the golden dataset headless, print a score
+# scripts/eval.sh - run the golden dataset headless, print a score
 set -euo pipefail
 pass=0; total=0
 
@@ -61,7 +61,7 @@ while IFS= read -r case; do
   must_match=$(jq -r '.assert.must_match // empty' <<<"$case")
   must_not=$(jq -r '.assert.must_not_match // empty' <<<"$case")
 
-  # headless run — swap in your tool's non-interactive command (e.g. claude -p)
+  # headless run - swap in your tool's non-interactive command (e.g. claude -p)
   out=$(agent --print "$input")
 
   ok=1
@@ -75,19 +75,19 @@ echo "score=$score pass=$pass/$total"
 echo "$score" > eval/.last-score
 ```
 
-Run it and you get a number, not a vibe. Because the system is non-deterministic, **score each case `n` times** (3 is a sane floor) and count it green only if it passes every draw — a case that passes two of three runs isn't passing, it's flaky, and flaky in your eval is flaky in production.
+Run it and you get a number, not a vibe. Because the system is non-deterministic, **score each case `n` times** (3 is a sane floor) and count it green only if it passes every draw - a case that passes two of three runs isn't passing, it's flaky, and flaky in your eval is flaky in production.
 
-Don't try to make the flakiness go away by pinning the temperature to zero. It won't. Temperature controls token *sampling*, not the inference pipeline underneath it, and that pipeline is non-deterministic for reasons that have nothing to do with creativity. Floating-point addition isn't associative — `(a + b) + c` doesn't always equal `a + (b + c)` once rounding enters — so the matrix multiplies inside the model can land on slightly different logits run to run. When two candidate tokens are nearly tied, a rounding error a dozen decimal places down flips their order, and the generation diverges from there. On top of that, production inference *batches* requests: your prompt is processed alongside whatever other requests happened to arrive in the same window, and the batch it lands in shifts the numbers. This is why a prompt behaves perfectly in your isolated test and turns flaky under load — the system around it changed, not the model's mood. Running each case `n` times is how you sample that distribution instead of pretending it's a point.
+Don't try to make the flakiness go away by pinning the temperature to zero. It won't. Temperature controls token *sampling*, not the inference pipeline underneath it, and that pipeline is non-deterministic for reasons that have nothing to do with creativity. Floating-point addition isn't associative - `(a + b) + c` doesn't always equal `a + (b + c)` once rounding enters - so the matrix multiplies inside the model can land on slightly different logits run to run. When two candidate tokens are nearly tied, a rounding error a dozen decimal places down flips their order, and the generation diverges from there. On top of that, production inference *batches* requests: your prompt is processed alongside whatever other requests happened to arrive in the same window, and the batch it lands in shifts the numbers. This is why a prompt behaves perfectly in your isolated test and turns flaky under load - the system around it changed, not the model's mood. Running each case `n` times is how you sample that distribution instead of pretending it's a point.
 
-While you're at it, measure cost and latency, not just correctness. You don't have to scrape token counts: with `--output-format json`, Claude Code hands back `total_cost_usd` and a per-model breakdown for every call, and `codex exec --json` streams structured events you can sum the same way. A prompt edit that lifts accuracy two points but doubles cost and latency is a regression too — just an invisible one until you put it on the board.
+While you're at it, measure cost and latency, not just correctness. You don't have to scrape token counts: with `--output-format json`, Claude Code hands back `total_cost_usd` and a per-model breakdown for every call, and `codex exec --json` streams structured events you can sum the same way. A prompt edit that lifts accuracy two points but doubles cost and latency is a regression too - just an invisible one until you put it on the board.
 
-## Step 3 — Gate the merge with a hook
+## Step 3 - Gate the merge with a hook
 
-A score nobody enforces is a dashboard. The point of this recipe is the gate. A [hook](/foundations/hooks/) is a script the system runs at a defined moment — here, before a merge or as the required CI check — and a non-zero exit blocks the action. That's the whole mechanism: the build goes red below baseline.
+A score nobody enforces is a dashboard. The point of this recipe is the gate. A [hook](/foundations/hooks/) is a script the system runs at a defined moment - here, before a merge or as the required CI check - and a non-zero exit blocks the action. That's the whole mechanism: the build goes red below baseline.
 
 ```bash
 #!/usr/bin/env bash
-# .githooks/pre-merge — block merges that regress the agent
+# .githooks/pre-merge - block merges that regress the agent
 set -euo pipefail
 
 ./scripts/eval.sh
@@ -102,9 +102,9 @@ fi
 echo "OK: eval $new >= baseline $base"
 ```
 
-The baseline is a committed file. You only move it *up*, in a deliberate commit, when a change genuinely improves behavior — never silently, never down. Lowering the bar to get a merge through is now a visible act in the diff, with your name on it, which is exactly the social pressure you want.
+The baseline is a committed file. You only move it *up*, in a deliberate commit, when a change genuinely improves behavior - never silently, never down. Lowering the bar to get a merge through is now a visible act in the diff, with your name on it, which is exactly the social pressure you want.
 
-## Step 4 — Version the prompts so every score has a cause
+## Step 4 - Version the prompts so every score has a cause
 
 The last piece makes the whole thing diagnostic instead of just defensive. Treat the agent's context as source: `AGENTS.md`, the rules files, any prompt templates all live in the repo and move through pull requests. (See [rules](/foundations/rules/) for how each tool layers and merges these files.)
 
@@ -120,16 +120,16 @@ That single block turns prompt tuning from a random walk into engineering. You c
 
 ## Where the gate stops, and what to pair it with
 
-A golden dataset is a regression net, not a safety net. It catches the failures you've *already seen* — every line in `golden.jsonl` is a scar you decided to never reopen. It cannot catch the failure you've never imagined, because it isn't in the file. A change can sail through a green eval and still ship a brand-new way of being wrong.
+A golden dataset is a regression net, not a safety net. It catches the failures you've *already seen* - every line in `golden.jsonl` is a scar you decided to never reopen. It cannot catch the failure you've never imagined, because it isn't in the file. A change can sail through a green eval and still ship a brand-new way of being wrong.
 
-So pair the gate with discovery. The gate is the deterministic guard: a lean, curated dataset that must stay green before a merge. Discovery is the opposite shape — throw a broad, messy stream of real or sampled prompts at the changed agent and *look* for new failures, with no pass/fail threshold. Discovery is allowed to be noisy and slow because it runs out of band, not on the merge button. When discovery surfaces a new failure mode, you don't argue about it — you promote it to a line in `golden.jsonl`, and now the gate guards it forever. The two systems feed each other: the gate keeps you from going backward, sampling keeps you finding the front.
+So pair the gate with discovery. The gate is the deterministic guard: a lean, curated dataset that must stay green before a merge. Discovery is the opposite shape - throw a broad, messy stream of real or sampled prompts at the changed agent and *look* for new failures, with no pass/fail threshold. Discovery is allowed to be noisy and slow because it runs out of band, not on the merge button. When discovery surfaces a new failure mode, you don't argue about it - you promote it to a line in `golden.jsonl`, and now the gate guards it forever. The two systems feed each other: the gate keeps you from going backward, sampling keeps you finding the front.
 
-The second limit is the assertion. Regex `must_match` / `must_not_match` checks are perfect for the cases that *are* string-shaped — "uses `pnpm`, never `npm`," "imports from `db/repo/`, never the ORM." They fall apart the moment correctness is a judgment: "the explanation is accurate," "the refactor preserved behavior," "the tone matches our docs." For those you need a model to grade the output — an LLM-as-judge. Useful, but remember what it is: you've added a *second* non-deterministic system to score the first. Pin the judge's own prompt in the repo, version it like everything else, and run *it* against a handful of hand-graded cases so a drift in the judge can't silently move your scores. A judge you don't test is just vibes with extra latency.
+The second limit is the assertion. Regex `must_match` / `must_not_match` checks are perfect for the cases that *are* string-shaped - "uses `pnpm`, never `npm`," "imports from `db/repo/`, never the ORM." They fall apart the moment correctness is a judgment: "the explanation is accurate," "the refactor preserved behavior," "the tone matches our docs." For those you need a model to grade the output - an LLM-as-judge. Useful, but remember what it is: you've added a *second* non-deterministic system to score the first. Pin the judge's own prompt in the repo, version it like everything else, and run *it* against a handful of hand-graded cases so a drift in the judge can't silently move your scores. A judge you don't test is just vibes with extra latency.
 
-And the objection you're already forming: *this is too slow and too expensive to run on every PR.* It would be, if you ran everything every time. Don't. Tier it. A small smoke set — the ten cases that cover your load-bearing rules — runs on every PR and gates the merge in a minute. The full dataset, scored `n` times, runs nightly or on demand, and a drop there opens an issue instead of blocking a human who's mid-flow. Keeping the gate lean is a feature, not a compromise: the merge guard should test the behavior you cannot afford to lose, and nothing pulls a team off evals faster than a check that takes fifteen minutes to tell them they're fine.
+And the objection you're already forming: *this is too slow and too expensive to run on every PR.* It would be, if you ran everything every time. Don't. Tier it. A small smoke set - the ten cases that cover your load-bearing rules - runs on every PR and gates the merge in a minute. The full dataset, scored `n` times, runs nightly or on demand, and a drop there opens an issue instead of blocking a human who's mid-flow. Keeping the gate lean is a feature, not a compromise: the merge guard should test the behavior you cannot afford to lose, and nothing pulls a team off evals faster than a check that takes fifteen minutes to tell them they're fine.
 
 ## What you've actually built
 
-A broad, capable agent that knows everything in general and nothing about your repo, wired to a narrow, deep record of how your team specifically wants it to behave — and a gate that won't let anyone weaken that record by accident. That's context engineering with a regression net under it. The golden dataset *is* your SME knowledge, made executable; the hook is what stops the next well-meaning edit from quietly forgetting it.
+A broad, capable agent that knows everything in general and nothing about your repo, wired to a narrow, deep record of how your team specifically wants it to behave - and a gate that won't let anyone weaken that record by accident. That's context engineering with a regression net under it. The golden dataset *is* your SME knowledge, made executable; the hook is what stops the next well-meaning edit from quietly forgetting it.
 
 "It worked when I tried it" was never a claim about the system. It was a claim about your luck on one draw. Replace the luck with a number that has to go up.

@@ -1,9 +1,9 @@
 /**
- * Plugin packer — one team setup (skill + subagent + hook + MCP server +
+ * Plugin packer - one team setup (skill + subagent + hook + MCP server +
  * slash command) and how it ships to a teammate in each tool: which pieces
  * ride in the plugin bundle, which stay loose files. Formats, commands, and
  * marketplace names are extracted from
- * src/content/tool-instructions/<tool>/plugins.mdx — keep in sync.
+ * src/content/tool-instructions/<tool>/plugins.mdx - keep in sync.
  */
 
 export type PpkToolId = 'claude-code' | 'codex' | 'opencode' | 'cursor' | 'copilot';
@@ -52,7 +52,7 @@ export const ppkTools: PpkToolSpec[] = [
     },
     dist: 'Scopes: user by default, `--scope project` commits the install to `.claude/settings.json`, and managed scope lets an org enforce it. The official `claude-plugins-official` marketplace is preinstalled.',
     caveat:
-      'Installed plugins are copied into `~/.claude/plugins/cache/` — a plugin can’t reference files outside its own directory.',
+      'Installed plugins are copied into `~/.claude/plugins/cache/` - a plugin can’t reference files outside its own directory.',
   },
   {
     id: 'codex',
@@ -61,13 +61,13 @@ export const ppkTools: PpkToolSpec[] = [
       skill: { status: 'bundle', note: 'Lands in the plugin’s `skills/` directory.' },
       subagent: {
         status: 'loose',
-        note: 'No `agents` manifest field — agent TOML files ship alongside the plugin, not inside it.',
+        note: 'No `agents` manifest field - agent TOML files ship alongside the plugin, not inside it.',
       },
       hook: { status: 'bundle', note: '`hooks/hooks.json` ships in the plugin.' },
       mcp: { status: 'bundle', note: '`.mcp.json` ships in the plugin.' },
       command: {
         status: 'loose',
-        note: 'No dedicated commands field — package it as a skill (standalone custom prompts are deprecated).',
+        note: 'No dedicated commands field - package it as a skill (standalone custom prompts are deprecated).',
       },
     },
     ship: {
@@ -75,7 +75,7 @@ export const ppkTools: PpkToolSpec[] = [
     },
     dist: 'Marketplace sources are `marketplace.json` files (local path, Git repo, or npm package), declared in `~/.codex/config.toml` under `[marketplaces.<name>]`. `/plugins` browses tabs for OpenAI-curated, workspace, and personal sources.',
     caveat:
-      'Per-plugin state lives in `config.toml` — `[plugins."team-stack@team-plugins"] enabled = false` turns it off without uninstalling.',
+      'Per-plugin state lives in `config.toml` - `[plugins."team-stack@team-plugins"] enabled = false` turns it off without uninstalling.',
   },
   {
     id: 'opencode',
@@ -85,39 +85,39 @@ export const ppkTools: PpkToolSpec[] = [
       subagent: { status: 'loose', note: 'Agent markdown stays a loose file.' },
       hook: {
         status: 'bundle',
-        note: 'The plugin IS the hook surface — export handlers for events like `file.edited`.',
+        note: 'The plugin IS the hook surface - export handlers for events like `file.edited`.',
       },
       mcp: { status: 'loose', note: 'Configured in `opencode.json`, outside the plugin.' },
       command: {
         status: 'loose',
-        note: 'Explicitly not a plugin capability — commands stay in `.opencode/commands/`.',
+        note: 'Explicitly not a plugin capability - commands stay in `.opencode/commands/`.',
       },
     },
     ship: {
       code: '// opencode.json\n"plugin": ["@our-org/team-stack"]',
     },
-    dist: 'Plugins are live JS/TS modules — closer to a VS Code extension than a static bundle. npm packages auto-install at startup (via Bun); local files load from `.opencode/plugins/` or `~/.config/opencode/plugins/`.',
-    caveat: 'No official registry — the community index is `awesome-opencode` on GitHub.',
+    dist: 'Plugins are live JS/TS modules - closer to a VS Code extension than a static bundle. npm packages auto-install at startup (via Bun); local files load from `.opencode/plugins/` or `~/.config/opencode/plugins/`.',
+    caveat: 'No official registry - the community index is `awesome-opencode` on GitHub.',
   },
   {
     id: 'cursor',
     label: 'Cursor',
     pieces: {
       skill: { status: 'loose', note: 'Share the `.cursor/skills/` folder directly.' },
-      subagent: { status: 'loose', note: 'A `.cursor/*` file — share it directly.' },
-      hook: { status: 'loose', note: 'A `.cursor/*` file — share it directly.' },
+      subagent: { status: 'loose', note: 'A `.cursor/*` file - share it directly.' },
+      hook: { status: 'loose', note: 'A `.cursor/*` file - share it directly.' },
       mcp: {
         status: 'loose',
         note: 'One-click installs via the MCP Marketplace and cursor.directory.',
       },
-      command: { status: 'loose', note: '`.cursor/commands/*.md` — share the files.' },
+      command: { status: 'loose', note: '`.cursor/commands/*.md` - share the files.' },
     },
     ship: {
-      text: 'No plugin format yet — commit the `.cursor/*` files to the repo, and the whole team gets the setup on pull.',
+      text: 'No plugin format yet - commit the `.cursor/*` files to the repo, and the whole team gets the setup on pull.',
     },
     dist: 'The inherited surfaces: OpenVSX-backed extensions (the VS Code model, with thinner coverage than upstream) and the MCP Marketplace. Neither bundles rules + skills + agents into one unit.',
     caveat:
-      'A first-class plugin format is a live community request — unverified whether an official rules/skills marketplace ships in 2026.',
+      'A first-class plugin format is a live community request - unverified whether an official rules/skills marketplace ships in 2026.',
   },
   {
     id: 'copilot',
@@ -132,14 +132,14 @@ export const ppkTools: PpkToolSpec[] = [
       },
       command: {
         status: 'loose',
-        note: 'Prompt files aren’t listed among plugin components in our chapter — share `.github/prompts/` files.',
+        note: 'Prompt files aren’t listed among plugin components in our chapter - share `.github/prompts/` files.',
       },
     },
     ship: {
-      text: 'Install from a plugin marketplace — `github/copilot-plugins` (official) and `github/awesome-copilot` (community) are registered by default; marketplaces can live on GitHub, any Git server, or disk.',
+      text: 'Install from a plugin marketplace - `github/copilot-plugins` (official) and `github/awesome-copilot` (community) are registered by default; marketplaces can live on GitHub, any Git server, or disk.',
     },
     dist: 'Plugins (preview, 2026) bundle agents + skills + hooks + MCP + LSP for both VS Code and the Copilot CLI. Enterprise admins can set baseline plugins for every user.',
     caveat:
-      'Don’t conflate plugins with Copilot Extensions — Extensions are `@`-invocable Chat apps from the GitHub Marketplace, a different primitive.',
+      'Don’t conflate plugins with Copilot Extensions - Extensions are `@`-invocable Chat apps from the GitHub Marketplace, a different primitive.',
   },
 ];

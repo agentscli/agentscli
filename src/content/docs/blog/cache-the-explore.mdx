@@ -1,27 +1,27 @@
 ---
 title: "Cache the Explore"
-description: "The codebase is the strongest steering signal you have — stronger than your prompt or your rules. So pay the exploration cost once, freeze it into a file, and feed it to every run."
+description: "The codebase is the strongest steering signal you have - stronger than your prompt or your rules. So pay the exploration cost once, freeze it into a file, and feed it to every run."
 authors: sourabh
 date: 2026-05-29
 tags: [context-engineering, subagents, rules, workflow]
 draft: false
 ---
 
-You point an agent at a feature in a large repo and watch it turn into an archaeologist. The first ten minutes are pure digging — `grep` here, open three files there, trace the import, find the auth helper, figure out which of the four "service" folders is the real one. Only *then* does it start the work you actually asked for. And it learned almost nothing in those ten minutes that you didn't already know cold.
+You point an agent at a feature in a large repo and watch it turn into an archaeologist. The first ten minutes are pure digging - `grep` here, open three files there, trace the import, find the auth helper, figure out which of the four "service" folders is the real one. Only *then* does it start the work you actually asked for. And it learned almost nothing in those ten minutes that you didn't already know cold.
 
-That digging is the agent reconstructing the single strongest signal it has. Rank the things that steer it, weakest to strongest. Your prompt is at the bottom — a paragraph it reads once and half-forgets. Your rules file is stronger — persistent, reloaded every session. But the input that actually decides what the agent writes is neither. It's the code already in the repo. The agent reads the surrounding files, infers the conventions, and copies what it sees. The codebase is the dominant steering input, louder than anything you type.
+That digging is the agent reconstructing the single strongest signal it has. Rank the things that steer it, weakest to strongest. Your prompt is at the bottom - a paragraph it reads once and half-forgets. Your rules file is stronger - persistent, reloaded every session. But the input that actually decides what the agent writes is neither. It's the code already in the repo. The agent reads the surrounding files, infers the conventions, and copies what it sees. The codebase is the dominant steering input, louder than anything you type.
 
-So here's what should bother you: if the codebase is the strongest signal, why does every single run rediscover it from scratch? Run that feature five times, spin up three parallel agents, and you pay the archaeology tax over and over — for a map that hasn't changed since the first dig.
+So here's what should bother you: if the codebase is the strongest signal, why does every single run rediscover it from scratch? Run that feature five times, spin up three parallel agents, and you pay the archaeology tax over and over - for a map that hasn't changed since the first dig.
 
-The instinct is to make the agent explore *better* — smarter search, more tool calls, a bigger window to hold what it found. That's the wrong lever. The higher-leverage move is to make it explore *less*. Pay the exploration cost once, capture it as a committed artifact, and feed that artifact into every later run. This is a recipe for doing exactly that, combining three primitives: [subagents](/foundations/subagents/), [rules](/foundations/rules/), and [headless mode](/foundations/headless/).
+The instinct is to make the agent explore *better* - smarter search, more tool calls, a bigger window to hold what it found. That's the wrong lever. The higher-leverage move is to make it explore *less*. Pay the exploration cost once, capture it as a committed artifact, and feed that artifact into every later run. This is a recipe for doing exactly that, combining three primitives: [subagents](/foundations/subagents/), [rules](/foundations/rules/), and [headless mode](/foundations/headless/).
 
 ## The smart zone is the first few thousand tokens
 
-An agent is sharpest at the start of its context window, before the window fills with tool output, half-read files, and dead-end greps. Call it the smart zone — the early budget where reasoning is cleanest. Spend it on discovery and you've spent your best tokens re-learning what you already know. The actual work — the design judgment, the careful edit — happens later, in the noisier part of the window, after the agent has already tired itself out orienting.
+An agent is sharpest at the start of its context window, before the window fills with tool output, half-read files, and dead-end greps. Call it the smart zone - the early budget where reasoning is cleanest. Spend it on discovery and you've spent your best tokens re-learning what you already know. The actual work - the design judgment, the careful edit - happens later, in the noisier part of the window, after the agent has already tired itself out orienting.
 
 This is the gap this whole site is about, playing out inside a single run. The agent is **broad and contextless**: it knows the language, the framework, a million repos that aren't yours. You are **narrow and deep**: you know that current-user resolution lives in `lib/session.ts`, that the old payments path is a deprecated shim, that the "utils" folder under `legacy/` is a trap. Every run, the broad agent burns its smartest tokens trying to reconstruct your depth by hand. Context engineering is handing it that depth directly so it can skip the reconstruction.
 
-The cache is how you hand it over. Pay the explore once, freeze the result, and every future run starts already oriented — its smart zone free for actual work instead of re-discovery.
+The cache is how you hand it over. Pay the explore once, freeze the result, and every future run starts already oriented - its smart zone free for actual work instead of re-discovery.
 
 ## The recipe
 
@@ -29,9 +29,9 @@ Three moving parts: a subagent that explores and writes the map, a rule that tel
 
 ### 1. A subagent writes the map, in its own window
 
-Run the exploration as a [subagent](/foundations/subagents/) — a separate agent with its own isolated context window. This matters for one specific reason: exploration is *messy*. It generates dozens of tool calls, opens files it discards, follows imports that lead nowhere. You do not want that exhaust in your main window. You want the *conclusion*, distilled. A subagent absorbs all the mess in its own context and hands back only the clean artifact. (If you'd rather steer the pass yourself, run it interactively in [plan mode](/foundations/plan-mode/) instead — the agent reads and reasons but can't touch the codebase, so the explore stays read-only while you shape it. Either way the output is the same: one clean `research.md`, the looking done once.)
+Run the exploration as a [subagent](/foundations/subagents/) - a separate agent with its own isolated context window. This matters for one specific reason: exploration is *messy*. It generates dozens of tool calls, opens files it discards, follows imports that lead nowhere. You do not want that exhaust in your main window. You want the *conclusion*, distilled. A subagent absorbs all the mess in its own context and hands back only the clean artifact. (If you'd rather steer the pass yourself, run it interactively in [plan mode](/foundations/plan-mode/) instead - the agent reads and reasons but can't touch the codebase, so the explore stays read-only while you shape it. Either way the output is the same: one clean `research.md`, the looking done once.)
 
-Give it a focused brief and one job — write `research.md`:
+Give it a focused brief and one job - write `research.md`:
 
 ```text
 You are exploring this repo to produce a reusable map for later coding runs.
@@ -49,29 +49,29 @@ Be terse. This file is read by future agents with a fixed token budget.
 Cite a file path for every claim. If you didn't verify it, don't write it.
 ```
 
-The output is the asset. A good `research.md` reads like the orientation a senior engineer gives a new hire on day one — not a wiki dump, but *"here's the eight files that matter, here's how a request flows, here's the helper you actually call, and here's the folder that will burn you."* That's the SME's map, serialized once instead of re-derived every run.
+The output is the asset. A good `research.md` reads like the orientation a senior engineer gives a new hire on day one - not a wiki dump, but *"here's the eight files that matter, here's how a request flows, here's the helper you actually call, and here's the folder that will burn you."* That's the SME's map, serialized once instead of re-derived every run.
 
-One discipline that pays off: generate it **just-in-time**, right before a batch of work on that slice — not as a permanent repo-wide wiki you maintain forever. You're caching the explore for *this* push, not documenting the project for posterity. The narrower the scope, the more accurate the map and the longer it stays true.
+One discipline that pays off: generate it **just-in-time**, right before a batch of work on that slice - not as a permanent repo-wide wiki you maintain forever. You're caching the explore for *this* push, not documenting the project for posterity. The narrower the scope, the more accurate the map and the longer it stays true.
 
 ### 2. A rule points every run at the map
 
-A cached map nobody reads is dead weight. So make reading it the default. This is a [rule](/foundations/rules/) — persistent, human-authored context that loads on every session. Put it in your `AGENTS.md` (or `CLAUDE.md`):
+A cached map nobody reads is dead weight. So make reading it the default. This is a [rule](/foundations/rules/) - persistent, human-authored context that loads on every session. Put it in your `AGENTS.md` (or `CLAUDE.md`):
 
 ```markdown
-## Orientation — read the map before you explore
+## Orientation - read the map before you explore
 
 Before working on the checkout/payments slice, read `./research.md`.
 It is a pre-computed map of the key modules, data flow, helpers, and
 gotchas for that slice. Trust it as your starting picture.
 
 - Use the helper paths it names. Do NOT re-derive current-user or db
-  access by grepping — `research.md` already found the canonical one.
+  access by grepping - `research.md` already found the canonical one.
 - Only explore beyond it if the task touches something the map omits.
 - If you find the map is WRONG or stale, say so explicitly and stop.
   Do not silently work around a bad map.
 ```
 
-Now every run — interactive or automated — opens by `@`-referencing the map instead of re-running the archaeology. The agent starts from your curated picture, not from a blank repo. The smart zone goes to the work.
+Now every run - interactive or automated - opens by `@`-referencing the map instead of re-running the archaeology. The agent starts from your curated picture, not from a blank repo. The smart zone goes to the work.
 
 That last clause is not decoration. A map the agent silently distrusts is worse than no map; a map it silently *trusts when it's wrong* is worse still. The rule makes staleness loud.
 
@@ -85,39 +85,39 @@ spec.md       →  the DESTINATION "what done looks like; acceptance criteria"
 plan.md       →  the JOURNEY     "the ordered steps from here to there"
 ```
 
-This trio is what makes the cache pay off in [headless mode](/foundations/headless/) — the non-interactive flag every serious CLI agent ships (Claude Code's `-p`, Codex's `exec`, opencode's `run`). An autonomous or AFK loop has nobody sitting beside it to answer "where's the auth helper?" If it has to rediscover the codebase on every pass, it spends its whole bounded budget orienting and never reaches the work. Hand it map + destination + journey up front and each pass starts already knowing the terrain, the goal, and its next step:
+This trio is what makes the cache pay off in [headless mode](/foundations/headless/) - the non-interactive flag every serious CLI agent ships (Claude Code's `-p`, Codex's `exec`, opencode's `run`). An autonomous or AFK loop has nobody sitting beside it to answer "where's the auth helper?" If it has to rediscover the codebase on every pass, it spends its whole bounded budget orienting and never reaches the work. Hand it map + destination + journey up front and each pass starts already knowing the terrain, the goal, and its next step:
 
 ```bash
-# Each headless pass opens already oriented — no re-exploration.
+# Each headless pass opens already oriented - no re-exploration.
 PROMPT=$(cat <<'EOF'
 Read ./research.md (the map), ./spec.md (the goal), ./plan.md (the steps).
 Work the FIRST unchecked item in plan.md only. Use the helpers research.md
-names — do not re-explore. Then stop.
+names - do not re-explore. Then stop.
 EOF
 )
 claude -p "$PROMPT" --allowedTools "Edit,Bash(git:*),Bash(npm test:*)"
 ```
 
-The loop stops spending its smart zone on discovery it could have inherited. That budget goes to the edit, the test, the judgment — the part you actually wanted.
+The loop stops spending its smart zone on discovery it could have inherited. That budget goes to the edit, the test, the judgment - the part you actually wanted.
 
 ## When the explore isn't worth caching
 
-The cache pays off when exploration is *expensive* and *repeated*. Kill either leg and the math collapses. A small repo the agent can hold in one window? It re-orients in thirty seconds — capturing a map and policing its expiry costs more than it ever saves. A genuine one-shot, a task you'll run once and never return to? You'd amortize the explore over a single run, which is just doing the explore with extra steps. Caching is for the slice you're about to hammer five times, in parallel, across a headless loop — where the same archaeology would otherwise repeat on every pass. The deeper the repo and the more runs you'll spend inside it, the more the up-front looking earns back. One pass on a shallow repo: skip all of this and let the agent dig.
+The cache pays off when exploration is *expensive* and *repeated*. Kill either leg and the math collapses. A small repo the agent can hold in one window? It re-orients in thirty seconds - capturing a map and policing its expiry costs more than it ever saves. A genuine one-shot, a task you'll run once and never return to? You'd amortize the explore over a single run, which is just doing the explore with extra steps. Caching is for the slice you're about to hammer five times, in parallel, across a headless loop - where the same archaeology would otherwise repeat on every pass. The deeper the repo and the more runs you'll spend inside it, the more the up-front looking earns back. One pass on a shallow repo: skip all of this and let the agent dig.
 
 ## The map is a liability, not documentation
 
-Here's the catch, and it's the half of this people get wrong. A cached map is only an asset while it's accurate. The moment the architecture moves and the map doesn't, it flips polarity — it stops helping and starts *poisoning*. Now the strongest-after-the-code steering signal is actively pointing the broad agent at a helper that was renamed, a module that was split, a flow that was rerouted. A confidently wrong map is worse than no map, because the agent has no reason to doubt it. It'll write against the world as the map describes it, not the world as it is.
+Here's the catch, and it's the half of this people get wrong. A cached map is only an asset while it's accurate. The moment the architecture moves and the map doesn't, it flips polarity - it stops helping and starts *poisoning*. Now the strongest-after-the-code steering signal is actively pointing the broad agent at a helper that was renamed, a module that was split, a flow that was rerouted. A confidently wrong map is worse than no map, because the agent has no reason to doubt it. It'll write against the world as the map describes it, not the world as it is.
 
-So treat `research.md` the way you'd treat a cache anywhere else: with an eviction policy. Start by giving it an expiry, not a copyright — a stamp at the top of the file that tells the next run when it was captured and against what:
+So treat `research.md` the way you'd treat a cache anywhere else: with an eviction policy. Start by giving it an expiry, not a copyright - a stamp at the top of the file that tells the next run when it was captured and against what:
 
 ```markdown
 _Captured 2026-05-29. Slice: checkout/payments. Re-verify before reuse._
 ```
 
-That one line changes how the file gets treated. Documentation rots quietly and you keep trusting it; a cache entry is *supposed* to be invalidated, and stamping it that way means the first move on returning to the slice isn't "read research.md" — it's "is research.md still true?" If you can't answer that in thirty seconds, you delete and regenerate.
+That one line changes how the file gets treated. Documentation rots quietly and you keep trusting it; a cache entry is *supposed* to be invalidated, and stamping it that way means the first move on returning to the slice isn't "read research.md" - it's "is research.md still true?" If you can't answer that in thirty seconds, you delete and regenerate.
 
-- **Regenerate it when the architecture moves.** Re-point the subagent at the slice and overwrite the file. Cheap — it's the same one-shot explore you already paid for once.
-- **Delete it aggressively once the feature ships.** People resist this, because deleting something that "might be useful later" feels wasteful. It isn't. The map was scoped to a push that's now done; keeping it around leaves a landmine for the next run. And `git` already has it — recovering a deleted file is one command, while detecting that a stale file silently corrupted a run is a debugging afternoon you'll never get back.
+- **Regenerate it when the architecture moves.** Re-point the subagent at the slice and overwrite the file. Cheap - it's the same one-shot explore you already paid for once.
+- **Delete it aggressively once the feature ships.** People resist this, because deleting something that "might be useful later" feels wasteful. It isn't. The map was scoped to a push that's now done; keeping it around leaves a landmine for the next run. And `git` already has it - recovering a deleted file is one command, while detecting that a stale file silently corrupted a run is a debugging afternoon you'll never get back.
 
 Add the lifecycle to the rule so it's enforced, not remembered:
 
@@ -128,7 +128,7 @@ Add the lifecycle to the rule so it's enforced, not remembered:
 - Regenerate it (re-run the explorer subagent) whenever the modules it
   names get moved, renamed, split, or deprecated.
 - DELETE it once the feature it was scoped for ships. git can recover it.
-- A stale map outranks the prompt and the rules — it will steer the agent
+- A stale map outranks the prompt and the rules - it will steer the agent
   wrong. When in doubt, delete and regenerate rather than trust it.
 ```
 
@@ -136,6 +136,6 @@ The contrarian shape, stated plainly: the win isn't a better explorer, and it is
 
 ## Why this closes the gap
 
-Look at the division of labor. The broad agent supplies capability — it can read any stack, write the diff, run the tests. You supply the one thing it lacks, *your repo's actual shape*, but you supply it as a **pre-paid artifact** instead of as a tax every run re-pays. The subagent does the expensive looking once and absorbs the mess. The rule makes every future run inherit the result. The headless loop runs against the cache instead of against a blank repo. And the eviction policy keeps the cache from rotting into a liability.
+Look at the division of labor. The broad agent supplies capability - it can read any stack, write the diff, run the tests. You supply the one thing it lacks, *your repo's actual shape*, but you supply it as a **pre-paid artifact** instead of as a tax every run re-pays. The subagent does the expensive looking once and absorbs the mess. The rule makes every future run inherit the result. The headless loop runs against the cache instead of against a blank repo. And the eviction policy keeps the cache from rotting into a liability.
 
-The codebase is the strongest signal your agent has. The second strongest is an accurate map of it. Pay for that map once, point every run at it — and delete it the day it stops being true.
+The codebase is the strongest signal your agent has. The second strongest is an accurate map of it. Pay for that map once, point every run at it - and delete it the day it stops being true.
