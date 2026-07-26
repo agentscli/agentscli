@@ -1,6 +1,6 @@
 ---
 title: How agents work
-description: The mental model behind every primitive in this section — the agentic loop, the context window, and why context engineering is the whole game.
+description: The mental model behind every primitive in this section - the agentic loop, the context window, and why context engineering is the whole game.
 ---
 
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
@@ -8,7 +8,11 @@ import LoopStepper from '../../../components/interactive/LoopStepper.tsx';
 import StackDiagram from '../../../components/StackDiagram.astro';
 import FlowDiagram from '../../../components/FlowDiagram.astro';
 
-Before any of the primitives in this section make sense — rules, skills, subagents, hooks, the rest — there's a smaller, sharper question to answer: *what is the agent actually doing when you give it a task?* The chapters that follow are all answers to a single question that depends on this one: **how do you control what the model sees, in what order, and at what cost?** This page is the substrate.
+You asked for a one-line change and the agent read four files you never mentioned, ran the test suite twice, and came back three minutes and several thousand tokens later. Or the opposite: an hour into a session that started sharp, it quietly drops a constraint you set forty minutes ago, and you find yourself re-explaining something it clearly understood at the time.
+
+Neither is random, and neither is fixed by prompting harder. Both are the shape of the loop the agent runs, and the size of the buffer it runs inside. Without a model of those two things, every surprise reads as the model being clever or being dumb, and the lever that would actually change the outcome stays invisible.
+
+That lever is what the rest of this section is about, one primitive at a time: **how do you control what the model sees, in what order, and at what cost?** This page is the substrate underneath all of them.
 
 ## The agentic loop
 
@@ -32,15 +36,15 @@ The shape, broadly:
   ]}
 />
 
-The three phases blend together — a single tool call often does two of them at once (reading a file is both *gather* and *verify*). The loop adapts to the task. A question about the codebase might be only context-gathering. A bug fix cycles through all three repeatedly. A refactor leans heavily on the verify phase.
+The three phases blend together - a single tool call often does two of them at once (reading a file is both *gather* and *verify*). The loop adapts to the task. A question about the codebase might be only context-gathering. A bug fix cycles through all three repeatedly. A refactor leans heavily on the verify phase.
 
 ### One task through the loop
 
-The diagram above, running. A one-line bug fix traced step by step — including the verify that fails and sends the loop back around, which is the part a diagram can't show.
+The diagram above, running. A one-line bug fix traced step by step - including the verify that fails and sends the loop back around, which is the part a diagram can't show.
 
 <LoopStepper client:visible />
 
-Two pieces make this work: a **model** that reasons about what to do next, and **tools** that let the model act. Without tools, the model can only output text. With tools — read a file, edit a file, run a command, search the web, call a database — the model becomes an agent. Every CLI in this section is, at its core, a *harness*: a controlled environment that wraps a model with a tool set, a permissions layer, and a way to feed context in and pull results out.
+Two pieces make this work: a **model** that reasons about what to do next, and **tools** that let the model act. Without tools, the model can only output text. With tools - read a file, edit a file, run a command, search the web, call a database - the model becomes an agent. Every CLI in this section is, at its core, a *harness*: a controlled environment that wraps a model with a tool set, a permissions layer, and a way to feed context in and pull results out.
 
 The primitives later in this section all live somewhere on that loop. [Rules](/foundations/rules/) shape what the model starts with. [Skills](/foundations/skills/) and [MCP servers](/foundations/mcp-servers/) give it more to reach for. [Hooks](/foundations/hooks/) fire on lifecycle events inside the loop. [Subagents](/foundations/subagents/) spawn nested loops. [Plan mode](/foundations/plan-mode/) and [permissions](/foundations/permissions/) constrain which tools the loop can use. None of them make sense without the loop underneath.
 
@@ -63,46 +67,48 @@ What goes into the window during a real session:
   ]}
 />
 
-The conversation and tool results are the parts that grow. Every file the agent reads, every command it runs, every search result it gets back — all of it lands in the window and stays there. A long debugging session is, structurally, a window that's mostly stack traces, half-tried fixes, and grep output that didn't help.
+The conversation and tool results are the parts that grow. Every file the agent reads, every command it runs, every search result it gets back - all of it lands in the window and stays there. A long debugging session is, structurally, a window that's mostly stack traces, half-tried fixes, and grep output that didn't help.
 
 This matters because the window has two failure modes:
 
-- **It fills up.** Once full, the CLI has to evict or summarise older content to make room. What gets cut is usually the *middle* — early instructions and recent messages are preserved, but detailed steps from earlier in the conversation get blurred or lost. Long sessions get hazier.
-- **Signal-to-noise drops.** Even when the window isn't full, packing it with irrelevant material — a 2000-line file when you only needed one function, ten failed greps before the one that worked — makes the model less coherent. More tokens, worse output.
+- **It fills up.** Once full, the CLI has to evict or summarise older content to make room. What gets cut is usually the *middle* - early instructions and recent messages are preserved, but detailed steps from earlier in the conversation get blurred or lost. Long sessions get hazier.
+- **Signal-to-noise drops.** Even when the window isn't full, packing it with irrelevant material - a 2000-line file when you only needed one function, ten failed greps before the one that worked - makes the model less coherent. More tokens, worse output.
 
-Both are why **context engineering** — the title-level frame for this site — is the discipline of deciding what the agent sees, when, and at what cost. Every primitive in this section is a different lever on that decision.
+Both are why **context engineering** - the title-level frame for this site - is the discipline of deciding what the agent sees, when, and at what cost. Every primitive in this section is a different lever on that decision.
 
 ### Three cost profiles to keep in mind
 
 The primitives in this section sort into three rough cost profiles, and once you see the sort, the names stop blurring together.
 
-- **Always-loaded.** Read into the window at session start and present on every turn. **Cost:** permanent footprint until the session ends. **Examples:** [rules](/foundations/rules/), tool definitions, [skill](/foundations/skills/) descriptions.
-- **On-demand.** Their *existence* is visible to the model, but the *content* only loads when the model decides it's relevant. **Cost:** cheap until used. **Examples:** [skill](/foundations/skills/) bodies, MCP tool schemas (where the CLI supports lazy loading).
-- **Isolated.** Spawned with their own fresh window, do work, return only a summary. **Cost:** zero on the parent window beyond that summary. **Examples:** [subagents](/foundations/subagents/), [plan-mode](/foundations/plan-mode/) explorations you discard.
+| Profile | Cost | Examples |
+|---|---|---|
+| **Always-loaded** - read into the window at session start, present on every turn | Permanent footprint until the session ends | [Rules](/foundations/rules/), tool definitions, [skill](/foundations/skills/) descriptions |
+| **On-demand** - their *existence* is visible to the model, but the *content* only loads when the model decides it's relevant | Cheap until used | [Skill](/foundations/skills/) bodies, MCP tool schemas (where the CLI supports lazy loading) |
+| **Isolated** - spawned with their own fresh window, do work, return only a summary | Zero on the parent window beyond that summary | [Subagents](/foundations/subagents/), [plan-mode](/foundations/plan-mode/) explorations you discard |
 
-When you're choosing between primitives — *should this be a rule or a skill? a skill or a subagent?* — you're almost always choosing between cost profiles. The decision tables in each chapter ("why this and not…") are restatements of the same trade-off.
+When you're choosing between primitives - *should this be a rule or a skill? a skill or a subagent?* - you're almost always choosing between cost profiles. The decision tables in each chapter ("why this and not…") are restatements of the same trade-off.
 
 ## Sessions
 
-A **session** is one run of the loop, with one context window. When you close the CLI and reopen it tomorrow, you get a **new session**: a fresh window, no memory of yesterday's conversation. The codebase is the same, the rules file is the same, but everything that happened *between you and the agent* — every correction, every decision, every "no, not like that" — is gone.
+A **session** is one run of the loop, with one context window. When you close the CLI and reopen it tomorrow, you get a **new session**: a fresh window, no memory of yesterday's conversation. The codebase is the same, the rules file is the same, but everything that happened *between you and the agent* - every correction, every decision, every "no, not like that" - is gone.
 
 That's why [rules](/foundations/rules/) exist as a separate primitive. The unwritten conventions of your codebase ("we use pnpm, not npm") have to be re-established every session unless they're written down somewhere the CLI reads automatically. A rule file is how you make a fact survive the session boundary.
 
-Most CLIs also let you *resume* or *fork* a previous session — reopening the same window instead of starting fresh — and some now persist agent-managed "memory" across sessions (a separate primitive from rules; see the [rules](/foundations/rules/) chapter for the distinction). But the default is always: new session, empty window.
+Most CLIs also let you *resume* or *fork* a previous session - reopening the same window instead of starting fresh - and some now persist agent-managed "memory" across sessions (a separate primitive from rules; see the [rules](/foundations/rules/) chapter for the distinction). But the default is always: new session, empty window.
 
 ## Why this matters for everything that follows
 
 Each chapter in this section is, underneath, an answer to a piece of one question: *how do you get the right context in front of the model, at the right time, without filling the window with noise?*
 
-- **Rules** — put facts the agent needs *every* turn into the window automatically.
-- **Skills** — keep procedures *out* of the window until they're needed.
-- **Subagents** — do noisy work in a *different* window so yours stays clean.
-- **MCP servers** — give the agent a way to *reach* external systems instead of you pasting their contents in.
-- **Hooks** — react to events on the loop deterministically, without using window space to remind the model.
-- **Permissions** — narrow what the agent can do without enlarging the window with warnings.
-- **Plan mode** — explore without locking actions into the window before you've agreed on them.
+- **Rules** - put facts the agent needs *every* turn into the window automatically.
+- **Skills** - keep procedures *out* of the window until they're needed.
+- **Subagents** - do noisy work in a *different* window so yours stays clean.
+- **MCP servers** - give the agent a way to *reach* external systems instead of you pasting their contents in.
+- **Hooks** - react to events on the loop deterministically, without using window space to remind the model.
+- **Permissions** - narrow what the agent can do without enlarging the window with warnings.
+- **Plan mode** - explore without locking actions into the window before you've agreed on them.
 
-The vocabulary differs across tools, the implementations diverge, the trade-offs shift — but the underlying problem is shared. The rest of this section is a tour of how each tool solves it.
+The vocabulary differs across tools, the implementations diverge, the trade-offs shift - but the underlying problem is shared. The rest of this section is a tour of how each tool solves it.
 
 <UpstreamRefs
   links={[
@@ -120,6 +126,16 @@ The vocabulary differs across tools, the implementations diverge, the trade-offs
       tool: 'OpenCode',
       label: 'Intro',
       url: 'https://opencode.ai/docs/',
+    },
+    {
+      tool: 'Cursor',
+      label: 'Docs',
+      url: 'https://cursor.com/docs',
+    },
+    {
+      tool: 'Copilot',
+      label: 'Copilot overview',
+      url: 'https://code.visualstudio.com/docs/copilot/overview',
     },
     {
       tool: 'Pi',

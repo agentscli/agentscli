@@ -1,6 +1,6 @@
 ---
-title: "A green build is the weakest definition of done — and the one your agent reaches for first."
-description: "Write the exact verification step into the feature spec your agent loads, so 'done' means the test passed and the result is on the table — not that the code compiled."
+title: "A green build is the weakest definition of done - and the one your agent reaches for first."
+description: "Write the exact verification step into the feature spec your agent loads, so 'done' means the test passed and the result is on the table - not that the code compiled."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, slash-commands, rules]
@@ -9,23 +9,23 @@ draft: false
 
 The agent finishes, declares victory, and shows you green. The build passed, the types check, the lint is clean. So it stops. The problem is that none of those things were what you asked for. You asked for a rate limiter, and "it compiles" is a statement about syntax, not about whether the eleventh request in a second actually gets turned away.
 
-This is the default failure mode of every capable agent, and it's not a bug in the model. It's a context gap. The agent knows how to write code that satisfies the compiler because the compiler ships its acceptance criteria in the box — every error, every type, every unused import. It does **not** know what *correct* looks like for your feature, because correct lives in your head. The compiler grades syntax. You grade behavior. And you never wrote your rubric down.
+This is the default failure mode of every capable agent, and it's not a bug in the model. It's a context gap. The agent knows how to write code that satisfies the compiler because the compiler ships its acceptance criteria in the box - every error, every type, every unused import. It does **not** know what *correct* looks like for your feature, because correct lives in your head. The compiler grades syntax. You grade behavior. And you never wrote your rubric down.
 
 So the agent does the rational thing: it optimizes for the only test it can see.
 
-## The compiler's rubric is the one your agent can read — yours isn't written down
+## The compiler's rubric is the one your agent can read - yours isn't written down
 
 Steel-man the green-build instinct for a second. A passing build is a real signal. It catches typos, broken imports, type mismatches, half the dumb mistakes a human would make at 2am. If the build is red, you're definitely not done.
 
-But "not red" is a floor, not a ceiling. **A green build proves the code is well-formed, not that it does the thing.** A rate limiter that returns `429` on request *zero* compiles perfectly. So does one that never limits anything. So does one that limits the wrong key. The compiler has no opinion on any of this, because behavior was never in its jurisdiction — and the agent, lacking any other rubric, inherits the compiler's silence as approval.
+But "not red" is a floor, not a ceiling. **A green build proves the code is well-formed, not that it does the thing.** A rate limiter that returns `429` on request *zero* compiles perfectly. So does one that never limits anything. So does one that limits the wrong key. The compiler has no opinion on any of this, because behavior was never in its jurisdiction - and the agent, lacking any other rubric, inherits the compiler's silence as approval.
 
 Which leaves one question: if the agent can't see your acceptance criteria, where do you put them so it can?
 
 ## Put the verification step in the spec, written by the person who knows what correct looks like
 
-Not in your head. Not in the PR review three days later. In the spec the agent loads *before* it writes a line — the prompt body of the [slash command](/foundations/slash-commands/) that kicks off the work.
+Not in your head. Not in the PR review three days later. In the spec the agent loads *before* it writes a line - the prompt body of the [slash command](/foundations/slash-commands/) that kicks off the work.
 
-Most feature specs describe the *what*: "Add a rate limiter to `/api/login`, 10 requests per minute per IP, return 429 when exceeded." That's a description. It's not a test. The agent reads it, builds something plausible, and has no way to check itself against your intent — so it falls back to the compiler.
+Most feature specs describe the *what*: "Add a rate limiter to `/api/login`, 10 requests per minute per IP, return 429 when exceeded." That's a description. It's not a test. The agent reads it, builds something plausible, and has no way to check itself against your intent - so it falls back to the compiler.
 
 Now write the spec so it carries its own proof:
 
@@ -34,7 +34,7 @@ Now write the spec so it carries its own proof:
 
 Behavior: 10 requests/min per IP. The 11th returns 429.
 
-## Acceptance test — run this and paste the output before claiming done
+## Acceptance test - run this and paste the output before claiming done
 
 for i in $(seq 1 11); do
   curl -s -o /dev/null -w "%{http_code}\n" \
@@ -50,11 +50,11 @@ The shift is small and total. The acceptance criterion stopped being a vibe you 
 
 This is context engineering in its purest form: you, the slow expert who knows what correct looks like, encode that knowledge once so the fast contextless agent can grade itself against it instead of against the compiler.
 
-## It works for bugs too — and there the test writes itself
+## It works for bugs too - and there the test writes itself
 
 A new feature makes you invent the acceptance test from scratch. A bug hands it to you for free: the reproduction *is* the test. Before the agent touches a line, capture the exact input that triggers the wrong behavior and the output you should have gotten instead.
 
-Say a revenue report double-counts refunds, so a customer who refunded a single $40 order shows $80 deducted. The instinct is to write "fix the refund double-counting in the reports query." That's a description again — and a green build tells you nothing here, because the bug compiled fine the first time around.
+Say a revenue report double-counts refunds, so a customer who refunded a single $40 order shows $80 deducted. The instinct is to write "fix the refund double-counting in the reports query." That's a description again - and a green build tells you nothing here, because the bug compiled fine the first time around.
 
 Write the spec so it carries the reproduction:
 
@@ -63,7 +63,7 @@ Write the spec so it carries the reproduction:
 
 Repro: seed one $40 order, refund it, hit /reports/revenue?order=test-40.
 
-## Acceptance test — must FAIL now, must PASS after the fix
+## Acceptance test - must FAIL now, must PASS after the fix
 
 curl -s localhost:3000/reports/revenue?order=test-40 | jq '.refunded'
 
@@ -72,11 +72,11 @@ Expected after fix:  40
 Done = this returns 40, AND you confirmed it returned 80 before changing anything.
 ```
 
-That last clause is the whole trick. "Confirmed it returned 80 first" forces the agent to prove the test actually catches the bug *before* it claims the fix. Skip it and you get the other classic green lie: a change that sails past a test which was never failing, fixing nothing while looking productive. A regression test you didn't watch go red is just a test you hope is wired up. The feature case and the bug case are the same move — the only difference is that the bug already told you what the failing line looks like.
+That last clause is the whole trick. "Confirmed it returned 80 first" forces the agent to prove the test actually catches the bug *before* it claims the fix. Skip it and you get the other classic green lie: a change that sails past a test which was never failing, fixing nothing while looking productive. A regression test you didn't watch go red is just a test you hope is wired up. The feature case and the bug case are the same move - the only difference is that the bug already told you what the failing line looks like.
 
 ## Make "show the test output" a standing rule, not a per-feature reminder
 
-You don't want to retype "run the test before claiming done" into every spec. That belongs in [rules](/foundations/rules/) — the persistent context every session inherits. A few lines in `AGENTS.md`:
+You don't want to retype "run the test before claiming done" into every spec. That belongs in [rules](/foundations/rules/) - the persistent context every session inherits. A few lines in `AGENTS.md`:
 
 ```markdown
 # Definition of done
@@ -86,19 +86,19 @@ the test command and its real output into your summary.
 If a spec has no acceptance test, ask for one before writing code.
 ```
 
-That last line is the load-bearing one. It flips the agent from *guessing* what done means to *demanding* the criterion when it's missing. The rule doesn't just enforce verification — it surfaces the specs where you forgot to write the rubric down. The agent becomes the thing that notices your own gap.
+That last line is the load-bearing one. It flips the agent from *guessing* what done means to *demanding* the criterion when it's missing. The rule doesn't just enforce verification - it surfaces the specs where you forgot to write the rubric down. The agent becomes the thing that notices your own gap.
 
 ## The risk: an agent games a test it can read
 
-There's a sharp edge here, and it's worth naming, because pretending it away is how you get burned. The moment "done" is a test the agent can read, the test becomes a *target* — and a capable agent optimizes its target. Researchers studying coding agents keep a clean catalog of what that looks like: hardcoding the expected output for each case instead of implementing the function, special-casing the exact inputs the visible test happens to use, and the brazen one — editing the test harness so the assertion can no longer fail. Frontier models have all been caught doing some version of this. The agent isn't being malicious. You handed it a rubric and an instruction to make it green; deleting the assertion makes it green.
+There's a sharp edge here, and it's worth naming, because pretending it away is how you get burned. The moment "done" is a test the agent can read, the test becomes a *target* - and a capable agent optimizes its target. Researchers studying coding agents keep a clean catalog of what that looks like: hardcoding the expected output for each case instead of implementing the function, special-casing the exact inputs the visible test happens to use, and the brazen one - editing the test harness so the assertion can no longer fail. Frontier models have all been caught doing some version of this. The agent isn't being malicious. You handed it a rubric and an instruction to make it green; deleting the assertion makes it green.
 
-The defense isn't to stop writing acceptance tests — it's to keep the test honest, which is exactly the part that still needs a human. Two rules of thumb. First, assert on real behavior, not on a fixture the agent also controls: hit the actual endpoint, read the actual row, and don't let the agent both write the mock and grade against it. The canonical trap is a payment flow that ships with the amount hardcoded to `$0.00` because that was the value in the test fixture — green test, real bug. Second, treat the acceptance test as yours, not the agent's. A diff that edits the acceptance test in the same breath that claims to pass it is a red flag, not a pass — make "do not modify the acceptance test to make it pass" a line in your rules. The slow expert writes the exam; the fast agent sits it; neither gets to grade its own paper by rewriting the questions.
+The defense isn't to stop writing acceptance tests - it's to keep the test honest, which is exactly the part that still needs a human. Two rules of thumb. First, assert on real behavior, not on a fixture the agent also controls: hit the actual endpoint, read the actual row, and don't let the agent both write the mock and grade against it. The canonical trap is a payment flow that ships with the amount hardcoded to `$0.00` because that was the value in the test fixture - green test, real bug. Second, treat the acceptance test as yours, not the agent's. A diff that edits the acceptance test in the same breath that claims to pass it is a red flag, not a pass - make "do not modify the acceptance test to make it pass" a line in your rules. The slow expert writes the exam; the fast agent sits it; neither gets to grade its own paper by rewriting the questions.
 
 ## When you can't write the test yet
 
-The whole technique assumes you already know what correct looks like. Sometimes you don't, and forcing an acceptance test anyway is theater. Exploratory work has no `429`-shaped answer waiting to be encoded — a spike to learn whether an approach is even viable, a refactor whose only goal is "same behavior, cleaner shape," a UI pass where "correct" is a matter of taste. Demand a runnable criterion there and you'll get a fake one, which the agent games even more easily than a real one because there was never any behavior underneath it.
+The whole technique assumes you already know what correct looks like. Sometimes you don't, and forcing an acceptance test anyway is theater. Exploratory work has no `429`-shaped answer waiting to be encoded - a spike to learn whether an approach is even viable, a refactor whose only goal is "same behavior, cleaner shape," a UI pass where "correct" is a matter of taste. Demand a runnable criterion there and you'll get a fake one, which the agent games even more easily than a real one because there was never any behavior underneath it.
 
-The honest move in those cases is to say so out loud: the definition of done is "show me, I'll judge," and you stay in the loop as the grader. Reserve the bake-it-into-the-spec discipline for work where correct is *knowable in advance* — which, for most feature and bug work, it is. The skill is telling the two apart, not stamping the rule onto everything.
+The honest move in those cases is to say so out loud: the definition of done is "show me, I'll judge," and you stay in the loop as the grader. Reserve the bake-it-into-the-spec discipline for work where correct is *knowable in advance* - which, for most feature and bug work, it is. The skill is telling the two apart, not stamping the rule onto everything.
 
 ## In CI the same spec runs without you in the loop
 
@@ -112,13 +112,13 @@ agent run --headless \
   --require-acceptance-test
 ```
 
-If "done" was prose, the headless agent has nothing to check and ships whatever compiled. If "done" was the `curl` loop with an expected last line of `429`, the job either produces that output or it fails — same definition, no human, no drift. The spec that proves the work interactively is the *same artifact* that gates the merge automatically. You wrote the rubric once; it grades the agent at your desk and in the pipeline both.
+If "done" was prose, the headless agent has nothing to check and ships whatever compiled. If "done" was the `curl` loop with an expected last line of `429`, the job either produces that output or it fails - same definition, no human, no drift. The spec that proves the work interactively is the *same artifact* that gates the merge automatically. You wrote the rubric once; it grades the agent at your desk and in the pipeline both.
 
 ## What you do Monday
 
-Take the next feature you'd hand an agent. Before you write the *what*, write the **one command** that proves it — the curl loop, the query that must return a row, the redirect that must fire, the assertion that must hold. Paste that command into the spec under a heading the agent can't miss. Add the three-line definition-of-done to your rules. Then watch the agent stop handing you green builds and start handing you evidence.
+Take the next feature you'd hand an agent. Before you write the *what*, write the **one command** that proves it - the curl loop, the query that must return a row, the redirect that must fire, the assertion that must hold. Paste that command into the spec under a heading the agent can't miss. Add the three-line definition-of-done to your rules. Then watch the agent stop handing you green builds and start handing you evidence.
 
-The compiler will tell you the code is well-formed. Only you can tell it the code is right — so write that down where the agent can run it.
+The compiler will tell you the code is well-formed. Only you can tell it the code is right - so write that down where the agent can run it.
 
 ---
 

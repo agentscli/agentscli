@@ -2,7 +2,7 @@ import type { SimSegment, SimStep } from './context-sim-types';
 
 /**
  * A simulated long session against a 200k-token window. Token counts are
- * illustrative orders of magnitude, not measurements — the shape of the
+ * illustrative orders of magnitude, not measurements - the shape of the
  * session (fixed overhead, exploration spikes, delegation, the threshold,
  * what compaction keeps) is the content. Keep the story consistent with
  * the prose in foundations/context-management.mdx.
@@ -36,7 +36,7 @@ const FIXED: SimSegment[] = [
     category: 'overhead',
     label: 'Built-in tool definitions',
     tokens: 12,
-    note: 'Schemas for read, edit, bash, grep… — present every turn.',
+    note: 'Schemas for read, edit, bash, grep… - present every turn.',
   },
   {
     id: 'rules',
@@ -52,7 +52,7 @@ export const simSteps: SimStep[] = [
     id: 'start',
     title: 'Session start',
     narration:
-      'Before you type a word, 17k tokens are spent: the system prompt, the built-in tool definitions, and your rules file. This fixed overhead reloads on every turn — which is also why it’s the one part of the window you fully control.',
+      'Before you type a word, 17k tokens are spent: the system prompt, the built-in tool definitions, and your rules file. This fixed overhead reloads on every turn - which is also why it’s the one part of the window you fully control.',
     callout: 'A lean rules file pays rent every single turn.',
     add: FIXED,
   },
@@ -60,7 +60,7 @@ export const simSteps: SimStep[] = [
     id: 'mcp',
     title: 'MCP servers connect',
     narration:
-      'Three MCP servers register, and every one of their tool schemas lands in the window — whether the session ever calls them or not. Permanent weight, paid up front.',
+      'Three MCP servers register, and every one of their tool schemas lands in the window - whether the session ever calls them or not. Permanent weight, paid up front.',
     callout: 'Tool-schema deferral (where supported) keeps unused servers out of the window.',
     add: [
       {
@@ -76,7 +76,7 @@ export const simSteps: SimStep[] = [
     id: 'brief',
     title: 'You describe the task',
     narration:
-      'Your migration brief: one careful paragraph, about 1k tokens. Notice the ratio — the window is already 16% spent, and your actual request is half a percent of it.',
+      'Your migration brief: one careful paragraph, about 1k tokens. Notice the ratio - the window is already 16% spent, and your actual request is half a percent of it.',
     add: [
       {
         id: 'user-brief',
@@ -90,7 +90,7 @@ export const simSteps: SimStep[] = [
     id: 'explore',
     title: 'The agent explores',
     narration:
-      'Six file reads land in full — bodies, not summaries — plus greps and directory listings. Exploration is the first big spike of any session, and file contents are the biggest single eater of context.',
+      'Six file reads land in full - bodies, not summaries - plus greps and directory listings. Exploration is the first big spike of any session, and file contents are the biggest single eater of context.',
     add: [
       {
         id: 'file-reads',
@@ -111,7 +111,7 @@ export const simSteps: SimStep[] = [
     id: 'dead-ends',
     title: 'Dead ends',
     narration:
-      'Two hypotheses don’t pan out: failed test runs, a reverted edit, stack traces. None of it ever becomes signal — but all of it stays in the window, competing for attention with the things that matter.',
+      'Two hypotheses don’t pan out: failed test runs, a reverted edit, stack traces. None of it ever becomes signal - but all of it stays in the window, competing for attention with the things that matter.',
     add: [
       {
         id: 'dead-ends',
@@ -147,7 +147,7 @@ export const simSteps: SimStep[] = [
     id: 'grind',
     title: 'Implementation grind',
     narration:
-      'Edits, diffs, and four full test runs. The window crosses half full and everything still works fine — but the trend line is set.',
+      'Edits, diffs, and four full test runs. The window crosses half full and everything still works fine - but the trend line is set.',
     add: [
       {
         id: 'impl-turns',
@@ -167,7 +167,7 @@ export const simSteps: SimStep[] = [
     id: 'mistake',
     title: 'The 24k mistake',
     narration:
-      'One careless read of a generated lockfile: 24k tokens of pure noise in a single tool call. This is what the inspect commands (`/context`, `/status`) are for — catching the spike when it happens, not an hour later when the symptoms start.',
+      'One careless read of a generated lockfile: 24k tokens of pure noise in a single tool call. This is what the inspect commands (`/context`, `/status`) are for - catching the spike when it happens, not an hour later when the symptoms start.',
     add: [
       {
         id: 'lockfile',
@@ -211,7 +211,7 @@ export const simSteps: SimStep[] = [
     narration:
       'One summarisation call replaces the middle of the session. What survives: the goal, the decisions and why, file names, and the most recent turns verbatim. What’s gone: file bodies, exact error output, the precise sequence of steps.',
     callout:
-      'Write unsaved work to disk before compacting — a diff that exists only in conversation gets flattened to “edited auth.ts”.',
+      'Write unsaved work to disk before compacting - a diff that exists only in conversation gets flattened to “edited auth.ts”.',
     compact: {
       keepIds: ['system-prompt', 'tool-defs', 'rules', 'mcp-schemas'],
       add: [
@@ -235,7 +235,7 @@ export const simSteps: SimStep[] = [
     id: 'sharp-again',
     title: 'Sharp again',
     narration:
-      'The session continues on a lean window. The agent re-reads the two files that still matter — far cheaper than dragging seventeen stale reads along. And when this task ships and the next one is unrelated, the right move is `/clear`, not another compact.',
+      'The session continues on a lean window. The agent re-reads the two files that still matter - far cheaper than dragging seventeen stale reads along. And when this task ships and the next one is unrelated, the right move is `/clear`, not another compact.',
     add: [
       {
         id: 'post-turns',

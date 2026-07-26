@@ -1,11 +1,11 @@
 ---
 title: "The CLI, headless & CI"
-description: "Take Cursor out of the editor. Install cursor-agent, drive it interactively in the terminal or headless from a script with -p and the text/json/stream-json formats, authenticate with CURSOR_API_KEY, learn the CLI's own built-in slash commands, wire a budgetcli check into CI, spawn Cloud Agents over a REST API, and let Bugbot review every PR — all while keeping the auto-run discipline you set up earlier load-bearing."
+description: "Take Cursor out of the editor. Install cursor-agent, drive it interactively in the terminal or headless from a script with -p and the text/json/stream-json formats, authenticate with CURSOR_API_KEY, learn the CLI's own built-in slash commands, wire a budgetcli check into CI, spawn Cloud Agents over a REST API, and let Bugbot review every PR - all while keeping the auto-run discipline you set up earlier load-bearing."
 ---
 
 import NightShift from '../../../../../components/interactive/NightShift.tsx';
 
-Everything you've done with Cursor so far happened inside the editor. The Agent sidebar, Tab, the mode dropdown, the diff you review before you commit — all of it assumed you were sitting in front of the desktop app, watching the loop run. That's the right surface for the work this course has been about: turning `budgetcli` from someone else's weekend project into something you trust, one reviewed change at a time. But it's not the *only* surface, and the reason this chapter comes near the end is the editorial bet this course makes: the editor is the product, the terminal is the export. That's a framing call, not a Cursor claim — Cursor's own CLI docs present the terminal agent as a standalone tool ("Cursor CLI lets you interact with AI agents directly from your terminal"), with no hierarchy between editor and CLI. {/* VERIFY: the "editor primary / CLI secondary" framing is authorial, not documented by Cursor — cursor.com/docs/cli/overview presents the CLI as a standalone tool with no editor-vs-CLI hierarchy. Keep this as the author's position; do not attribute it to the docs. Source: https://cursor.com/docs/cli/overview */}
+Everything you've done with Cursor so far happened inside the editor. The Agent sidebar, Tab, the mode dropdown, the diff you review before you commit - all of it assumed you were sitting in front of the desktop app, watching the loop run. That's the right surface for the work this course has been about: turning `budgetcli` from someone else's weekend project into something you trust, one reviewed change at a time. But it's not the *only* surface, and the reason this chapter comes near the end is the editorial bet this course makes: the editor is the product, the terminal is the export. That's a framing call, not a Cursor claim - Cursor's own CLI docs present the terminal agent as a standalone tool ("Cursor CLI lets you interact with AI agents directly from your terminal"), with no hierarchy between editor and CLI. {/* VERIFY: the "editor primary / CLI secondary" framing is authorial, not documented by Cursor - cursor.com/docs/cli/overview presents the CLI as a standalone tool with no editor-vs-CLI hierarchy. Keep this as the author's position; do not attribute it to the docs. Source: https://cursor.com/docs/cli/overview */}
 
 This chapter takes `budgetcli`'s agent out of the room. The same agent you've driven by hand all course, run from a script with nobody watching: a one-shot categoriser check you can pipe into other commands, a CI step that reviews every push, a Cloud Agent you spawn over HTTP, and an AI reviewer sitting on your pull requests. The thread running through all of it is the one you set in [Permissions, auto-run & the sandbox](/course/cursor/permissions/): the moment you take yourself out of the loop, the approval prompt you half-ignore in the editor is gone, and whatever containment you settled *in advance* is the only thing standing between an unattended agent and your real financial data.
 
@@ -17,42 +17,42 @@ Cursor's terminal agent installs with a one-line script:
 curl https://cursor.com/install -fsS | bash
 ```
 
-The flags drift, and this is a live example of it: Cursor's current CLI install docs show `-fsS`, while an older Cursor blog post used `-fsSL` (with the trailing `L`). Either generally works, but `-fsS` is what the docs say today — confirm the exact command before you put it in a script.
+The flags drift, and this is a live example of it: Cursor's current CLI install docs show `-fsS`, while an older Cursor blog post used `-fsSL` (with the trailing `L`). Either generally works, but `-fsS` is what the docs say today - confirm the exact command before you put it in a script.
 
-That installs the binary and puts it on your `PATH`. There's a naming wrinkle worth flagging up front, because it bites people reading mixed documentation: Cursor's **current** docs invoke the binary as **`agent`** (`agent --version`, `agent -p ...`). The older name was **`cursor-agent`**, and you'll still see it in mixed sources, but first-party docs and examples now say `agent`. Throughout this chapter we'll write the longer **`cursor-agent`** form on purpose — it's unambiguous when you're skimming and it's the name that disambiguates against anything else called `agent` on your `PATH` — but be aware the docs themselves now use the bare `agent`. The flags are identical either way.
+That installs the binary and puts it on your `PATH`. There's a naming wrinkle worth flagging up front, because it bites people reading mixed documentation: Cursor's **current** docs invoke the binary as **`agent`** (`agent --version`, `agent -p ...`). The older name was **`cursor-agent`**, and you'll still see it in mixed sources, but first-party docs and examples now say `agent`. Throughout this chapter we'll write the longer **`cursor-agent`** form on purpose - it's unambiguous when you're skimming and it's the name that disambiguates against anything else called `agent` on your `PATH` - but be aware the docs themselves now use the bare `agent`. The flags are identical either way.
 
-Run it with no arguments and you get the interactive TUI — the same agent loop you know from the sidebar, rendered in the terminal:
+Run it with no arguments and you get the interactive TUI - the same agent loop you know from the sidebar, rendered in the terminal:
 
 ```text
 $ cursor-agent
 ```
 
-This is the surface for the moments you'd reach for the editor but happen to already be in a shell: a quick question about `budgetcli`'s categoriser, a small fix you'd rather describe than open the app for. It runs the full read-propose-review loop, just text-first. It is *not* the surface this chapter is about. The reason the CLI matters — the reason it earns its own chapter — is the other mode.
+This is the surface for the moments you'd reach for the editor but happen to already be in a shell: a quick question about `budgetcli`'s categoriser, a small fix you'd rather describe than open the app for. It runs the full read-propose-review loop, just text-first. It is *not* the surface this chapter is about. The reason the CLI matters - the reason it earns its own chapter - is the other mode.
 
 ## Headless: the agent as a command
 
-`cursor-agent -p "<prompt>"` (long form `--print`) runs the agent **non-interactively**: it takes the prompt, runs the task to completion, prints the result, and exits. No TUI, no back-and-forth, no one at the keyboard. The docs call `-p, --print` the "print mode for non-interactive scripting and automation" — which is exactly the surface this chapter is built on.
+`cursor-agent -p "<prompt>"` (long form `--print`) runs the agent **non-interactively**: it takes the prompt, runs the task to completion, prints the result, and exits. No TUI, no back-and-forth, no one at the keyboard. The docs call `-p, --print` the "print mode for non-interactive scripting and automation" - which is exactly the surface this chapter is built on.
 
 ```text
 $ cursor-agent -p "Run the categoriser over last month's transactions and
   report any category whose total moved more than 20% from the prior month."
 ```
 
-If you watched the loop in [Getting started](/course/cursor/getting-started/), nothing in *what the agent does* is new here — it reads, it reasons, it acts. What's gone is you. There's no approval pause, because in a headless run there's no one to approve. That single fact is what the rest of this chapter has to design around, and it's why Cursor flags this mode the way it does (more on that in a moment).
+If you watched the loop in [Getting started](/course/cursor/getting-started/), nothing in *what the agent does* is new here - it reads, it reasons, it acts. What's gone is you. There's no approval pause, because in a headless run there's no one to approve. That single fact is what the rest of this chapter has to design around, and it's why Cursor flags this mode the way it does (more on that in a moment).
 
-Because it's an ordinary command-line program, it composes with everything a shell can do — redirect it to a file, drop it in a cron entry, pipe it into the next command, gate a CI step on its exit. That composability is the whole point of headless mode: the categoriser check that was a thing you *did* in the editor becomes a thing your repo *runs*.
+Because it's an ordinary command-line program, it composes with everything a shell can do - redirect it to a file, drop it in a cron entry, pipe it into the next command, gate a CI step on its exit. That composability is the whole point of headless mode: the categoriser check that was a thing you *did* in the editor becomes a thing your repo *runs*.
 
 ### Output formats: text, json, stream-json
 
-The default output is `text` — formatted for a human reading a terminal, which is fine for a check you run by hand. But a script wants something it can act on, not prose to scrape. Headless mode takes an output format for exactly that:
+The default output is `text` - formatted for a human reading a terminal, which is fine for a check you run by hand. But a script wants something it can act on, not prose to scrape. Headless mode takes an output format for exactly that:
 
-- **`text`** — the default; "clean, final-answer-only responses," formatted for a human reading a terminal.
-- **`json`** — the run as a single structured JSON result for "structured analysis" a script can parse.
-- **`stream-json`** — "message-level progress tracking": the run as a stream of JSON events as they happen, rather than one blob at the end.
+- **`text`** - the default; "clean, final-answer-only responses," formatted for a human reading a terminal.
+- **`json`** - the run as a single structured JSON result for "structured analysis" a script can parse.
+- **`stream-json`** - "message-level progress tracking": the run as a stream of JSON events as they happen, rather than one blob at the end.
 
 You select the format with the `--output-format` flag (`--output-format json`). All three format names and the flag spelling are straight from the headless docs.
 
-Paired with `stream-json` there's a `--stream-partial-output` flag that provides "incremental streaming of deltas" as they're produced rather than waiting for each event to complete — useful when you want to surface progress from a long run instead of staring at a blank pipe.
+Paired with `stream-json` there's a `--stream-partial-output` flag that provides "incremental streaming of deltas" as they're produced rather than waiting for each event to complete - useful when you want to surface progress from a long run instead of staring at a blank pipe.
 
 The `json` format is the one you'll reach for first when wiring `budgetcli` into a script: ask the agent a question, get a parseable answer back, branch on it.
 
@@ -62,57 +62,57 @@ $ cursor-agent -p "Did any account go negative last month? Answer with the
     | jq -r '.result'
 ```
 
-That `--output-format json` and the `.result` field it produces are both documented — the headless JSON output carries a `.result` field, which is what `jq -r '.result'` is pulling here. The *shape* of the move is stable; just re-read the schema at publish time, since the exact field set can grow.
+That `--output-format json` and the `.result` field it produces are both documented - the headless JSON output carries a `.result` field, which is what `jq -r '.result'` is pulling here. The *shape* of the move is stable; just re-read the schema at publish time, since the exact field set can grow.
 
 ### `--force`: writing without the confirmation
 
-In the editor, when the agent wants to write a file or run a command, you see it and you approve it — that's the leash from the permissions chapter. Headless, there's no one to click *Run*. The `--force` flag is how you tell a non-interactive run to act without waiting on a confirmation that will never come: the docs say `--force` "allows the agent to make direct file changes without confirmation," and that without it "changes are only proposed, not applied." So the default for a `-p` run is *propose, don't apply* — `--force` is the switch that lets it actually write. (The docs also list `--yolo` as a synonym for `--force`; they do the same thing.)
+In the editor, when the agent wants to write a file or run a command, you see it and you approve it - that's the leash from the permissions chapter. Headless, there's no one to click *Run*. The `--force` flag is how you tell a non-interactive run to act without waiting on a confirmation that will never come: the docs say `--force` "allows the agent to make direct file changes without confirmation," and that without it "changes are only proposed, not applied." So the default for a `-p` run is *propose, don't apply* - `--force` is the switch that lets it actually write. (The docs also list `--yolo` as a synonym for `--force`; they do the same thing.)
 
-This is the headless equivalent of flipping auto-run to *Always run everything* in the editor — and it carries the same warning, sharpened, because there's no human watching. A `cursor-agent -p ... --force` run does what it decides to do, to the files in front of it, with no pause. The discipline from [Permissions, auto-run & the sandbox](/course/cursor/permissions/) doesn't soften here; it becomes the only thing you've got. Run `--force` against a throwaway clone or inside an isolated environment, not against your live `budgetcli` working tree, until you trust exactly what the prompt can reach.
+This is the headless equivalent of flipping auto-run to *Always run everything* in the editor - and it carries the same warning, sharpened, because there's no human watching. A `cursor-agent -p ... --force` run does what it decides to do, to the files in front of it, with no pause. The discipline from [Permissions, auto-run & the sandbox](/course/cursor/permissions/) doesn't soften here; it becomes the only thing you've got. Run `--force` against a throwaway clone or inside an isolated environment, not against your live `budgetcli` working tree, until you trust exactly what the prompt can reach.
 
-### The beta caveat — read it, don't skip it
+### The beta caveat - read it, don't skip it
 
-Cursor's CLI launch **blog post** flags the CLI as **in beta**, with the explicit note that its **"security safeguards are still evolving."** Worth being precise about where that comes from: the quote is from Cursor's blog (cursor.com/blog/cli), not the current docs pages — the headless and installation docs no longer foreground a "beta" designation at all, which suggests the status may be maturing. {/* VERIFY: the "still in beta / security safeguards are still evolving" quote is from cursor.com/blog/cli, NOT the docs pages, which carry no beta framing. Attribute to the blog and re-check currency at publish — the CLI may have gone GA. Source: https://cursor.com/blog/cli */} That is not boilerplate to scroll past. It's Cursor telling you that the containment around a headless run is less mature than the editor's, at exactly the moment you're handing the agent the ability to act with no one watching. The takeaway isn't "don't use it" — the docs recommend headless mode for batch processing, code-review scripts, and CI pipelines — it's "don't treat the flags as a security boundary." The boundary is *where you run it*: a sandbox, a CI container, a Cloud Agent's isolated VM. We come back to that with every later section.
+Cursor's CLI launch **blog post** flags the CLI as **in beta**, with the explicit note that its **"security safeguards are still evolving."** Worth being precise about where that comes from: the quote is from Cursor's blog (cursor.com/blog/cli), not the current docs pages - the headless and installation docs no longer foreground a "beta" designation at all, which suggests the status may be maturing. {/* VERIFY: the "still in beta / security safeguards are still evolving" quote is from cursor.com/blog/cli, NOT the docs pages, which carry no beta framing. Attribute to the blog and re-check currency at publish - the CLI may have gone GA. Source: https://cursor.com/blog/cli */} That is not boilerplate to scroll past. It's Cursor telling you that the containment around a headless run is less mature than the editor's, at exactly the moment you're handing the agent the ability to act with no one watching. The takeaway isn't "don't use it" - the docs recommend headless mode for batch processing, code-review scripts, and CI pipelines - it's "don't treat the flags as a security boundary." The boundary is *where you run it*: a sandbox, a CI container, a Cloud Agent's isolated VM. We come back to that with every later section.
 
 ## Authentication: `CURSOR_API_KEY`
 
-Interactively, `cursor-agent` can log you in through the browser the first time you run it. Headless, there's no browser and no you — so authentication comes from an environment variable, **`CURSOR_API_KEY`**. The headless docs show exactly this: `export CURSOR_API_KEY=your_api_key_here` to authenticate in scripts.
+Interactively, `cursor-agent` can log you in through the browser the first time you run it. Headless, there's no browser and no you - so authentication comes from an environment variable, **`CURSOR_API_KEY`**. The headless docs show exactly this: `export CURSOR_API_KEY=your_api_key_here` to authenticate in scripts.
 
 ```text
 $ export CURSOR_API_KEY="$(cat ~/.config/budgetcli/cursor-key)"
 $ cursor-agent -p "summarise the open TODOs in internal/categorise/" --output-format json
 ```
 
-You generate the key from the Cursor dashboard and treat it like any other credential: out of the repo, in a secret store, scoped as tightly as your plan allows. In CI it lives as an encrypted secret, never inline in the workflow file. One thing worth knowing: `CURSOR_API_KEY` is named on the headless docs page, but the CLI configuration reference doesn't list it among the env vars it documents (which are `CURSOR_CONFIG_DIR`, `XDG_CONFIG_HOME`, the proxy variables, and `NODE_EXTRA_CA_CERTS`) — so don't reach for an invented `CURSOR_*` sibling on a hunch. The auth variable is real; the surrounding family isn't yours to guess at. If you need to configure something beyond auth, check the actual config surface, which has a constraint worth knowing.
+You generate the key from the Cursor dashboard and treat it like any other credential: out of the repo, in a secret store, scoped as tightly as your plan allows. In CI it lives as an encrypted secret, never inline in the workflow file. One thing worth knowing: `CURSOR_API_KEY` is named on the headless docs page, but the CLI configuration reference doesn't list it among the env vars it documents (which are `CURSOR_CONFIG_DIR`, `XDG_CONFIG_HOME`, the proxy variables, and `NODE_EXTRA_CA_CERTS`) - so don't reach for an invented `CURSOR_*` sibling on a hunch. The auth variable is real; the surrounding family isn't yours to guess at. If you need to configure something beyond auth, check the actual config surface, which has a constraint worth knowing.
 
 ## The CLI config constraint
 
-Here's a sharp edge that surprises people coming from the editor, where everything is configurable per-project. For the **CLI**, the configuration model is inverted, and the docs state it flatly: "Only permissions can be configured at the project level. All other CLI settings must be set globally." Concretely, the per-project slice is just `permissions.allow` / `permissions.deny` in `<project>/.cursor/cli.json`; everything else — model, vim mode, attribution, network — lives in the global `~/.cursor/cli-config.json`.
+Here's a sharp edge that surprises people coming from the editor, where everything is configurable per-project. For the **CLI**, the configuration model is inverted, and the docs state it flatly: "Only permissions can be configured at the project level. All other CLI settings must be set globally." Concretely, the per-project slice is just `permissions.allow` / `permissions.deny` in `<project>/.cursor/cli.json`; everything else - model, vim mode, attribution, network - lives in the global `~/.cursor/cli-config.json`.
 
-Concretely: your model choice, your default output preferences, your CLI-level behaviour — those are settings on *you*, not on `budgetcli`. What you *can* pin to the repo is the permission posture — what the agent is allowed to touch when it runs against this project. That asymmetry is deliberate and it's the right shape for headless work: the thing that matters most about an unattended run — its blast radius — is the thing you're allowed to scope to the project, while the cosmetic preferences ride along globally. Don't fight it by trying to commit a per-project model setting and wondering why it's ignored.
+Concretely: your model choice, your default output preferences, your CLI-level behaviour - those are settings on *you*, not on `budgetcli`. What you *can* pin to the repo is the permission posture - what the agent is allowed to touch when it runs against this project. That asymmetry is deliberate and it's the right shape for headless work: the thing that matters most about an unattended run - its blast radius - is the thing you're allowed to scope to the project, while the cosmetic preferences ride along globally. Don't fight it by trying to commit a per-project model setting and wondering why it's ignored.
 
 ## The CLI's own slash commands
 
-The interactive TUI has its own set of **built-in slash commands** — and this is a different list from the `/` picker in the editor. In the editor, `/` opens a picker over your subagents, skills, and custom commands. In the CLI, `/` runs a **fixed, built-in** set that controls the session itself. Every command below is confirmed present in the slash-commands reference; the reference also documents a handful this curated list skips (`/vim`, `/copy-request-id`, `/copy-conversation-id`, `/setup-terminal`):
+The interactive TUI has its own set of **built-in slash commands** - and this is a different list from the `/` picker in the editor. In the editor, `/` opens a picker over your subagents, skills, and custom commands. In the CLI, `/` runs a **fixed, built-in** set that controls the session itself. Every command below is confirmed present in the slash-commands reference; the reference also documents a handful this curated list skips (`/vim`, `/copy-request-id`, `/copy-conversation-id`, `/setup-terminal`):
 
-- **Mode** — `/plan`, `/ask` switch the agent's posture, the same Plan and Ask modes from the [Modes](/course/cursor/modes/) chapter, reached by command instead of <kbd>Shift+Tab</kbd>.
-- **Config** — `/model` to switch model, `/max-mode` to toggle MAX Mode, `/auto-run` to set the auto-run posture, `/sandbox` to control sandboxing — the terminal-side levers for the same knobs you set in the editor's settings.
-- **Session** — `/new-chat`, `/resume`, `/fork`, `/summarize` (`/compress` is an alias), `/logout`, `/quit` manage the conversation and your login.
-- **MCP** — `/mcp` controls MCP servers from inside the session. {/* VERIFY: the reference lists `/mcp` but does not separately document the `list | enable | disable` subcommand syntax. Confirm the subcommand spelling before publish. Source: https://cursor.com/docs/cli/reference/slash-commands */}
-- **Utility** — `/usage`, `/about`, `/help`, `/feedback`.
+- **Mode** - `/plan`, `/ask` switch the agent's posture, the same Plan and Ask modes from the [Modes](/course/cursor/modes/) chapter, reached by command instead of <kbd>Shift+Tab</kbd>.
+- **Config** - `/model` to switch model, `/max-mode` to toggle MAX Mode, `/auto-run` to set the auto-run posture, `/sandbox` to control sandboxing - the terminal-side levers for the same knobs you set in the editor's settings.
+- **Session** - `/new-chat`, `/resume`, `/fork`, `/summarize` (`/compress` is an alias), `/logout`, `/quit` manage the conversation and your login.
+- **MCP** - `/mcp` controls MCP servers from inside the session. {/* VERIFY: the reference lists `/mcp` but does not separately document the `list | enable | disable` subcommand syntax. Confirm the subcommand spelling before publish. Source: https://cursor.com/docs/cli/reference/slash-commands */}
+- **Utility** - `/usage`, `/about`, `/help`, `/feedback`.
 
-Two of these are worth dwelling on for a headless mindset. `/auto-run` and `/sandbox` are the *same* controls as the editor's auto-run modes and Agent Sandbox — which means the containment lessons from the permissions chapter transfer directly to the terminal, including their known leaks. And `/usage` is the one you'll actually want in a CLI session: it's how you check what a run is costing without leaving the terminal, which matters more once a script is firing the agent on a schedule.
+Two of these are worth dwelling on for a headless mindset. `/auto-run` and `/sandbox` are the *same* controls as the editor's auto-run modes and Agent Sandbox - which means the containment lessons from the permissions chapter transfer directly to the terminal, including their known leaks. And `/usage` is the one you'll actually want in a CLI session: it's how you check what a run is costing without leaving the terminal, which matters more once a script is firing the agent on a schedule.
 
-These only exist in the *interactive* TUI. A headless `-p` run isn't a session you type `/` into — it's a single shot. The slash commands are for when you're sitting in the terminal agent driving it live.
+These only exist in the *interactive* TUI. A headless `-p` run isn't a session you type `/` into - it's a single shot. The slash commands are for when you're sitting in the terminal agent driving it live.
 
 ## Wiring it into CI
 
 The headless command plus `CURSOR_API_KEY` is everything you need to put `budgetcli`'s agent on a runner. The job we'll automate is the transaction check: on every push, recategorise whatever landed and flag anything that looks off, so a bad import doesn't quietly corrupt months of history before you notice.
 
-The workflow is unremarkable on purpose — install the CLI, set the key from a secret, run one headless command, gate the step on its result:
+The workflow is unremarkable on purpose - install the CLI, set the key from a secret, run one headless command, gate the step on its result:
 
 ```text
-# .github/workflows/budgetcli-check.yml (shape only — confirm flags before use)
+# .github/workflows/budgetcli-check.yml (shape only - confirm flags before use)
 name: budgetcli transaction check
 on: [push]
 jobs:
@@ -133,62 +133,62 @@ jobs:
           test "$(jq -r '.result' result.json)" = "PASS"
 ```
 
-The assertion here reads the documented `.result` field — the headless JSON output carries `.result`, so `jq -r '.result'` pulls the agent's answer and `test` turns it into the step's exit code. An earlier draft of this example asserted a `.ok` boolean; there is no documented `.ok` field, so don't reach for one. {/* VERIFY: the CI shape is illustrative. `.result` is the documented headless JSON field; there is no documented `.ok` field. Re-read the real output schema at publish time before committing a pipeline to any specific field. Source: https://cursor.com/docs/cli/headless */}
+The assertion here reads the documented `.result` field - the headless JSON output carries `.result`, so `jq -r '.result'` pulls the agent's answer and `test` turns it into the step's exit code. An earlier draft of this example asserted a `.ok` boolean; there is no documented `.ok` field, so don't reach for one. {/* VERIFY: the CI shape is illustrative. `.result` is the documented headless JSON field; there is no documented `.ok` field. Re-read the real output schema at publish time before committing a pipeline to any specific field. Source: https://cursor.com/docs/cli/headless */}
 
-Everything load-bearing here you've already met. The install line is the same one-liner. The key is the same `CURSOR_API_KEY`, now an encrypted GitHub secret rather than an inline export. The command is a headless `-p` run with `--force`, because there's no human on the runner to approve a write — which is exactly the moment to remember the beta caveat and the fact that a CI container *is* your containment. The runner is disposable and isolated; that's what makes `--force` tolerable here in a way it wouldn't be against your laptop's working tree.
+Everything load-bearing here you've already met. The install line is the same one-liner. The key is the same `CURSOR_API_KEY`, now an encrypted GitHub secret rather than an inline export. The command is a headless `-p` run with `--force`, because there's no human on the runner to approve a write - which is exactly the moment to remember the beta caveat and the fact that a CI container *is* your containment. The runner is disposable and isolated; that's what makes `--force` tolerable here in a way it wouldn't be against your laptop's working tree.
 
-The one genuinely new thing is the gate: reading `.result` and comparing it turns the agent's JSON answer into the step's exit code, so a failed check fails the push. That's the difference between an agent that *comments* and an agent that *blocks* — and for guarding `budgetcli`'s financial history, you want it to block.
+The one genuinely new thing is the gate: reading `.result` and comparing it turns the agent's JSON answer into the step's exit code, so a failed check fails the push. That's the difference between an agent that *comments* and an agent that *blocks* - and for guarding `budgetcli`'s financial history, you want it to block.
 
-The gate is also where an unattended run's honesty comes from. With no one at the keyboard, `PASS` is just the agent's opinion until something the agent can't sweet-talk — a build, the suite, a full-path run — has to agree. Which checks you wire into the job decide what its green actually means:
+The gate is also where an unattended run's honesty comes from. With no one at the keyboard, `PASS` is just the agent's opinion until something the agent can't sweet-talk - a build, the suite, a full-path run - has to agree. Which checks you wire into the job decide what its green actually means:
 
 <NightShift client:visible />
 
 ## Cloud Agents: spawning an agent over HTTP
 
-Headless `cursor-agent` runs the agent *on your runner* — your machine, your container, your CI minutes. **Cloud Agents** are a different primitive: full agents that run in **isolated VMs in Cursor's cloud**, not locally, and that you can spawn **programmatically over a REST API**. The docs confirm both: "The Cloud Agents API lets you programmatically launch and manage cloud agents," and the execution environment "uses Cursor-hosted VMs." The canonical docs live under `cursor.com/docs/cloud-agent`.
+Headless `cursor-agent` runs the agent *on your runner* - your machine, your container, your CI minutes. **Cloud Agents** are a different primitive: full agents that run in **isolated VMs in Cursor's cloud**, not locally, and that you can spawn **programmatically over a REST API**. The docs confirm both: "The Cloud Agents API lets you programmatically launch and manage cloud agents," and the execution environment "uses Cursor-hosted VMs." The canonical docs live under `cursor.com/docs/cloud-agent`.
 
-The naming is a known trap. These were called **Background Agents** and were renamed **Cloud Agents** — the docs say so directly: "Cloud Agents were formerly called Background Agents." Older forum posts and even some menus may still say "Background"; they're the same thing. The docs URL has moved with the rename, too — it's now the `/cloud-agent` tree, not the old `/background-agent` path.
+The naming is a known trap. These were called **Background Agents** and were renamed **Cloud Agents** - the docs say so directly: "Cloud Agents were formerly called Background Agents." Older forum posts and even some menus may still say "Background"; they're the same thing. The docs URL has moved with the rename, too - it's now the `/cloud-agent` tree, not the old `/background-agent` path.
 
 What you get over the API:
 
-- **Programmatic spawn** — kick off an agent from a script, a webhook, or another service, not just from the desktop app.
-- **Model-selectable** — choose the model per spawned agent, the same roster you pick from in the editor.
-- **GitHub PR and Linear integration out of the box** — a Cloud Agent clones the repo to a fresh branch, does the work, pushes results, and opens a pull request; it can pick up work from a Linear issue.
-- **Triggers from Slack, GitHub, and Linear** — each can launch an agent without anyone touching the API directly. The mention syntax is `@cursor`, uniform across every host — Slack, a GitHub PR or issue comment, and Linear all use the same handle. These automations are documented under `cursor.com/docs/cloud-agent/automations`.
+- **Programmatic spawn** - kick off an agent from a script, a webhook, or another service, not just from the desktop app.
+- **Model-selectable** - choose the model per spawned agent, the same roster you pick from in the editor.
+- **GitHub PR and Linear integration out of the box** - a Cloud Agent clones the repo to a fresh branch, does the work, pushes results, and opens a pull request; it can pick up work from a Linear issue.
+- **Triggers from Slack, GitHub, and Linear** - each can launch an agent without anyone touching the API directly. The mention syntax is `@cursor`, uniform across every host - Slack, a GitHub PR or issue comment, and Linear all use the same handle. These automations are documented under `cursor.com/docs/cloud-agent/automations`.
 
-The core capabilities — programmatic REST spawn, per-agent model selection, the `autoCreatePR` flow onto an auto-generated `cursor/` branch, and Linear via MCP — are all confirmed in the Cloud Agents docs.
+The core capabilities - programmatic REST spawn, per-agent model selection, the `autoCreatePR` flow onto an auto-generated `cursor/` branch, and Linear via MCP - are all confirmed in the Cloud Agents docs.
 
-For `budgetcli`, the Cloud Agents shape is the natural next step past CI: instead of a headless command that runs *inside* your pipeline, you fire an agent that runs in Cursor's cloud, on a clean clone, and comes back with a PR you review. The blast-radius story is the cleanest of any surface in this chapter — the agent never touches your machine or your runner, so the local threat model from the permissions chapter simply doesn't apply. The containment is by construction: it's an isolated VM in someone else's cloud, working a throwaway branch, and the only thing that reaches you is a pull request you read before you merge.
+For `budgetcli`, the Cloud Agents shape is the natural next step past CI: instead of a headless command that runs *inside* your pipeline, you fire an agent that runs in Cursor's cloud, on a clean clone, and comes back with a PR you review. The blast-radius story is the cleanest of any surface in this chapter - the agent never touches your machine or your runner, so the local threat model from the permissions chapter simply doesn't apply. The containment is by construction: it's an isolated VM in someone else's cloud, working a throwaway branch, and the only thing that reaches you is a pull request you read before you merge.
 
-That said, a Cloud Agent opening PRs against `budgetcli` is exactly the kind of access you scope deliberately — what repos it can reach, what it's allowed to merge (it shouldn't auto-merge), and which triggers can launch it. An open `@cursor` trigger in a Slack channel is convenient and is also a way for anyone in that channel to spawn an agent against your repo. Treat the trigger list as an access-control surface, not just a convenience.
+That said, a Cloud Agent opening PRs against `budgetcli` is exactly the kind of access you scope deliberately - what repos it can reach, what it's allowed to merge (it shouldn't auto-merge), and which triggers can launch it. An open `@cursor` trigger in a Slack channel is convenient and is also a way for anyone in that channel to spawn an agent against your repo. Treat the trigger list as an access-control surface, not just a convenience.
 
 ## Bugbot: an AI reviewer on every PR
 
-The last surface inverts the relationship. Everywhere else in this chapter *you* drive the agent — from a script, from CI, from the API. **Bugbot** is Cursor's AI **PR reviewer**: you connect a repo once from the Cursor dashboard, and from then on Bugbot "analyzes PR diffs and leaves comments with explanations and fix suggestions," the way a careful human reviewer would.
+The last surface inverts the relationship. Everywhere else in this chapter *you* drive the agent - from a script, from CI, from the API. **Bugbot** is Cursor's AI **PR reviewer**: you connect a repo once from the Cursor dashboard, and from then on Bugbot "analyzes PR diffs and leaves comments with explanations and fix suggestions," the way a careful human reviewer would.
 
 It runs across both major hosts, including the self-managed flavours that matter to corporate teams: **GitHub (including GitHub Enterprise Server)** and **GitLab (including GitLab Self-Hosted)**.
 
 You set a **per-repo mode** for how aggressively it runs:
 
-- **Every PR** — Bugbot reviews automatically on each pull request.
-- **On mention** — it stays quiet until someone asks, via a `cursor review` or `bugbot run` comment.
-- **Once per PR** — a single review that skips re-review on subsequent commits.
+- **Every PR** - Bugbot reviews automatically on each pull request.
+- **On mention** - it stays quiet until someone asks, via a `cursor review` or `bugbot run` comment.
+- **Once per PR** - a single review that skips re-review on subsequent commits.
 
-Where Bugbot earns its place in a *CI* chapter is the **GitHub check**. Bugbot publishes a status check named **"Cursor Bugbot"** with three documented conclusions: **`success`** when the PR is clean (no issues and no unresolved prior comments), **`neutral`** when it found issues, the run was cancelled by a newer commit, or it hit an internal error — and **`failure`** when it found issues *and the check is configured to fail on unresolved issues*. That's the hook into branch protection: the review stops being an advisory comment and becomes a check your merge rules can see. By default, issues found surface as `neutral` — Bugbot flags rather than blocks, leaving the merge decision with a human — but a repo can opt into the failing check and let Bugbot hard-block. For `budgetcli`, the default `neutral` posture fits: you want a second set of eyes on a categoriser change, not a robot with automatic veto power over your own repo, though the option to escalate to a blocking check is there if you want it.
+Where Bugbot earns its place in a *CI* chapter is the **GitHub check**. Bugbot publishes a status check named **"Cursor Bugbot"** with three documented conclusions: **`success`** when the PR is clean (no issues and no unresolved prior comments), **`neutral`** when it found issues, the run was cancelled by a newer commit, or it hit an internal error - and **`failure`** when it found issues *and the check is configured to fail on unresolved issues*. That's the hook into branch protection: the review stops being an advisory comment and becomes a check your merge rules can see. By default, issues found surface as `neutral` - Bugbot flags rather than blocks, leaving the merge decision with a human - but a repo can opt into the failing check and let Bugbot hard-block. For `budgetcli`, the default `neutral` posture fits: you want a second set of eyes on a categoriser change, not a robot with automatic veto power over your own repo, though the option to escalate to a blocking check is there if you want it.
 
-Bugbot also learns. A reviewer can comment **`@cursor remember [fact]`** on a PR to teach it a team-specific pattern — a convention, a known sharp edge, a "we always do it this way here" — and the docs confirm this "saves the fact as a learned rule and applies it to future reviews." It's the same instinct as the [Rules](/course/cursor/rules/) chapter — writing the project's standing facts down once so the agent stops re-deriving them — except taught conversationally, in the review thread, instead of authored as `.mdc` files.
+Bugbot also learns. A reviewer can comment **`@cursor remember [fact]`** on a PR to teach it a team-specific pattern - a convention, a known sharp edge, a "we always do it this way here" - and the docs confirm this "saves the fact as a learned rule and applies it to future reviews." It's the same instinct as the [Rules](/course/cursor/rules/) chapter - writing the project's standing facts down once so the agent stops re-deriving them - except taught conversationally, in the review thread, instead of authored as `.mdc` files.
 
-One thing the docs are firm about and you should be too: Bugbot's pricing is **usage-based** — it "first consumes your included usage, then bills additional reviews through on-demand spend" — and the specific numbers are version-fluid. Don't quote a figure from memory; read it off Cursor's pricing page at publish time.
+One thing the docs are firm about and you should be too: Bugbot's pricing is **usage-based** - it "first consumes your included usage, then bills additional reviews through on-demand spend" - and the specific numbers are version-fluid. Don't quote a figure from memory; read it off Cursor's pricing page at publish time.
 
 ## The shape to carry out of this chapter
 
-You started this course inside the editor, and most of your hours will stay there — that's correct, the editor is where the deciding happens. What this chapter added is the export: four ways to run the *same* agent with no one in the room, ordered by how far they sit from your machine.
+You started this course inside the editor, and most of your hours will stay there - that's correct, the editor is where the deciding happens. What this chapter added is the export: four ways to run the *same* agent with no one in the room, ordered by how far they sit from your machine.
 
-- **Headless `cursor-agent -p`** — the agent as a command. `text`/`json`/`stream-json` output, `--force` to write unattended, `CURSOR_API_KEY` for auth. It runs on *your* hardware, so *your* containment (sandbox, disposable clone) is what holds — and the beta caveat means you lean on that containment, not the flags.
-- **CI** — the same headless command on a runner, keyed by a secret, gated by an exit code so a bad `budgetcli` import fails the push instead of landing.
-- **Cloud Agents over the REST API** — the agent in an isolated VM in Cursor's cloud, spawned programmatically or by a Slack/GitHub/Linear trigger, returning a PR you review. Containment by construction; the local threat model doesn't apply.
-- **Bugbot** — the inversion: an AI reviewer on every PR, surfacing as a "Cursor Bugbot" GitHub check you can wire into branch protection, learning your team's patterns through `@cursor remember`.
+- **Headless `cursor-agent -p`** - the agent as a command. `text`/`json`/`stream-json` output, `--force` to write unattended, `CURSOR_API_KEY` for auth. It runs on *your* hardware, so *your* containment (sandbox, disposable clone) is what holds - and the beta caveat means you lean on that containment, not the flags.
+- **CI** - the same headless command on a runner, keyed by a secret, gated by an exit code so a bad `budgetcli` import fails the push instead of landing.
+- **Cloud Agents over the REST API** - the agent in an isolated VM in Cursor's cloud, spawned programmatically or by a Slack/GitHub/Linear trigger, returning a PR you review. Containment by construction; the local threat model doesn't apply.
+- **Bugbot** - the inversion: an AI reviewer on every PR, surfacing as a "Cursor Bugbot" GitHub check you can wire into branch protection, learning your team's patterns through `@cursor remember`.
 
-Get the ordering right — editor for deciding, headless for scripting, CI for gating, Cloud Agents and Bugbot for the work that should happen without you at all — and Cursor stops being an app you sit in front of and becomes a thing your repo runs. The discipline that makes that safe is the one you already have: the further you push the agent from your keyboard, the less you trust the flags and the more you trust *where* it runs.
+Get the ordering right - editor for deciding, headless for scripting, CI for gating, Cloud Agents and Bugbot for the work that should happen without you at all - and Cursor stops being an app you sit in front of and becomes a thing your repo runs. The discipline that makes that safe is the one you already have: the further you push the agent from your keyboard, the less you trust the flags and the more you trust *where* it runs.
 
-And every flag, format, command, model, and price in this chapter is version-fluid by design — Cursor's own blog called the CLI a beta whose safeguards were still evolving, Cloud Agents were renamed (and their docs URL moved) once already, and Bugbot's pricing moves. Confirm each against the docs cited inline before you put any of it in a pipeline you can't watch.
+And every flag, format, command, model, and price in this chapter is version-fluid by design - Cursor's own blog called the CLI a beta whose safeguards were still evolving, Cloud Agents were renamed (and their docs URL moved) once already, and Bugbot's pricing moves. Confirm each against the docs cited inline before you put any of it in a pipeline you can't watch.

@@ -63,7 +63,7 @@ export default function EdgeAudit() {
   const announcement = selected
     ? `${EA_PARTICIPANTS[selected.from]} to ${EA_PARTICIPANTS[selected.to]}, ${
         selected.label
-      }: ${selected.fabricated ? 'fabricated — ' : ''}${selected.verdict.replace(
+      }: ${selected.fabricated ? 'fabricated - ' : ''}${selected.verdict.replace(
         /`/g,
         ''
       )}${allChecked ? ` All six edges checked. ${EA_CLOSING}` : ''}`
@@ -76,7 +76,7 @@ export default function EdgeAudit() {
           type="button"
           className="ea-reset"
           onClick={reset}
-          aria-label="Reset the audit — clear all checked edges"
+          aria-label="Reset the audit - clear all checked edges"
         >
           Reset
         </button>
@@ -121,9 +121,9 @@ export default function EdgeAudit() {
                 .join(' ');
               const state = isChecked
                 ? edge.fabricated
-                  ? ' — checked: fabricated'
-                  : ' — checked: receipt on file'
-                : ' — unchecked';
+                  ? ' - checked: fabricated'
+                  : ' - checked: receipt on file'
+                : ' - unchecked';
               return (
                 <button
                   key={edge.id}
@@ -203,7 +203,7 @@ export default function EdgeAudit() {
           </div>
         ) : (
           <p className="ea-hint">
-            No receipts yet. Pick an edge — start with the one your next change
+            No receipts yet. Pick an edge - start with the one your next change
             depends on.
           </p>
         )}

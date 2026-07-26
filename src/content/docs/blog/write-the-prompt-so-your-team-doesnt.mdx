@@ -7,23 +7,23 @@ tags: [context-engineering, mcp-servers, slash-commands]
 draft: false
 ---
 
-It's 6pm. A test just went flaky in CI, and the one engineer who knows how to triage it — pull the last three runs, check the ownership tag, read the retry-policy doc *before* you ask the model anything — is in a meeting. So you write your own version of that prompt. You get a worse answer. You quietly conclude the agent isn't very good at triage.
+It's 6pm. A test just went flaky in CI, and the one engineer who knows how to triage it - pull the last three runs, check the ownership tag, read the retry-policy doc *before* you ask the model anything - is in a meeting. So you write your own version of that prompt. You get a worse answer. You quietly conclude the agent isn't very good at triage.
 
 Every team has a prompt like that: one person knows how to write it, everyone else writes a degraded copy. And the degraded copy is what trains the whole team to distrust the tool.
 
-The agent is fine. The **context** is missing — and the person who knows which context to attach is in a meeting.
+The agent is fine. The **context** is missing - and the person who knows which context to attach is in a meeting.
 
 ## The standard lives in a doc nobody opens
 
-The instinct is to fix this with documentation. You write a `PROMPTS.md`: "When triaging a flaky test, paste the last three runs, include the ownership tag, link the retry policy." It's correct. It's thorough. It is also a document a tired engineer at 6pm will not read, will half-remember, and will execute by hand — re-typing the same scaffolding, re-fetching the same data, getting it subtly wrong.
+The instinct is to fix this with documentation. You write a `PROMPTS.md`: "When triaging a flaky test, paste the last three runs, include the ownership tag, link the retry policy." It's correct. It's thorough. It is also a document a tired engineer at 6pm will not read, will half-remember, and will execute by hand - re-typing the same scaffolding, re-fetching the same data, getting it subtly wrong.
 
 A doc describes the standard. It doesn't *run* it. So the prompt drifts: ten engineers produce ten dialects of the same request, and the model burns its first three turns making tool calls to assemble context that someone already knew how to assemble. Hold onto the question that exposes the waste: **why are we paying the round-trip cost for context the author already had at authoring time?**
 
 ## A prompt is a thing you can ship, not just a string you type
 
-The fix is to stop treating "the right prompt" as tribal knowledge and start treating it as an artifact you deploy. [MCP servers](/foundations/mcp-servers/) expose three things to an agent: tools (functions the model can call), resources (data the model can read), and **prompts** — parameterized templates the server hands back, fully assembled, when invoked.
+The fix is to stop treating "the right prompt" as tribal knowledge and start treating it as an artifact you deploy. [MCP servers](/foundations/mcp-servers/) expose three things to an agent: tools (functions the model can call), resources (data the model can read), and **prompts** - parameterized templates the server hands back, fully assembled, when invoked.
 
-That last one is the underused primitive. A server-side prompt is a function that takes arguments and returns a ready-to-run message — and crucially, it can **embed resources directly into the returned message** instead of leaving the model to go fetch them.
+That last one is the underused primitive. A server-side prompt is a function that takes arguments and returns a ready-to-run message - and crucially, it can **embed resources directly into the returned message** instead of leaving the model to go fetch them.
 
 ```json
 {
@@ -48,7 +48,7 @@ async def triage_flaky_test(test_id: str):
                 text=f"Triage flaky test {test_id}. "
                      f"Owner: {owner_tag}. Follow the retry-policy below."
             )),
-            # the data the model needs, embedded — no round-trip
+            # the data the model needs, embedded - no round-trip
             PromptMessage(role="user", content=EmbeddedResource(
                 resource=read_resource("policy://retry-policy")
             )),
@@ -65,19 +65,19 @@ The expert prompt, the ownership tag, the last three runs, and the retry policy 
 
 ## The slash command is the whole point
 
-Here's what makes this stick where the doc failed. Most agent clients surface MCP prompts as **[slash commands](/foundations/slash-commands/)** — auto-discovered, autocompleted, listed right where the user is already typing. (Claude Code namespaces them as `/mcp__<server>__<name>`, so the exact string is `/mcp__testkit__triage_flaky_test`; the point is that it appears in the menu unprompted.) The standard stops being something you opt into and becomes something you trip over on purpose.
+Here's what makes this stick where the doc failed. Most agent clients surface MCP prompts as **[slash commands](/foundations/slash-commands/)** - auto-discovered, autocompleted, listed right where the user is already typing. (Claude Code namespaces them as `/mcp__<server>__<name>`, so the exact string is `/mcp__testkit__triage_flaky_test`; the point is that it appears in the menu unprompted.) The standard stops being something you opt into and becomes something you trip over on purpose.
 
-A teammate types `/triage_flaky_test`, the client prompts for the one argument that actually varies, they fill in `test_id`, and they get the senior engineer's exact procedure — pre-loaded with the data, every time. Nobody read a doc. Nobody re-engineered the prompt. The non-expert just invoked the expert.
+A teammate types `/triage_flaky_test`, the client prompts for the one argument that actually varies, they fill in `test_id`, and they get the senior engineer's exact procedure - pre-loaded with the data, every time. Nobody read a doc. Nobody re-engineered the prompt. The non-expert just invoked the expert.
 
-It gets one step better. The spec defines a [completion API](/foundations/mcp-servers/) — a `completion/complete` request the client fires as the user types an argument value. Your server can answer it with live data: open the `test_id` field and the menu fills with the test IDs that actually went red this week, not a blank box the user has to copy a string into. The argument that "varies" stops being something the user has to know and becomes something the system suggests. That's the same gap-closing move applied one layer down — the expert encodes not just the procedure but the *valid inputs* to it.
+It gets one step better. The spec defines a [completion API](/foundations/mcp-servers/) - a `completion/complete` request the client fires as the user types an argument value. Your server can answer it with live data: open the `test_id` field and the menu fills with the test IDs that actually went red this week, not a blank box the user has to copy a string into. The argument that "varies" stops being something the user has to know and becomes something the system suggests. That's the same gap-closing move applied one layer down - the expert encodes not just the procedure but the *valid inputs* to it.
 
-That is the difference between *describing* a standard and *shipping* one. A `PROMPTS.md` entry is skippable by definition; it sits behind a deliberate act of reading. A slash command is in the autocomplete menu. One is a suggestion. The other is the path of least resistance — and path-of-least-resistance is the only thing that survives contact with a deadline.
+That is the difference between *describing* a standard and *shipping* one. A `PROMPTS.md` entry is skippable by definition; it sits behind a deliberate act of reading. A slash command is in the autocomplete menu. One is a suggestion. The other is the path of least resistance - and path-of-least-resistance is the only thing that survives contact with a deadline.
 
 ## The same move, a harder prompt
 
 Triage is the easy case because the procedure is small. The payoff is bigger on the prompt nobody enjoys writing: the team's PR-review pass.
 
-Hand-rolled, it degrades the same way. An engineer pastes a diff and types "review this." The model dutifully flags a missing null check and a typo — and says nothing about the three things your team actually gates on, because nothing told it they exist: this service's public API has a backward-compatibility contract, schema changes require a migration runbook entry, and anything touching the billing path needs a second reviewer named in the description. A generic reviewer can't enforce a standard it was never given.
+Hand-rolled, it degrades the same way. An engineer pastes a diff and types "review this." The model dutifully flags a missing null check and a typo - and says nothing about the three things your team actually gates on, because nothing told it they exist: this service's public API has a backward-compatibility contract, schema changes require a migration runbook entry, and anything touching the billing path needs a second reviewer named in the description. A generic reviewer can't enforce a standard it was never given.
 
 Ship it as a prompt and the gates travel with the request:
 
@@ -88,7 +88,7 @@ async def review_pr(pr_number: str):
     return GetPromptResult(messages=[
         PromptMessage(role="user", content=TextContent(
             text=("Review this PR against our gates: (1) the public API in "
-                  "billing/ has a backward-compat contract — flag any breaking "
+                  "billing/ has a backward-compat contract - flag any breaking "
                   "signature change; (2) schema changes need a migration runbook "
                   "entry; (3) billing-path changes need a named second reviewer. "
                   "Report each gate as pass/fail with the line that triggers it.")
@@ -104,11 +104,11 @@ async def review_pr(pr_number: str):
     ])
 ```
 
-The single varying argument is `pr_number` — and the completion API can populate it with the open PRs assigned to the caller. Everything that makes the review *yours* — the gates, the runbook reference, the diff — is assembled server-side. The reviewer who's never internalized those three rules now applies them perfectly, because they didn't have to remember them. The standard moved from the senior engineer's head into a function that runs on every invocation.
+The single varying argument is `pr_number` - and the completion API can populate it with the open PRs assigned to the caller. Everything that makes the review *yours* - the gates, the runbook reference, the diff - is assembled server-side. The reviewer who's never internalized those three rules now applies them perfectly, because they didn't have to remember them. The standard moved from the senior engineer's head into a function that runs on every invocation.
 
 ## Embedding the data is a context-engineering move, not a convenience
 
-It's tempting to read "pre-load the resources" as a latency optimization. It's deeper than that. When the model has to fetch its own context, *it* decides what's relevant — and a contextless agent decides badly. It pulls the wrong CI run, skips the ownership tag because nothing told it that tag matters, never reads the retry policy because it didn't know one existed.
+It's tempting to read "pre-load the resources" as a latency optimization. It's deeper than that. When the model has to fetch its own context, *it* decides what's relevant - and a contextless agent decides badly. It pulls the wrong CI run, skips the ownership tag because nothing told it that tag matters, never reads the retry policy because it didn't know one existed.
 
 Embedding the resources moves that judgment back to the author. **The person who knows which context matters encodes that knowledge once, server-side, and every invocation inherits it.** You're not saving a round-trip; you're closing the gap between what the agent can fetch and what an expert knows to fetch. That's the entire discipline, compressed into one function.
 
@@ -116,27 +116,27 @@ This pairs naturally with [rules](/foundations/rules/): rules are the always-on 
 
 ## "Just give the agent the tools and let it fetch"
 
-The obvious objection: why pre-assemble anything? Expose `get_ci_runs`, `get_owner_tag`, and `get_retry_policy` as MCP *tools*, and a capable agent will call them itself. That's true, and sometimes correct — but it quietly relocates the expertise problem instead of solving it. The agent now has to *decide* to call all three, in the right order, and to weight the retry policy as binding rather than advisory. The whole premise of this site is that the agent is broad but contextless: it doesn't know the policy is load-bearing because nothing in the request says so. Tool exposure gives the model the *ability* to gather context; a prompt gives it the *judgment* about which context to gather — and judgment is exactly the thing the meeting-bound senior engineer was supplying.
+The obvious objection: why pre-assemble anything? Expose `get_ci_runs`, `get_owner_tag`, and `get_retry_policy` as MCP *tools*, and a capable agent will call them itself. That's true, and sometimes correct - but it quietly relocates the expertise problem instead of solving it. The agent now has to *decide* to call all three, in the right order, and to weight the retry policy as binding rather than advisory. The whole premise of this site is that the agent is broad but contextless: it doesn't know the policy is load-bearing because nothing in the request says so. Tool exposure gives the model the *ability* to gather context; a prompt gives it the *judgment* about which context to gather - and judgment is exactly the thing the meeting-bound senior engineer was supplying.
 
 There's a second-order cost too. Every tool call the model makes to assemble known context is a turn it spends reasoning about plumbing instead of the actual problem, and each round-trip is a fresh chance to pull the wrong run or skip a step. Embedding collapses that to a single hop. The right division is usually: embed the context the author *already knows* is needed; expose tools for the context that genuinely depends on what the model finds along the way.
 
 ## Where this breaks
 
-This pattern has sharp edges, and the spec flags the sharpest one itself: implementations **MUST** carefully validate prompt inputs and outputs to prevent injection. An embedded resource is untrusted text you are splicing directly into the model's context. If `docs://review-gates` is editable by anyone, or the CI run output contains an attacker-influenced string, you've built a clean delivery channel for prompt injection — the model can't tell your instructions from instructions that rode in on the data. Treat embedded resources as you'd treat any user-supplied input crossing a trust boundary: pin them to sources you control, and don't embed free-text fields that outsiders can write.
+This pattern has sharp edges, and the spec flags the sharpest one itself: implementations **MUST** carefully validate prompt inputs and outputs to prevent injection. An embedded resource is untrusted text you are splicing directly into the model's context. If `docs://review-gates` is editable by anyone, or the CI run output contains an attacker-influenced string, you've built a clean delivery channel for prompt injection - the model can't tell your instructions from instructions that rode in on the data. Treat embedded resources as you'd treat any user-supplied input crossing a trust boundary: pin them to sources you control, and don't embed free-text fields that outsiders can write.
 
-Two quieter failure modes. The first is **token cost**: embedding is generous by default, and a prompt that pre-loads a 4,000-line policy doc and a full diff on every invocation can spend more context than the hand-rolled version it replaced. If the resource is large and only a slice is usually relevant, embedding the whole thing is the wrong trade — let the model fetch the slice. The second is **staleness**: a prompt that embeds "the retry policy" is only as current as whatever `read_resource` returns. Point it at the live source, not a snapshot you pasted into the server six weeks ago, or you'll ship yesterday's standard with tomorrow's confidence.
+Two quieter failure modes. The first is **token cost**: embedding is generous by default, and a prompt that pre-loads a 4,000-line policy doc and a full diff on every invocation can spend more context than the hand-rolled version it replaced. If the resource is large and only a slice is usually relevant, embedding the whole thing is the wrong trade - let the model fetch the slice. The second is **staleness**: a prompt that embeds "the retry policy" is only as current as whatever `read_resource` returns. Point it at the live source, not a snapshot you pasted into the server six weeks ago, or you'll ship yesterday's standard with tomorrow's confidence.
 
 ## When not to ship a prompt
 
 The technique earns its keep when a procedure is *stable* and *shared*. Reach for something else when either condition fails.
 
-If the procedure is still being figured out — you're discovering the right triage steps as you go — freezing it into a server function is premature; you'll spend more time redeploying the prompt than running it. Let it stabilize as a doc or a habit first, then ship it once it stops changing.
+If the procedure is still being figured out - you're discovering the right triage steps as you go - freezing it into a server function is premature; you'll spend more time redeploying the prompt than running it. Let it stabilize as a doc or a habit first, then ship it once it stops changing.
 
-And if the prompt needs five or six arguments to be useful, that's a signal it isn't one reusable procedure — it's a workflow with too many degrees of freedom to be a single command. The whole value here is that exactly one thing varies and the system fills in the rest. When many things vary, you're past what a prompt should carry; reach for a [subagent](/foundations/subagents/) with its own tools and room to reason, and keep the prompt for the genuinely fixed plays.
+And if the prompt needs five or six arguments to be useful, that's a signal it isn't one reusable procedure - it's a workflow with too many degrees of freedom to be a single command. The whole value here is that exactly one thing varies and the system fills in the rest. When many things vary, you're past what a prompt should carry; reach for a [subagent](/foundations/subagents/) with its own tools and room to reason, and keep the prompt for the genuinely fixed plays.
 
 ## What to do Monday
 
-Find the prompt one person on your team knows how to write — the triage, the incident summary, the PR-review pass with your team's specific gates. Don't document it. Define it as a server-side MCP prompt: one or two arguments for what genuinely varies, the rest of the context embedded as resources the server assembles.
+Find the prompt one person on your team knows how to write - the triage, the incident summary, the PR-review pass with your team's specific gates. Don't document it. Define it as a server-side MCP prompt: one or two arguments for what genuinely varies, the rest of the context embedded as resources the server assembles.
 
 Then watch where it shows up: in everyone's slash-command menu, named, autocompleted, impossible to skip and cheaper to run than the hand-rolled version. The senior engineer's knowledge stops evaporating into Slack threads and starts compounding as infrastructure.
 

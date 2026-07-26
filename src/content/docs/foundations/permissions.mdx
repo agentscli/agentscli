@@ -1,36 +1,39 @@
 ---
 title: Permissions, sandboxing & approval modes
-description: How each CLI decides which actions need your blessing — the most divergent area in vocabulary across the three tools.
+description: How each CLI decides which actions need your blessing - the most divergent area in vocabulary across the six tools.
 ---
 
 import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 import PermissionSim from '../../../components/interactive/PermissionSim.tsx';
 
-You're two settings into the agent's lifecycle and you've already hit the wall. Either it pops up a confirmation dialog on *every single command* — and you spend the session pressing `y`, `y`, `y` until you stop reading what you're approving — or you've turned approvals off and now there's nothing between the agent and `rm -rf node_modules` in the wrong directory.
+You're two settings into the agent's lifecycle and you've already hit the wall. Either it pops up a confirmation dialog on *every single command* - and you spend the session pressing `y`, `y`, `y` until you stop reading what you're approving - or you've turned approvals off and now there's nothing between the agent and `rm -rf node_modules` in the wrong directory.
 
-There's a real range of actions the agent does in a session: reading a file (boring, always fine), running tests (boring, always fine), editing your code (usually fine), running a one-off shell command (depends on the command), pushing to remote (you definitely want to know), `chmod`-ing system files (probably not). Treating all of those as one "do you approve?" question is what produces both fatigue and accidents.
+Both postures give a single answer to a set of actions that don't share one:
 
-That's the gap permissions close. Decide *once*, declaratively: which tools are always fine, which always need you in the loop, which are flatly forbidden. Then the agent runs unattended through the boring 80% and only interrupts you for the genuinely risky 20% — and the truly dangerous things just can't happen, even if the agent decides they're a good idea.
+| The agent wants to... | Your honest answer |
+|---|---|
+| Read a file, grep the repo | Fine, every time |
+| Run the test suite | Fine, every time |
+| Edit your code | Usually fine |
+| Run a one-off shell command | Depends entirely on the command |
+| Push to a remote | Tell me first |
+| `chmod` a system file | No |
 
-Every CLI in scope encodes exactly that three-way decision — *do it without asking*, *ask me first*, or *refuse outright* — on every action the agent attempts. The shapes are wildly different:
+Collapsing that column into a single "do you approve?" prompt is what produces both the fatigue and the accidents. Permissions let you answer it *once*, declaratively: which tools are always fine, which always need you in the loop, which are flatly forbidden. The agent then runs unattended through the boring 80% and only interrupts you for the genuinely risky 20% - and the truly dangerous things can't happen at all, even if the agent decides they're a good idea.
 
-- **Claude Code:** named permission modes (`default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions`, cycled with Shift+Tab — see the [permission modes ladder](/course/claude-code/permissions-modes/modes-ladder/)) layered over allow/ask/deny rules per tool, plus managed policy.
-- **Codex:** OS-level sandbox tiers combined with approval policies.
-- **OpenCode:** per-tool allow/ask/deny, scoped per primary agent.
-- **Cursor:** auto-run modes (Auto-review / Allowlist / Run Everything) plus command allow/denylists; OS-level Agent Sandbox on macOS, Linux, and Windows (via WSL2), folded into Allowlist as a layer rather than its own mode.
-- **Copilot:** per-call tool approval in VS Code Chat, with `chat.permissions.default` and per-category auto-approve knobs; optional shell sandbox; org-wide content exclusions.
+Every CLI in scope encodes exactly that three-way decision - *do it without asking*, *ask me first*, or *refuse outright* - on every action the agent attempts. Same job, then: decide what the agent can do unattended.
 
-Same job — decide what the agent can do unattended — different mental models, different vocabulary, different layers.
+What they don't share is the shape. This is the most divergent area in the section - different mental models, different vocabulary, different layers, and no two tools put the gate in the same place. The [Comparison](#comparison) table below is the map between them.
 
 **Real-world examples of permission rules people actually set:**
 
-- **Always allow** — reads (Read, Grep, Glob), test runs (`pnpm test`, `pytest`), formatters (`prettier`, `ruff`), git status/log/diff.
-- **Ask first** — any `git push`, any `git rebase`, deletions, anything touching `node_modules` or `package-lock.json`, `npm install`/`pip install`.
-- **Always deny** — `rm -rf`, edits to `.env` or secrets, writes outside the project root, `sudo`, `chmod`, pushing to `main` directly.
-- **Scoped allow patterns** — `Bash(npm run *)` allowed, `Bash(npm install *)` asked. Same tool, different command shapes.
-- **Per-agent profiles (OpenCode)** — your `plan` agent is read-only no matter what; your `build` agent has full edit access; a custom `security-review` agent has read + a narrow shell allowlist.
-- **Org-wide policy** — managed config forbids any tool that can touch `prod` for everyone in the team, regardless of what they set locally.
+- **Always allow** - reads (Read, Grep, Glob), test runs (`pnpm test`, `pytest`), formatters (`prettier`, `ruff`), git status/log/diff.
+- **Ask first** - any `git push`, any `git rebase`, deletions, anything touching `node_modules` or `package-lock.json`, `npm install`/`pip install`.
+- **Always deny** - `rm -rf`, edits to `.env` or secrets, writes outside the project root, `sudo`, `chmod`, pushing to `main` directly.
+- **Scoped allow patterns** - `Bash(npm run *)` allowed, `Bash(npm install *)` asked. Same tool, different command shapes.
+- **Per-agent profiles (OpenCode)** - your `plan` agent is read-only no matter what; your `build` agent has full edit access; a custom `security-review` agent has read + a narrow shell allowlist.
+- **Org-wide policy** - managed config forbids any tool that can touch `prod` for everyone in the team, regardless of what they set locally.
 
 The test: if you've ever caught yourself approving a command without actually reading it, your permission rules are too tight. If you've ever discovered the agent did something you wouldn't have approved, they're too loose.
 
@@ -50,7 +53,7 @@ Those mental models, side by side: Claude Code walks allow/ask/deny rule lists, 
 | Restrict a worker subagent's tools | [Subagent](/foundations/subagents/) `tools:` field | Session-wide permissions |
 | Enforce a rule across the whole org | Managed/policy config | Per-user settings |
 
-Permissions are *coarse and declarative* — "Bash is ask, Read is allow." Hooks are *fine and procedural* — "if the bash command matches `git push.*main`, block it and log it." Use permissions for the policy; reach for hooks when the policy needs logic.
+Permissions are *coarse and declarative* - "Bash is ask, Read is allow." Hooks are *fine and procedural* - "if the bash command matches `git push.*main`, block it and log it." Use permissions for the policy; reach for hooks when the policy needs logic.
 
 ## How it works in each tool
 
@@ -61,11 +64,11 @@ Permissions are *coarse and declarative* — "Bash is ask, Read is allow." Hooks
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
 | Primary axis | Permission mode + allow/ask/deny rules per tool | Sandbox tier × approval policy | Per-tool per-agent | Auto-run mode + allow/denylist | Per-call approval + auto-approve knobs | Trust gate on project resources; no per-tool permission popups |
-| OS-level sandbox | No | Yes (`read-only` / `workspace-write` / `danger-full-access`) | No (wrap in a container if you need it) | Yes (Agent Sandbox: macOS/Linux native, Windows via WSL2) | Optional (`chat.agent.sandbox.enabled`, macOS/Linux) | Via container/extension, not built-in |
-| Approval modes | Named modes: `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` (Shift+Tab to cycle), over allow/ask/deny rules | `untrusted` / `on-request` / `never` | `allow` / `ask` / `deny` | Auto-review / Allowlist / Run Everything | `default` / `autoApprove` / `autopilot` | None — YOLO by default; gates come from a container or extension |
-| Org/managed override | Yes (managed `settings.json`) | Yes (managed config) | Yes (managed config) | Yes (Team / Enterprise) | Yes (Business / Enterprise; content exclusions, MCP policy) | — |
+| OS-level sandbox | No | Yes (`read-only` / `workspace-write` / `danger-full-access`) | No (wrap in a container if you need it) | Yes (Agent Sandbox: macOS/Linux native, Windows via WSL2) - a layer inside Allowlist mode, not a mode of its own | Optional (`chat.agent.sandbox.enabled`, macOS/Linux) | Via container/extension, not built-in |
+| Approval modes | Named modes: `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` (Shift+Tab to cycle), over allow/ask/deny rules - walked through in the [modes ladder](/course/claude-code/permissions-modes/modes-ladder/) | `untrusted` / `on-request` / `never` | `allow` / `ask` / `deny` | Auto-review / Allowlist / Run Everything | `default` / `autoApprove` / `autopilot` | None - YOLO by default; gates come from a container or extension |
+| Org/managed override | Yes (managed `settings.json`) | Yes (managed config) | Yes (managed config) | Yes (Team / Enterprise) | Yes (Business / Enterprise; content exclusions, MCP policy) | - |
 | Evaluation order | Deny > Ask > Allow | Sandbox blocks first, then approval gate | Last match wins | Sandbox first, then allow/denylist (with caveats) | Per-call gate unless auto-approve set | N/A |
-| Per-agent profile | No (single profile per session) | No (single mode per session) | **Yes** (per primary agent) | — | — | — |
+| Per-agent profile | No (single profile per session) | No (single mode per session) | **Yes** (per primary agent) | - | - | - |
 | "YOLO mode" | `bypassPermissions` mode (`--dangerously-skip-permissions`) | `danger-full-access` + `never` | All tools `allow` | "Run Everything" | `chat.tools.global.autoApprove` | The default posture |
 
 ## Translation: "make it stop asking"
@@ -73,7 +76,7 @@ Permissions are *coarse and declarative* — "Bash is ask, Read is allow." Hooks
 | Tool | How |
 |---|---|
 | Claude Code | Add `allow` rules for the tool pattern, or move `Bash(...)` out of `ask`. |
-| Codex | `--ask-for-approval never` (and pick a sandbox you trust) — the exact flag and config surface has moved across recent Codex releases, so confirm against your installed version. |
+| Codex | `--ask-for-approval never` (and pick a sandbox you trust) - the exact flag and config surface has moved across recent Codex releases, so confirm against your installed version. |
 | OpenCode | Set the relevant tool to `allow` on the active primary agent. |
 | Cursor | Switch auto-run mode to "Allowlist" with sandboxing enabled (or "Run Everything," with the usual warning). |
 | Copilot | Set `chat.permissions.default` to `autoApprove`, or flip specific `chat.tools.*.autoApprove` keys. |
@@ -82,7 +85,9 @@ Permissions are *coarse and declarative* — "Bash is ask, Read is allow." Hooks
 
 - **"Sandbox"** is a real OS-level isolation tier in Codex; in Claude Code and OpenCode the word is used loosely (or refers to Docker).
 - **"Approval"** in Codex is the *frequency* policy (ask/never); in Claude Code it's the *result* of an `ask` rule. Same word, different layer.
-- Codex's `on-failure` approval mode is deprecated — don't recommend it.
+- Codex's `on-failure` approval mode is deprecated - don't recommend it.
+
+You don't have to design the whole policy up front, and nobody does. Start from your tool's default posture and let the next session tell you what to change: the command you approved three times without reading becomes an allow rule, the one that made you flinch becomes an `ask`, and the handful you can name in advance as never-acceptable become `deny`. That last group is the only part worth writing before you've felt the friction, because it's the only part that has to hold when you're not watching.
 
 <UpstreamRefs
   links={[

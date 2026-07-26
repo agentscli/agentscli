@@ -1,6 +1,6 @@
 ---
 title: "Permissions: damage control, not security theater"
-description: "Pi runs YOLO by default — no sandbox, no approval prompts, full filesystem and shell access on every turn. Build the one gate stash actually needs: a rule file, a tool_call hook, and a hard-stop-vs-let-adapt choice for every violation."
+description: "Pi runs YOLO by default - no sandbox, no approval prompts, full filesystem and shell access on every turn. Build the one gate stash actually needs: a rule file, a tool_call hook, and a hard-stop-vs-let-adapt choice for every violation."
 sidebar:
   label: "Permissions · damage control"
 ---
@@ -8,14 +8,14 @@ sidebar:
 import AutonomyDial from '../../../../../components/interactive/AutonomyDial.tsx';
 
 :::caution[YOLO by default]
-Out of the box, Pi has **no permission-prompt gate**. No sandbox, no allow/ask/deny list, no confirmation dialog before a `bash` call or a `write`. If the model decides to run `rm -rf` or overwrite `.env`, it runs — nothing between the tool call and your filesystem. This is a deliberate stance, not a gap someone forgot to close: the design view is that most permission-prompting amounts to security theater, and that allow-listing individual commands doesn't scale to real work. Whether or not you buy that argument in general, you should at least *know* you're accepting it every time you point Pi at a repo — and decide for `stash`, specifically, whether that's the leash you want.
+Out of the box, Pi has **no permission-prompt gate**. No sandbox, no allow/ask/deny list, no confirmation dialog before a `bash` call or a `write`. If the model decides to run `rm -rf` or overwrite `.env`, it runs - nothing between the tool call and your filesystem. This is a deliberate stance, not a gap someone forgot to close: the design view is that most permission-prompting amounts to security theater, and that allow-listing individual commands doesn't scale to real work. Whether or not you buy that argument in general, you should at least *know* you're accepting it every time you point Pi at a repo - and decide for `stash`, specifically, whether that's the leash you want.
 :::
 
-For a repo you're still exploring, YOLO is arguably fine — worst case, `git checkout` undoes it. `stash` isn't that repo anymore. It has a SQLite database holding every article you've ever saved, and a `.env` with the tokens the fetch worker and search index depend on. Neither is in version control, and neither comes back from `git checkout`. You don't need Pi's entire permission model rebuilt from scratch — you need exactly the handful of things that would actually hurt, gated, and everything else left alone.
+For a repo you're still exploring, YOLO is arguably fine - worst case, `git checkout` undoes it. `stash` isn't that repo anymore. It has a SQLite database holding every article you've ever saved, and a `.env` with the tokens the fetch worker and search index depend on. Neither is in version control, and neither comes back from `git checkout`. You don't need Pi's entire permission model rebuilt from scratch - you need exactly the handful of things that would actually hurt, gated, and everything else left alone.
 
 ## The shape of the gate: a rule file plus one hook
 
-The community pattern for this is called damage control, and it's built entirely from primitives you already know: `pi.on("tool_call", ...)` and `pi.on("session_start", ...)`. On `session_start`, the extension loads a small rule file — typically `.pi/damage-control-rules.yaml`, falling back to `~/.pi/damage-control-rules.yaml` if the project doesn't have its own — into four buckets:
+The community pattern for this is called damage control, and it's built entirely from primitives you already know: `pi.on("tool_call", ...)` and `pi.on("session_start", ...)`. On `session_start`, the extension loads a small rule file - typically `.pi/damage-control-rules.yaml`, falling back to `~/.pi/damage-control-rules.yaml` if the project doesn't have its own - into four buckets:
 
 ```yaml
 # .pi/damage-control-rules.yaml
@@ -33,13 +33,13 @@ readOnlyPaths:
 
 bashToolPatterns:
   - pattern: "rm -rf"
-    reason: "Recursive delete — confirm what's actually being removed."
+    reason: "Recursive delete - confirm what's actually being removed."
     ask: true
   - pattern: "DROP TABLE|DELETE FROM"
     reason: "Direct SQL against stash.db bypasses the app entirely."
 ```
 
-Then a `tool_call` handler inspects every attempted call against those buckets before it runs. The bookkeeping around it — resolving tilde paths, walking every read/write/grep/bash tool type, loading the YAML from project or home directory — is exactly the kind of thing worth having Pi write rather than typing by hand. The part worth seeing directly is the non-obvious bit: matching a call against the right rule bucket, then routing the response through `ctx.ui.confirm` or straight to `ctx.abort()`:
+Then a `tool_call` handler inspects every attempted call against those buckets before it runs. The bookkeeping around it - resolving tilde paths, walking every read/write/grep/bash tool type, loading the YAML from project or home directory - is exactly the kind of thing worth having Pi write rather than typing by hand. The part worth seeing directly is the non-obvious bit: matching a call against the right rule bucket, then routing the response through `ctx.ui.confirm` or straight to `ctx.abort()`:
 
 ```typescript
 // .pi/extensions/damage-control.ts (excerpt)
@@ -73,35 +73,35 @@ pi.on("tool_call", async (event, ctx) => {
 
 A few things worth noticing, because they're what make this a *gate* rather than a suggestion:
 
-- Path matching is deliberately loose — directory-prefix match, glob turned into regex, substring fallback against both the absolute path and the cwd-relative one — but guarded against near-miss false positives. A rule targeting `stash.db` shouldn't quietly also block `stash.db.bak`, so the matcher checks that the character right after the match isn't itself part of a path or file name.
-- Every decision — allowed, asked, blocked — gets written to a durable log via `pi.appendEntry("damage-control-log", {...})`. That's not bookkeeping for its own sake: it's a replayable audit trail of every close call the agent had with your data, for free, because the session's own append-only log is where it lives.
-- An `ask: true` rule routes through `ctx.ui.confirm(title, message, { timeout: 30_000 })` — a real blocking dialog, not a fire-and-forget notification.
+- Path matching is deliberately loose - directory-prefix match, glob turned into regex, substring fallback against both the absolute path and the cwd-relative one - but guarded against near-miss false positives. A rule targeting `stash.db` shouldn't quietly also block `stash.db.bak`, so the matcher checks that the character right after the match isn't itself part of a path or file name.
+- Every decision - allowed, asked, blocked - gets written to a durable log via `pi.appendEntry("damage-control-log", {...})`. That's not bookkeeping for its own sake: it's a replayable audit trail of every close call the agent had with your data, for free, because the session's own append-only log is where it lives.
+- An `ask: true` rule routes through `ctx.ui.confirm(title, message, { timeout: 30_000 })` - a real blocking dialog, not a fire-and-forget notification.
 
-You don't need to write the surrounding path-matching and YAML-loading code yourself. Describe the gate to Pi in terms of the rule file above: *"Write a Pi extension at `.pi/extensions/damage-control.ts` that loads `.pi/damage-control-rules.yaml` (falling back to `~/.pi/damage-control-rules.yaml`) on `session_start`, then on every `tool_call` blocks writes/edits to `zeroAccessPaths`, blocks or asks-then-blocks on `bashToolPatterns` matches, and calls `ctx.abort()` on any hard block."* Review what comes back against the real shape above — specifically, that it calls `ctx.abort()` on the unconditional-block path (not just `ask`-then-deny), and that path matching doesn't false-positive on near-miss filenames like `stash.db.bak`.
+You don't need to write the surrounding path-matching and YAML-loading code yourself. Describe the gate to Pi in terms of the rule file above: *"Write a Pi extension at `.pi/extensions/damage-control.ts` that loads `.pi/damage-control-rules.yaml` (falling back to `~/.pi/damage-control-rules.yaml`) on `session_start`, then on every `tool_call` blocks writes/edits to `zeroAccessPaths`, blocks or asks-then-blocks on `bashToolPatterns` matches, and calls `ctx.abort()` on any hard block."* Review what comes back against the real shape above - specifically, that it calls `ctx.abort()` on the unconditional-block path (not just `ask`-then-deny), and that path matching doesn't false-positive on near-miss filenames like `stash.db.bak`.
 
 ## The pair: hard-stop vs. let-adapt
 
-Here's the part that separates this from a blunt on/off switch. An unconditional rule violation does two things: it returns `{ block: true, reason }`, *and* the handler calls `ctx.abort()` — which kills the entire in-flight turn, not just the one tool call. That's the right response to "the model is about to `DROP TABLE`": stop everything, don't let it try to route around the block.
+Here's the part that separates this from a blunt on/off switch. An unconditional rule violation does two things: it returns `{ block: true, reason }`, *and* the handler calls `ctx.abort()` - which kills the entire in-flight turn, not just the one tool call. That's the right response to "the model is about to `DROP TABLE`": stop everything, don't let it try to route around the block.
 
-But not every violation deserves that much force. Suppose the agent tries to read a file inside `migrations/` to check the schema before writing a new one — technically a read-only-path hit, but not remotely dangerous. Killing the whole turn over that is just friction. So the same rule engine ships a second variant, byte-for-byte identical except for one change: it never calls `ctx.abort()`, and the static `reason` string is replaced by a small decision procedure that tells the model *how* to keep going —
+But not every violation deserves that much force. Suppose the agent tries to read a file inside `migrations/` to check the schema before writing a new one - technically a read-only-path hit, but not remotely dangerous. Killing the whole turn over that is just friction. So the same rule engine ships a second variant, byte-for-byte identical except for one change: it never calls `ctx.abort()`, and the static `reason` string is replaced by a small decision procedure that tells the model *how* to keep going -
 
 ```typescript
 function continueFeedback(toolName: string, reason: string, destructive: boolean): string {
   if (destructive) {
-    return `${reason} STOP. Tell the user exactly what you need and why — do not invent a workaround.`;
+    return `${reason} STOP. Tell the user exactly what you need and why - do not invent a workaround.`;
   }
   return `${reason} Non-destructive: assume the data you can't see is present and correct, and continue without it.`;
 }
 ```
 
-Same hook, same rule file, same return channel — just tuned from a kill switch into steerable in-band guidance the model reasons over. In practice you want both files sitting next to each other: `damage-control.ts` guarding `stash.db` and `.env` with a hard `ctx.abort()`, and `damage-control-continue.ts` guarding the lower-stakes paths where you'd rather the agent adapt and keep working than stop and wait on you.
+Same hook, same rule file, same return channel - just tuned from a kill switch into steerable in-band guidance the model reasons over. In practice you want both files sitting next to each other: `damage-control.ts` guarding `stash.db` and `.env` with a hard `ctx.abort()`, and `damage-control-continue.ts` guarding the lower-stakes paths where you'd rather the agent adapt and keep working than stop and wait on you.
 
-Deciding which bucket a given path or command belongs in is exactly the judgment this dial makes explicit — ask it the same two questions for anything you're tempted to add to your own rule file:
+Deciding which bucket a given path or command belongs in is exactly the judgment this dial makes explicit - ask it the same two questions for anything you're tempted to add to your own rule file:
 
 <AutonomyDial client:visible />
 
-Map that back onto `stash`: `.env` and `stash.db` are irreversible with consequences that reach beyond your machine (they're what makes the service work for whoever else is using it) — that's the hard-stop bucket, no ask, no adapt. A stray read inside `migrations/` is undoable and stays local — that's exactly the shape `damage-control-continue.ts` was built for.
+Map that back onto `stash`: `.env` and `stash.db` are irreversible with consequences that reach beyond your machine (they're what makes the service work for whoever else is using it) - that's the hard-stop bucket, no ask, no adapt. A stray read inside `migrations/` is undoable and stays local - that's exactly the shape `damage-control-continue.ts` was built for.
 
-MCP is worth a one-line note here too: Pi has no MCP support in its core, and adding a server (even a well-behaved one) is itself something to weigh against this gate — every tool it registers spends context on every single turn, whether you use it or not. Damage control doesn't police that trade-off, but it's the same instinct: add capability deliberately, not because a hidden default let it through.
+MCP is worth a one-line note here too: Pi has no MCP support in its core, and adding a server (even a well-behaved one) is itself something to weigh against this gate - every tool it registers spends context on every single turn, whether you use it or not. Damage control doesn't police that trade-off, but it's the same instinct: add capability deliberately, not because a hidden default let it through.
 
-You've now got the sharpest guardrail stash needed. Next, a gate of a different kind — not what the agent's allowed to touch, but how many things it's allowed to be doing at once. [Next: task discipline](/course/pi/rebuild-the-defaults/task-discipline/).
+You've now got the sharpest guardrail stash needed. Next, a gate of a different kind - not what the agent's allowed to touch, but how many things it's allowed to be doing at once. [Next: task discipline](/course/pi/rebuild-the-defaults/task-discipline/).

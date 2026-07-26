@@ -17,7 +17,7 @@ const fmt = (n: number) =>
 function tokensPerWeek(item: (typeof skeItems)[number], home: SkeHome): number {
   if (home === 'rule') return item.tokens * SKE_SESSIONS_PER_WEEK;
   if (home === 'skill') {
-    // A fact filed as a skill has no moment of invocation — the body never loads.
+    // A fact filed as a skill has no moment of invocation - the body never loads.
     const bodyLoads = item.kind === 'fact' ? 0 : item.usesPerWeek;
     return SKE_STUB_TOKENS * SKE_SESSIONS_PER_WEEK + item.tokens * bodyLoads;
   }
@@ -69,19 +69,19 @@ export default function SkillEconomy() {
   let reading: string;
   if (misplaced.length === 0) {
     reading =
-      'Every piece is in its cheapest working home: the fact stays in view, the procedures wait behind a tiny stub, and the one-off never took a permanent slot. Same knowledge as the everything-in-rules version — at a fraction of the window cost, with nothing re-taught.';
+      'Every piece is in its cheapest working home: the fact stays in view, the procedures wait behind a tiny stub, and the one-off never took a permanent slot. Same knowledge as the everything-in-rules version - at a fraction of the window cost, with nothing re-taught.';
   } else if (deadFact) {
     reading =
-      'The dangerous one: a fact filed as a skill. It isn’t expensive — it just never loads, because facts don’t have a moment of invocation. The agent writes float code with the rule sitting one unfired call away.';
+      'The dangerous one: a fact filed as a skill. It isn’t expensive - it just never loads, because facts don’t have a moment of invocation. The agent writes float code with the rule sitting one unfired call away.';
   } else if (idleRent) {
     reading =
       'The procedures are paying rent in every session for the few that use them. Move them behind a skill stub: the knowledge stays one invocation away, and the window cost collapses.';
   } else if (humanMemory) {
     reading =
-      'Re-narrating a stable procedure keeps you as its memory. The tokens are similar to a skill — the difference is who holds the steps, and what happens the week you’re rushed.';
+      'Re-narrating a stable procedure keeps you as its memory. The tokens are similar to a skill - the difference is who holds the steps, and what happens the week you’re rushed.';
   } else {
     reading =
-      'Close — the one-off is the odd piece out. Knowledge that expires with the task shouldn’t get a permanent slot anywhere; just say it in the prompt.';
+      'Close - the one-off is the odd piece out. Knowledge that expires with the task shouldn’t get a permanent slot anywhere; just say it in the prompt.';
   }
 
   return (
@@ -186,10 +186,10 @@ export default function SkillEconomy() {
       </div>
 
       <p className="ske-footnote">
-        Numbers are illustrative — the ratios are the point. Over{' '}
+        Numbers are illustrative - the ratios are the point. Over{' '}
         {SKE_SESSIONS_PER_WEEK} sessions a week: a rule pays full size every
         session, a skill pays a ~{SKE_STUB_TOKENS}-token stub plus its body only
-        when it fires, a prompt pays only when said — but you’re the one saying
+        when it fires, a prompt pays only when said - but you’re the one saying
         it.
       </p>
     </div>

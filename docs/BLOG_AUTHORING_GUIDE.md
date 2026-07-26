@@ -154,7 +154,7 @@ Displays code/terminal output with macOS-style window decorations.
 
 ```astro
 <TerminalBlock
-  title="bash — agents-cli"
+  title="bash - agents-cli"
   lines={[
     { type: "command", content: "agents-cli deploy --env production" },
     { type: "success", content: "Analyzing project structure..." },
@@ -347,7 +347,7 @@ import AgentCallout from "../components/AgentCallout.astro";
 
 ```astro
 <TerminalBlock
-  title="bash — deploy"
+  title="bash - deploy"
   lines={[
     { type: "command", content: "agents-cli deploy --env production" },
     { type: "success", content: "Building application..." },

@@ -1,36 +1,36 @@
 ---
 title: Make permissions hold when no one is there to approve
-description: "Interactive runs lean on you to answer the prompt. Headless runs can't — so pre-approved allow rules, dontAsk mode, and deny rules become the entire safety story."
+description: "Interactive runs lean on you to answer the prompt. Headless runs can't - so pre-approved allow rules, dontAsk mode, and deny rules become the entire safety story."
 sidebar:
   label: "Headless permissions · dontAsk, allow, deny"
 ---
 
-Here's where the discipline from earlier in the course stops being optional. The moment your review pass runs from a script instead of your keyboard, the friendly `y/n` prompt has no one to answer it — and what happens at that prompt is the difference between a run that finishes and a run that either hangs, dies, or quietly does too much. Everything you learned in [Permissions & modes](/course/claude-code/permissions-modes/) was rehearsal for this.
+Here's where the discipline from earlier in the course stops being optional. The moment your review pass runs from a script instead of your keyboard, the friendly `y/n` prompt has no one to answer it - and what happens at that prompt is the difference between a run that finishes and a run that either hangs, dies, or quietly does too much. Everything you learned in [Permissions & modes](/course/claude-code/permissions-modes/) was rehearsal for this.
 
 ## The prompt has nowhere to go
 
-In an interactive session, when the agent wants to run a command outside its allow rules, it stops and asks you. Headless, there is no "you." So what does the prompt do? The honest answer is: nothing good. An action the run isn't pre-authorized for doesn't pause politely — in `-p` mode the run aborts when it hits something it can't get approval for. That's actually the *safe* failure: a dead job is better than a job that waved itself through. The job of this lesson is to make sure the run has exactly the permissions it needs so it finishes for the right reason, and nothing more so it can't be turned against you.
+In an interactive session, when the agent wants to run a command outside its allow rules, it stops and asks you. Headless, there is no "you." So what does the prompt do? The honest answer is: nothing good. An action the run isn't pre-authorized for doesn't pause politely - in `-p` mode the run aborts when it hits something it can't get approval for. That's actually the *safe* failure: a dead job is better than a job that waved itself through. The job of this lesson is to make sure the run has exactly the permissions it needs so it finishes for the right reason, and nothing more so it can't be turned against you.
 
 There are two layers, and you want both.
 
 ## Layer one: grant exactly what the job needs
 
-The narrow tool to use is `--allowedTools` — a list of tools, or specific commands, the run may use without asking. You saw it in the [last lesson](/course/claude-code/automation/headless/); now it's load-bearing. The same [permission rule syntax](/course/claude-code/permissions-modes/rules/) you used interactively applies, including command-level scoping:
+The narrow tool to use is `--allowedTools` - a list of tools, or specific commands, the run may use without asking. You saw it in the [last lesson](/course/claude-code/automation/headless/); now it's load-bearing. The same [permission rule syntax](/course/claude-code/permissions-modes/rules/) you used interactively applies, including command-level scoping:
 
 ```text
 git diff main | claude -p "Review this diff for payments regressions." \
   --allowedTools "Read,Bash(npm test),Bash(git diff *)"
 ```
 
-`Bash(npm test)` lets it run the suite; `Bash(git diff *)` lets it inspect changes; nothing else gets through. The trailing ` *` is prefix matching — note the space, which keeps `git diff *` from also matching `git diff-index`. This is the [rules lesson](/course/claude-code/permissions-modes/rules/) doing exactly what it was built for, except now there's no human backstop if you scope it too loosely.
+`Bash(npm test)` lets it run the suite; `Bash(git diff *)` lets it inspect changes; nothing else gets through. The trailing ` *` is prefix matching - note the space, which keeps `git diff *` from also matching `git diff-index`. This is the [rules lesson](/course/claude-code/permissions-modes/rules/) doing exactly what it was built for, except now there's no human backstop if you scope it too loosely.
 
 The general rule for unattended runs: **pre-approve the boring, specific things the job actually does, and nothing broad.** A blanket `Bash(*)` on a machine you can't watch is how a hijacked run runs anything it likes.
 
 ## Layer two: a mode that denies by default
 
-Allow rules say what's permitted. But what about everything you *didn't* list? Interactively, that prompts. Headless, you want a baseline that's decisive instead of hanging — and that baseline is **`dontAsk` mode**.
+Allow rules say what's permitted. But what about everything you *didn't* list? Interactively, that prompts. Headless, you want a baseline that's decisive instead of hanging - and that baseline is **`dontAsk` mode**.
 
-`dontAsk` auto-denies every tool call that would otherwise prompt. Only actions matching your `permissions.allow` rules and the built-in read-only command set can run; anything else is refused outright, no prompt, no wait. That makes the run **fully non-interactive** — exactly what a CI pipeline or a nightly job needs. You set it with the flag, and it pairs naturally with your allow list:
+`dontAsk` auto-denies every tool call that would otherwise prompt. Only actions matching your `permissions.allow` rules and the built-in read-only command set can run; anything else is refused outright, no prompt, no wait. That makes the run **fully non-interactive** - exactly what a CI pipeline or a nightly job needs. You set it with the flag, and it pairs naturally with your allow list:
 
 ```text
 claude -p "Run the payments suite and report regressions" \
@@ -40,11 +40,11 @@ claude -p "Run the payments suite and report regressions" \
 
 The mental model: `--allowedTools` is the guest list, `dontAsk` is the bouncer who turns away everyone not on it without coming to find you first. `dontAsk` is set via the `--permission-mode` flag and is documented in the [permission-modes reference](https://code.claude.com/docs/en/permission-modes); it never appears in the interactive `Shift+Tab` cycle precisely because it's built for scripts, not sessions.
 
-This is the right tool for our job. Resist the temptation to reach instead for `--dangerously-skip-permissions` (bypass mode) just to make the prompts go away — as you saw [when we covered going hands-off](/course/claude-code/permissions-modes/autonomous/), bypass removes the safety checks entirely and belongs only inside a throwaway container. For a CI job touching your real repo, `dontAsk` plus a tight allow list is the combination that's both non-interactive *and* contained.
+This is the right tool for our job. Resist the temptation to reach instead for `--dangerously-skip-permissions` (bypass mode) just to make the prompts go away - as you saw [when we covered going hands-off](/course/claude-code/permissions-modes/autonomous/), bypass removes the safety checks entirely and belongs only inside a throwaway container. For a CI job touching your real repo, `dontAsk` plus a tight allow list is the combination that's both non-interactive *and* contained.
 
 ## Layer three: the wall that can't be loosened
 
-There's one more piece, and it's the one that lets you sleep. Allow rules and modes describe what the run *may* do. A [deny rule](/course/claude-code/permissions-modes/deny/) describes what it may *never* do — in any mode, regardless of what else is granted. For an unattended run, that asymmetry is everything:
+There's one more piece, and it's the one that lets you sleep. Allow rules and modes describe what the run *may* do. A [deny rule](/course/claude-code/permissions-modes/deny/) describes what it may *never* do - in any mode, regardless of what else is granted. For an unattended run, that asymmetry is everything:
 
 ```text
 // .claude/settings.json
@@ -59,14 +59,14 @@ There's one more piece, and it's the one that lets you sleep. Allow rules and mo
 }
 ```
 
-A `Read` deny means a secret can't enter the agent's context at all — so a nightly job that gets a malicious instruction smuggled into a file it reads still can't exfiltrate your keys, because it was never allowed to read them. That guarantee held interactively too, but interactively you were also there as a second line of defense. Headless, the deny rule *is* the defense. This is the [deny lesson](/course/claude-code/permissions-modes/deny/) graduating from good hygiene to non-negotiable.
+A `Read` deny means a secret can't enter the agent's context at all - so a nightly job that gets a malicious instruction smuggled into a file it reads still can't exfiltrate your keys, because it was never allowed to read them. That guarantee held interactively too, but interactively you were also there as a second line of defense. Headless, the deny rule *is* the defense. This is the [deny lesson](/course/claude-code/permissions-modes/deny/) graduating from good hygiene to non-negotiable.
 
 ## The shape of a safe unattended grant
 
 Put the three layers together and you have the permission posture every job in the rest of this chapter will use:
 
-- **Deny rules** wall off the paths a leak or overwrite would actually hurt — set once, hold always.
+- **Deny rules** wall off the paths a leak or overwrite would actually hurt - set once, hold always.
 - **`dontAsk`** makes the run refuse-by-default instead of hang-by-default.
 - **A tight `--allowedTools`** opens just the specific commands the job needs to finish.
 
-High floor, low ceiling — the exact posture you built interactively, now with the human removed and the rules carrying the full weight. With this in place, you can hand the run to a machine and trust it to fail closed. The first machine we'll hand it to is [GitHub's, on every pull request](/course/claude-code/automation/ci/).
+High floor, low ceiling - the exact posture you built interactively, now with the human removed and the rules carrying the full weight. With this in place, you can hand the run to a machine and trust it to fail closed. The first machine we'll hand it to is [GitHub's, on every pull request](/course/claude-code/automation/ci/).

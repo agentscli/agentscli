@@ -4,11 +4,11 @@ import './terminal-replay.css';
 import { useWidgetFrame } from './widget-frame';
 
 /**
- * TerminalReplay — the script-driven-terminal engine, not a widget itself.
+ * TerminalReplay - the script-driven-terminal engine, not a widget itself.
  *
  * A scene is a `TrScript`: a scripted CLI session that auto-plays in a fake
  * terminal (typed user prompts, agent/tool lines) beside a live state panel
- * (labelled blocks + a running annotation, plus an optional capacity meter —
+ * (labelled blocks + a running annotation, plus an optional capacity meter -
  * in the panel or as a full-width top strip with a legend). Block values and
  * the meter are optional: scenes that aren't about filling a window can show
  * unnumbered state. The script can pause at one decision point and branch on
@@ -19,7 +19,7 @@ import { useWidgetFrame } from './widget-frame';
  * tapping, or focusing) a terminal line highlights the state blocks its beat
  * produced and recalls that beat's annotation; hovering a block highlights
  * the lines that caused it. The line↔block mapping is derived from the
- * script's beat structure — scenes get inspection for free.
+ * script's beat structure - scenes get inspection for free.
  *
  * To add a new scene: write a `<scene>-data.ts` exporting a TrScript, plus a
  * thin named wrapper component that renders <TerminalReplay script={...} />
@@ -40,7 +40,7 @@ export interface TrBlock {
   label: string;
   /**
    * in the script's unit (e.g. thousands of tokens); omit for blocks whose
-   * size isn't the point — they show no number and don't feed the meter
+   * size isn't the point - they show no number and don't feed the meter
    */
   value?: number;
 }
@@ -86,13 +86,13 @@ export interface TrScript {
   panelTitle: string;
   /**
    * meter capacity, in `unit`; omit for scenes that aren't about filling
-   * something up — no meter or running total renders at all
+   * something up - no meter or running total renders at all
    */
   capacity?: number;
   /** unit suffix for totals, e.g. 'k' */
   unit?: string;
   /**
-   * legend names per color slot — segment tooltips, plus the legend row when
+   * legend names per color slot - segment tooltips, plus the legend row when
    * the meter sits on top
    */
   slots?: Record<TrSlot, string>;
@@ -176,13 +176,13 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
   const lineRefs = useRef(new Map<number, HTMLDivElement>());
   const blockRefs = useRef(new Map<number, HTMLLIElement>());
   // Move focus to the decision bar only when playback was user-initiated
-  // (restart / skip) — never on first autoplay, so we don't steal focus from
+  // (restart / skip) - never on first autoplay, so we don't steal focus from
   // a reader mid-page.
   const focusDecisionRef = useRef(false);
   const uid = useId();
   const decisionPromptId = `${uid}-decision`;
 
-  // Autostart on hydration — with client:visible that means first scroll
+  // Autostart on hydration - with client:visible that means first scroll
   // into view. Reduced motion skips playback and lands on the decision.
   useEffect(() => {
     if (prefersReducedMotion()) {
@@ -285,7 +285,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
   }, [lines.length, chars, phase]);
 
   // When the decision bar appears, move focus to it so screen-reader and
-  // keyboard users hear the question — but only if playback was user-initiated
+  // keyboard users hear the question - but only if playback was user-initiated
   // (restart / skip), never on first autoplay.
   useEffect(() => {
     if (phase === 'decision' && focusDecisionRef.current) {
@@ -305,7 +305,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
   };
 
   // Indices (into `lines`) of the transcript lines that are inspectable right
-  // now — the roving group's members.
+  // now - the roving group's members.
   const activeLineIdx = canInspect
     ? lines.reduce<number[]>((acc, { beat }, i) => {
         if (inspectable.has(beat)) acc.push(i);
@@ -445,7 +445,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
         }
       : {};
 
-  // Tapping a block also brings its lines into view — the stacked mobile
+  // Tapping a block also brings its lines into view - the stacked mobile
   // layout can't rely on side-by-side glancing.
   const revealLines = (beat: number) => {
     termRef.current
@@ -523,7 +523,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
             key={slot}
             className={`tr-seg ${cls}`}
             style={{ width: `${(value / cap) * 100}%`, ...style }}
-            title={`${script.slots?.[slot] ?? slot} — ${value}${unit}`}
+            title={`${script.slots?.[slot] ?? slot} - ${value}${unit}`}
           />
         );
       })}
@@ -670,7 +670,7 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
 
       {canInspect && (
         <p className="tr-hint" aria-hidden="true">
-          tap or hover any terminal line — or any block — to trace what caused what
+          tap or hover any terminal line - or any block - to trace what caused what
         </p>
       )}
 

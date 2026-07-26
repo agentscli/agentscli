@@ -1,6 +1,6 @@
 ---
 title: Subagents
-description: Isolated worker contexts spawned by a parent — what they share, what they don't, and how each CLI shapes them.
+description: Isolated worker contexts spawned by a parent - what they share, what they don't, and how each CLI shapes them.
 ---
 
 import ToolTabs from '../../../components/ToolTabs.astro';
@@ -8,26 +8,28 @@ import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 import SubagentFanout from '../../../components/interactive/SubagentFanout.tsx';
 import StackDiagram from '../../../components/StackDiagram.astro';
 
-You asked the agent to debug a flaky test. Forty messages later, it's read seventeen files, tried four hypotheses, run the test six times with different env vars, and finally pinned it down. Now you want to actually fix the test and ship the feature you originally came in to build — and your context window is *full of debug noise*. Stack traces. Trial fixes. Failed reproductions. The agent is now somewhat less coherent than it was an hour ago, because half its context is rabbit-hole.
+You asked the agent to debug a flaky test. Forty messages later, it's read seventeen files, tried four hypotheses, run the test six times with different env vars, and finally pinned it down. Now you want to actually fix the test and ship the feature you originally came in to build - and your context window is *full of debug noise*. Stack traces. Trial fixes. Failed reproductions. The agent is now somewhat less coherent than it was an hour ago, because half its context is rabbit-hole.
 
 The cost wasn't the debugging. It was that the debugging happened *in the same window as the rest of your work*. Everything the agent learned to find the bug is now polluting the context it needs to write the fix.
 
-That's the gap subagents close. A **subagent** is an isolated worker the main agent spawns to do a discrete task — it runs its own loop, in a fresh context window that doesn't touch yours, and when it finishes the parent receives only a summary. Hand the debug task to one: it spawns fresh, burns through whatever context it needs, and returns *"the bug is in `auth/session.ts:142`, the session token is being mutated by the middleware before the test asserts on it."* One sentence back. Forty messages of investigation: gone. Whatever the subagent read, tried, backtracked through, or threw away never lands in your conversation — your main context stays clean for the actual fix.
+A **subagent** is an isolated worker the main agent spawns to do a discrete task - it runs its own loop, in a fresh context window that doesn't touch yours, and when it finishes the parent receives only a summary.
+
+Hand the debug task to one: it spawns fresh, burns through whatever context it needs, and returns *"the bug is in `auth/session.ts:142`, the session token is being mutated by the middleware before the test asserts on it."* One sentence back. Forty messages of investigation: gone. Whatever the subagent read, tried, backtracked through, or threw away never lands in your conversation - your main context stays clean for the actual fix.
 
 **Real-world examples of what teams use subagents for:**
 
-- **Codebase exploration** — "find every place we call the auth API and how each one handles errors." Dozens of file reads collapse into a one-paragraph map.
-- **Code review** — give a subagent the diff plus a checklist (security, perf, naming) and let it return findings. The 200-line diff and 50 lines of analysis don't enter your conversation.
-- **Verification / audit** — "go check that every endpoint in the new router has a corresponding test." Returns a list of gaps, not a tour of the test suite.
-- **Parallel work** — spawn three subagents at once: one writes the migration, one writes the seed data, one drafts the rollback. Merge results.
-- **Specialised personas** — a "security reviewer" subagent with a tighter tool surface (read-only, no shell) and a system prompt focused on threat modelling.
-- **Research and synthesis** — "read the last six release notes and summarise the breaking changes we need to handle." Returns the summary, not the raw notes.
+- **Codebase exploration** - "find every place we call the auth API and how each one handles errors." Dozens of file reads collapse into a one-paragraph map.
+- **Code review** - give a subagent the diff plus a checklist (security, perf, naming) and let it return findings. The 200-line diff and 50 lines of analysis don't enter your conversation.
+- **Verification / audit** - "go check that every endpoint in the new router has a corresponding test." Returns a list of gaps, not a tour of the test suite.
+- **Parallel work** - spawn three subagents at once: one writes the migration, one writes the seed data, one drafts the rollback. Merge results.
+- **Specialised personas** - a "security reviewer" subagent with a tighter tool surface (read-only, no shell) and a system prompt focused on threat modelling.
+- **Research and synthesis** - "read the last six release notes and summarise the breaking changes we need to handle." Returns the summary, not the raw notes.
 
 The test: if a task would generate a lot of intermediate noise but you only care about the final answer, it's a subagent task.
 
 ## What "isolated context" actually looks like
 
-The subagent's defining property is that it runs in its own context window — separate from yours. Picture two windows:
+The subagent's defining property is that it runs in its own context window - separate from yours. Picture two windows:
 
 <StackDiagram
   panels={[
@@ -50,13 +52,13 @@ The subagent's defining property is that it runs in its own context window — s
   ]}
 />
 
-The seventeen reads, the four hypotheses, the six test runs — none of them enter your parent window. The parent receives the one-sentence summary and nothing else. Whatever the subagent learned to *find* the answer is gone the moment it returns; whatever you needed to *act* on the answer is still there, uncluttered.
+The parent receives the one-sentence summary and nothing else. Whatever the subagent learned to *find* the answer is gone the moment it returns; whatever you needed to *act* on the answer is still there, uncluttered.
 
-The trade-off is also right there in the picture. The subagent starts with no shared history. It doesn't know what you discussed earlier, what you've already ruled out, what you care about. You have to brief it in the task description — the more precisely, the better. Subagents shine for self-contained work; they're a poor fit for tasks that need ongoing back-and-forth with you, because every "wait, also…" is a fresh subagent with no memory of the last one.
+The trade-off is also right there in the picture. The subagent starts with no shared history. It doesn't know what you discussed earlier, what you've already ruled out, what you care about. You have to brief it in the task description - the more precisely, the better. Subagents shine for self-contained work; they're a poor fit for tasks that need ongoing back-and-forth with you, because every "wait, also…" is a fresh subagent with no memory of the last one.
 
 ### See it at scale
 
-One delegation keeps a window clean; fan-out is where subagents change what's *possible*. The same audit — "find dead code across `api/`, `ui/`, and `tests/`" — run both ways. Token counts are illustrative; toggle and watch your window.
+One delegation keeps a window clean; fan-out is where subagents change what's *possible*. The same audit - "find dead code across `api/`, `ui/`, and `tests/`" - run both ways. Token counts are illustrative; toggle and watch your window.
 
 <SubagentFanout client:visible />
 
@@ -68,14 +70,14 @@ You're mid-flow on a feature when CI flags a flaky test. Without a subagent:
 you:       why is auth/session.test.ts flaky on CI?
 agent:     [reads session.test.ts]
 agent:     [reads session.ts]
-agent:     [runs the test locally — passes]
+agent:     [runs the test locally - passes]
 agent:     [reads the test runner config]
 agent:     [reads the middleware]
-agent:     [tries a hypothesis: timezone? — runs again, still passes]
+agent:     [tries a hypothesis: timezone? - runs again, still passes]
 agent:     [reads the CI workflow file]
-agent:     [tries another hypothesis: ordering? — runs in --random]
+agent:     [tries another hypothesis: ordering? - runs in --random]
 ... 30 messages later ...
-agent:     found it — middleware mutates the session token.
+agent:     found it - middleware mutates the session token.
 you:       great, now back to the feature.
 agent:     [main context now full of debugging trail; coherence dropping]
 ```
@@ -85,7 +87,7 @@ With a subagent:
 ```text
 you:       spawn a subagent: investigate why auth/session.test.ts is
            flaky on CI, return the root cause in one paragraph.
-agent:     [spawns subagent — fresh context]
+agent:     [spawns subagent - fresh context]
                        ... 30 messages happen elsewhere ...
 subagent:  Root cause: middleware in src/auth/middleware.ts:64
            mutates session.token before the test asserts on it.
@@ -118,20 +120,24 @@ A subagent returns once. It doesn't continue the conversation. If you need a bac
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Built-in subagents | None by default | `default`, `worker`, `explorer` | `general`, `explore`, `scout` | None by default | None named — native `runSubagent`/`agent` tool spawns isolated subagents | None |
-| Custom subagent path | `.claude/agents/*.md` | `.codex/agents/*.toml` | `.opencode/agents/*.md` | `.cursor/agents/*.md` (also reads `.claude/agents/`, `.codex/agents/`) | `.github/agents/*.agent.md` (also reads `.claude/agents/`) — any custom agent doubles as a subagent | No native primitive — via extension/package, or spawn a second `pi` process (e.g. in `tmux`) |
+| Built-in subagents | None by default | `default`, `worker`, `explorer` | `general`, `explore`, `scout` | None by default | None named - native `runSubagent`/`agent` tool spawns isolated subagents | None |
+| Custom subagent path | `.claude/agents/*.md` | `.codex/agents/*.toml` | `.opencode/agents/*.md` | `.cursor/agents/*.md` (also reads `.claude/agents/`, `.codex/agents/`) | `.github/agents/*.agent.md` (also reads `.claude/agents/`) - any custom agent doubles as a subagent | No native primitive - via extension/package, or spawn a second `pi` process (e.g. in `tmux`) |
 | Invocation | Via `Agent` tool from parent | Natural-language dispatch from parent | `@<name>` mention | Auto-delegation, `/name`, or natural-language mention | Agent-initiated via `runSubagent`; not typically user-invoked by name | Whatever the extension/package defines; or manual (separate `pi` session) |
-| Tool restriction | Frontmatter `tools:` field | No explicit allowlist field; shape via `mcp_servers` / `sandbox_mode` | `permission` (preferred) or deprecated `tools` | Frontmatter `readonly` flag | Frontmatter `tools:` (own surface) and `agents:` (allowed delegates) | — |
-| Skill preload | Frontmatter `skills:` field | TOML `skills.config` field | Via `permission.skill` rules | — | — | — |
+| Tool restriction | Frontmatter `tools:` field | No explicit allowlist field; shape via `mcp_servers` / `sandbox_mode` | `permission` (preferred) or deprecated `tools` | Frontmatter `readonly` flag | Frontmatter `tools:` (own surface) and `agents:` (allowed delegates) | - |
+| Skill preload | Frontmatter `skills:` field | TOML `skills.config` field | Via `permission.skill` rules | - | - | - |
 | Inherits parent history | No | No | No | No | No | N/A (no built-in concept) |
-| Peer-to-peer coordination | Agent teams (experimental) | Via Agents SDK | — | — | Custom-agent handoffs | — |
+| Peer-to-peer coordination | Agent teams (experimental) | Via Agents SDK | - | - | Custom-agent handoffs | - |
 
 ## Name collisions
 
-- **"Agent" vs "subagent"** — in OpenCode, "agent" alone usually means a *primary agent* (`build`, `plan`) you switch into with Tab. "Subagent" means a worker the primary spawns. In Claude Code, "agent" colloquially means a subagent unless someone says "agent team." In Copilot, a **custom agent** (`.agent.md`) is dual-purpose: a *persona* you can pick from the chat dropdown, or a subagent another agent delegates to via `runSubagent` — same file, two invocation paths, not two separate primitives.
-- **Subagent vs Agent team (Claude Code)** — a subagent returns a summary; an agent team is a set of independent peer sessions that communicate directly and share a task list.
+- **"Agent" in OpenCode** - usually means a *primary agent* (`build`, `plan`) you switch into with Tab. "Subagent" is reserved for a worker the primary spawns.
+- **"Agent" in Claude Code** - colloquially means a subagent, unless someone says "agent team."
+- **"Custom agent" in Copilot** - one `.agent.md` file, dual-purpose: a *persona* you pick from the chat dropdown, or a subagent another agent delegates to via `runSubagent`. Two invocation paths, not two separate primitives.
+- **Subagent vs Agent team (Claude Code)** - a subagent returns a summary; an agent team is a set of independent peer sessions that communicate directly and share a task list.
 - Don't confuse the Codex CLI's *child agents* with the OpenAI **Agents SDK**, which is a separate framework for production multi-agent orchestration.
-- **Cursor Cloud Agents** (formerly *Background Agents*) and **Copilot Coding Agent** both run in isolated remote sandboxes and return a PR — they're closer to "async hand-off" than "in-session subagent." Treat them as a separate primitive when comparing.
+- **Cursor Cloud Agents** (formerly *Background Agents*) and **Copilot Coding Agent** both run in isolated remote sandboxes and return a PR - they're closer to "async hand-off" than "in-session subagent." Treat them as a separate primitive when comparing.
+
+Next time a task is about to fill your window with work you'll never look at again, ask what you actually need back. If the answer is a paragraph rather than the trail that produced it, delegate it - and write the brief, because a subagent starts with none of what you already know. That discarded window is the [isolated cost profile](/foundations/how-agents-work/#three-cost-profiles-to-keep-in-mind) in practice: paid for once, never carried.
 
 <UpstreamRefs
   links={[

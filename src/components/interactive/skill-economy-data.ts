@@ -1,10 +1,10 @@
 /**
- * Items for the skill-economy widget. Evergreen — no vendor facts.
+ * Items for the skill-economy widget. Evergreen - no vendor facts.
  * The model: a rules-file line pays its tokens in the window every session;
  * a skill pays a small stub (name + description) every session and its body
  * only in the sessions that invoke it; a plain prompt pays nothing until the
- * moment it's needed — and again every time after that. Token numbers are
- * illustrative and coarse on purpose — the shape is the point.
+ * moment it's needed - and again every time after that. Token numbers are
+ * illustrative and coarse on purpose - the shape is the point.
  */
 
 /** Sessions assumed per working week, for the ledger arithmetic */
@@ -31,7 +31,7 @@ export interface SkeItem {
   label: string;
   /** The knowledge itself, as you'd write it down */
   text: string;
-  /** What kind of knowledge this is — drives the cost model */
+  /** What kind of knowledge this is - drives the cost model */
   kind: SkeKind;
   /** Human-readable cadence, shown next to the label */
   cadence: string;
@@ -54,7 +54,7 @@ export const skeItems: SkeItem[] = [
   {
     id: 'money-cents',
     label: 'cents, not floats',
-    text: 'Money is integer cents — `amountCents: number`, never floats.',
+    text: 'Money is integer cents - `amountCents: number`, never floats.',
     kind: 'fact',
     cadence: 'fact · matters most sessions',
     tokens: 22,
@@ -64,24 +64,24 @@ export const skeItems: SkeItem[] = [
       rule: {
         chip: 'right home',
         tone: 'good',
-        why: 'Twenty-two tokens a session and the float bug is extinct. A fact the agent must hold while writing any code has to be in view before it starts — that’s the rules file.',
+        why: 'Twenty-two tokens a session and the float bug is extinct. A fact the agent must hold while writing any code has to be in view before it starts - that’s the rules file.',
       },
       skill: {
         chip: 'never fires',
         tone: 'warn',
-        why: 'A fact isn’t an occasion. There’s no moment where the agent thinks “now I should invoke the money rule” — it just writes `19.99` with the skill sitting unloaded. Facts don’t fire; they have to already be there.',
+        why: 'A fact isn’t an occasion. There’s no moment where the agent thinks “now I should invoke the money rule” - it just writes `19.99` with the skill sitting unloaded. Facts don’t fire; they have to already be there.',
       },
       prompt: {
         chip: 're-taught forever',
         tone: 'warn',
-        why: 'You’ll say “cents, not floats” in every session that touches money — and the session you forget is the one that ships a float.',
+        why: 'You’ll say “cents, not floats” in every session that touches money - and the session you forget is the one that ships a float.',
       },
     },
   },
   {
     id: 'release-checklist',
     label: 'release checklist',
-    text: 'The release ritual: bump the version, regenerate the changelog, tag, build, smoke-test — fifteen steps in a fixed order.',
+    text: 'The release ritual: bump the version, regenerate the changelog, tag, build, smoke-test - fifteen steps in a fixed order.',
     kind: 'procedure',
     cadence: 'procedure · runs ~2×/week',
     tokens: 1200,
@@ -91,7 +91,7 @@ export const skeItems: SkeItem[] = [
       rule: {
         chip: 'idle rent',
         tone: 'warn',
-        why: 'Fifteen steps loaded into every session to be used twice a week. The other eight sessions pay 1.2k tokens for a procedure that never runs — bulk that competes with your real rules for attention.',
+        why: 'Fifteen steps loaded into every session to be used twice a week. The other eight sessions pay 1.2k tokens for a procedure that never runs - bulk that competes with your real rules for attention.',
       },
       skill: {
         chip: 'right home',
@@ -101,7 +101,7 @@ export const skeItems: SkeItem[] = [
       prompt: {
         chip: 'you’re the memory',
         tone: 'warn',
-        why: 'Pasting the steps costs about what the skill costs in tokens — but now you hold the checklist, and the step you skip under deadline is the one that bites.',
+        why: 'Pasting the steps costs about what the skill costs in tokens - but now you hold the checklist, and the step you skip under deadline is the one that bites.',
       },
     },
   },
@@ -128,7 +128,7 @@ export const skeItems: SkeItem[] = [
       prompt: {
         chip: 'you’re the memory',
         tone: 'warn',
-        why: 'Every other month you’ll reconstruct the expand-backfill-contract dance from memory — and the rollback plan is the part that gets dropped.',
+        why: 'Every other month you’ll reconstruct the expand-backfill-contract dance from memory - and the rollback plan is the part that gets dropped.',
       },
     },
   },
@@ -150,7 +150,7 @@ export const skeItems: SkeItem[] = [
       skill: {
         chip: 'menu clutter',
         tone: 'warn',
-        why: 'A skill for a situation that happens once. It never fires again — but its stub sits on the menu in every session from now on.',
+        why: 'A skill for a situation that happens once. It never fires again - but its stub sits on the menu in every session from now on.',
       },
       prompt: {
         chip: 'right home',

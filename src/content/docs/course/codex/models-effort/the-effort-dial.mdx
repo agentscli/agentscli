@@ -5,17 +5,17 @@ sidebar:
   label: "the effort dial · think as hard as the task earns"
 ---
 
-The first job of the afternoon is the smallest design decision you'll make all week, because it isn't one: `budgetcli` needs a plain accounts endpoint — list, create, read, delete — and the codebase already has two other resources built exactly this way. There's no architecture to invent, no fork to weigh, nothing to reason about. Running the agent at deep reasoning to copy an established pattern is paying for thinking the task doesn't contain. The right move is to drop the effort *before* you start, and the dial for that is `model_reasoning_effort`.
+The first job of the afternoon is the smallest design decision you'll make all week, because it isn't one: `budgetcli` needs a plain accounts endpoint - list, create, read, delete - and the codebase already has two other resources built exactly this way. There's no architecture to invent, no fork to weigh, nothing to reason about. Running the agent at deep reasoning to copy an established pattern is paying for thinking the task doesn't contain. The right move is to drop the effort *before* you start, and the dial for that is `model_reasoning_effort`.
 
 ## What the effort dial controls
 
-Reasoning effort is how much the agent works a problem out *before* it answers — considering approaches, ruling things out, planning the change — as opposed to answering straight from the prompt. Codex exposes that as a single setting, `model_reasoning_effort`, with five levels:
+Reasoning effort is how much the agent works a problem out *before* it answers - considering approaches, ruling things out, planning the change - as opposed to answering straight from the prompt. Codex exposes that as a single setting, `model_reasoning_effort`, with five levels:
 
 ```text
 minimal → low → medium → high → xhigh        # default: medium
 ```
 
-Lower means the agent answers faster and spends fewer tokens deliberating; higher means it spends more of its budget thinking on the steps that actually benefit from it. The default sits at `medium` — a sensible middle gear — and the skill is knowing when to move off it. (`xhigh` is the deepest level and is model-dependent; not every model exposes it. The allowed values and that caveat live in the [config reference](https://developers.openai.com/codex/config-reference) — read it rather than trusting a remembered list.)
+Lower means the agent answers faster and spends fewer tokens deliberating; higher means it spends more of its budget thinking on the steps that actually benefit from it. The default sits at `medium` - a sensible middle gear - and the skill is knowing when to move off it. (`xhigh` is the deepest level and is model-dependent; not every model exposes it. The allowed values and that caveat live in the [config reference](https://developers.openai.com/codex/config-reference) - read it rather than trusting a remembered list.)
 
 ## Dialing down for the boilerplate
 
@@ -29,39 +29,39 @@ Or, if you only want it for this one launch and not as a standing default, overr
 
 ```bash
 codex -c model_reasoning_effort="low" "add a CRUD accounts endpoint \
-  following the pattern in transactions.py — list, create, read, delete"
+  following the pattern in transactions.py - list, create, read, delete"
 ```
 
-The `-c key=value` flag overrides any config value for that run only; values parse as JSON when they can, otherwise as a literal string. Pointed at the endpoint with effort low, the agent does the obvious thing quickly — it reads the existing pattern, mirrors it, and writes the four routes without a long deliberation it didn't need:
+The `-c key=value` flag overrides any config value for that run only; values parse as JSON when they can, otherwise as a literal string. Pointed at the endpoint with effort low, the agent does the obvious thing quickly - it reads the existing pattern, mirrors it, and writes the four routes without a long deliberation it didn't need:
 
 ```text
 > add a CRUD accounts endpoint following the pattern in transactions.py
 
-  read transactions.py — router, Pydantic models, the cents-as-int convention
-  ✎ accounts.py        — list / create / read / delete, same shape
+  read transactions.py - router, Pydantic models, the cents-as-int convention
+  ✎ accounts.py        - list / create / read / delete, same shape
   Done. Four routes, mirrors the transactions router. Money stays integer cents.
 ```
 
-Same code you'd have gotten at deep reasoning, a fraction of the tokens and the wait — because there was nothing here the deeper gear would have improved.
+Same code you'd have gotten at deep reasoning, a fraction of the tokens and the wait - because there was nothing here the deeper gear would have improved.
 
 ## Dialing up for the rules engine
 
-Now the other end of the day. The categorisation rules engine is the opposite kind of problem: how should a rule match a transaction — substring, regex, merchant code? What happens when two rules both claim the same transaction? Does order matter, and if so, who decides it? This is a real design fork with several defensible answers, and the wrong one costs you a rewrite later. This is exactly where you want the agent to *think before it acts*:
+Now the other end of the day. The categorisation rules engine is the opposite kind of problem: how should a rule match a transaction - substring, regex, merchant code? What happens when two rules both claim the same transaction? Does order matter, and if so, who decides it? This is a real design fork with several defensible answers, and the wrong one costs you a rewrite later. This is exactly where you want the agent to *think before it acts*:
 
 ```bash
 codex -c model_reasoning_effort="high" "design the categorisation rules \
-  engine for budgetcli — how rules match transactions, how conflicts \
+  engine for budgetcli - how rules match transactions, how conflicts \
   resolve, how a user orders them. propose the model before writing code."
 ```
 
-At `high`, the agent earns the cost — it weighs the matching strategies, surfaces the conflict-resolution question you'd have hit in week three, and proposes a design instead of guessing at one:
+At `high`, the agent earns the cost - it weighs the matching strategies, surfaces the conflict-resolution question you'd have hit in week three, and proposes a design instead of guessing at one:
 
 ```text
   Thinking…
     Matching: substring is too blunt (it'll tag "AMAZON PRIME" as groceries
     if a grocer's name contains "ama"). Merchant-code-first, regex fallback.
     Conflicts: two rules can match one transaction. Need a deterministic
-    tiebreak — explicit priority, first-match-wins, or most-specific-wins.
+    tiebreak - explicit priority, first-match-wins, or most-specific-wins.
     First-match-wins is simplest and lets the user control order directly…
 
   Here's the design I propose, before I write any of it:
@@ -72,12 +72,12 @@ At `high`, the agent earns the cost — it weighs the matching strategies, surfa
 
 That deliberation block is the dial paying off. At `low` the agent would have shipped a plausible substring matcher and the conflict problem would have surfaced as a bug in production, against your own money.
 
-For a single unusually hard turn inside an otherwise normal session, you don't have to commit to a setting — `xhigh` on one `-c` override gives that one prompt the deepest gear and leaves your default alone. Reach for it on the genuinely gnarly turn, not as a habit.
+For a single unusually hard turn inside an otherwise normal session, you don't have to commit to a setting - `xhigh` on one `-c` override gives that one prompt the deepest gear and leaves your default alone. Reach for it on the genuinely gnarly turn, not as a habit.
 
 ## Effort is not the same dial as the model
 
-One thing to keep straight, because it's the most common confusion: **reasoning effort and model choice are independent.** Effort is *how hard a given model thinks*; the model is *which brain is doing the thinking*. You can run a capable model at low effort for mechanical work, or a lighter model at high effort — they're separate knobs and you set them separately. This lesson moved only the effort dial; the [next one moves the model](/course/codex/models-effort/switch-models/), and the two of them together are the gearbox.
+One thing to keep straight, because it's the most common confusion: **reasoning effort and model choice are independent.** Effort is *how hard a given model thinks*; the model is *which brain is doing the thinking*. You can run a capable model at low effort for mechanical work, or a lighter model at high effort - they're separate knobs and you set them separately. This lesson moved only the effort dial; the [next one moves the model](/course/codex/models-effort/switch-models/), and the two of them together are the gearbox.
 
-The asymmetry underneath the whole afternoon is one line: **deeper reasoning pays off in proportion to how ambiguous the problem is.** A CRUD endpoint with an existing pattern has one answer — dial down, you're buying thinking it doesn't have. A rules-engine design has several — dial up, the reasoning is what finds the right answer instead of a confident wrong one.
+The asymmetry underneath the whole afternoon is one line: **deeper reasoning pays off in proportion to how ambiguous the problem is.** A CRUD endpoint with an existing pattern has one answer - dial down, you're buying thinking it doesn't have. A rules-engine design has several - dial up, the reasoning is what finds the right answer instead of a confident wrong one.
 
-You've moved the effort dial both ways on the same model. Now the other knob — [picking which model answers in the first place](/course/codex/models-effort/switch-models/).
+You've moved the effort dial both ways on the same model. Now the other knob - [picking which model answers in the first place](/course/codex/models-effort/switch-models/).

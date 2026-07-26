@@ -1,27 +1,27 @@
 ---
 title: Reach external systems over MCP
-description: "OpenCode keeps guessing at feedmill's feeds-table schema because it can't see the database. Declare an MCP server in opencode.json — local with a command array, or remote with a url plus headers and OAuth — and the agent queries the real system instead of you pasting the answer."
+description: "OpenCode keeps guessing at feedmill's feeds-table schema because it can't see the database. Declare an MCP server in opencode.json - local with a command array, or remote with a url plus headers and OAuth - and the agent queries the real system instead of you pasting the answer."
 sidebar:
   label: "MCP · connect a system"
 ---
 
 import McpCostMeter from '../../../../../components/interactive/McpCostMeter.tsx';
 
-You hit this the moment OpenCode touches the sync server's storage. You ask it to add a column to the dedupe path, and it writes a query against a `feeds` table that has a `seen_at` column — except feedmill calls it `last_seen`, and there's a `source_id` foreign key the agent never mentioned because it never saw it. The schema lives in a running Postgres database. The agent's whole world is the files in the repo. So it does the only thing it can: it guesses from the struct definitions, gets the column names half-right, and you spend the turn pasting `\d feeds` output back at it so it can correct itself.
+You hit this the moment OpenCode touches the sync server's storage. You ask it to add a column to the dedupe path, and it writes a query against a `feeds` table that has a `seen_at` column - except feedmill calls it `last_seen`, and there's a `source_id` foreign key the agent never mentioned because it never saw it. The schema lives in a running Postgres database. The agent's whole world is the files in the repo. So it does the only thing it can: it guesses from the struct definitions, gets the column names half-right, and you spend the turn pasting `\d feeds` output back at it so it can correct itself.
 
-That pasting *is* the gap. The truth isn't in the codebase — it's in a live system the agent has no hands on. OpenCode's answer is the Model Context Protocol: you declare the database as an **MCP server**, and OpenCode gives the agent a tool that queries it directly. The next time it needs the schema it runs the query itself, sees `last_seen` and `source_id` with its own eyes, and writes the migration against what's actually there.
+That pasting *is* the gap. The truth isn't in the codebase - it's in a live system the agent has no hands on. OpenCode's answer is the Model Context Protocol: you declare the database as an **MCP server**, and OpenCode gives the agent a tool that queries it directly. The next time it needs the schema it runs the query itself, sees `last_seen` and `source_id` with its own eyes, and writes the migration against what's actually there.
 
 ## MCP is configuration, not code
 
-Worth being precise about what you're adding, because OpenCode has two extension surfaces and this is the lighter one. A **plugin** is code you write that runs inside OpenCode and can intercept its lifecycle. An **MCP server** is just a declaration in `opencode.json` pointing at a process or a URL that already speaks the protocol — you write no code, you write JSON. For reaching an external system that already has (or can get) an MCP server, this is the whole job: name it, point at it, done. Save the plugin surface for when you need to *change OpenCode's behavior*, not just *give it a new system to talk to*.
+Worth being precise about what you're adding, because OpenCode has two extension surfaces and this is the lighter one. A **plugin** is code you write that runs inside OpenCode and can intercept its lifecycle. An **MCP server** is just a declaration in `opencode.json` pointing at a process or a URL that already speaks the protocol - you write no code, you write JSON. For reaching an external system that already has (or can get) an MCP server, this is the whole job: name it, point at it, done. Save the plugin surface for when you need to *change OpenCode's behavior*, not just *give it a new system to talk to*.
 
-MCP servers go in the `mcp` field of `opencode.json`. Each one is either `type: "local"` — OpenCode spawns a process and talks to it over stdio — or `type: "remote"` — OpenCode connects to a URL over HTTP. Pick by where the server runs, not by what it does.
+MCP servers go in the `mcp` field of `opencode.json`. Each one is either `type: "local"` - OpenCode spawns a process and talks to it over stdio - or `type: "remote"` - OpenCode connects to a URL over HTTP. Pick by where the server runs, not by what it does.
 
 ## Declare a local server: the Postgres MCP
 
 feedmill's database is on your machine, so a local server is the fit: OpenCode launches the MCP process itself and pipes to it. You describe what you want and review the edit it proposes to `opencode.json`:
 
-{/* VERIFY (OPEN): the TUI transcript rendering here (the `| Edit` / `| feedmill-db_query` tool-prefix lines, the `→ approved` marker, the `Apply this change?` / `Yes No Always` wording) is a stylized course convention, not a byte-accurate capture of opencode v1.16.2's TUI — exact glyphs/labels aren't pinned in the docs (opencode.ai/docs/tui) and the TUI is under active change, so treat these blocks as illustrative of the flow, not the literal on-screen text. */}
+{/* VERIFY (OPEN): the TUI transcript rendering here (the `| Edit` / `| feedmill-db_query` tool-prefix lines, the `→ approved` marker, the `Apply this change?` / `Yes No Always` wording) is a stylized course convention, not a byte-accurate capture of opencode v1.16.2's TUI - exact glyphs/labels aren't pinned in the docs (opencode.ai/docs/tui) and the TUI is under active change, so treat these blocks as illustrative of the flow, not the literal on-screen text. */}
 > The transcript blocks in this lesson are stylized to show the *flow* (tool call → approval → edit); your actual OpenCode TUI may render the prefixes and prompts differently.
 
 ```text
@@ -51,13 +51,13 @@ feedmill's database is on your machine, so a local server is the fit: OpenCode l
     Yes   No   Always
 ```
 
-Read the shape before you approve. `type: "local"` means the `command` array is the only required key — it's the argv opencode will spawn, exactly as you'd type it in a shell, split into tokens. `enabled` is OpenCode's on/off switch for the server at startup; leave it `true` here. The `environment` object holds env vars the spawned process needs — `postgres-mcp` reads its connection string from `DATABASE_URI`, so it goes here rather than inline in the command (keeping the connection string out of the argv that shows up in process listings). The command array is still the load-bearing part: it picks the server and, via `--access-mode=restricted`, holds it to read-only queries.
+Read the shape before you approve. `type: "local"` means the `command` array is the only required key - it's the argv opencode will spawn, exactly as you'd type it in a shell, split into tokens. `enabled` is OpenCode's on/off switch for the server at startup; leave it `true` here. The `environment` object holds env vars the spawned process needs - `postgres-mcp` reads its connection string from `DATABASE_URI`, so it goes here rather than inline in the command (keeping the connection string out of the argv that shows up in process listings). The command array is still the load-bearing part: it picks the server and, via `--access-mode=restricted`, holds it to read-only queries.
 
-Heads-up on which Postgres server you wire in: Anthropic's old reference `@modelcontextprotocol/server-postgres` is **deprecated and archived** (moved to `modelcontextprotocol/servers-archived` in 2025), and its last published `v0.6.2` carries an unpatched read-only-bypass SQL-injection flaw — don't reach for it. The example above uses the maintained `postgres-mcp` ("Postgres MCP Pro", by Crystal DBA), which is actively patched and ships an `--access-mode` flag so you can pin it to read-only.
+Heads-up on which Postgres server you wire in: Anthropic's old reference `@modelcontextprotocol/server-postgres` is **deprecated and archived** (moved to `modelcontextprotocol/servers-archived` in 2025), and its last published `v0.6.2` carries an unpatched read-only-bypass SQL-injection flaw - don't reach for it. The example above uses the maintained `postgres-mcp` ("Postgres MCP Pro", by Crystal DBA), which is actively patched and ships an `--access-mode` flag so you can pin it to read-only.
 
 ## Watch the agent query instead of guess
 
-Now the payoff, on the same task that bit you. You ask for the migration again — and this time OpenCode reaches for the MCP tool before it writes a line of SQL:
+Now the payoff, on the same task that bit you. You ask for the migration again - and this time OpenCode reaches for the MCP tool before it writes a line of SQL:
 
 ```text
 > add a column to track how many times we've seen each item, and write
@@ -82,13 +82,13 @@ Now the payoff, on the same task that bit you. You ask for the migration again �
     Yes   No   Always
 ```
 
-That first beat is the entire lesson. The agent called a tool named `feedmill-db_query` — OpenCode namespaces MCP tools as `<server>_<tool>`, so you can always tell a tool that reaches outside the repo from a built-in like `read` or `bash` — and it ran a real query against your real database. It saw `last_seen`, not the `seen_at` it would have guessed, and it caught the `source_id` FK on its own. No pasting. The schema correction that used to cost you a turn now happens silently inside the agent's read step.
+That first beat is the entire lesson. The agent called a tool named `feedmill-db_query` - OpenCode namespaces MCP tools as `<server>_<tool>`, so you can always tell a tool that reaches outside the repo from a built-in like `read` or `bash` - and it ran a real query against your real database. It saw `last_seen`, not the `seen_at` it would have guessed, and it caught the `source_id` FK on its own. No pasting. The schema correction that used to cost you a turn now happens silently inside the agent's read step.
 
-Notice the MCP query still went through approval (`→ approved`). MCP tools are tools — they sit under the same permission model as everything else OpenCode does, so a server that can *write* to your system is gated exactly like a `bash` command that can. That matters most for the kind of server you'll meet next.
+Notice the MCP query still went through approval (`→ approved`). MCP tools are tools - they sit under the same permission model as everything else OpenCode does, so a server that can *write* to your system is gated exactly like a `bash` command that can. That matters most for the kind of server you'll meet next.
 
 ## Declare a remote server: url, headers, OAuth
 
-When the system isn't a local process — a hosted API, a SaaS dashboard, a shared service the team runs — you use `type: "remote"` and point at a URL instead of spawning a command. Say feedmill's error tracking lives in a hosted service with an MCP endpoint:
+When the system isn't a local process - a hosted API, a SaaS dashboard, a shared service the team runs - you use `type: "remote"` and point at a URL instead of spawning a command. Say feedmill's error tracking lives in a hosted service with an MCP endpoint:
 
 ```json
 {
@@ -105,18 +105,18 @@ When the system isn't a local process — a hosted API, a SaaS dashboard, a shar
 }
 ```
 
-The two keys that earn their place here are `url` — required, the endpoint opencode connects to — and `headers`, where you put auth that rides on every request. Resolve the token from the environment with `{env:VAR}` rather than pasting a live credential into a file you'll commit. For services that speak OAuth instead of a static token, a remote server takes an `oauth` object (or `oauth: false` to turn the flow off); OpenCode runs the authorization dance and holds the tokens for you, so you don't manage a bearer string at all.
+The two keys that earn their place here are `url` - required, the endpoint opencode connects to - and `headers`, where you put auth that rides on every request. Resolve the token from the environment with `{env:VAR}` rather than pasting a live credential into a file you'll commit. For services that speak OAuth instead of a static token, a remote server takes an `oauth` object (or `oauth: false` to turn the flow off); OpenCode runs the authorization dance and holds the tokens for you, so you don't manage a bearer string at all.
 
 The local/remote split is the only decision that really matters: local when OpenCode should *launch* the thing and talk over stdio, remote when it should *connect* to something already running over HTTP. Everything else is the auth details for getting in the door.
 
-## Where the declaration lives — and who it travels with
+## Where the declaration lives - and who it travels with
 
-`opencode.json` layers, and MCP servers ride that layering. Put `feedmill-db` in the project's `opencode.json` at the repo root and it travels with feedmill — anyone who clones the repo gets the same database tool, no setup. Put a server in your global config at `~/.config/opencode/opencode.json` and it follows *you* across every repo — the right home for a personal tool that isn't feedmill's business. Project config merges *over* global where they overlap, and a managed/system config layers above both for org-wide policy, so a team can pin or forbid servers centrally and a project can't quietly override that.
+`opencode.json` layers, and MCP servers ride that layering. Put `feedmill-db` in the project's `opencode.json` at the repo root and it travels with feedmill - anyone who clones the repo gets the same database tool, no setup. Put a server in your global config at `~/.config/opencode/opencode.json` and it follows *you* across every repo - the right home for a personal tool that isn't feedmill's business. Project config merges *over* global where they overlap, and a managed/system config layers above both for org-wide policy, so a team can pin or forbid servers centrally and a project can't quietly override that.
 
-The practical rule: a server everyone working on feedmill should have goes in the project file and gets committed; a server that's your own habit goes in your global file and stays out of the repo. Either way you declared a system once and OpenCode handed the agent a hand to reach it — the schema-guessing turn is gone for good.
+The practical rule: a server everyone working on feedmill should have goes in the project file and gets committed; a server that's your own habit goes in your global file and stays out of the repo. Either way you declared a system once and OpenCode handed the agent a hand to reach it - the schema-guessing turn is gone for good.
 
 One discipline before the next declaration: every enabled server's tool schemas land in the agent's window at session start, whether or not the session uses them. A database server that closes a real gap earns its cost; a stack of "might need it someday" declarations spends your context before you've typed a word. Mount and unmount below and watch the meter:
 
 <McpCostMeter client:visible />
 
-You gave the agent a new external system to talk to. The next lesson is about a channel it *already* has into feedmill's own code — the language server OpenCode runs alongside you, feeding the agent diagnostics on the typed Go codebase without any MCP wrapper at all. [Next: the LSP channel the agent already has](/course/opencode/extending/lsp-diagnostics/).
+You gave the agent a new external system to talk to. The next lesson is about a channel it *already* has into feedmill's own code - the language server OpenCode runs alongside you, feeding the agent diagnostics on the typed Go codebase without any MCP wrapper at all. [Next: the LSP channel the agent already has](/course/opencode/extending/lsp-diagnostics/).

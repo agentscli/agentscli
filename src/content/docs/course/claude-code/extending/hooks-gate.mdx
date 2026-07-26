@@ -1,19 +1,19 @@
 ---
 title: Block a bad commit with a PreToolUse hook
-description: "A hook is a deterministic shell command wired to a moment in the agent's lifecycle. Here we build a PreToolUse hook that refuses any commit touching the ledger unless a test changed too — a wall the agent can't talk its way past."
+description: "A hook is a deterministic shell command wired to a moment in the agent's lifecycle. Here we build a PreToolUse hook that refuses any commit touching the ledger unless a test changed too - a wall the agent can't talk its way past."
 sidebar:
   label: "Hooks · PreToolUse gate"
 ---
 
-There's one rule in the payments service you treat as sacred: **no change to the ledger code lands without a test alongside it.** The ledger is where money is counted; an untested change there is the kind of mistake that's invisible until it's expensive. You could write this rule into your project memory and ask the agent to honor it — and most of the time it would. But "most of the time" is precisely the wrong guarantee for the one thing that must never slip. You don't want a request the agent can forget under a full context window. You want a gate that fires every single time, no matter what the model decided.
+There's one rule in the payments service you treat as sacred: **no change to the ledger code lands without a test alongside it.** The ledger is where money is counted; an untested change there is the kind of mistake that's invisible until it's expensive. You could write this rule into your project memory and ask the agent to honor it - and most of the time it would. But "most of the time" is precisely the wrong guarantee for the one thing that must never slip. You don't want a request the agent can forget under a full context window. You want a gate that fires every single time, no matter what the model decided.
 
-That's a **hook**: a shell command Claude Code runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason its way around it. It's deterministic code on a rail, and that property — *always runs, model-independent* — is the whole reason it exists.
+That's a **hook**: a shell command Claude Code runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason its way around it. It's deterministic code on a rail, and that property - *always runs, model-independent* - is the whole reason it exists.
 
 ## The right moment to fire
 
-Hooks attach to lifecycle **events**. There are many — `SessionStart` when a session opens, `PostToolUse` after a tool runs, `Stop` when the agent tries to finish, `UserPromptSubmit` when you send a message — and picking the right one is most of the design. The full catalog is on the [hooks docs page](https://code.claude.com/docs/en/hooks).
+Hooks attach to lifecycle **events**. There are many - `SessionStart` when a session opens, `PostToolUse` after a tool runs, `Stop` when the agent tries to finish, `UserPromptSubmit` when you send a message - and picking the right one is most of the design. The full catalog is on the [hooks docs page](https://code.claude.com/docs/en/hooks).
 
-For our wall we want **`PreToolUse`**: it fires *before* a tool call executes, and — this is the key — it can **block that call from happening at all**. We want to inspect the commit the agent is about to make and refuse it if the ledger changed without a test. `PreToolUse` is the only event that lets us intervene at that instant, before the bad commit exists.
+For our wall we want **`PreToolUse`**: it fires *before* a tool call executes, and - this is the key - it can **block that call from happening at all**. We want to inspect the commit the agent is about to make and refuse it if the ledger changed without a test. `PreToolUse` is the only event that lets us intervene at that instant, before the bad commit exists.
 
 ## Wire it up
 
@@ -38,9 +38,9 @@ A hook is configured in `settings.json` under a `hooks` key. You name the event,
 }
 ```
 
-The `matcher: "Bash"` means this only fires when the agent is about to run a shell command — `git commit` among them. The `$CLAUDE_PROJECT_DIR` placeholder resolves to your repo root, so the path holds no matter where the session was launched.
+The `matcher: "Bash"` means this only fires when the agent is about to run a shell command - `git commit` among them. The `$CLAUDE_PROJECT_DIR` placeholder resolves to your repo root, so the path holds no matter where the session was launched.
 
-Now the script. Claude Code hands every hook a JSON blob on **stdin** describing the call it's about to make — for a Bash call, that includes the exact command string under `tool_input.command`. The script reads it, decides, and signals its verdict through its **exit code**. The rule that matters: **exit code 2 blocks the action**, and whatever the script wrote to stderr is fed back to the agent as the reason. Any other exit code lets the call proceed.
+Now the script. Claude Code hands every hook a JSON blob on **stdin** describing the call it's about to make - for a Bash call, that includes the exact command string under `tool_input.command`. The script reads it, decides, and signals its verdict through its **exit code**. The rule that matters: **exit code 2 blocks the action**, and whatever the script wrote to stderr is fed back to the agent as the reason. Any other exit code lets the call proceed.
 
 ```text
 #!/bin/bash
@@ -63,7 +63,7 @@ fi
 exit 0
 ```
 
-It's plain shell, which is the point — nothing here is AI. It reads the staged files, and if the ledger changed but no test did, it exits 2 and the commit never happens.
+It's plain shell, which is the point - nothing here is AI. It reads the staged files, and if the ledger changed but no test did, it exits 2 and the commit never happens.
 
 ## Watch the wall hold
 
@@ -78,7 +78,7 @@ Now the agent finishes a ledger tweak and reaches for a commit:
     Blocked: this commit changes ledger/ but stages no test.
     Add a test for the ledger change before committing.
 
-  The commit was refused — the hook requires a test alongside any
+  The commit was refused - the hook requires a test alongside any
   ledger change. Let me add one for the rounding case and re-stage.
 
   ● Write  ledger/balance.test.ts
@@ -87,8 +87,8 @@ Now the agent finishes a ledger tweak and reaches for a commit:
     ✓ committed
 ```
 
-Watch what the agent did with the rejection. It didn't get stuck — it read the stderr message the hook fed back, understood *why* it was blocked, wrote the missing test, and committed cleanly. The gate didn't just stop a bad action; it steered the agent toward the right one. And it would have fired identically in accept-edits mode, in auto mode, at 2am with nobody watching. The rule no longer depends on anyone remembering it.
+Watch what the agent did with the rejection. It didn't get stuck - it read the stderr message the hook fed back, understood *why* it was blocked, wrote the missing test, and committed cleanly. The gate didn't just stop a bad action; it steered the agent toward the right one. And it would have fired identically in accept-edits mode, in auto mode, at 2am with nobody watching. The rule no longer depends on anyone remembering it.
 
-Beyond the exit-code path, a `PreToolUse` hook can return structured JSON for finer control — `permissionDecision: "deny"` with a reason, or even rewrite the tool input — all documented on the [hooks page](https://code.claude.com/docs/en/hooks). But exit 2 is the whole gate, and it's enough for the wall we needed.
+Beyond the exit-code path, a `PreToolUse` hook can return structured JSON for finer control - `permissionDecision: "deny"` with a reason, or even rewrite the tool input - all documented on the [hooks page](https://code.claude.com/docs/en/hooks). But exit 2 is the whole gate, and it's enough for the wall we needed.
 
-You've now built something categorically different from everything earlier in this chapter. The deny rules and the scoped connection *constrained* the agent; this *overrules* it. That difference is sharp enough to be worth naming precisely — because knowing when to reach for a hook instead of a rule is its own skill, and it's [the next lesson](/course/claude-code/extending/hooks-vs/).
+You've now built something categorically different from everything earlier in this chapter. The deny rules and the scoped connection *constrained* the agent; this *overrules* it. That difference is sharp enough to be worth naming precisely - because knowing when to reach for a hook instead of a rule is its own skill, and it's [the next lesson](/course/claude-code/extending/hooks-vs/).

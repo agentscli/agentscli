@@ -23,17 +23,17 @@ function status(
   sit: GldSituation
 ): Status {
   if (kind === 'wall')
-    return { label: 'held — enforced, not remembered', tone: 'good' };
-  if (kind === 'code') return { label: 'held — code on the rail', tone: 'good' };
+    return { label: 'held - enforced, not remembered', tone: 'good' };
+  if (kind === 'code') return { label: 'held - code on the rail', tone: 'good' };
   if (kind === 'blocksWork')
-    return { label: 'holds — by blocking the work', tone: 'warn' };
+    return { label: 'holds - by blocking the work', tone: 'warn' };
   if (kind === 'unexpressed')
     return {
       label: 'not actually protected',
       tone: highStakes ? 'bad' : 'warn',
     };
-  // judgment — the only kind the clock touches
-  if (sit === 'watch') return { label: 'held — you’re the gate', tone: 'good' };
+  // judgment - the only kind the clock touches
+  if (sit === 'watch') return { label: 'held - you’re the gate', tone: 'good' };
   if (sit === 'late')
     return {
       label: 'one compaction from gone',
@@ -76,19 +76,19 @@ export default function GuaranteeLadder() {
   if (allRule) {
     reading =
       sit === 'watch'
-        ? 'All four look fine — and that’s the trap state. While you watch, an instruction is indistinguishable from a guarantee, because you’re the enforcement. The file didn’t hold the line; you did. Move the clock.'
+        ? 'All four look fine - and that’s the trap state. While you watch, an instruction is indistinguishable from a guarantee, because you’re the enforcement. The file didn’t hold the line; you did. Move the clock.'
         : sit === 'late'
           ? 'Hour three is where instructions quietly stop being guarantees: the session compacted, and whether any given line survived isn’t something you can see from here. The two high-stakes constraints are now running on hope.'
           : 'The 2am run: the only thing between the secrets, the untested money commit, and a mistake is the model’s memory of a file it read at session start. Nothing here holds because nothing here enforces.';
   } else if (allBest) {
     reading =
       sit === 'watch'
-        ? 'Everything holds — but notice why each one holds. One is being weighed, one is walled, two are enforced. Same green, three different guarantees; the difference only shows when you stop watching.'
+        ? 'Everything holds - but notice why each one holds. One is being weighed, one is walled, two are enforced. Same green, three different guarantees; the difference only shows when you stop watching.'
         : sit === 'late'
-          ? 'The compaction cost you nothing that mattered. The preference may have faded — it was judgment, low stakes, and review catches it — while the wall and the two gates don’t live in the context window at all.'
+          ? 'The compaction cost you nothing that mattered. The preference may have faded - it was judgment, low stakes, and review catches it - while the wall and the two gates don’t live in the context window at all.'
           : 'The unattended run is the exam, and this passes it: the preference degraded gracefully, and everything with teeth is enforced by the harness or by code on the rail. Inform what needs judgment; wall what has a name; enforce what must be true.';
   } else {
-    reading = `${held} of ${gldConstraints.length} hold here, and the gaps aren’t random — each one is a constraint whose home can’t express it or can’t enforce it. Match the guarantee to the need: judgment wants a rule, a named class wants a permission, a condition on the real action wants a hook.`;
+    reading = `${held} of ${gldConstraints.length} hold here, and the gaps aren’t random - each one is a constraint whose home can’t express it or can’t enforce it. Match the guarantee to the need: judgment wants a rule, a named class wants a permission, a condition on the real action wants a hook.`;
   }
 
   return (
@@ -108,7 +108,7 @@ export default function GuaranteeLadder() {
         <strong>rule</strong> (the model is told), a <strong>permission</strong>{' '}
         (the harness forbids a class of action), a <strong>hook</strong> (your
         code runs on the rail, every time). All four start in the rules file.
-        Re-home them — then move the clock, because what holds while you watch
+        Re-home them - then move the clock, because what holds while you watch
         isn’t what holds at 2am.
       </p>
 
@@ -224,10 +224,10 @@ export default function GuaranteeLadder() {
       </div>
 
       <p className="gld-footnote">
-        Each tool wears its own names — permissions may be an
-        approvals-and-sandbox dial, a hook a plugin on lifecycle events — but
+        Each tool wears its own names - permissions may be an
+        approvals-and-sandbox dial, a hook a plugin on lifecycle events - but
         the ladder is the same: guarantee strength is set by what sits in the
-        loop — the model’s memory, a harness wall, or your code.
+        loop - the model’s memory, a harness wall, or your code.
       </p>
     </div>
   );

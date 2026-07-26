@@ -4,7 +4,7 @@ import starlight from '@astrojs/starlight';
 import starlightSidebarTopics from 'starlight-sidebar-topics';
 import react from '@astrojs/react';
 
-// Cloudflare Web Analytics beacon token (public value — safe to commit).
+// Cloudflare Web Analytics beacon token (public value - safe to commit).
 // Get it from the Cloudflare dashboard → Web Analytics → add agentscli.com → copy token.
 // Set CF_BEACON_TOKEN in the build env, or paste the token as the '' fallback below.
 // Leave empty to disable the beacon (keeps local dev clean).
@@ -88,7 +88,7 @@ export default defineConfig({
 						href: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap',
 					},
 				},
-				// Cloudflare Web Analytics — privacy-friendly, cookieless. Only emitted
+				// Cloudflare Web Analytics - privacy-friendly, cookieless. Only emitted
 				// when CF_BEACON_TOKEN is set, so local dev and untokened builds stay clean.
 				...(CF_BEACON_TOKEN
 					? [
@@ -109,7 +109,7 @@ export default defineConfig({
 			// configured. The two course topics (Claude Code, Codex) are siblings of
 			// the "Courses" hub; the custom Sidebar override nests them under it in the
 			// switcher so each course opens in isolation.
-			// NOTE: the starlight-blog PLUGIN is intentionally not registered — the blog
+			// NOTE: the starlight-blog PLUGIN is intentionally not registered - the blog
 			// is served entirely by custom routes under src/pages/blog/ (listing,
 			// posts, tags, rss.xml). The starlight-blog PACKAGE stays installed only
 			// for the blogSchema import in src/content/config.ts, which validates
@@ -725,6 +725,7 @@ export default defineConfig({
 								{ label: 'Architecture diagrams via agent', slug: 'playbooks/architecture-diagrams' },
 								{ label: 'AFK agents', slug: 'playbooks/afk-agents' },
 								{ label: 'AI-ready code', slug: 'playbooks/ai-ready-code' },
+								{ label: 'Video with agents', slug: 'playbooks/video-with-agents' },
 							],
 						},
 						{

@@ -1,39 +1,58 @@
 ---
 title: Configuration & profiles
-description: Where each CLI keeps its settings, how layering works, and which tool has named profiles.
+description: Where each CLI keeps its settings, which layer wins when two of them disagree, and how to swap whole setups with a flag.
 ---
 
 import ToolTabs from '../../../components/ToolTabs.astro';
 import UpstreamRefs from '../../../components/UpstreamRefs.astro';
 import ConfigExplorer from '../../../components/interactive/ConfigExplorer.tsx';
 
-You wanted to change the default model to the cheaper one. Twenty minutes later you've got three browser tabs open, one for each tool's docs, and you've discovered: there's a project setting, a user setting, an environment variable, a TOML profile, a managed config, and a flag, and they all interact, and the one you edited isn't the one that's winning, and you can't actually tell *which* one is winning because nothing in the TUI says.
+You wanted to change the default model to the cheaper one. Twenty minutes later you have three browser tabs open and a list of places the setting could live: a project file, a user file, an environment variable, a profile, a managed policy, a flag. You edited one of them. It is not the one that is winning. Nothing in the TUI tells you which one is.
 
-Or: you've got a "safe" setup you use for client repos (ask before every shell command, deny edits to anything outside the workspace) and a "wide open" setup you use for personal projects (allow everything, never ask). You currently swap between them by hand-editing the settings file every time, which is exactly the kind of fiddly chore you started using the CLI to avoid.
+The second version of this chore is swapping whole setups. A locked-down posture for client repos, a wide-open one for personal projects, and a hand-edit of the settings file every time you cross between them.
 
-That's the gap configuration design closes. Once you know *where* each setting lives, *which layer wins*, and *what mechanism your tool uses for swapping setups* (Codex profiles, Claude Code local-settings, OpenCode primary agents), the chore becomes a flag. *"Use the safe setup"* becomes `codex --profile safe` — once.
+Both problems come from the same place: the CLI's settings are not one file, they are a stack of files with a resolution order, and the order is invisible until you go looking. Learn the stack and the twenty-minute hunt becomes a two-minute check, and the hand-edit becomes `codex --profile safe`.
 
-The shape is the same everywhere: every CLI in scope has a hierarchy of configuration locations — a project-level file checked into the repo, a user-level file in your home directory, and optional managed-policy overrides for orgs. These files hold the settings that don't belong in a prompt or a skill — the default model, permission rules, MCP server registrations, hooks, theme, output format defaults.
-
-**Codex is the only tool in scope with named profiles** — separate config bundles you swap with `--profile <name>` at launch. As of Codex CLI 0.134.0+, each profile lives in its own `~/.codex/<name>.config.toml` file rather than a block inside the shared `config.toml` — the older `[profiles.name]` table no longer works, so double-check your Codex version before copying an older tutorial's layout. Claude Code and OpenCode achieve a similar feel through different mechanisms (local-settings files; per-agent customisation). **Cursor** and **Copilot** ride VS Code's `settings.json` model — Cursor adds a `.cursor/` directory at the repo root for its native assets; Copilot's settings live under the `github.copilot.*` and `chat.*` namespaces, plus repo-level files under `.github/` and org-level policy on github.com.
-
-## Explore the config surface
-
-Every file each CLI reads, in one tree. Click any entry for what it does, when it loads, whether it belongs in git, and a working example. The [comparison table](#comparison) below covers the same ground as prose.
-
-<ConfigExplorer client:visible />
+The shape is broadly shared. Every CLI in scope reads a project-level file that can be checked into the repo, a user-level file in your home directory, and optional managed-policy overrides for orgs. These hold the settings that don't belong in a prompt or a skill: the default model, permission rules, MCP server registrations, hook bindings, theme, output defaults.
 
 **Real-world examples of what teams put in configuration (vs. in code or skills):**
 
-- **Default model** — pin Sonnet for the project so contributors don't all use whatever they happen to default to. See [Model selection](/foundations/model-selection/).
-- **Permission policy** — the team's allow/ask/deny rules, checked in so everyone gets the same guardrails. See [Permissions](/foundations/permissions/).
-- **MCP server registrations** — your repo's Postgres/Linear/Figma adapters wired up once, in `.mcp.json` / `config.toml` / `opencode.json`. See [MCP servers](/foundations/mcp-servers/).
-- **Hook bindings** — declarative event handlers (lint after edit, block pushes to main). See [Hooks](/foundations/hooks/).
-- **Personal overrides** — Claude Code's `settings.local.json` (gitignored) for your machine-specific quirks: a different model, a noisier hook, an extra debugging MCP server.
-- **Org policy** — managed config that mandates: deny `Bash(rm:*)`, require approval for `Bash(*)`, force a specific model. Cannot be overridden by user settings.
-- **Profile bundles (Codex)** — `--profile work` (sandboxed, conservative), `--profile yolo` (full access, never asks), `--profile review` (read-only, untrusted). Swap by flag; each name is its own `~/.codex/<name>.config.toml` file on current Codex CLI versions.
+- **Default model** - pin one for the project so contributors don't each use whatever they happen to default to. See [Model selection](/foundations/model-selection/).
+- **Permission policy** - the team's allow/ask/deny rules, checked in so everyone gets the same guardrails. See [Permissions](/foundations/permissions/).
+- **MCP server registrations** - your repo's Postgres/Linear/Figma adapters wired up once. See [MCP servers](/foundations/mcp-servers/).
+- **Hook bindings** - declarative event handlers such as lint-after-edit or block-pushes-to-main. See [Hooks](/foundations/hooks/).
+- **Personal overrides** - machine-specific quirks kept out of git: a different model, a noisier hook, an extra debugging MCP server.
+- **Org policy** - managed config that mandates a rule and cannot be overridden downstream: deny `Bash(rm:*)`, force a specific model.
+- **Profile bundles** - `--profile work` (sandboxed, conservative) versus `--profile yolo` (full access, never asks), swapped by flag rather than by edit.
 
 The test: if the same setting is being typed at the CLI more than once, or copy-pasted between files, it belongs in configuration.
+
+## Every file, and when it loads
+
+Each CLI's full config surface as one tree. Click any entry for what it does, when it loads, whether it belongs in git, and a working example.
+
+<ConfigExplorer client:visible />
+
+## When two files disagree
+
+This is the part that costs the twenty minutes, and it is the one place the tools genuinely diverge rather than just renaming things.
+
+The intuition most people bring is that the more specific file wins: project beats user, because the project is closer to the work. That intuition is right in some tools and backwards in others.
+
+| Tool | Order when project and user config disagree | Precondition that can void the project file entirely |
+|---|---|---|
+| Claude Code | Managed policy, then **user**, then project-local, then project-shared | - |
+| Codex | Documented as a merge of project, user, and managed; the exact order is *Unverified* | Directory trust: config in an untrusted project directory does not apply at all |
+| OpenCode | **Project**, merged over global rather than replacing it; managed layers above | - |
+| Cursor | VS Code's `settings.json` model; `.vscode/settings.json` is honoured, precise order *Unverified* | The CLI accepts only *permissions* per project; every other CLI setting is global |
+| Copilot | VS Code's `settings.json` model, with github.com org policy above it | Org policy can exclude models and content outright, whatever the repo says |
+| Pi | **Project**, deep-merged into global key by key, so a project overrides only what it names | Trust gate: `.pi/` resources load only after the project is trusted |
+
+Two things to take from the table. First, **Claude Code resolves user above project**, the reverse of OpenCode and Pi and the reverse of what most people guess. Check a model into `.claude/settings.json`, and if your own user settings pin a different one, yours wins and the repo's does not.
+
+Second, **a trust gate is not precedence.** It is a switch that turns the project layer off entirely. A Codex or Pi project file in an untrusted directory is not losing a merge, it is never being read. From the outside the two failures look identical, and they are fixed differently: one by editing a file, the other by trusting the directory.
+
+*Verify the exact order against the upstream docs below before relying on it. Layering rules move between releases, and they fail silently when they change.*
 
 ## Why this and not...
 
@@ -41,13 +60,13 @@ The test: if the same setting is being typed at the CLI more than once, or copy-
 |---|---|---|
 | Pin defaults that survive across sessions (model, theme, output format) | **Configuration file** | Env vars per session |
 | Share team settings via the repo | **Project config** (checked in) | User config |
-| Keep personal overrides off git | Claude Code `settings.local.json` / shell env | Project config |
+| Keep personal overrides off git | A gitignored local-settings file or shell env | Project config |
 | Swap between named setups with one flag | **Codex profile** | Editing the file each time |
 | Distribute config + skills + hooks + MCP as one unit | [Plugin](/foundations/plugins/) | Raw config |
 | Enforce org-wide policy that can't be overridden | Managed config | Project / user files |
 | Give one agent a different posture than another (OpenCode) | Custom primary agent | A second profile |
 
-Configuration is for *defaults and policy*. Skills, hooks, MCP servers, and subagents are still where the behaviour lives — config just *enables* them and sets their defaults. If you find your config file growing into a procedure, you wanted a skill.
+Configuration is for *defaults and policy*. Skills, hooks, MCP servers, and subagents are still where the behaviour lives; config just enables them and sets their defaults. If your config file is growing into a procedure, you wanted a skill.
 
 ## How it works in each tool
 
@@ -58,22 +77,18 @@ Configuration is for *defaults and policy*. Skills, hooks, MCP servers, and suba
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
 | Project config | `.claude/settings.json` | `.codex/config.toml` (in trusted dirs) | `opencode.json` | `.vscode/settings.json` + `.cursor/` (rules, mcp, hooks, etc.) | `.github/copilot-instructions.md`, `.github/instructions/`, `.vscode/mcp.json` | `.pi/settings.json` |
-| Local-only project config | `.claude/settings.local.json` (gitignored) | — | — | — | — | — |
+| Local-only project config | `.claude/settings.local.json` (gitignored) | - | - | - | - | - |
 | User config | `~/.claude/settings.json` | `~/.codex/config.toml` | `~/.config/opencode/opencode.json` | `Cursor/User/settings.json` (platform path) + `~/.cursor/` | VS Code user `settings.json` + `~/.copilot/` (CLI) | `~/.pi/agent/settings.json` |
-| Format | JSON | TOML | JSON | JSON (VS Code) + assorted files under `.cursor/` | JSON (VS Code `settings.json`) | JSON — deep-merges user + project; also `models.json`, `trust.json` |
-| Managed/org overrides | Yes | Yes (managed configs) | Yes (managed configs) | Yes (Team / Enterprise dashboard) | Yes (github.com org policy, Business/Enterprise) | — |
-| **Named profiles** | No | **Yes** (`--profile`) | No (use primary agents) | No | No | No (no Codex-style named profile bundles) |
+| Format | JSON | TOML | JSON | JSON (VS Code) + assorted files under `.cursor/` | JSON (VS Code `settings.json`) | JSON - deep-merges user + project; also `models.json`, `trust.json` |
+| Managed/org overrides | Yes | Yes (managed configs) | Yes (managed configs) | Yes (Team / Enterprise dashboard) | Yes (github.com org policy, Business/Enterprise) | - |
+| **Named profiles** | No | **Yes** (`--profile`) <sup>1</sup> | No (use primary agents) | No | No | No |
+| Config-per-project limits | - | Project config requires directory trust | - | CLI: permissions only, rest is global | Org policy overrides repo files | Project resources require trust |
 
-## Tips
+<sup>1</sup> Codex profiles are the one named-profile mechanism in scope, and the only place a whole posture swaps by flag. Note the vocabulary trap: "profile" means a named config bundle in Codex and nothing of the sort elsewhere - Claude Code and OpenCode both say "settings level" or "scope" for what looks superficially similar.
 
-- In Claude Code, use `settings.local.json` for anything you don't want checked in — model overrides, personal hook scripts, allow rules unique to your machine.
-- In Codex, profiles are the cleanest way to switch between a "safe" work setup and a YOLO experimentation setup without retyping flags.
-- In OpenCode, **don't try to emulate Codex profiles by swapping `opencode.json`** — define custom primary agents instead.
-- In Cursor and Copilot, the IDE's `settings.json` is the source of truth — check `.vscode/settings.json` into the repo for shared defaults, then let user `settings.json` override.
+The Codex profile file layout has also moved recently, and the corpus disagrees with itself on where profiles now live: a `[profiles.<name>]` table inside the shared `config.toml`, or one `~/.codex/<name>.config.toml` file per profile. *Unverified* which applies to your version. Check `codex --version` against the config reference below before copying any tutorial's layout. Profiles are also still marked experimental in the current docs.
 
-## Name collisions
-
-- "Profile" in Codex means a named config bundle. The word doesn't mean the same thing in Claude Code or OpenCode — both use "settings level" or "scope."
+Everything above is a default. The next time a setting doesn't take effect, work the stack rather than the file: confirm the project directory is trusted, check whether your user config is shadowing the repo's, and only then edit. Most of the twenty minutes is spent editing the wrong layer confidently.
 
 <UpstreamRefs
   links={[

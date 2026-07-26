@@ -46,7 +46,7 @@ export default function ContextSimulator() {
   }, [segments]);
 
   /**
-   * Legend chips are a full equivalent selector for the bar segments — the
+   * Legend chips are a full equivalent selector for the bar segments - the
    * cleanest fix for segments that render only a few px wide (e.g. Rules at
    * ~1% share) and are otherwise nearly untappable on touch. A category can
    * back more than one segment at once (e.g. "Conversation" appears several
@@ -123,7 +123,7 @@ export default function ContextSimulator() {
                   : `cxs-seg cxs-seg-${seg.category}`
               }
               style={{ width: `${(seg.tokens / WINDOW_TOKENS) * 100}%` }}
-              title={`${seg.label} — ${seg.tokens}k`}
+              title={`${seg.label} - ${seg.tokens}k`}
               aria-label={`${seg.label}, ${seg.tokens}k tokens`}
               onClick={() =>
                 setSelectedId(selectedId === seg.id ? null : seg.id)
@@ -173,11 +173,11 @@ export default function ContextSimulator() {
         {selected ? (
           <>
             <strong>{selected.label}</strong> · {selected.tokens}k tokens
-            {selected.note ? <> — {withCode(selected.note)}</> : null}
+            {selected.note ? <> - {withCode(selected.note)}</> : null}
           </>
         ) : (
           <span className="cxs-seg-detail-hint">
-            Click any segment of the bar — or a legend chip below — to see what it is.
+            Click any segment of the bar - or a legend chip below - to see what it is.
           </span>
         )}
       </div>
@@ -188,7 +188,7 @@ export default function ContextSimulator() {
         {step.subagent && (
           <div className="cxs-subagent">
             <div className="cxs-subagent-title">
-              {step.subagent.label} — its own separate window
+              {step.subagent.label} - its own separate window
             </div>
             <div className="cxs-subagent-bar">
               <span

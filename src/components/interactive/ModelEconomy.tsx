@@ -18,7 +18,7 @@ interface Dial {
   effort: MdeEffort;
 }
 
-/** Cost of the expensive corner, per occurrence — what an escalation pays */
+/** Cost of the expensive corner, per occurrence - what an escalation pays */
 const escalate = (size: number) =>
   size * MDE_MODEL_MULT.capable * MDE_EFFORT_MULT.high;
 
@@ -102,7 +102,7 @@ export default function ModelEconomy() {
     return { model, effort };
   };
 
-  // Three ways to set every dial at once — the second state (the redo tax)
+  // Three ways to set every dial at once - the second state (the redo tax)
   // is one chip away instead of hidden behind a deliberate mis-dial.
   type Preset = {
     id: string;
@@ -167,15 +167,15 @@ export default function ModelEconomy() {
   let reading: string;
   if (misplaced === 0) {
     reading =
-      'This is the lumpy day costing what it should: pocket change on the mechanical work, real budget on the two hard problems — which are now almost the entire bill, and earn it. Spend concentrated where a wrong answer is expensive is what a well-dialled day looks like.';
+      'This is the lumpy day costing what it should: pocket change on the mechanical work, real budget on the two hard problems - which are now almost the entire bill, and earn it. Spend concentrated where a wrong answer is expensive is what a well-dialled day looks like.';
   } else if (underpowered) {
     reading =
-      'The cheap corner just became the expensive one: the hard task fails, retries, and escalates to the big model anyway, so the redo tax alone beats starting on the matched corner — before counting your time reading confident wrong answers. Underpowering the hard problem is the costly mistake, not overpaying for it.';
+      'The cheap corner just became the expensive one: the hard task fails, retries, and escalates to the big model anyway, so the redo tax alone beats starting on the matched corner - before counting your time reading confident wrong answers. Underpowering the hard problem is the costly mistake, not overpaying for it.';
   } else if (coinflip) {
     reading =
-      'Nothing failed outright — but a hard problem got a capable brain on a shallow budget, and what that buys is the first defensible answer, delivered confidently. The tasks that fork are exactly where deep effort pays; skimp there and your review is doing the reasoning you didn’t buy.';
+      'Nothing failed outright - but a hard problem got a capable brain on a shallow budget, and what that buys is the first defensible answer, delivered confidently. The tasks that fork are exactly where deep effort pays; skimp there and your review is doing the reasoning you didn’t buy.';
   } else {
-    reading = `Everything ships — no failures, no redo tax — and the day still costs ${ratio.toFixed(
+    reading = `Everything ships - no failures, no redo tax - and the day still costs ${ratio.toFixed(
       1
     )}× what it should. That’s the quiet leak of a pinned dial: the mechanical work bills like hard work, five and three times over. Dial it down to the cheapest corner that ships it; the hard problems keep their budget.`;
   }
@@ -193,7 +193,7 @@ export default function ModelEconomy() {
         </button>
       )}
       <p className="mde-lead">
-        A lumpy day: four kinds of task, and two dials on each — which{' '}
+        A lumpy day: four kinds of task, and two dials on each - which{' '}
         <strong>model</strong> answers, and how much <strong>effort</strong> it
         spends thinking. Everything starts where most people leave it: pinned
         to the expensive corner. Re-dial each task and watch what the day
@@ -290,7 +290,7 @@ export default function ModelEconomy() {
       </div>
 
       <p className="mde-footnote">
-        Numbers are illustrative — the ratios are the point (capable ≈{' '}
+        Numbers are illustrative - the ratios are the point (capable ≈{' '}
         {MDE_MODEL_MULT.capable}× per token, high effort ≈{' '}
         {MDE_EFFORT_MULT.high}× the tokens). The redo tax counts an
         underpowered task’s failed attempts plus the escalation you’d run

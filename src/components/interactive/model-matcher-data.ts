@@ -1,8 +1,8 @@
 /**
- * Model matcher — pick the work and where the choice should live; see the
+ * Model matcher - pick the work and where the choice should live; see the
  * right model tier and the exact switch mechanism per tool. Rosters, commands,
  * flags, and config fields are extracted from
- * src/content/tool-instructions/<tool>/model-selection.mdx — keep in sync.
+ * src/content/tool-instructions/<tool>/model-selection.mdx - keep in sync.
  * The task→tier mapping is editorial and evergreen.
  */
 
@@ -28,13 +28,13 @@ export const mmtTasks: MmtTask[] = [
     id: 'everyday',
     label: 'Everyday coding',
     tier: 'default',
-    why: 'The tier the tool’s own defaults assume — calibrated for the ordinary loop of reading, editing, and running tests.',
+    why: 'The tier the tool’s own defaults assume - calibrated for the ordinary loop of reading, editing, and running tests.',
   },
   {
     id: 'sweep',
     label: 'Sweep & summarize',
     tier: 'light',
-    why: 'High-volume, low-stakes per call. You don’t need the flagship to spell `connectionTimeout` correctly — pay for speed, not depth.',
+    why: 'High-volume, low-stakes per call. You don’t need the flagship to spell `connectionTimeout` correctly - pay for speed, not depth.',
   },
 ];
 
@@ -76,11 +76,11 @@ export const mmtTools: MmtToolSpec[] = [
       },
       default: {
         model: 'claude-sonnet-4-6',
-        note: 'The tool’s own default — balanced, with the same 1M-token window.',
+        note: 'The tool’s own default - balanced, with the same 1M-token window.',
       },
       light: {
         model: 'claude-haiku-4-5',
-        note: 'Fastest and cheapest, 200K window — built for sweeps and exploration subagents.',
+        note: 'Fastest and cheapest, 200K window - built for sweeps and exploration subagents.',
       },
     },
     scopes: {
@@ -90,19 +90,19 @@ export const mmtTools: MmtToolSpec[] = [
       },
       launch: {
         code: 'ANTHROPIC_MODEL={model} claude',
-        how: 'The environment variable steers that invocation — handy in scripts and CI.',
+        how: 'The environment variable steers that invocation - handy in scripts and CI.',
       },
       pin: {
         code: '"model": "{model}"',
-        how: 'The `model` key in `settings.json` — project-level pins the team, user-level pins you.',
+        how: 'The `model` key in `settings.json` - project-level pins the team, user-level pins you.',
       },
       subagent: {
         code: 'model: {model}',
-        how: 'In the subagent’s markdown frontmatter — the worker runs on this model while the main loop keeps its own.',
+        how: 'In the subagent’s markdown frontmatter - the worker runs on this model while the main loop keeps its own.',
       },
     },
     roster:
-      'Anthropic models only. Changing vendors means changing tools — the vendor-risk trade the multi-provider tools soften.',
+      'Anthropic models only. Changing vendors means changing tools - the vendor-risk trade the multi-provider tools soften.',
   },
   {
     id: 'codex',
@@ -110,7 +110,7 @@ export const mmtTools: MmtToolSpec[] = [
     tiers: {
       flagship: {
         model: 'gpt-5.5',
-        note: 'Top of the documented lineup — the catalog isn’t static, so run `codex debug models` for what your account can actually drive.',
+        note: 'Top of the documented lineup - the catalog isn’t static, so run `codex debug models` for what your account can actually drive.',
       },
       default: {
         model: 'gpt-5.5',
@@ -118,7 +118,7 @@ export const mmtTools: MmtToolSpec[] = [
       },
       light: {
         model: 'gpt-5.4-mini',
-        note: 'The small fast tier — the one to hand to exploration subagents.',
+        note: 'The small fast tier - the one to hand to exploration subagents.',
       },
     },
     scopes: {
@@ -132,7 +132,7 @@ export const mmtTools: MmtToolSpec[] = [
       },
       pin: {
         code: 'model = "{model}"',
-        how: 'In `config.toml` — or inside a profile, so one `--profile` flag swaps model and settings together.',
+        how: 'In `config.toml` - or inside a profile, so one `--profile` flag swaps model and settings together.',
       },
       subagent: {
         code: 'model = "{model}"',
@@ -140,7 +140,7 @@ export const mmtTools: MmtToolSpec[] = [
       },
     },
     roster:
-      'OpenAI models only. Codex doesn’t publish a static catalog — `codex debug models` prints the live list for your account.',
+      'OpenAI models only. Codex doesn’t publish a static catalog - `codex debug models` prints the live list for your account.',
   },
   {
     id: 'opencode',
@@ -148,23 +148,23 @@ export const mmtTools: MmtToolSpec[] = [
     tiers: {
       flagship: {
         model: 'anthropic/claude-opus-4-7',
-        note: 'An example — opencode refs are `provider/model`, and any of ~75 providers can fill either side. Zen curates the tested combinations.',
+        note: 'An example - opencode refs are `provider/model`, and any of ~75 providers can fill either side. Zen curates the tested combinations.',
       },
       default: {
         model: 'anthropic/claude-sonnet-4-6',
-        note: 'An example — every agent carries its own `model`, so “the default” is whatever your build agent says it is.',
+        note: 'An example - every agent carries its own `model`, so “the default” is whatever your build agent says it is.',
       },
       light: {
         model: 'anthropic/claude-haiku-4-5',
-        note: 'An example — a small Gemini, Groq-hosted model, or a local Ollama model slots in the same way.',
+        note: 'An example - a small Gemini, Groq-hosted model, or a local Ollama model slots in the same way.',
       },
     },
     scopes: {
       session: {
-        how: 'Models live on agents, not sessions — pick a different agent in the TUI, or point the current one at another `model`.',
+        how: 'Models live on agents, not sessions - pick a different agent in the TUI, or point the current one at another `model`.',
       },
       launch: {
-        how: 'The agent you start with brings its model — set that agent’s `model` field before the run.',
+        how: 'The agent you start with brings its model - set that agent’s `model` field before the run.',
       },
       pin: {
         code: '"model": "{model}"',
@@ -172,11 +172,11 @@ export const mmtTools: MmtToolSpec[] = [
       },
       subagent: {
         code: 'model: {model}',
-        how: 'In the agent’s markdown frontmatter — the same field powers side-by-side comparisons: two agents, two models, one prompt.',
+        how: 'In the agent’s markdown frontmatter - the same field powers side-by-side comparisons: two agents, two models, one prompt.',
       },
     },
     roster:
-      'Fully multi-provider — ~75 providers preloaded via the Models.dev catalog, including local Ollama and LM Studio. The only tool in scope that runs models that never leave your machine.',
+      'Fully multi-provider - ~75 providers preloaded via the Models.dev catalog, including local Ollama and LM Studio. The only tool in scope that runs models that never leave your machine.',
   },
   {
     id: 'cursor',
@@ -184,7 +184,7 @@ export const mmtTools: MmtToolSpec[] = [
     tiers: {
       flagship: {
         model: 'Opus 4.7 · GPT-5 · Gemini 3 Pro',
-        note: 'Caveat: several frontier thinking models auto-enable MAX Mode when selected — whether a per-request override has landed is unverified.',
+        note: 'Caveat: several frontier thinking models auto-enable MAX Mode when selected - whether a per-request override has landed is unverified.',
       },
       default: {
         model: 'Sonnet 4.6 · Composer',
@@ -197,13 +197,13 @@ export const mmtTools: MmtToolSpec[] = [
     },
     scopes: {
       session: {
-        how: 'The per-chat model picker — switch any time. Plan mode goes further: plan with one model and hand the build to another, the only native split in scope.',
+        how: 'The per-chat model picker - switch any time. Plan mode goes further: plan with one model and hand the build to another, the only native split in scope.',
       },
       launch: {
-        how: 'The picker sits at message composition — no launch flag is documented in our chapter.',
+        how: 'The picker sits at message composition - no launch flag is documented in our chapter.',
       },
       pin: {
-        how: 'No project pin documented — model choice lives in the picker, and org admins gate the roster on Team / Enterprise plans.',
+        how: 'No project pin documented - model choice lives in the picker, and org admins gate the roster on Team / Enterprise plans.',
       },
       subagent: {
         how: 'Subagent frontmatter supports a model override, same pattern as the others.',
@@ -218,7 +218,7 @@ export const mmtTools: MmtToolSpec[] = [
     tiers: {
       flagship: {
         model: 'Claude Opus 4.7',
-        note: 'Pro+ / Enterprise plans only — the roster is plan-gated, and premium models bill against a monthly quota with per-model multipliers.',
+        note: 'Pro+ / Enterprise plans only - the roster is plan-gated, and premium models bill against a monthly quota with per-model multipliers.',
       },
       default: {
         model: 'Claude Sonnet 4.6 · GPT-5',
@@ -226,22 +226,22 @@ export const mmtTools: MmtToolSpec[] = [
       },
       light: {
         model: 'GPT-5 mini · Claude Haiku 4.5',
-        note: 'Free-tier models, unlimited on paid plans — the quota-safe workhorses.',
+        note: 'Free-tier models, unlimited on paid plans - the quota-safe workhorses.',
       },
     },
     scopes: {
       session: {
         code: '/model',
-        how: 'VS Code: the model picker in chat. CLI: `/model` at runtime — the default is Claude Sonnet 4.5.',
+        how: 'VS Code: the model picker in chat. CLI: `/model` at runtime - the default is Claude Sonnet 4.5.',
       },
       launch: {
-        how: 'The CLI can point at custom providers via environment variables — OpenAI-compatible, Azure, Anthropic, or a local Ollama.',
+        how: 'The CLI can point at custom providers via environment variables - OpenAI-compatible, Azure, Anthropic, or a local Ollama.',
       },
       pin: {
-        how: 'No project pin documented. On Business / Enterprise, org admins allow or deny models — the picker only shows what policy permits.',
+        how: 'No project pin documented. On Business / Enterprise, org admins allow or deny models - the picker only shows what policy permits.',
       },
       subagent: {
-        how: 'Not supported — Copilot has no per-subagent model override.',
+        how: 'Not supported - Copilot has no per-subagent model override.',
       },
     },
     roster:

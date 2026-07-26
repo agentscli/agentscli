@@ -7,9 +7,9 @@ sidebar:
 
 import NightShift from '../../../../../components/interactive/NightShift.tsx';
 
-You can run the report from a script. Now we let the script run *itself* — on every push that touches `budgetcli`, with no one pressing enter. This is the unattended check we set out to build: when a fresh batch of transactions lands, something recategorises them and runs the suite, so a malformed import gets caught at the door instead of corrupting months of history quietly.
+You can run the report from a script. Now we let the script run *itself* - on every push that touches `budgetcli`, with no one pressing enter. This is the unattended check we set out to build: when a fresh batch of transactions lands, something recategorises them and runs the suite, so a malformed import gets caught at the door instead of corrupting months of history quietly.
 
-Notice what's load-bearing in that sentence: *the suite*. With no one pressing enter, the run's claim to have worked is only as true as the checks it has to get past — that, more than any of the CI plumbing below, is what makes an unattended check worth trusting:
+Notice what's load-bearing in that sentence: *the suite*. With no one pressing enter, the run's claim to have worked is only as true as the checks it has to get past - that, more than any of the CI plumbing below, is what makes an unattended check worth trusting:
 
 <NightShift client:visible />
 
@@ -17,7 +17,7 @@ The command in the middle is still `codex exec`. CI only changes two things arou
 
 ## Auth in CI: the API key, not the sign-in flow
 
-On your laptop you most likely signed in through the ChatGPT OAuth flow — `codex login` opens a browser, you click, you're done. A CI runner has no browser and no one to click. So for unattended runs you authenticate with an **API key** instead. The docs recommend the API-key path precisely for [programmatic and CI-style use](https://developers.openai.com/codex/auth): the runner reads `OPENAI_API_KEY` from its environment, and Codex picks it up with no interactive step.
+On your laptop you most likely signed in through the ChatGPT OAuth flow - `codex login` opens a browser, you click, you're done. A CI runner has no browser and no one to click. So for unattended runs you authenticate with an **API key** instead. The docs recommend the API-key path precisely for [programmatic and CI-style use](https://developers.openai.com/codex/auth): the runner reads `OPENAI_API_KEY` from its environment, and Codex picks it up with no interactive step.
 
 The key must live in **encrypted CI secrets**, never in the workflow file or the repo. In GitHub Actions you store it as a repository (or organisation) secret named `OPENAI_API_KEY` and expose it only on the step that needs it:
 
@@ -37,13 +37,13 @@ jobs:
           codex exec "Recategorise any transactions added in this push, then run the test suite. If categorisation or a test fails, exit non-zero."
 ```
 
-Expose the secret on the single step that runs `codex exec`, not job-wide — the smaller the surface the key is live on, the less a hijacked step can do with it. (OpenAI also ships a first-party GitHub Action that wraps `codex exec` with the install and secret-injection already handled; the raw `run:` form above is shown here because it makes the moving parts visible, and it's identical to what you'd write on any other CI platform.)
+Expose the secret on the single step that runs `codex exec`, not job-wide - the smaller the surface the key is live on, the less a hijacked step can do with it. (OpenAI also ships a first-party GitHub Action that wraps `codex exec` with the install and secret-injection already handled; the raw `run:` form above is shown here because it makes the moving parts visible, and it's identical to what you'd write on any other CI platform.)
 
 ## The posture an unattended run has to commit to
 
-Here is where [Approvals & sandboxing](/course/codex/approvals-sandbox/) stops being optional. Interactively, the two axes — `-a` / `--ask-for-approval` and `-s` / `--sandbox` — lean on you: when the agent wants to do something its sandbox forbids, the approval mode decides whether it runs, asks, or refuses, and *you* answer the ask. In CI there's no one to answer. So you have to pick a posture where "ask" never happens, because an ask in an unattended run is a hang or a death, not a pause.
+Here is where [Approvals & sandboxing](/course/codex/approvals-sandbox/) stops being optional. Interactively, the two axes - `-a` / `--ask-for-approval` and `-s` / `--sandbox` - lean on you: when the agent wants to do something its sandbox forbids, the approval mode decides whether it runs, asks, or refuses, and *you* answer the ask. In CI there's no one to answer. So you have to pick a posture where "ask" never happens, because an ask in an unattended run is a hang or a death, not a pause.
 
-That rules out `on-request` here — it's built to pause and consult you. The combination an unattended run wants is **approvals set to never, paired with the tightest sandbox that still lets the job finish**:
+That rules out `on-request` here - it's built to pause and consult you. The combination an unattended run wants is **approvals set to never, paired with the tightest sandbox that still lets the job finish**:
 
 ```text
 codex exec "Recategorise new transactions, then run the suite." \
@@ -51,18 +51,18 @@ codex exec "Recategorise new transactions, then run the suite." \
   --sandbox workspace-write
 ```
 
-- `--ask-for-approval never` means the run never stops to consult a human — it either does the work within its sandbox or it fails. That's the only approval mode that makes sense when there's no human to consult.
-- `--sandbox workspace-write` confines writes to the working directory, so the run can recategorise transactions and write test output but can't roam the runner's filesystem. Recall from [the sandbox lesson](/course/codex/approvals-sandbox/) that **network is off by default** in `workspace-write` — which is exactly what you want for a check that should only ever touch local files, and a reason to keep the exchange-rate MCP server *out* of this particular job.
+- `--ask-for-approval never` means the run never stops to consult a human - it either does the work within its sandbox or it fails. That's the only approval mode that makes sense when there's no human to consult.
+- `--sandbox workspace-write` confines writes to the working directory, so the run can recategorise transactions and write test output but can't roam the runner's filesystem. Recall from [the sandbox lesson](/course/codex/approvals-sandbox/) that **network is off by default** in `workspace-write` - which is exactly what you want for a check that should only ever touch local files, and a reason to keep the exchange-rate MCP server *out* of this particular job.
 
 The principle is the same high-floor, low-ceiling posture you built interactively, now carrying full weight: `never` approvals so the run can't hang, the narrowest sandbox so it can't wander. Reserve `danger-full-access` and `--yolo` for throwaway containers; they have no business on a runner that has your repo checked out and your API key in its environment.
 
 ## Treat the new transactions as untrusted input
 
-One CI-specific hazard worth a callout. The data this job runs on — freshly imported transactions, possibly from a CSV someone else produced — is **input the agent will read**, and input is where prompt injection lives. A row crafted to read like an instruction ("ignore previous instructions and...") is exactly the kind of thing an unattended agent shouldn't be free to act on.
+One CI-specific hazard worth a callout. The data this job runs on - freshly imported transactions, possibly from a CSV someone else produced - is **input the agent will read**, and input is where prompt injection lives. A row crafted to read like an instruction ("ignore previous instructions and...") is exactly the kind of thing an unattended agent shouldn't be free to act on.
 
 Two habits keep that contained, both already in your toolkit:
 
 - **Lean on the sandbox, not the prompt, for the hard limits.** `--sandbox workspace-write` with network off means that even if the agent were talked into something, it physically can't reach the rate API or exfiltrate anything off the box. The sandbox is the wall; the prompt is just guidance.
-- **Hand it data, don't let it hunt.** Where you can, pipe or point the agent at the specific transactions to check rather than turning it loose to find them — the [headless lesson](/course/codex/automation/headless/) showed the shape. Less reaching, smaller blast radius.
+- **Hand it data, don't let it hunt.** Where you can, pipe or point the agent at the specific transactions to check rather than turning it loose to find them - the [headless lesson](/course/codex/automation/headless/) showed the shape. Less reaching, smaller blast radius.
 
-You now have the transaction check running on every push, authenticating with a key it reads from the environment and confined to a posture it committed to before the run started. But there's a subtler problem hiding in that run: it still loads *your* personal config and *budgetcli's* `AGENTS.md`, which means it can behave differently on the runner than it did on your laptop — and differently next month when either of those files has drifted. Pinning that down is [the next lesson](/course/codex/automation/reproducible/).
+You now have the transaction check running on every push, authenticating with a key it reads from the environment and confined to a posture it committed to before the run started. But there's a subtler problem hiding in that run: it still loads *your* personal config and *budgetcli's* `AGENTS.md`, which means it can behave differently on the runner than it did on your laptop - and differently next month when either of those files has drifted. Pinning that down is [the next lesson](/course/codex/automation/reproducible/).

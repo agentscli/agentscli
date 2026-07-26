@@ -1,12 +1,12 @@
 /**
- * Fresh-eyes probe data — the reader plays a fresh agent running the
+ * Fresh-eyes probe data - the reader plays a fresh agent running the
  * step-2 naming probe against two repo structures: one smears the answer
  * across four folders, the other holds it in one file.
  *
  * Keep in sync with: src/content/docs/playbooks/ai-ready-code.mdx
  * (the billing running example, the probe question "Where do we decide
  * which customers get billed?", the layer-first vs domain-first trees in
- * step 2's code block, and the ≤2-moves pass threshold). Evergreen — no
+ * step 2's code block, and the ≤2-moves pass threshold). Evergreen - no
  * vendor facts; the trees extend the chapter's block with plausible
  * distractor files only.
  *
@@ -28,11 +28,11 @@ export const FE_FRAMING =
   "You're the fresh session: no rules file, no memory, no tenure. Open files until you can answer.";
 
 export const FE_EMPTY =
-  'Nothing opened yet — findings accumulate here as you read.';
+  'Nothing opened yet - findings accumulate here as you read.';
 
 /** Closing line under the scoreboard, once both structures have a verdict. */
 export const FE_CLOSING =
-  'That difference, times every session, forever — structure is context you pay for once.';
+  'That difference, times every session, forever - structure is context you pay for once.';
 
 export type FeStructureId = 'layer' | 'domain';
 
@@ -112,7 +112,7 @@ export const feStructures: FeStructure[] = [
         path: 'services/billing.ts',
         depth: 2,
         finding:
-          'part of it — `runBilling()` filters by due date, but imports the exclusion rules from the validator.',
+          'part of it - `runBilling()` filters by due date, but imports the exclusion rules from the validator.',
         piece: true,
       },
       {
@@ -151,7 +151,7 @@ export const feStructures: FeStructure[] = [
         path: 'validators/billing.ts',
         depth: 2,
         finding:
-          'part of it — the archived-customer exclusion lives here, as a validation rule.',
+          'part of it - the archived-customer exclusion lives here, as a validation rule.',
         piece: true,
       },
       { kind: 'folder', label: 'jobs/', depth: 1 },
@@ -162,21 +162,21 @@ export const feStructures: FeStructure[] = [
         path: 'jobs/nightly-run.ts',
         depth: 2,
         finding:
-          "part of it — the nightly job hardcodes a `status !== 'trial'` filter before calling the service.",
+          "part of it - the nightly job hardcodes a `status !== 'trial'` filter before calling the service.",
         piece: true,
       },
     ],
     piecesNeeded: 3,
-    // Three pieces means three opens minimum — a pass is arithmetically impossible.
+    // Three pieces means three opens minimum - a pass is arithmetically impossible.
     verdictPass: null,
     verdictFail:
-      'Answer assembled — from three files in three folders, in {opens} opens. The threshold was 2. Nothing here is missing; it’s smeared. And a fresh session pays this again tomorrow.',
+      'Answer assembled - from three files in three folders, in {opens} opens. The threshold was 2. Nothing here is missing; it’s smeared. And a fresh session pays this again tomorrow.',
     scorePass: null,
-    scoreFail: '{opens} opens, 3 files — fail',
+    scoreFail: '{opens} opens, 3 files - fail',
     nudge:
-      'Still assembling — the decision is split across a service, a validator, and a job.',
+      'Still assembling - the decision is split across a service, a validator, and a job.',
     nextPrompt:
-      'Same question, same logic — now run it against the domain-first tab.',
+      'Same question, same logic - now run it against the domain-first tab.',
   },
   {
     id: 'domain',
@@ -191,7 +191,7 @@ export const feStructures: FeStructure[] = [
         path: 'billing/select.ts',
         depth: 2,
         finding:
-          'all of it — `selectBillableItems()` filters due, non-archived, non-trial customers. One pure function, one file.',
+          'all of it - `selectBillableItems()` filters due, non-archived, non-trial customers. One pure function, one file.',
         piece: true,
       },
       {
@@ -200,7 +200,7 @@ export const feStructures: FeStructure[] = [
         label: 'invoice.ts',
         path: 'billing/invoice.ts',
         depth: 2,
-        finding: 'how much — not who. One folder over from the answer.',
+        finding: 'how much - not who. One folder over from the answer.',
         piece: false,
       },
       {
@@ -235,12 +235,12 @@ export const feStructures: FeStructure[] = [
     ],
     piecesNeeded: 1,
     verdictPass:
-      '{opens} open{s}. Pass. Same logic, same codebase maturity — the structure just answers the question itself.',
+      '{opens} open{s}. Pass. Same logic, same codebase maturity - the structure just answers the question itself.',
     // Reachable only by opening distractors before select.ts.
     verdictFail:
-      'Assembled in {opens} opens — the answer was one file all along. The structure would have ended this in one.',
-    scorePass: '{opens} open{s} — pass',
-    scoreFail: '{opens} opens — fail',
+      'Assembled in {opens} opens - the answer was one file all along. The structure would have ended this in one.',
+    scorePass: '{opens} open{s} - pass',
+    scoreFail: '{opens} opens - fail',
     nudge: null,
     nextPrompt: 'Now run the same question against the layer-first tab.',
   },

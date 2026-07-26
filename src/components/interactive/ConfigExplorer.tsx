@@ -12,9 +12,9 @@ const BADGE_LABEL: Record<string, string> = {
 };
 
 const BADGE_HINT: Record<string, string> = {
-  committed: 'Tracked in git — shared with your whole team.',
-  gitignored: 'Excluded from git — stays on your machine only.',
-  'auto-generated': "Written by the tool itself — don't hand-edit.",
+  committed: 'Tracked in git - shared with your whole team.',
+  gitignored: 'Excluded from git - stays on your machine only.',
+  'auto-generated': "Written by the tool itself - don't hand-edit.",
 };
 
 // Long path labels wrap at slashes rather than mid-token.

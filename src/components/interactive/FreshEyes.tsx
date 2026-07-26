@@ -216,7 +216,7 @@ export default function FreshEyes() {
           <div
             className="fe-tree"
             role="group"
-            aria-label={`${structure.tabLabel} file tree — arrow keys move, Enter opens`}
+            aria-label={`${structure.tabLabel} file tree - arrow keys move, Enter opens`}
           >
             {structure.rows.map((row, i) => {
               if (!isFile(row)) {
@@ -245,7 +245,7 @@ export default function FreshEyes() {
                   style={{ paddingLeft: 10 + row.depth * 16 }}
                   tabIndex={idx === roveIdx ? 0 : -1}
                   aria-pressed={isOpen}
-                  aria-label={`${row.path}${isOpen ? ' — opened' : ''}`}
+                  aria-label={`${row.path}${isOpen ? ' - opened' : ''}`}
                   onClick={() => {
                     setRove(idx);
                     openFile(row);

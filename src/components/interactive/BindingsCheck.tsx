@@ -114,7 +114,7 @@ export default function BindingsCheck() {
 
       <div className="bc-stage">
         <div className="bc-card-col">
-          {/* Demo artifact only — every value it renders is inspectable as
+          {/* Demo artifact only - every value it renders is inspectable as
               text in the chips, so the card itself is hidden from AT. */}
           <div className="bc-card" aria-hidden="true">
             <span className="bc-card-badge">{BC_CARD.badge}</span>

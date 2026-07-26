@@ -1,6 +1,6 @@
 ---
 title: "Inject the Reminder When the Agent Forgets"
-description: "Your rules file is necessary but not sufficient. Persistent context degrades as the window fills — so move the rule that keeps getting ignored into a hook that fires at the exact moment it matters."
+description: "Your rules file is necessary but not sufficient. Persistent context degrades as the window fills - so move the rule that keeps getting ignored into a hook that fires at the exact moment it matters."
 authors: sourabh
 date: 2026-05-29
 tags: [context-engineering, hooks, rules, workflow]
@@ -9,7 +9,7 @@ draft: false
 
 The rule is right there in your context file. You wrote it weeks ago: *when you change the base translation, update the other locales.* For the first hour of the session, the agent honors it. You edit `en.json`, and without prompting it fans the change out to `fr.json`, `de.json`, `ja.json`. Clean.
 
-Then the session gets long. You refactor a component, chase a flaky test, rename a prop across nine files. Somewhere in there you touch `en.json` again — and nothing happens to the other locales. No fan-out. No mention of the rule. The agent that obeyed it at token 8,000 walks right past it at token 90,000.
+Then the session gets long. You refactor a component, chase a flaky test, rename a prop across nine files. Somewhere in there you touch `en.json` again - and nothing happens to the other locales. No fan-out. No mention of the rule. The agent that obeyed it at token 8,000 walks right past it at token 90,000.
 
 You didn't change the rule. You didn't change the file. What changed is that the instruction got crowded out as the window filled.
 
@@ -17,22 +17,22 @@ You didn't change the rule. You didn't change the file. What changed is that the
 
 The reflex is to fix this in the rules file. Bold the line. Add capitals. Move it to the top. Write `IMPORTANT:` in front of it. You are negotiating with a probabilistic system about how much it should weight one sentence buried under 90,000 tokens of refactor diffs, test output, and your own back-and-forth. You will lose that negotiation eventually, because the failure isn't about emphasis. It's about position.
 
-[Rules](/foundations/rules/) are persistent context — declarative knowledge you write down once so the agent stops being a stranger to your codebase every morning. That's exactly the right tool for the *why*: why locales must stay in sync, what the contract is between the base file and the rest. But persistent context is passive. It sits in the window and competes for attention with everything else in the window. The more the session does, the more it competes, and the more it loses.
+[Rules](/foundations/rules/) are persistent context - declarative knowledge you write down once so the agent stops being a stranger to your codebase every morning. That's exactly the right tool for the *why*: why locales must stay in sync, what the contract is between the base file and the rest. But persistent context is passive. It sits in the window and competes for attention with everything else in the window. The more the session does, the more it competes, and the more it loses.
 
-This is the gap in miniature. A broad, fast agent that has read more `en.json` files than you ever will, paired with a project rule only you know matters — and the rule degrades precisely when the work gets deep enough to need it. Writing it down once was necessary. It was not sufficient.
+This is the gap in miniature. A broad, fast agent that has read more `en.json` files than you ever will, paired with a project rule only you know matters - and the rule degrades precisely when the work gets deep enough to need it. Writing it down once was necessary. It was not sufficient.
 
-Notice which rules survive and which don't. "We use pnpm, not npm" tends to hold, because it's reinforced constantly — every command the agent runs is a fresh reminder. The locale rule has no such reinforcement. It matters at one specific, infrequent moment, and the rest of the session is silent on it. Those are exactly the rules that get crowded out: low-frequency, high-stakes, and invisible until the moment they fire. A louder line in the rules file raises the floor on all of them at once, which is both expensive in tokens and unreliable in effect. You don't want every rule shouting all the time. You want the *right* rule to speak at the *right* moment.
+Notice which rules survive and which don't. "We use pnpm, not npm" tends to hold, because it's reinforced constantly - every command the agent runs is a fresh reminder. The locale rule has no such reinforcement. It matters at one specific, infrequent moment, and the rest of the session is silent on it. Those are exactly the rules that get crowded out: low-frequency, high-stakes, and invisible until the moment they fire. A louder line in the rules file raises the floor on all of them at once, which is both expensive in tokens and unreliable in effect. You don't want every rule shouting all the time. You want the *right* rule to speak at the *right* moment.
 
 ## Fire on the event, not on memory
 
 The durable fix is to stop depending on the agent *remembering* the rule and instead make the behavior happen *by construction*. You don't want a sentence the model might recall. You want an action that fires the instant the triggering edit happens, regardless of how full the window is.
 
-That is what [hooks](/foundations/hooks/) are for. A hook is a deterministic gate wired to an event in the agent's loop — a tool call about to run, or one that just finished. It does not care how many tokens deep you are. It fires on the event, every time, the same way.
+That is what [hooks](/foundations/hooks/) are for. A hook is a deterministic gate wired to an event in the agent's loop - a tool call about to run, or one that just finished. It does not care how many tokens deep you are. It fires on the event, every time, the same way.
 
 The event you care about here is "the base translation file was just edited." So you reach for a `PostToolUse` hook, matched on the edit tools, filtered to the one file that triggers the contract.
 
 ```json
-// .claude/settings.json — fire after any Edit/Write
+// .claude/settings.json - fire after any Edit/Write
 {
   "hooks": {
     "PostToolUse": [
@@ -51,13 +51,13 @@ The matcher narrows to edit-class tools. But `Edit|Write` fires on *every* file 
 
 ```bash
 #!/usr/bin/env bash
-# locale-sync-reminder.sh — only speak up when en.json was the file touched
+# locale-sync-reminder.sh - only speak up when en.json was the file touched
 payload="$(cat)"
 path="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty')"
 
 case "$path" in
   *locales/en.json)
-    # On PostToolUse, plain stdout never reaches the model — it only shows in the
+    # On PostToolUse, plain stdout never reaches the model - it only shows in the
     # transcript. To land text in the agent's context you emit JSON with
     # additionalContext, which Claude Code wraps in a system reminder beside the
     # tool result for the model to read on its next turn.
@@ -69,18 +69,18 @@ case "$path" in
     }'
     ;;
   *)
-    exit 0  # not the trigger file — say nothing
+    exit 0  # not the trigger file - say nothing
     ;;
 esac
 ```
 
-Now the reminder is not a line the agent has to keep alive in memory for two hours. The `additionalContext` field lands the message in the agent's context the moment — and only the moment — `en.json` is written; Claude Code wraps it in a system reminder beside the tool result, and the model reads it on its next turn. Token 8,000 or token 90,000, the trigger is identical, because it is bound to the event instead of to attention.
+Now the reminder is not a line the agent has to keep alive in memory for two hours. The `additionalContext` field lands the message in the agent's context the moment - and only the moment - `en.json` is written; Claude Code wraps it in a system reminder beside the tool result, and the model reads it on its next turn. Token 8,000 or token 90,000, the trigger is identical, because it is bound to the event instead of to attention.
 
-## Don't sync in the main window — fork it
+## Don't sync in the main window - fork it
 
-You could stop there and let the agent do the locale fan-out inline. Don't. Translating four files means loading four files, diffing keys, and emitting four edits — all of which lands in the main session's context window. You just spent a hook to fight context degradation; the last thing you want is to pour several thousand tokens of routine sync work back into the window you were trying to protect.
+You could stop there and let the agent do the locale fan-out inline. Don't. Translating four files means loading four files, diffing keys, and emitting four edits - all of which lands in the main session's context window. You just spent a hook to fight context degradation; the last thing you want is to pour several thousand tokens of routine sync work back into the window you were trying to protect.
 
-So the reminder doesn't say "go edit the locales." It says "delegate to the locale-sync subagent." [Subagents](/foundations/subagents/) are exactly the isolation primitive you want here: each one runs in its own context window and hands back only its final summary, so the files it loads and the diffs it reasons about never touch the main conversation. A subagent also declares which model it runs on — and key-matching across JSON files is mechanical, not subtle, so you point it at a fast model like Haiku.
+So the reminder doesn't say "go edit the locales." It says "delegate to the locale-sync subagent." [Subagents](/foundations/subagents/) are exactly the isolation primitive you want here: each one runs in its own context window and hands back only its final summary, so the files it loads and the diffs it reasons about never touch the main conversation. A subagent also declares which model it runs on - and key-matching across JSON files is mechanical, not subtle, so you point it at a fast model like Haiku.
 
 ```markdown
 ---
@@ -99,13 +99,13 @@ You sync locale files. When invoked:
 3. Report a one-line summary of what changed per file. Edit nothing else.
 ```
 
-The isolation is free — a subagent gets its own context by construction, so the main session never sees the four files load. It gets one line back: *fr/de/ja updated, 3 keys each.* The work happened; the window stayed clean.
+The isolation is free - a subagent gets its own context by construction, so the main session never sees the four files load. It gets one line back: *fr/de/ja updated, 3 keys each.* The work happened; the window stayed clean.
 
 ## Reminder, or enforcement?
 
-`additionalContext` is a nudge, not a guarantee. It lands fresh and adjacent to the tool result, which is exactly why it beats a line buried 90,000 tokens back — recency and position are doing the work that emphasis couldn't. But the agent still *reads* it and decides. A model deep in a different task can register the reminder and quietly deprioritize it. For most workflow rules that's fine: the reminder fires every time, the odds of compliance jump sharply, and the occasional miss costs you a one-line follow-up.
+`additionalContext` is a nudge, not a guarantee. It lands fresh and adjacent to the tool result, which is exactly why it beats a line buried 90,000 tokens back - recency and position are doing the work that emphasis couldn't. But the agent still *reads* it and decides. A model deep in a different task can register the reminder and quietly deprioritize it. For most workflow rules that's fine: the reminder fires every time, the odds of compliance jump sharply, and the occasional miss costs you a one-line follow-up.
 
-When the contract is non-negotiable — a security boundary, a generated file that must never be hand-edited — escalate from reminder to stop. A `PostToolUse` hook that returns a `block` decision halts the loop before the next model turn and feeds its reason back to the agent, so it cannot sail on as if nothing happened:
+When the contract is non-negotiable - a security boundary, a generated file that must never be hand-edited - escalate from reminder to stop. A `PostToolUse` hook that returns a `block` decision halts the loop before the next model turn and feeds its reason back to the agent, so it cannot sail on as if nothing happened:
 
 ```bash
 *locales/en.json)
@@ -116,26 +116,26 @@ When the contract is non-negotiable — a security boundary, a generated file th
   ;;
 ```
 
-Be precise about what this does. The edit already happened — `PostToolUse` fires *after* the tool runs — so `block` does not undo the write. What it does is refuse to let the session advance until the agent has confronted the reason on its next turn. That's the difference between a note the agent can shelve and a gate it has to walk through. Reach for `additionalContext` when a miss is recoverable; reach for `block` when it isn't.
+Be precise about what this does. The edit already happened - `PostToolUse` fires *after* the tool runs - so `block` does not undo the write. What it does is refuse to let the session advance until the agent has confronted the reason on its next turn. That's the difference between a note the agent can shelve and a gate it has to walk through. Reach for `additionalContext` when a miss is recoverable; reach for `block` when it isn't.
 
 ## When to leave the rule in the file
 
 A hook is not the answer for every rule, and converting the wrong ones makes things worse. Two kinds of rule belong in the [rules file](/foundations/rules/) and nowhere else.
 
-The first is the rule that already survives. "Use pnpm, not npm" needs no hook, because every command the agent runs reinforces it — the session keeps it alive for free. Wrapping it in a hook spends complexity to solve a problem you don't have.
+The first is the rule that already survives. "Use pnpm, not npm" needs no hook, because every command the agent runs reinforces it - the session keeps it alive for free. Wrapping it in a hook spends complexity to solve a problem you don't have.
 
-The second is the judgment call. A hook fires deterministically on a pattern; it cannot tell whether *this* edit genuinely warrants the action. "Add a changeset when you change public API" sounds hookable until you notice a path matcher can't distinguish a real signature change from a comment fix in the same file. Wire it to fire on every edit and it will cry wolf — and an injection that fires when it shouldn't trains the agent to read the reminder as noise, the exact banner-blindness you escaped by moving off the rules file. The locale fix works because its trigger is mechanical and unambiguous: one specific file, written, every time. The further a rule drifts from that — the more it depends on reading intent rather than matching a path — the more it belongs in prose the agent reasons over, not a gate that fires on a string.
+The second is the judgment call. A hook fires deterministically on a pattern; it cannot tell whether *this* edit genuinely warrants the action. "Add a changeset when you change public API" sounds hookable until you notice a path matcher can't distinguish a real signature change from a comment fix in the same file. Wire it to fire on every edit and it will cry wolf - and an injection that fires when it shouldn't trains the agent to read the reminder as noise, the exact banner-blindness you escaped by moving off the rules file. The locale fix works because its trigger is mechanical and unambiguous: one specific file, written, every time. The further a rule drifts from that - the more it depends on reading intent rather than matching a path - the more it belongs in prose the agent reasons over, not a gate that fires on a string.
 
 ## What you actually built
 
 Trace the path. You touch `en.json`. The `PostToolUse` hook fires on the edit event and filters to the trigger file. The reminder lands in context at that exact instant and names the subagent. The subagent runs in its own isolated context on a fast model, syncs the locales without spending your main window, and returns one line.
 
-The behavior that silently failed deep in a long session now happens whenever the relevant file is touched — not because the agent remembered, but because the event made it remember. You moved a load-bearing rule out of passive memory and into event-timed injection. That is the whole move.
+The behavior that silently failed deep in a long session now happens whenever the relevant file is touched - not because the agent remembered, but because the event made it remember. You moved a load-bearing rule out of passive memory and into event-timed injection. That is the whole move.
 
-This is what closing the gap looks like at the level of a single workflow. The rule encoded what only your team knew — that the locales form a contract. The agent, broad and fast, had no reason to treat `en.json` as special and every reason to forget it once the session got busy. The hook is the bridge: it carries your knowledge into the exact moment the agent acts, instead of hoping the agent carries it for you.
+This is what closing the gap looks like at the level of a single workflow. The rule encoded what only your team knew - that the locales form a contract. The agent, broad and fast, had no reason to treat `en.json` as special and every reason to forget it once the session got busy. The hook is the bridge: it carries your knowledge into the exact moment the agent acts, instead of hoping the agent carries it for you.
 
 ## One caveat: confirm the gate is actually live
 
-The old gotcha was that hooks loaded only at startup, so config you added mid-session did nothing until you relaunched. That's no longer the trap — Claude Code's file watcher picks up edits to `settings.json`, so the hook is usually live the moment you save it. What remains is silent misfires: a matcher that doesn't match, a script that isn't executable, or — the classic — a `PostToolUse` script that `echo`s its reminder to plain stdout, where the model never sees it. Run `/hooks` to confirm the handler is registered against the right event, and remember that on `PostToolUse` only `additionalContext` reaches the agent. Then edit `en.json` once and watch the reminder land.
+The old gotcha was that hooks loaded only at startup, so config you added mid-session did nothing until you relaunched. That's no longer the trap - Claude Code's file watcher picks up edits to `settings.json`, so the hook is usually live the moment you save it. What remains is silent misfires: a matcher that doesn't match, a script that isn't executable, or - the classic - a `PostToolUse` script that `echo`s its reminder to plain stdout, where the model never sees it. Run `/hooks` to confirm the handler is registered against the right event, and remember that on `PostToolUse` only `additionalContext` reaches the agent. Then edit `en.json` once and watch the reminder land.
 
-Keep the rules file for the *why* — that's where the contract and the reasoning belong, and it's where a human reading the repo will look. But for anything that must happen at a specific moment, stop trusting a sentence to survive the window. Convert it into a hook, and let the event do the remembering.
+Keep the rules file for the *why* - that's where the contract and the reasoning belong, and it's where a human reading the repo will look. But for anything that must happen at a specific moment, stop trusting a sentence to survive the window. Convert it into a hook, and let the event do the remembering.

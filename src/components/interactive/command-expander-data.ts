@@ -1,8 +1,8 @@
 /**
- * Command expander — one custom command (/security-review) traced from the
+ * Command expander - one custom command (/security-review) traced from the
  * keystroke, through the file that defines it, to the prompt the model
  * receives. Paths, placeholders, and invocation semantics are extracted from
- * src/content/tool-instructions/<tool>/slash-commands.mdx — keep in sync.
+ * src/content/tool-instructions/<tool>/slash-commands.mdx - keep in sync.
  * The example command itself is illustrative.
  */
 
@@ -46,10 +46,10 @@ export const cxpTools: CxpToolSpec[] = [
     ],
     notes: {
       invoke:
-        'Every user-invocable skill is a slash command — `/security-review` fires this SKILL.md. The legacy `.claude/commands/<name>.md` form still works.',
-      args: 'Only `$ARGUMENTS` is documented — the full tail after the command name lands as one string.',
+        'Every user-invocable skill is a slash command - `/security-review` fires this SKILL.md. The legacy `.claude/commands/<name>.md` form still works.',
+      args: 'Only `$ARGUMENTS` is documented - the full tail after the command name lands as one string.',
       caveat:
-        'Add `disable-model-invocation: true` and the model can never auto-trigger it — the pattern for side-effect commands like `/deploy-dry-run`.',
+        'Add `disable-model-invocation: true` and the model can never auto-trigger it - the pattern for side-effect commands like `/deploy-dry-run`.',
     },
   },
   {
@@ -69,10 +69,10 @@ export const cxpTools: CxpToolSpec[] = [
     ],
     notes: {
       invoke:
-        'The filename minus `.md` is the command name. Unique to Codex: press Tab to queue the command — it fires when the current turn finishes.',
+        'The filename minus `.md` is the command name. Unique to Codex: press Tab to queue the command - it fires when the current turn finishes.',
       args: '`$1`–`$9` positional, `$ARGUMENTS` for the full tail, named placeholders like `$FILE`, and `$$` escapes a literal dollar.',
       caveat:
-        'Prompts and skills are separate primitives with separate syntax — `/name` fires a prompt, `$name` fires a skill — and the docs now steer new work toward skills.',
+        'Prompts and skills are separate primitives with separate syntax - `/name` fires a prompt, `$name` fires a skill - and the docs now steer new work toward skills.',
     },
   },
   {
@@ -92,10 +92,10 @@ export const cxpTools: CxpToolSpec[] = [
     ],
     notes: {
       invoke:
-        '`/security-review` executes immediately — no queueing. User-level commands live in `~/.config/opencode/commands/`.',
+        '`/security-review` executes immediately - no queueing. User-level commands live in `~/.config/opencode/commands/`.',
       args: '`$ARGUMENTS` for the full tail, `$1`, `$2`, … for positional tokens.',
       caveat:
-        'Commands are the user-triggered surface; skills are a separate primitive — and plugins can’t register slash commands today.',
+        'Commands are the user-triggered surface; skills are a separate primitive - and plugins can’t register slash commands today.',
     },
   },
   {
@@ -116,9 +116,9 @@ export const cxpTools: CxpToolSpec[] = [
     notes: {
       invoke:
         'In the editor’s Agent chat, the `/` picker lists subagents, skills, and custom commands (since 1.6). The CLI’s slash set is fixed built-ins (`/model`, `/rules`, `/commands`, …).',
-      args: 'Unverified — argument-passing semantics aren’t documented, and community requests for richer templating are still open. We show the body verbatim, so no arguments in the example.',
+      args: 'Unverified - argument-passing semantics aren’t documented, and community requests for richer templating are still open. We show the body verbatim, so no arguments in the example.',
       caveat:
-        '`/` runs something, `@` attaches context — a deliberate split. On Enterprise, Team Commands push commands centrally with no local file edit.',
+        '`/` runs something, `@` attaches context - a deliberate split. On Enterprise, Team Commands push commands centrally with no local file edit.',
     },
   },
   {
@@ -138,10 +138,10 @@ export const cxpTools: CxpToolSpec[] = [
     ],
     notes: {
       invoke:
-        '`/security-review` from Chat in VS Code, JetBrains, or the web — note the `.prompt.md` extension. The location is configurable via `chat.promptFilesLocations`.',
-      args: 'No argument substitution is documented for prompt files in our chapter — the body ships as written.',
+        '`/security-review` from Chat in VS Code, JetBrains, or the web - note the `.prompt.md` extension. The location is configurable via `chat.promptFilesLocations`.',
+      args: 'No argument substitution is documented for prompt files in our chapter - the body ships as written.',
       caveat:
-        '`/` runs an action, `@` attaches context. The `copilot` CLI and `gh copilot` are separate surfaces — their commands don’t carry over.',
+        '`/` runs an action, `@` attaches context. The `copilot` CLI and `gh copilot` are separate surfaces - their commands don’t carry over.',
     },
   },
 ];

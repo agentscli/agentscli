@@ -9,11 +9,11 @@ draft: true
 
 "The agent keeps getting our auth flow wrong." Everyone on the team nods. Nobody can say how often, in which way, or whether it's one bug or five wearing the same coat. So the fix is a vibe: someone adds a paragraph to the rules file, the complaints get quieter for a week, and the cycle resets. You are debugging a system you have never actually looked at.
 
-Here is the thing you walked past on the way to that paragraph. **Every failed run is a labeled example.** The label is "this went wrong," and the transcript is the feature vector — the prompt, the context the agent had, the tool calls it made, the wrong turn it took. You generate dozens of these a day and then close the terminal. That's a dataset hitting the floor.
+Here is the thing you walked past on the way to that paragraph. **Every failed run is a labeled example.** The label is "this went wrong," and the transcript is the feature vector - the prompt, the context the agent had, the tool calls it made, the wrong turn it took. You generate dozens of these a day and then close the terminal. That's a dataset hitting the floor.
 
 ## The instinct to clean up the transcript is the bug
 
-When a run fails, the tidy move is to clear it and start fresh. Clean slate, no clutter. But the failure you just dismissed is the only direct measurement you have of where your agent's context is thin. The mainstream advice — write better rules, pick a [stronger model](/foundations/model-selection/), tune your prompts — is reasonable, and it is also guessing. You're proposing fixes to a distribution you've never measured.
+When a run fails, the tidy move is to clear it and start fresh. Clean slate, no clutter. But the failure you just dismissed is the only direct measurement you have of where your agent's context is thin. The mainstream advice - write better rules, pick a [stronger model](/foundations/model-selection/), tune your prompts - is reasonable, and it is also guessing. You're proposing fixes to a distribution you've never measured.
 
 The contrarian move is boring and it wins: **look at your data.** Almost nobody reads their failed transcripts, which is exactly why everyone keeps re-correcting the same five things by hand. The model isn't the bottleneck. Your ignorance of your own failure modes is.
 
@@ -27,24 +27,24 @@ Use a [hook](/foundations/hooks/) that fires when a session ends and appends the
 
 ```bash
 #!/usr/bin/env bash
-# .claude/hooks/session-end.sh — append every session transcript to a JSONL log
+# .claude/hooks/session-end.sh - append every session transcript to a JSONL log
 SESSION_DIR="${HOME}/.agent-runs"
 mkdir -p "$SESSION_DIR"
 
-# SessionEnd hands the hook a JSON payload on stdin — the transcript path and the
+# SessionEnd hands the hook a JSON payload on stdin - the transcript path and the
 # reason the session ended live in there, not in environment variables.
 payload=$(cat)
 transcript=$(jq -r '.transcript_path' <<<"$payload")
 reason=$(jq -r '.reason' <<<"$payload")
 
-# The transcript file itself is JSONL — one message object per line — so slurp it
+# The transcript file itself is JSONL - one message object per line - so slurp it
 # into an array (-s) and fold it into a single record for the run log.
 jq -cs --arg reason "$reason" \
   '{ts: now, reason: $reason, transcript: .}' \
   "$transcript" >> "$SESSION_DIR/runs.jsonl"
 ```
 
-Now `runs.jsonl` accumulates the real distribution of your work — successes and failures, undifferentiated, which is fine. You don't need to label them by hand. That's the next step's job. The hook's only job is to make sure nothing reaches the floor.
+Now `runs.jsonl` accumulates the real distribution of your work - successes and failures, undifferentiated, which is fine. You don't need to label them by hand. That's the next step's job. The hook's only job is to make sure nothing reaches the floor.
 
 ## Let an LLM judge cluster the failures into counts
 
@@ -52,7 +52,7 @@ A pile of transcripts is not insight. You need them sorted into named categories
 
 ```bash
 # --output-format json here is Claude Code's flag (Codex's equivalent is
-# `codex exec --json`); the `agent` binary is illustrative — swap in yours.
+# `codex exec --json`); the `agent` binary is illustrative - swap in yours.
 while read -r run; do
   echo "$run" | agent -p \
     "Classify this agent session. Output JSON only:
@@ -63,7 +63,7 @@ while read -r run; do
 done < ~/.agent-runs/runs.jsonl > ~/.agent-runs/judged.jsonl
 ```
 
-Then collapse it to the only artifact that matters — a ranked tally:
+Then collapse it to the only artifact that matters - a ranked tally:
 
 ```bash
 jq -r 'select(.outcome=="failure") | .category' \
@@ -77,16 +77,16 @@ jq -r 'select(.outcome=="failure") | .category' \
    4 misread-monorepo-package-boundaries
 ```
 
-"The agent keeps getting our auth flow wrong" was never one problem. It was **31 instances of the same specific mistake** — inventing middleware instead of calling the helper you already wrote — plus a long tail of unrelated noise. The vibe is now a number, and the number tells you exactly where the leverage is.
+"The agent keeps getting our auth flow wrong" was never one problem. It was **31 instances of the same specific mistake** - inventing middleware instead of calling the helper you already wrote - plus a long tail of unrelated noise. The vibe is now a number, and the number tells you exactly where the leverage is.
 
-One caution before you trust the tally: read a dozen of the judged transcripts yourself, especially near the category boundaries. An LLM judge inherits the same kind of blind spots as the model that failed — it has documented biases toward output that looks like its own and toward whichever answer it saw first — so its categories are a fast first pass, not ground truth. You're hunting for the places it lumped two distinct failures under one label, or minted a vague category to be agreeable. The count is only as honest as a human spot-check makes it. This is the part the people who do this for a living are adamant about: look at your data with your own eyes first, then let the machine scale what you learned.
+One caution before you trust the tally: read a dozen of the judged transcripts yourself, especially near the category boundaries. An LLM judge inherits the same kind of blind spots as the model that failed - it has documented biases toward output that looks like its own and toward whichever answer it saw first - so its categories are a fast first pass, not ground truth. You're hunting for the places it lumped two distinct failures under one label, or minted a vague category to be agreeable. The count is only as honest as a human spot-check makes it. This is the part the people who do this for a living are adamant about: look at your data with your own eyes first, then let the machine scale what you learned.
 
 ## Fix the top category once, in your rules file
 
 The whole exercise pays off here. That top row isn't a bug to squash run-by-run; it's a **missing piece of persistent context.** The agent reinvents `requireSession` because nothing in its context told it the helper exists. So you tell it once, in the [rules](/foundations/rules/) file every session loads:
 
 ```md
-## Auth — do not reinvent
+## Auth - do not reinvent
 
 Session checks go through `requireSession()` in `src/lib/auth.ts`.
 Never write custom middleware that reads cookies or verifies JWTs by hand.
@@ -96,29 +96,29 @@ Protected routes: wrap the handler, don't add a guard inside it.
     export const POST = requireSession(async (req, session) => { /* ... */ });
 ```
 
-One edit retires 31 future corrections. This is the highest-ROI move in the whole practice, and it isn't a hunch — teams who run error analysis formally find the same shape every time: a handful of categories cover most of the failures, and fixing one at its root can turn a class that failed most of the time into one that rarely does. The leverage is real, and it's concentrated in the top row. And because the loop is data-driven, you can prove it worked: run the judge again next week and watch that row shrink. If it doesn't, your fix was wrong — which is itself information you'd never have had from a vibe. The rules file stops being a junk drawer of guesses and becomes a changelog of measured failures, each entry earning its place. Let the count be your threshold: promote a category only once it clears some bar — say five instances — so the file stays a guardrail per recurring class, not a diary of every one-off nitpick. A bloated rules file gets skimmed and ignored; a tight one gets followed.
+One edit retires 31 future corrections. This is the highest-ROI move in the whole practice, and it isn't a hunch - teams who run error analysis formally find the same shape every time: a handful of categories cover most of the failures, and fixing one at its root can turn a class that failed most of the time into one that rarely does. The leverage is real, and it's concentrated in the top row. And because the loop is data-driven, you can prove it worked: run the judge again next week and watch that row shrink. If it doesn't, your fix was wrong - which is itself information you'd never have had from a vibe. The rules file stops being a junk drawer of guesses and becomes a changelog of measured failures, each entry earning its place. Let the count be your threshold: promote a category only once it clears some bar - say five instances - so the file stays a guardrail per recurring class, not a diary of every one-off nitpick. A bloated rules file gets skimmed and ignored; a tight one gets followed.
 
 ## The category tells you which surface to fix it on
 
-The auth row lands in the rules file because the failure is a missing fact — the agent didn't know `requireSession` existed. But scroll down the tally and the other rows want different tools, and the label tells you which.
+The auth row lands in the rules file because the failure is a missing fact - the agent didn't know `requireSession` existed. But scroll down the tally and the other rows want different tools, and the label tells you which.
 
 `wrong-test-runner (used jest, repo uses vitest)` is also a knowledge gap, but it's the kind a sentence in the rules file is too quiet to fix. The agent reaches for `jest` on reflex before it consults anything. A [hook](/foundations/hooks/) that intercepts the test command and rejects `jest` outright is louder than a rule, because it fires at the moment of the mistake instead of hoping the agent remembered a paragraph from session start.
 
-`edited-generated-files-in-src/gen` isn't a knowledge gap at all — the agent often knows the files are generated and edits them anyway because nothing stops it. That's a [permissions](/foundations/permissions/) problem: deny writes to `src/gen` and the category drops to zero by construction, no persuasion required.
+`edited-generated-files-in-src/gen` isn't a knowledge gap at all - the agent often knows the files are generated and edits them anyway because nothing stops it. That's a [permissions](/foundations/permissions/) problem: deny writes to `src/gen` and the category drops to zero by construction, no persuasion required.
 
 So the tally does double duty. The count tells you which row to fix first; the *shape* of the category tells you whether the fix is a rule (it didn't know), a hook (it knew but acted on reflex), or a deny rule (it knew and you have to stop it). Reading each failure as "what kind of context was missing" is what turns a list of complaints into a routing table.
 
-And the count is what stops you fixing the wrong row first. Left to instinct, you'll go after whichever failure annoys *you* most — the test-runner mix-up that broke your flow this morning — while the 31-instance auth hole keeps bleeding quietly because no single occurrence ever felt dramatic. The squeaky wheel and the expensive wheel are rarely the same wheel. The tally is the only thing that tells them apart.
+And the count is what stops you fixing the wrong row first. Left to instinct, you'll go after whichever failure annoys *you* most - the test-runner mix-up that broke your flow this morning - while the 31-instance auth hole keeps bleeding quietly because no single occurrence ever felt dramatic. The squeaky wheel and the expensive wheel are rarely the same wheel. The tally is the only thing that tells them apart.
 
 ## When the loop isn't worth running
 
-This is a volume play, and it's worth being honest about the floor. If you generate five agent runs a week on a solo weekend project, you don't have a distribution — you have anecdotes, and the right response to an anecdote is to just fix it and move on. The hook, the judge batch, and the spot-check are overhead that only pays back when the same mistake is expensive *because it recurs*: a team sharing one codebase, a long-lived repo, an agent you invoke dozens of times a day. Below that threshold you're building a measurement apparatus for a signal too sparse to read. Reach for it when the corrections start feeling like a loop you're stuck in — that feeling is the distribution telling you it's large enough to measure.
+This is a volume play, and it's worth being honest about the floor. If you generate five agent runs a week on a solo weekend project, you don't have a distribution - you have anecdotes, and the right response to an anecdote is to just fix it and move on. The hook, the judge batch, and the spot-check are overhead that only pays back when the same mistake is expensive *because it recurs*: a team sharing one codebase, a long-lived repo, an agent you invoke dozens of times a day. Below that threshold you're building a measurement apparatus for a signal too sparse to read. Reach for it when the corrections start feeling like a loop you're stuck in - that feeling is the distribution telling you it's large enough to measure.
 
-Two honest caveats, because capturing everything has a cost. A log of every transcript is also a log of every secret, token, and customer detail that passed through the agent — treat `runs.jsonl` as sensitive, redact before it leaves your machine, and don't let it outlive its usefulness. And don't over-fit: the failures you captured are a sample, not the whole truth, so a fix that empties one row of your log isn't proven until it holds on runs you haven't seen yet. The tally tells you where to look; it doesn't excuse you from looking.
+Two honest caveats, because capturing everything has a cost. A log of every transcript is also a log of every secret, token, and customer detail that passed through the agent - treat `runs.jsonl` as sensitive, redact before it leaves your machine, and don't let it outlive its usefulness. And don't over-fit: the failures you captured are a sample, not the whole truth, so a fix that empties one row of your log isn't proven until it holds on runs you haven't seen yet. The tally tells you where to look; it doesn't excuse you from looking.
 
 This is context engineering with the guessing removed. The agent is broad and fast and contextless; it will confidently rebuild what it can't see. Your transcripts are the highest-resolution map of what it can't see, generated for free, every single day. The only question is whether you keep them.
 
-Clean transcripts feel productive. Counted transcripts make you smarter. Stop clearing the failures — start tallying them.
+Clean transcripts feel productive. Counted transcripts make you smarter. Stop clearing the failures - start tallying them.
 
 ---
 

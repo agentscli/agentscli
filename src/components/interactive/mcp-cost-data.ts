@@ -1,13 +1,13 @@
 /**
  * Illustrative MCP servers for the context-cost meter. Tool counts and
  * schema sizes are order-of-magnitude estimates (~600–800 tokens per tool
- * definition), not measurements — the point is the shape of the cost, not
+ * definition), not measurements - the point is the shape of the cost, not
  * the exact numbers. Window + built-in baseline match context-sim-data.ts.
  */
 
 export const MCM_WINDOW_TOKENS = 200;
 
-/** Built-in tool definitions (read, edit, bash, grep…) — always present */
+/** Built-in tool definitions (read, edit, bash, grep…) - always present */
 export const MCM_BUILTIN_TOKENS = 12;
 
 /** Approx. cost per enabled server when schemas are deferred (name + description stub) */
@@ -28,7 +28,7 @@ export const mcpServers: McpServer[] = [
     label: 'GitHub',
     toolCount: 35,
     tokens: 26,
-    blurb: 'Issues, PRs, reviews, workflows — big surface, big schema.',
+    blurb: 'Issues, PRs, reviews, workflows - big surface, big schema.',
   },
   {
     id: 'playwright',

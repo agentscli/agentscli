@@ -1,29 +1,29 @@
 ---
 title: "Orchestrator, lead, worker"
-description: "Add the layer between you and the workers: leads who plan and delegate but never touch a file themselves. And the real reason to decompose a migration — it isn't context size, it's focus."
+description: "Add the layer between you and the workers: leads who plan and delegate but never touch a file themselves. And the real reason to decompose a migration - it isn't context size, it's focus."
 sidebar:
   label: "Orchestration · the layer between you and the work"
 ---
 
 import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
 
-Go back to how the last chapter's fan-out actually worked: your main thread spawned N children with `spawn("pi", ["--mode","json","-p", ...])`, waited on all of them with `Promise.allSettled`, and read N summaries back. Flat, one hop, done. That shape was exactly right for re-extracting a pile of saved URLs, because every child was doing the *same* narrow job on a different input — there was nothing to coordinate, only work to divide.
+Go back to how the last chapter's fan-out actually worked: your main thread spawned N children with `spawn("pi", ["--mode","json","-p", ...])`, waited on all of them with `Promise.allSettled`, and read N summaries back. Flat, one hop, done. That shape was exactly right for re-extracting a pile of saved URLs, because every child was doing the *same* narrow job on a different input - there was nothing to coordinate, only work to divide.
 
-The extraction-engine migration doesn't divide that cleanly. It splits into genuinely different *domains* — the extractor module itself, the search index that has to be rebuilt against whatever the new extractor produces, the web UI and CLI that render whatever shape comes out the other end — and inside each domain there's more than one worker's worth of work. Fan all of that out flat from one thread and you're not delegating anymore, you're just relaying: reading every domain's status, deciding what each one should do next, holding all three domains' context in your own head at once. You rebuilt the bottleneck you were trying to remove.
+The extraction-engine migration doesn't divide that cleanly. It splits into genuinely different *domains* - the extractor module itself, the search index that has to be rebuilt against whatever the new extractor produces, the web UI and CLI that render whatever shape comes out the other end - and inside each domain there's more than one worker's worth of work. Fan all of that out flat from one thread and you're not delegating anymore, you're just relaying: reading every domain's status, deciding what each one should do next, holding all three domains' context in your own head at once. You rebuilt the bottleneck you were trying to remove.
 
 ## Add one layer: a lead per domain
 
-The fix isn't a new primitive — it's the *same* spawn mechanism from the last chapter, used one level deeper. A **lead** is a spawned `pi` process, exactly like a worker, except its job is never to edit a file. Its job is to read enough of its domain to plan, then spawn and manage the workers underneath it. For the migration, that's three leads:
+The fix isn't a new primitive - it's the *same* spawn mechanism from the last chapter, used one level deeper. A **lead** is a spawned `pi` process, exactly like a worker, except its job is never to edit a file. Its job is to read enough of its domain to plan, then spawn and manage the workers underneath it. For the migration, that's three leads:
 
-- **Extraction lead** — owns the extractor module and the fetch worker's call site. Delegates workers for "swap the library," "handle the sites that broke the old extractor," and "backfill the test fixtures."
-- **Index lead** — owns the full-text search rebuild. Delegates workers for "reindex every already-saved row" and "confirm the accented-character cases that used to get dropped now round-trip."
-- **Interface lead** — owns the tiny web UI and the CLI's rendering of saved entries. Delegates a worker per surface.
+- **Extraction lead** - owns the extractor module and the fetch worker's call site. Delegates workers for "swap the library," "handle the sites that broke the old extractor," and "backfill the test fixtures."
+- **Index lead** - owns the full-text search rebuild. Delegates workers for "reindex every already-saved row" and "confirm the accented-character cases that used to get dropped now round-trip."
+- **Interface lead** - owns the tiny web UI and the CLI's rendering of saved entries. Delegates a worker per surface.
 
-You — or your primary Pi session — become the **orchestrator**: you talk to three leads, not to every worker underneath them. Your own prompt burden doesn't grow whether each lead is running one worker or five; that scaling happens entirely underneath the leads, out of your sight.
+You - or your primary Pi session - become the **orchestrator**: you talk to three leads, not to every worker underneath them. Your own prompt burden doesn't grow whether each lead is running one worker or five; that scaling happens entirely underneath the leads, out of your sight.
 
 ## The hard rule: leads don't work, they delegate
 
-This only holds together if leads are *structurally* prevented from doing direct work, not just asked nicely not to. The mechanism is the tool-surface lock you'll recognize from the last chapter's spawn primitive: strip a lead down to a single dispatch tool on session start, so it cannot open `edit` or `write` even if it wanted to —
+This only holds together if leads are *structurally* prevented from doing direct work, not just asked nicely not to. The mechanism is the tool-surface lock you'll recognize from the last chapter's spawn primitive: strip a lead down to a single dispatch tool on session start, so it cannot open `edit` or `write` even if it wanted to -
 
 ```ts
 pi.registerFlag("role", {
@@ -39,24 +39,24 @@ pi.on("session_start", async (event, ctx) => {
 });
 ```
 
-There's no ambient "am I a lead" property Pi hands you — a spawned process only knows its own role because its parent told it, on the command line, the same way the orchestrator passes `--tools` and `--model` to every child it spawns: `spawn("pi", [..., "--role", "lead"])`. `pi.registerFlag` declares that flag so Pi's own CLI parser accepts it instead of rejecting the invocation as unknown, and `pi.getFlag` reads back whatever the parent passed.
+There's no ambient "am I a lead" property Pi hands you - a spawned process only knows its own role because its parent told it, on the command line, the same way the orchestrator passes `--tools` and `--model` to every child it spawns: `spawn("pi", [..., "--role", "lead"])`. `pi.registerFlag` declares that flag so Pi's own CLI parser accepts it instead of rejecting the invocation as unknown, and `pi.getFlag` reads back whatever the parent passed.
 
-`dispatch_agent` is the same child-process spawn you already know, just called from inside a lead instead of from your main thread — it hands a worker a scoped brief, waits (or polls), and returns the worker's summary. A lead that only has this one tool available cannot quietly fix something itself, because the tool to do that isn't on its list.
+`dispatch_agent` is the same child-process spawn you already know, just called from inside a lead instead of from your main thread - it hands a worker a scoped brief, waits (or polls), and returns the worker's summary. A lead that only has this one tool available cannot quietly fix something itself, because the tool to do that isn't on its list.
 
-Skip this and you get a specific, predictable failure: a worker stalls or comes back empty, and the lead — reasonable-sounding, in its own output — decides "the task has to get done, let me just write the file myself." That's not a bug in the model, it's the model behaving exactly like a manager who steps in when a report goes quiet. The problem is what it costs you: an unenforced lead is a worker with a bigger title and none of the accountability, and you've lost the one property — one domain, one owner, one place to look when something's wrong — that made the layer worth adding in the first place. Enforce the lock; don't rely on the prompt to hold it.
+Skip this and you get a specific, predictable failure: a worker stalls or comes back empty, and the lead - reasonable-sounding, in its own output - decides "the task has to get done, let me just write the file myself." That's not a bug in the model, it's the model behaving exactly like a manager who steps in when a report goes quiet. The problem is what it costs you: an unenforced lead is a worker with a bigger title and none of the accountability, and you've lost the one property - one domain, one owner, one place to look when something's wrong - that made the layer worth adding in the first place. Enforce the lock; don't rely on the prompt to hold it.
 
-## Why decompose at all — and the answer that's *wrong*
+## Why decompose at all - and the answer that's *wrong*
 
-Here's the tempting, wrong justification: "we split this into three teams because one context window can't hold the whole migration." Don't reach for that one. Context windows are large and getting larger, and the extraction migration's total reading material — one extractor module, one index rebuild, two small UI surfaces — would fit in a single frontier context with room to spare. If context size were the real constraint, a bigger window would make the whole team unnecessary, and it doesn't.
+Here's the tempting, wrong justification: "we split this into three teams because one context window can't hold the whole migration." Don't reach for that one. Context windows are large and getting larger, and the extraction migration's total reading material - one extractor module, one index rebuild, two small UI surfaces - would fit in a single frontier context with room to spare. If context size were the real constraint, a bigger window would make the whole team unnecessary, and it doesn't.
 
-The real reason is narrower and holds regardless of window size: **a focused agent is a performant agent.** An agent whose only brief is "swap the extractor, pass rows through it" makes categorically fewer mistakes than one that's also carrying the index rebuild's tokenizer quirks and the UI's rendering assumptions in the same context — not because it runs out of room, but because unrelated problems mixed into one context raise the error rate on all of them. Watch what happens to a single thread's window just from *reading material for three unrelated sweeps*, before any of the actual migration work starts:
+The real reason is narrower and holds regardless of window size: **a focused agent is a performant agent.** An agent whose only brief is "swap the extractor, pass rows through it" makes categorically fewer mistakes than one that's also carrying the index rebuild's tokenizer quirks and the UI's rendering assumptions in the same context - not because it runs out of room, but because unrelated problems mixed into one context raise the error rate on all of them. Watch what happens to a single thread's window just from *reading material for three unrelated sweeps*, before any of the actual migration work starts:
 
 <SubagentFanout client:visible />
 
-Notice the point isn't that delegation saves tokens — total tokens spent are roughly the same either way, maybe more once you count each lead's own overhead. What it buys is a context that stays *legible*: your orchestrator thread holds three short lead reports, not three domains' worth of file reads and dead-end greps tangled together. That legibility is the whole argument for teams, not the size of the window.
+Notice the point isn't that delegation saves tokens - total tokens spent are roughly the same either way, maybe more once you count each lead's own overhead. What it buys is a context that stays *legible*: your orchestrator thread holds three short lead reports, not three domains' worth of file reads and dead-end greps tangled together. That legibility is the whole argument for teams, not the size of the window.
 
 ## What you actually have now
 
-Three domains, three leads, a handful of workers apiece, and one rule enforced by a tool lock rather than a hope: nobody above worker tier touches a file. Sketch the roster the way you'd sketch any config — a name per lead, a list of workers underneath it — and it stays exactly this legible however many workers a lead ends up needing, because your own prompt to the orchestrator never gets longer.
+Three domains, three leads, a handful of workers apiece, and one rule enforced by a tool lock rather than a hope: nobody above worker tier touches a file. Sketch the roster the way you'd sketch any config - a name per lead, a list of workers underneath it - and it stays exactly this legible however many workers a lead ends up needing, because your own prompt to the orchestrator never gets longer.
 
 What none of this gives a lead yet is memory of its own lane. Spawn the extraction lead again next session and it starts from zero, even though it spent an entire migration learning exactly which sites break the new extractor. [Next: give each lead a place to keep that](/course/pi/teams/expertise/).

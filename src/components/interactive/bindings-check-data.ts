@@ -1,11 +1,11 @@
 /**
  * Data for the bindings-check widget (BindingsCheck.tsx).
  *
- * KEEP IN SYNC with `src/content/docs/playbooks/design-to-code.mdx` — the
+ * KEEP IN SYNC with `src/content/docs/playbooks/design-to-code.mdx` - the
  * widget dramatizes that chapter's organizing constraint ("an image carries
- * looks, never bindings") and its step 6 ("check the bindings — grep the
+ * looks, never bindings") and its step 6 ("check the bindings - grep the
  * diff for literals"), reusing the chapter's running example: a pricing
- * card built agent-first into a React + Tailwind codebase. Evergreen — no
+ * card built agent-first into a React + Tailwind codebase. Evergreen - no
  * vendor facts; palettes, file paths, and line numbers are illustrative.
  *
  * Copy strings render through withCode(): backticked spans become <code>;
@@ -14,9 +14,9 @@
 
 /** The demo card's self-contained brand palette (widget custom properties). */
 export interface BcPalette {
-  /** `--bc-brand-500` — price accent */
+  /** `--bc-brand-500` - price accent */
   brand500: string;
-  /** `--bc-brand-600` — badge and (nominally) CTA background */
+  /** `--bc-brand-600` - badge and (nominally) CTA background */
   brand600: string;
 }
 
@@ -26,7 +26,7 @@ export const BC_PALETTES: Record<'purple' | 'teal', BcPalette> = {
   teal: { brand500: '#14b8a6', brand600: '#0d9488' },
 };
 
-/** `--bc-space-4` — the spacing token the card padding is bound to. */
+/** `--bc-space-4` - the spacing token the card padding is bound to. */
 export const BC_SPACE_4 = '16px';
 
 export type BcSource = 'token' | 'literal';
@@ -39,12 +39,12 @@ export interface BcValue {
   property: string;
   kind: 'color' | 'length';
   /**
-   * What the chip's swatch paints, as live CSS — a `var(--bc-*)` reference
+   * What the chip's swatch paints, as live CSS - a `var(--bc-*)` reference
    * for bound values (so the rebrand moves the swatch too), the raw literal
    * for hardcoded ones (so it stays put).
    */
   swatchCss?: string;
-  /** Rendered value under the shipped (purple) brand — what the eye gets */
+  /** Rendered value under the shipped (purple) brand - what the eye gets */
   rendersAs: string;
   /** Rendered value after the teal refresh (bound values flip; literals don't) */
   rendersAsRebranded: string;
@@ -78,7 +78,7 @@ export const bcValues: BcValue[] = [
     rendersAsRebranded: '#7c69f7',
     source: 'literal',
     resolved: '#7c69f7',
-    note: 'A literal that renders identical to `var(--brand-600)` — today.',
+    note: 'A literal that renders identical to `var(--brand-600)` - today.',
   },
   {
     id: 'price-color',
@@ -112,7 +112,7 @@ export const bcValues: BcValue[] = [
     rendersAsRebranded: '13px',
     source: 'literal',
     resolved: '13px',
-    note: 'A number read off the mockup — no token on the scale is 13px.',
+    note: 'A number read off the mockup - no token on the scale is 13px.',
   },
   {
     id: 'border-color',
@@ -128,7 +128,7 @@ export const bcValues: BcValue[] = [
   },
 ];
 
-/** The grep reveal — step 6, run today. */
+/** The grep reveal - step 6, run today. */
 export const BC_GREP = {
   command: "$ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/PricingCard.tsx",
   lines: [
@@ -147,7 +147,7 @@ export const BC_GREP = {
   ],
 };
 
-/** Demo card content — the chapter's running example. */
+/** Demo card content - the chapter's running example. */
 export const BC_CARD = {
   badge: 'Recommended',
   name: 'Pro',
@@ -161,7 +161,7 @@ export const BC_CARD = {
 export const BC_COPY = {
   statusPass: 'Step 5 passed: side-by-side matches the mockup, pixel level. ✓',
   hook:
-    'Step 6 hasn’t run. Six of these values came from the diff — can you tell which are wired to tokens and which are hardcoded lookalikes?',
+    'Step 6 hasn’t run. Six of these values came from the diff - can you tell which are wired to tokens and which are hardcoded lookalikes?',
   chipsGroupLabel:
     'Six values from the diff. Mark the ones you suspect are hardcoded literals; arrow keys move between values, Enter or Space toggles a mark.',
   suspectTag: 'suspect',
@@ -169,18 +169,18 @@ export const BC_COPY = {
   decidePrompt: 'Two ways to find out which is which:',
   decideGroupLabel: 'Run the bindings check',
   grepLabel: 'grep the diff',
-  grepSub: 'step 6 — cheap, today',
+  grepSub: 'step 6 - cheap, today',
   rebrandLabel: 'ship the brand refresh',
   rebrandSub: 'someday, in production',
   grepOutcome:
-    'Three hits. The render could never have shown you these — the grep finds them in seconds, before the merge.',
+    'Three hits. The render could never have shown you these - the grep finds them in seconds, before the merge.',
   rebrandLead:
     '`tailwind.config.ts`: brand tokens repointed, purple → teal. Every bound value followed; the three literals stayed purple.',
   rebrandOutcome:
-    'Same information the grep gave you — delivered on rebrand day, in production, as a bug report.',
+    'Same information the grep gave you - delivered on rebrand day, in production, as a bug report.',
   grading: 'You flagged {x} of 3 literals, with {y} false alarm{s}.',
   verdict:
-    'Visual fidelity decays gracefully; a hardcoded palette decays all at once. Zero literals in the diff is the checkpoint — and it’s grep-able.',
+    'Visual fidelity decays gracefully; a hardcoded palette decays all at once. Zero literals in the diff is the checkpoint - and it’s grep-able.',
   markFlagged: 'flagged',
   markMissed: 'missed',
   markFalseAlarm: 'false alarm',

@@ -1,6 +1,6 @@
 ---
 title: Plan mode / read-only agent
-description: Same posture — agent can think but not change — three different implementations.
+description: Think first, act later - but how hard the block is, and what happens to the plan when you leave the mode, differ in every tool.
 ---
 
 import ToolTabs from '../../../components/ToolTabs.astro';
@@ -11,28 +11,42 @@ You say *"refactor the payments module to use the new transaction API."* The age
 
 The problem isn't that the agent is wrong. It's that you handed it a *direction* and it interpreted that as a *go*. You wanted to align on approach first. The agent doesn't pause to align unless you explicitly tell it to.
 
-That's the gap Plan mode closes. In Plan mode the agent literally *can't* edit, so it has to put the plan in front of you first. You read it, push back, adjust, and only then drop out of Plan mode to execute. The same conversation, but with the alignment step put back where it belongs — before the writes, not after.
+Plan mode puts the alignment step back where it belongs. In Plan mode the agent can't edit - or, in some tools, can't edit without asking you first - so it has to put the plan in front of you instead. You read it, push back, adjust, and only then drop out to execute. The same conversation, with the agreement before the writes rather than after.
 
-The posture is simple: the agent can read, search, grep, and reason — but cannot write, edit, or run mutating commands. You drop into it when you want a plan, a code review, a "tell me what you'd change before you change anything," or a safe exploration of an unfamiliar codebase.
+The posture is simple: the agent can read, search, grep, and reason - but cannot write, edit, or run mutating commands. You drop into it when you want a plan, a code review, a "tell me what you'd change before you change anything," or a safe exploration of an unfamiliar codebase.
 
-It's the same idea everywhere — *think first, act later* — but each tool implements it differently: a toggle in Claude Code, a flag combination in Codex, a separate primary agent in OpenCode, and — newer and more structured — a first-class IDE mode in Cursor 2.0 and, in Copilot Chat, one of several selectable agents (Plan, Agent, custom agents) in VS Code's Chat view, with a session-wide permission level set separately.
+It's the same idea everywhere - *think first, act later*. What the word "mode" hides is how hard the block actually is, and what happens to the plan once you leave.
 
 **Real-world examples of when you'd switch into Plan mode:**
 
-- **Non-trivial refactors** — anything touching more than two files. Have the agent map the change set before any edits land.
-- **First contact with an unfamiliar codebase** — *"give me the tour: where's auth, what's the data model, what's the testing pattern"* without any risk of accidental writes.
-- **Code review** — paste a diff (or point at a branch) and ask for findings. No edits, just analysis.
-- **Architecture discussions** — *"if we wanted to split this monolith, what would the seams be?"* The output is a doc, not a PR.
-- **Pre-incident dry runs** — *"walk me through how a rollback would work if the deploy fails"* without the rollback actually running.
-- **Reviewing the agent's own proposal** — when the agent suggests a design, switch to Plan mode to discuss it before letting it implement.
+- **Non-trivial refactors** - anything touching more than two files. Have the agent map the change set before any edits land.
+- **First contact with an unfamiliar codebase** - *"give me the tour: where's auth, what's the data model, what's the testing pattern"* without any risk of accidental writes.
+- **Code review** - paste a diff (or point at a branch) and ask for findings. No edits, just analysis.
+- **Architecture discussions** - *"if we wanted to split this monolith, what would the seams be?"* The output is a doc, not a PR.
+- **Pre-incident dry runs** - *"walk me through how a rollback would work if the deploy fails"* without the rollback actually running.
+- **Reviewing the agent's own proposal** - when the agent suggests a design, switch to Plan mode to discuss it before letting it implement.
 
 The test: if the right next action is *"talk about it,"* not *"do it,"* you want Plan mode.
 
-## Walk the posture
+## The stages of a planned task
 
-The lifecycle is the same everywhere — switch in, explore, plan, gate, execute — but every stage looks different per tool. Step through one task and switch tools to compare:
+The lifecycle is the same everywhere - switch in, explore, plan, gate, execute - but every stage looks different per tool. Step through one task and switch tools to compare. Pi has no built-in mode, so it isn't in the stepper; its tab below covers the substitutes.
 
 <PlanModeStepper client:visible />
+
+## What the mode blocks, and what it only asks about
+
+"Read-only" is doing different amounts of work in each tool. The implementations sort into four classes of enforcement, and the class only reveals itself in the moment the model reaches for an edit anyway. That moment is the whole reason you switched in.
+
+**Blocked by the runtime.** Claude Code's mode blocks Write, Edit, and non-read Bash for as long as the toggle is on, so the tool call cannot land even if the model tries. Codex composes the same posture out of permission primitives: under `--sandbox read-only` the agent physically cannot write files or run mutating commands. In both, a wrong turn fails closed and costs you nothing but the tokens.
+
+**Gated, not blocked.** OpenCode's `plan` primary agent maps edits to ask/deny rather than refusing them. A proposed edit surfaces for your approval instead of executing; deny it and the agent keeps planning, approve it and the edit lands mid-plan. The posture is only as read-only as your answers, which is a different guarantee from the one above.
+
+**Nothing to block.** Copilot's Plan mode doesn't execute at all - its whole output is the plan artefact, so there is no edit attempt to intercept. The edits happen later, when you hand the plan to Agent mode, and how hard *that* is gated is a separate, session-wide setting: `chat.permissions.default` plus the per-tool auto-approve knobs. Picking Plan from the mode dropdown does not tighten Agent. See [Permissions](/foundations/permissions/).
+
+**Convention only.** Pi ships no plan mode, so asking it to write the plan before touching code is a request the model can quietly not honour, not a gate. The plan-mode example in Pi's `examples/extensions/` is what closes that hole: it intercepts edit and bash calls, requires a written plan first, then lifts the gate.
+
+Cursor belongs with the first class in practice and with a caveat on paper: the research phase is read-only, but the precise tool allowlist inside Plan Mode is not exhaustively documented. *Unverified* - treat read-only as the working assumption there, not a guarantee you can build a policy on.
 
 ## Why this and not...
 
@@ -44,7 +58,7 @@ The lifecycle is the same everywhere — switch in, explore, plan, gate, execute
 | Get a structured plan artifact (file, checklist) | [Skill](/foundations/skills/) that produces a plan + plan mode | Plan mode alone |
 | Pause the agent mid-flow to check approach | **Plan mode toggle** | Restarting the session |
 
-Plan mode is a *session-level posture*, not a permanent setting. You flip in, get your plan, flip out, execute. If you find yourself never flipping out, what you actually wanted was a read-only subagent or a tighter permissions profile.
+The line under all of these: plan mode constrains the loop for a session, while [subagents](/foundations/subagents/) and [permissions](/foundations/permissions/) constrain it structurally. Reach for the structural ones when the restriction should outlive the conversation.
 
 ## How it works in each tool
 
@@ -54,17 +68,33 @@ Plan mode is a *session-level posture*, not a permanent setting. You flip in, ge
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Mechanism | Session toggle (Shift-Tab) | Sandbox + approval combo | Primary agent (Tab) | First-class IDE mode (Shift+Tab / dropdown) | First-class IDE mode (mode dropdown) | No built-in — file a plan manually, or via extension/package |
+| Mechanism | Session toggle (Shift-Tab) | Sandbox + approval combo | Primary agent (Tab) | First-class IDE mode (Shift+Tab / dropdown) | First-class IDE mode (mode dropdown) | No built-in - file a plan manually, or via extension/package |
 | Mid-session toggle | Yes (Shift-Tab) | Yes (`/permissions` picker) | Yes (Tab) | Yes (mode picker / Shift+Tab) | Yes (mode dropdown) | N/A |
-| Edit attempts | Blocked by mode | Blocked by sandbox | Gated to ask/deny | Read-only research; plan emitted as editable markdown | No execution — produces a plan artefact | N/A — nothing blocks edits without an extension |
-| Plan artefact | Inline chat output | Inline chat output | Inline chat output | **Editable markdown file** (home dir or workspace) | Structured plan in chat, auto-saved to a session memory file; cleared at session end | A file you ask the agent to write, by convention |
+| Edit attempts | Blocked by mode | Blocked by sandbox | Gated to ask/deny | Read-only research (*Unverified* exact allowlist) | No execution - produces a plan artefact | N/A - nothing blocks edits without an extension |
+| Plan artefact | Inline chat output | Inline chat output | Inline chat output | **Editable markdown file** (home dir by default) | Structured plan in chat (session-scoped) | A file you ask the agent to write, by convention |
 | Custom plan-like profiles | No | Compose your own flags | **Yes** (custom primary) | Plan-with-one-model, build-with-another | Custom `.agent.md` planning agents | Via extension/package |
-| Preserves history on switch | Yes | N/A (restart) | Yes | Yes | Yes | N/A |
+| Preserves history on switch | Yes | Yes via `/permissions`; no if you restart | Yes | Yes | Yes | N/A |
+
+## Where the plan goes when you leave the mode
+
+Plan mode is a *session-level posture*, not a permanent setting: you flip in, get your plan, flip out, execute. If you find yourself never flipping out, what you actually wanted was a read-only subagent or a tighter permissions profile. But what you carry out with you is not the same thing in every tool, and no row above says so.
+
+**The plan lives in the window.** In Claude Code, Codex, and OpenCode the plan is inline chat output, so it survives exactly as long as the session does. Toggle back with Shift-Tab or Tab and the plan, plus everything the agent read while exploring, is still in context. The Codex caveat is that switching posture by restarting instead of through `/permissions` doesn't carry the exploration over - the restart starts cold.
+
+**The plan lives in a file.** Cursor is the only tool in scope whose *mode* emits a file rather than chat: an editable markdown plan, defaulting to your home directory. That is outside the repo, invisible to your teammates, and in nobody's diff until you use "Save to workspace" to move it in. Reviewable in a pull request, then, but only if you move it deliberately.
+
+**The plan lives until the session ends.** Copilot's structured plan is auto-saved to a session memory file and cleared when the session ends. Treat it as a working document rather than a record: if the plan is worth keeping, copy it into the repo before you close the chat.
+
+Pi is the case where the question doesn't arise. With no mode, the plan is whatever file you asked the agent to write, and it lives as long as any other file in the repo - the weakest enforcement in the set paired with the most durable artefact.
+
+The lifespan is also what makes the mode cheap or expensive. Exploring, planning, and executing in one session pays for the reading once; a restart pays again for the same files. See the cost profiles in [How agents work](/foundations/how-agents-work/).
+
+The next multi-file change you hand over, switch in before you type the task rather than after the first wrong diff. Then check one thing in your own tool: does the mode block the edit, or only ask you about it? That answer is the difference between a guardrail and a habit, and it decides how much you can safely stop reading.
 
 ## Name collisions
 
 - **"Plan mode"** in Claude Code is a *toggle*. In OpenCode it's a *primary agent*. In Codex it's an *emergent combination of flags*. In Cursor and Copilot it's a *first-class IDE mode* with a dedicated picker entry. Always say which.
-- Claude Code's `/plan` isn't a separate skill — it's a built-in command that's just another on-ramp into the same Plan mode as Shift-Tab, optionally seeded with a task (`/plan fix the auth bug`). Same posture, same artifact, two ways in.
+- Claude Code's `/plan` isn't a separate skill - it's a built-in command that's just another on-ramp into the same Plan mode as Shift-Tab, optionally seeded with a task (`/plan fix the auth bug`). Same posture, same artifact, two ways in.
 
 <UpstreamRefs
   links={[

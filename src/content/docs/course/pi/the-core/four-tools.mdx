@@ -1,34 +1,34 @@
 ---
 title: The four tools, exactly
-description: "Read, write, edit, bash — no hidden fifth tool, no fuzzy matching. The exact rules behind last chapter's fix, and why edit's uniqueness requirement is the one that will bite you first."
+description: "Read, write, edit, bash - no hidden fifth tool, no fuzzy matching. The exact rules behind last chapter's fix, and why edit's uniqueness requirement is the one that will bite you first."
 sidebar:
   label: "Four tools · read, write, edit, bash"
 ---
 
-Go back and actually read the diff from last chapter's fix. Not the summary Pi gave you — the real, `git show`-able change to `stash`'s date parsing. You'll notice it's small: a handful of lines, one function, no drive-by reformatting of the rest of the file. That's not luck. It's a direct consequence of which tool Pi reached for, and what that tool is and isn't allowed to do. Pi doesn't give the model forty specialized tools to choose between — it gives it four, and the small size of that set is exactly what makes each one worth knowing precisely.
+Go back and actually read the diff from last chapter's fix. Not the summary Pi gave you - the real, `git show`-able change to `stash`'s date parsing. You'll notice it's small: a handful of lines, one function, no drive-by reformatting of the rest of the file. That's not luck. It's a direct consequence of which tool Pi reached for, and what that tool is and isn't allowed to do. Pi doesn't give the model forty specialized tools to choose between - it gives it four, and the small size of that set is exactly what makes each one worth knowing precisely.
 
-## `read` — bounded, and it tells you when it's held back
+## `read` - bounded, and it tells you when it's held back
 
-`read` takes a `path`, and optionally an `offset` (which line to start at) and a `limit` (how many lines to return). It is not "give me the whole file, however big" — output is capped by a line count or a byte count, whichever ceiling it hits first. Hand it a config file that's thousands of lines long and you don't get silence or an error: you get as much as fits, plus an explicit notice telling the model the next `offset` to continue from. The model can always ask for more; it just never gets an unbounded firehose by accident.
+`read` takes a `path`, and optionally an `offset` (which line to start at) and a `limit` (how many lines to return). It is not "give me the whole file, however big" - output is capped by a line count or a byte count, whichever ceiling it hits first. Hand it a config file that's thousands of lines long and you don't get silence or an error: you get as much as fits, plus an explicit notice telling the model the next `offset` to continue from. The model can always ask for more; it just never gets an unbounded firehose by accident.
 
-That's what you're looking at at the top of last chapter's session — Pi reading `stash`'s extractor module before touching it, not because a rule said "read before you write," but because the loop had nothing else to work from yet:
+That's what you're looking at at the top of last chapter's session - Pi reading `stash`'s extractor module before touching it, not because a rule said "read before you write," but because the loop had nothing else to work from yet:
 
 ```text
 • Read app/worker/extract.py                             (312 lines)
 ```
 
-If that file had been ten times longer, you'd have seen a truncation notice instead of a clean read — and the very next tool call would have been another `read` at the offset it handed back. Nothing hidden, nothing magic — just a stated boundary and a stated way past it.
+If that file had been ten times longer, you'd have seen a truncation notice instead of a clean read - and the very next tool call would have been another `read` at the offset it handed back. Nothing hidden, nothing magic - just a stated boundary and a stated way past it.
 
-## `edit` — exact text, unique match, or it refuses
+## `edit` - exact text, unique match, or it refuses
 
 This is the one whose rules matter most, because it's the one that will surprise you if you assume it's smarter than it is. `edit` takes a path and a list of `{ oldText, newText }` pairs. Its single hard rule, straight from the tool's own description: **every `oldText` must match a unique, non-overlapping region of the original file.**
 
 Two consequences follow directly from that:
 
-- If the text you're asking it to replace appears more than once in the file, `edit` won't guess which one you meant — it fails outright. The model has to include enough surrounding context in `oldText` to make the match unambiguous.
-- Matching happens against the file's **original** content for every edit in a batch, not against a running, already-edited version. So if you (or the model) send five edits in one call, none of them can overlap with another — there's no "apply edit one, then match edit two against the result." Overlapping changes have to be merged into a single edit instead.
+- If the text you're asking it to replace appears more than once in the file, `edit` won't guess which one you meant - it fails outright. The model has to include enough surrounding context in `oldText` to make the match unambiguous.
+- Matching happens against the file's **original** content for every edit in a batch, not against a running, already-edited version. So if you (or the model) send five edits in one call, none of them can overlap with another - there's no "apply edit one, then match edit two against the result." Overlapping changes have to be merged into a single edit instead.
 
-There's no `replace_all` flag anywhere in the picture. If an occurrence isn't already unique in the file, `edit` has no built-in way to blast every instance at once — that's a deliberate omission, not a missing feature. It forces precision instead of offering a blunt instrument.
+There's no `replace_all` flag anywhere in the picture. If an occurrence isn't already unique in the file, `edit` has no built-in way to blast every instance at once - that's a deliberate omission, not a missing feature. It forces precision instead of offering a blunt instrument.
 
 Watch that constraint do its job in `stash`'s fix. The bug was that `parse_page_date()` tried exactly one fixed date format and returned `None` silently the moment a date didn't match it; several different date strings needed to route through the same ordered list before falling back:
 
@@ -38,31 +38,31 @@ Watch that constraint do its job in `stash`'s fix. The bug was that `parse_page_
   + Replace: "DATE_FORMATS = (\"%B %d, %Y\", \"%Y-%m-%d\", \"%m/%d/%Y\", \"%d %b %Y\")\n\ndef parse_page_date(raw: str) -> date | None:\n    for fmt in DATE_FORMATS:\n        try:\n            return datetime.strptime(raw, fmt).date()\n        except ValueError:\n            continue\n    return None"
 ```
 
-That block of `oldText` is a whole function body, not just the one changed line — because a bare `return datetime.strptime(...)` on its own might not have been unique across the file, and the model had already read enough of `extract.py` to know it. The edit landed clean on the first try because the match was unambiguous. If it hadn't been, you'd have seen the tool refuse and the model retry with more surrounding text — not silently touch the wrong occurrence.
+That block of `oldText` is a whole function body, not just the one changed line - because a bare `return datetime.strptime(...)` on its own might not have been unique across the file, and the model had already read enough of `extract.py` to know it. The edit landed clean on the first try because the match was unambiguous. If it hadn't been, you'd have seen the tool refuse and the model retry with more surrounding text - not silently touch the wrong occurrence.
 
-The output you get back isn't just "done," either — `edit` returns a real diff for display and a standard patch underneath it, plus the line number where the change starts. That's what let the TUI show you a clean before/after instead of a vague confirmation.
+The output you get back isn't just "done," either - `edit` returns a real diff for display and a standard patch underneath it, plus the line number where the change starts. That's what let the TUI show you a clean before/after instead of a vague confirmation.
 
-## `write` — the blunt instrument, on purpose
+## `write` - the blunt instrument, on purpose
 
-`write` takes a path and full file content, and it does exactly one thing: create the file (making any parent directories along the way) or overwrite it wholesale. No merge, no partial application, no matching logic at all — the opposite end of the spectrum from `edit`'s precision. That's why the system prompt steers the model toward `write` only for brand-new files or genuine full rewrites, and toward `edit` for anything that's touching part of an existing one. You didn't see `write` fire during the date fix, and that's the expected outcome — a targeted bug fix in an existing function is `edit`'s job, not `write`'s.
+`write` takes a path and full file content, and it does exactly one thing: create the file (making any parent directories along the way) or overwrite it wholesale. No merge, no partial application, no matching logic at all - the opposite end of the spectrum from `edit`'s precision. That's why the system prompt steers the model toward `write` only for brand-new files or genuine full rewrites, and toward `edit` for anything that's touching part of an existing one. You didn't see `write` fire during the date fix, and that's the expected outcome - a targeted bug fix in an existing function is `edit`'s job, not `write`'s.
 
-## `bash` — synchronous, capped output, and no background jobs
+## `bash` - synchronous, capped output, and no background jobs
 
-`bash` runs one command in `stash`'s working directory and waits for it to finish before returning anything — there's no way to fire a command and get control back immediately. That's a deliberate omission: Pi's author has argued background execution trades away observability for convenience, and points to `tmux` instead for anything genuinely long-running, since a human can watch and co-debug inside a real terminal session rather than trusting an agent's notion of "still running."
+`bash` runs one command in `stash`'s working directory and waits for it to finish before returning anything - there's no way to fire a command and get control back immediately. That's a deliberate omission: Pi's author has argued background execution trades away observability for convenience, and points to `tmux` instead for anything genuinely long-running, since a human can watch and co-debug inside a real terminal session rather than trusting an agent's notion of "still running."
 
-Output is capped too — the **last 100 lines or 10KB**, whichever limit hits first, same truncation helper `read` uses. Here's the part worth remembering: when a command's output gets truncated, the *full* output isn't thrown away — it's written to a temp file, and the path comes back in the result so the model can `read` or grep the rest itself if it needs to:
+Output is capped too - the **last 100 lines or 10KB**, whichever limit hits first, same truncation helper `read` uses. Here's the part worth remembering: when a command's output gets truncated, the *full* output isn't thrown away - it's written to a temp file, and the path comes back in the result so the model can `read` or grep the rest itself if it needs to:
 
 ```text
 • Bash: python -m pytest tests/test_worker.py -v
   ... 94 lines of test output ...
-  [truncated — full output at /tmp/pi-bash-8f2c1a.log]
+  [truncated - full output at /tmp/pi-bash-8f2c1a.log]
   12 passed, 0 failed
 ```
 
-That's what ran after the edit landed — the fix verifying itself against `stash`'s existing test suite, not you taking the model's word for it. If those tests had produced a wall of output past the cap, nothing would have been lost; it would just be sitting in a temp file, one `read` call away.
+That's what ran after the edit landed - the fix verifying itself against `stash`'s existing test suite, not you taking the model's word for it. If those tests had produced a wall of output past the cap, nothing would have been lost; it would just be sitting in a temp file, one `read` call away.
 
 ## Why this set, and not a bigger one
 
-Notice what's absent: no dedicated `grep` or `find` in the default set (some setups add them as convenience wrappers, and the system prompt adjusts its guidance if they're present — more on that two lessons from now). No specialized "run tests" tool, no "search the web" tool, no fifth thing bolted on for a use case someone thought of once. Four tools, each doing one job with a stated, learnable boundary. That smallness is what made it possible to just now read every rule governing every tool Pi has — try doing that for a coding agent with forty of them.
+Notice what's absent: no dedicated `grep` or `find` in the default set (some setups add them as convenience wrappers, and the system prompt adjusts its guidance if they're present - more on that two lessons from now). No specialized "run tests" tool, no "search the web" tool, no fifth thing bolted on for a use case someone thought of once. Four tools, each doing one job with a stated, learnable boundary. That smallness is what made it possible to just now read every rule governing every tool Pi has - try doing that for a coding agent with forty of them.
 
-You've read the fix at the level of exact tool mechanics: what got read, how the edit matched, what the bash call verified and where its overflow went. That's one layer of the black box opened. The next one is the shape of the *loop* that decided to call those tools in that order — and it has fewer limits than you'd expect. [Next: go one level deeper into the loop](/course/pi/the-core/the-loop-in-depth/).
+You've read the fix at the level of exact tool mechanics: what got read, how the edit matched, what the bash call verified and where its overflow went. That's one layer of the black box opened. The next one is the shape of the *loop* that decided to call those tools in that order - and it has fewer limits than you'd expect. [Next: go one level deeper into the loop](/course/pi/the-core/the-loop-in-depth/).

@@ -1,13 +1,13 @@
 ---
 title: Connect an external system with an MCP server
-description: "An MCP server is a bridge to a system the agent can't otherwise see — a database, an issue tracker, a browser. Add one, and the agent reads and acts on that system directly instead of working from what you paste."
+description: "An MCP server is a bridge to a system the agent can't otherwise see - a database, an issue tracker, a browser. Add one, and the agent reads and acts on that system directly instead of working from what you paste."
 sidebar:
   label: "MCP · claude mcp add"
 ---
 
 import McpCostMeter from '../../../../../components/interactive/McpCostMeter.tsx';
 
-You're debugging a failing charge, and the conversation has settled into a bad rhythm: you paste the Jira ticket, the agent asks what the `charges` table looks like, you run a `psql` query and paste the schema back, it guesses at a column name and gets it wrong. The agent is smart but blind — it can reason about the payments service all day, but the two systems that actually hold the answers, the **Postgres database** and the **Jira board**, sit outside the walls it can reach. Every fact from them has to pass through you, by hand.
+You're debugging a failing charge, and the conversation has settled into a bad rhythm: you paste the Jira ticket, the agent asks what the `charges` table looks like, you run a `psql` query and paste the schema back, it guesses at a column name and gets it wrong. The agent is smart but blind - it can reason about the payments service all day, but the two systems that actually hold the answers, the **Postgres database** and the **Jira board**, sit outside the walls it can reach. Every fact from them has to pass through you, by hand.
 
 That copy-paste loop is the exact signal that you want an MCP server. The **Model Context Protocol** is an open standard for connecting an agent to an external tool or data source; an *MCP server* is one such connection. Add the database as a server and the agent can query the schema itself; add Jira and it can read the ticket without you relaying it. The systems stop being things you describe and become things the agent touches.
 
@@ -15,31 +15,31 @@ That copy-paste loop is the exact signal that you want an MCP server. The **Mode
 
 You register a server with `claude mcp add`. There are two transport shapes you'll meet immediately, and our two systems happen to land one on each.
 
-A **local stdio server** runs as a process on your machine — right for a tool that needs direct system access, like a database client. The Postgres server is one of these:
+A **local stdio server** runs as a process on your machine - right for a tool that needs direct system access, like a database client. The Postgres server is one of these:
 
 ```text
 claude mcp add --transport stdio db -- npx -y @bytebase/dbhub \
   --dsn "postgresql://readonly:pass@localhost:5432/payments"
 ```
 
-Read that command carefully, because the ordering bites people. Every option — `--transport`, `--scope`, `--env` — comes *before* the server name (`db`). The bare `--` then separates the name from the command Claude Code will actually spawn to run the server. (Note the `readonly` user in that connection string — we'll come back to why that choice matters in the next lesson.)
+Read that command carefully, because the ordering bites people. Every option - `--transport`, `--scope`, `--env` - comes *before* the server name (`db`). The bare `--` then separates the name from the command Claude Code will actually spawn to run the server. (Note the `readonly` user in that connection string - we'll come back to why that choice matters in the next lesson.)
 
-A **remote HTTP server** is the recommended shape for a cloud service, and most hosted tools — Jira among them — expose one. You point it at the URL the vendor publishes for their MCP endpoint:
+A **remote HTTP server** is the recommended shape for a cloud service, and most hosted tools - Jira among them - expose one. You point it at the URL the vendor publishes for their MCP endpoint:
 
 ```text
 claude mcp add --transport http jira https://<your-jira-mcp-endpoint>
 ```
 
-(Check the vendor's own MCP docs for the exact endpoint — they publish it; don't guess.) Cloud servers almost always need authentication. Claude Code speaks OAuth: the first time the agent reaches for a server that needs a login, or whenever you run `/mcp` inside a session, you get a browser flow that authorizes the connection and stores the token securely. You never paste a Jira password into a config file.
+(Check the vendor's own MCP docs for the exact endpoint - they publish it; don't guess.) Cloud servers almost always need authentication. Claude Code speaks OAuth: the first time the agent reaches for a server that needs a login, or whenever you run `/mcp` inside a session, you get a browser flow that authorizes the connection and stores the token securely. You never paste a Jira password into a config file.
 
-The exact flags, the SSE and WebSocket transports, and the `claude mcp add-json` form for pasting a full config are all on the [MCP docs page](https://code.claude.com/docs/en/mcp). The three commands above — `add`, plus `claude mcp list` and `claude mcp get <name>` to inspect what you've registered — are the ones you'll use daily.
+The exact flags, the SSE and WebSocket transports, and the `claude mcp add-json` form for pasting a full config are all on the [MCP docs page](https://code.claude.com/docs/en/mcp). The three commands above - `add`, plus `claude mcp list` and `claude mcp get <name>` to inspect what you've registered - are the ones you'll use daily.
 
 ## Use what you connected
 
 Once a server is connected, its tools simply appear, and the agent reaches for them the way it reaches for `Read` or `Bash`. The copy-paste loop collapses:
 
 ```text
-> charge ch_8812 failed for this customer — look at the ticket and the db,
+> charge ch_8812 failed for this customer - look at the ticket and the db,
   what's going on?
 
   ● jira - get_issue (PAY-441)
@@ -49,17 +49,17 @@ Once a server is connected, its tools simply appear, and the agent reaches for t
     SELECT status, failure_code FROM charges WHERE id = 'ch_8812'
     → status=failed, failure_code=expired_idempotency_key
 
-  The ticket says the card was valid, and the database agrees — the
+  The ticket says the card was valid, and the database agrees - the
   decline isn't a card problem. failure_code is expired_idempotency_key,
   so the retry arrived after the key's TTL. That's our bug, not the bank's.
 ```
 
 Notice what changed. You asked one question in plain language; the agent pulled the ticket from Jira and the row from Postgres on its own and reasoned across both. Nothing was pasted. Two systems that lived entirely in your head a minute ago are now part of the agent's working context.
 
-Servers also expose **resources** you can pull in deliberately with an `@` mention — `@db:schema://charges` drops the table schema in as an attachment — and **prompts** that show up as `/mcp__server__name` commands. But the everyday win is the one above: the agent quietly using the right tool for a question that used to require you as the courier.
+Servers also expose **resources** you can pull in deliberately with an `@` mention - `@db:schema://charges` drops the table schema in as an attachment - and **prompts** that show up as `/mcp__server__name` commands. But the everyday win is the one above: the agent quietly using the right tool for a question that used to require you as the courier.
 
 One discipline before you connect a third server: every mounted server's tool definitions ride into context at session start, whether or not the session uses them. Two purposeful connections cost little; a stack of "might need it someday" servers spends a chunk of your window before you've typed a word. Mount and unmount below and watch what each one costs:
 
 <McpCostMeter client:visible />
 
-You've now handed the agent reach into two systems it couldn't see. Which should feel slightly uncomfortable — because you just gave a thing that acts on its own a live connection to your production-adjacent database and your ticket tracker. A connection is not the same as unrestricted trust, and the next lesson is about [drawing that line deliberately](/course/claude-code/extending/mcp-scope/) instead of by accident.
+You've now handed the agent reach into two systems it couldn't see. Which should feel slightly uncomfortable - because you just gave a thing that acts on its own a live connection to your production-adjacent database and your ticket tracker. A connection is not the same as unrestricted trust, and the next lesson is about [drawing that line deliberately](/course/claude-code/extending/mcp-scope/) instead of by accident.
