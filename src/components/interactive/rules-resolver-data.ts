@@ -214,9 +214,9 @@ export const rlrTools: RlrTool[] = [
   },
   {
     slug: 'opencode',
-    label: 'opencode',
+    label: 'OpenCode',
     model:
-      'First match wins - opencode walks up from the working directory and the first AGENTS.md found REPLACES the others. No merging.',
+      'First match wins - OpenCode walks up from the working directory and the first AGENTS.md found REPLACES the others. No merging.',
     results: {
       root: {
         outcomes: [

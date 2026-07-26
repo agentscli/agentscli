@@ -126,7 +126,7 @@ export default defineConfig({
 								{ label: 'Codex', link: '/course/codex/' },
 								{ label: 'GitHub Copilot', link: '/course/copilot/' },
 								{ label: 'Cursor', link: '/course/cursor/' },
-								{ label: 'opencode', link: '/course/opencode/' },
+								{ label: 'OpenCode', link: '/course/opencode/' },
 								{ label: 'Pi', link: '/course/pi/' },
 							],
 						},
@@ -527,30 +527,30 @@ export default defineConfig({
 							],
 						},
 						{
-							label: 'opencode',
+							label: 'OpenCode',
 							link: '/course/opencode/',
 							icon: 'open-book',
 							items: [
-								{ label: 'opencode overview', slug: 'course/opencode' },
+								{ label: 'OpenCode overview', slug: 'course/opencode' },
 								{
 									label: 'Getting started',
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/getting-started' },
 										{ label: 'Install · meet the TUI', slug: 'course/opencode/getting-started/install' },
+										{ label: 'Bring your own model', slug: 'course/opencode/getting-started/bring-your-own-model' },
 										{ label: 'The loop · one turn', slug: 'course/opencode/getting-started/the-loop' },
 										{ label: 'First change · fix, review, commit', slug: 'course/opencode/getting-started/first-change' },
 										{ label: 'Editor · next to your editor', slug: 'course/opencode/getting-started/editor' },
-										{ label: 'Bring your own model', slug: 'course/opencode/getting-started/bring-your-own-model' },
 									],
 								},
 								{
 									label: 'Providers & models',
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/providers-models' },
-										{ label: 'Switch models · in-session', slug: 'course/opencode/providers-models/switch-models' },
 										{ label: 'Wire up multiple providers', slug: 'course/opencode/providers-models/multi-provider-setup' },
-										{ label: 'Run two side by side', slug: 'course/opencode/providers-models/side-by-side' },
+										{ label: 'Switch models · in-session', slug: 'course/opencode/providers-models/switch-models' },
 										{ label: 'Per-agent model', slug: 'course/opencode/providers-models/per-agent-model' },
+										{ label: 'Run two side by side', slug: 'course/opencode/providers-models/side-by-side' },
 										{ label: 'Local & custom models', slug: 'course/opencode/providers-models/local-and-custom' },
 									],
 								},
@@ -559,9 +559,9 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/the-tui' },
 										{ label: 'Leader key & command palette', slug: 'course/opencode/the-tui/leader-and-palette' },
-										{ label: 'Plan / build toggle', slug: 'course/opencode/the-tui/plan-build-toggle' },
 										{ label: 'Sessions · juggle & resume', slug: 'course/opencode/the-tui/sessions' },
 										{ label: 'Undo, redo & compact', slug: 'course/opencode/the-tui/undo-redo-compact' },
+										{ label: 'Plan / build toggle', slug: 'course/opencode/the-tui/plan-build-toggle' },
 										{ label: 'Keybinds & themes', slug: 'course/opencode/the-tui/keybinds-and-themes' },
 									],
 								},
@@ -579,8 +579,8 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/skills' },
 										{ label: 'Package your first skill', slug: 'course/opencode/skills/first-skill' },
-										{ label: 'Gate which agents run it', slug: 'course/opencode/skills/gating-skills' },
 										{ label: 'Reuse a portable skill', slug: 'course/opencode/skills/portable-skills' },
+										{ label: 'Gate which agents run it', slug: 'course/opencode/skills/gating-skills' },
 									],
 								},
 								{
@@ -588,8 +588,8 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/subagents' },
 										{ label: 'The three built-in subagents', slug: 'course/opencode/subagents/built-in-subagents' },
-										{ label: 'Fan out across adapters', slug: 'course/opencode/subagents/fan-out' },
 										{ label: 'Write a custom subagent', slug: 'course/opencode/subagents/custom-subagent' },
+										{ label: 'Fan out across adapters', slug: 'course/opencode/subagents/fan-out' },
 									],
 								},
 								{

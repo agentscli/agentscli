@@ -305,7 +305,7 @@ model = "gpt-5.4"`,
             type: 'folder',
             oneLiner: 'Skills following the cross-tool Agent Skills standard.',
             description:
-              'Codex walks up from your working directory to the repo root looking for `.agents/skills/`. Skills here are portable to Claude Code and opencode with their basic shape intact.',
+              'Codex walks up from your working directory to the repo root looking for `.agents/skills/`. Skills here are portable to Claude Code and OpenCode with their basic shape intact.',
             chapter: CHAPTER.skills,
             children: [
               {
@@ -411,7 +411,7 @@ command = "scripts/check-bash-command.sh"`,
             oneLiner: 'Personal skills in the cross-tool standard, available everywhere.',
             when: 'Descriptions at session start; body on invocation.',
             description:
-              'Your user-level skill repository in the Agent Skills open standard - portable between Codex, Claude Code, and opencode.',
+              'Your user-level skill repository in the Agent Skills open standard - portable between Codex, Claude Code, and OpenCode.',
             chapter: CHAPTER.skills,
           },
         ],
@@ -465,7 +465,7 @@ Use Active Record validations; never raw SQL in models.`,
             oneLiner: 'The cross-tool rules standard - Copilot reads it natively.',
             when: 'Read when the `chat.useAgentsMdFile` setting is enabled.',
             description:
-              'The same AGENTS.md that Codex, opencode, and Cursor read works here unchanged. Copilot also reads `CLAUDE.md` (repo root, `.claude/CLAUDE.md`, or `CLAUDE.local.md` - gated by `chat.useClaudeMdFile`), so a team already invested in another tool\'s rules file keeps it. Nested AGENTS.md support exists but is experimental.',
+              'The same AGENTS.md that Codex, OpenCode, and Cursor read works here unchanged. Copilot also reads `CLAUDE.md` (repo root, `.claude/CLAUDE.md`, or `CLAUDE.local.md` - gated by `chat.useClaudeMdFile`), so a team already invested in another tool\'s rules file keeps it. Nested AGENTS.md support exists but is experimental.',
             chapter: CHAPTER.rules,
           },
           {
@@ -593,7 +593,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             oneLiner: 'Personal skills available in every repo.',
             when: 'Same lifecycle as project skills: descriptions up front, body on demand.',
             description:
-              'Same SKILL.md format as project skills. Copilot also reads `~/.agents/skills/`, the cross-tool location shared with Codex, Cursor, and opencode.',
+              'Same SKILL.md format as project skills. Copilot also reads `~/.agents/skills/`, the cross-tool location shared with Codex, Cursor, and OpenCode.',
             chapter: CHAPTER.skills,
           },
           {
@@ -625,7 +625,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             oneLiner: 'Always-on portable rules; nested files stack, they don\'t replace.',
             when: 'Root file always; a nested AGENTS.md joins in for work in its subtree.',
             description:
-              'Plain markdown, no frontmatter - the cross-tool standard shared with Codex, opencode, and Copilot. Nested files concatenate with their ancestors, and the deeper file wins on direct conflict. When you need rules that load conditionally instead of always, you graduate to `.cursor/rules/`.',
+              'Plain markdown, no frontmatter - the cross-tool standard shared with Codex, OpenCode, and Copilot. Nested files concatenate with their ancestors, and the deeper file wins on direct conflict. When you need rules that load conditionally instead of always, you graduate to `.cursor/rules/`.',
             chapter: CHAPTER.rules,
           },
           {
@@ -824,7 +824,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
   },
   {
     slug: 'opencode',
-    label: 'opencode',
+    label: 'OpenCode',
     scopes: [
       {
         label: 'your-project/',
@@ -849,7 +849,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
             label: 'AGENTS.md',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'The rules layer - opencode has no separate rules file.',
+            oneLiner: 'The rules layer - OpenCode has no separate rules file.',
             when: 'Read at session start, every invocation.',
             description:
               'Follows the open `agents.md` spec and is portable from Codex unchanged. Nesting uses a first-win strategy: a subdirectory\'s AGENTS.md replaces a parent\'s rather than merging with it - the opposite of Claude Code\'s additive layering.',
@@ -861,7 +861,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
             type: 'folder',
             oneLiner: 'Project-scoped skills, commands, and agents.',
             description:
-              'opencode\'s native asset directory. Note that opencode also cross-reads `.claude/skills/` and `.agents/skills/` from the same repo - see those entries below.',
+              'OpenCode\'s native asset directory. Note that OpenCode also cross-reads `.claude/skills/` and `.agents/skills/` from the same repo - see those entries below.',
             chapter: CHAPTER.configuration,
             children: [
               {
@@ -869,7 +869,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 label: 'skills/',
                 type: 'folder',
                 badge: 'committed',
-                oneLiner: 'Native opencode skills, loaded on demand via the `skill` tool.',
+                oneLiner: 'Native OpenCode skills, loaded on demand via the `skill` tool.',
                 when: 'Names and descriptions at session start; the body loads on demand.',
                 description:
                   'Frontmatter requires `name` (must match the directory) and `description`. There is no equivalent to Claude Code\'s `disable-model-invocation` or `context: fork` - the agent sees every skill and loads bodies as needed.',
@@ -894,7 +894,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 oneLiner: 'Subagents and custom primary agents.',
                 when: 'Subagents run on `@mention`; primary agents are selected at launch.',
                 description:
-                  'Markdown with rich frontmatter: `mode` (`subagent` | `primary` | `all`), per-agent `model` and `temperature`, a `permission` object with glob support, `steps` to cap iterations, and `hidden` to keep it out of autocomplete. Custom primary agents are opencode\'s answer to Codex profiles.',
+                  'Markdown with rich frontmatter: `mode` (`subagent` | `primary` | `all`), per-agent `model` and `temperature`, a `permission` object with glob support, `steps` to cap iterations, and `hidden` to keep it out of autocomplete. Custom primary agents are OpenCode\'s answer to Codex profiles.',
                 exampleIntro: 'A read-only security auditor:',
                 exampleTitle: '.opencode/agents/auditor.md',
                 example: `---
@@ -915,10 +915,10 @@ permission:
             label: '.claude/skills/  (cross-read)',
             type: 'folder',
             badge: 'committed',
-            oneLiner: 'opencode reads Claude Code\'s skill directory directly.',
+            oneLiner: 'OpenCode reads Claude Code\'s skill directory directly.',
             when: 'Same lifecycle as native skills: descriptions at start, body on demand.',
             description:
-              'A skill authored for Claude Code generally works unchanged; opencode ignores frontmatter keys it doesn\'t know. Precedence when names collide: `.opencode/skills/` > `.claude/skills/` > `.agents/skills/`.',
+              'A skill authored for Claude Code generally works unchanged; OpenCode ignores frontmatter keys it doesn\'t know. Precedence when names collide: `.opencode/skills/` > `.claude/skills/` > `.agents/skills/`.',
             chapter: CHAPTER.skills,
           },
           {
@@ -929,7 +929,7 @@ permission:
             oneLiner: 'Skills in the cross-tool standard, shared with Codex.',
             when: 'Walked up from cwd to the git worktree root at session start.',
             description:
-              'The same `.agents/skills/` directories Codex reads. One skill directory can serve opencode, Codex, and Claude Code at once.',
+              'The same `.agents/skills/` directories Codex reads. One skill directory can serve OpenCode, Codex, and Claude Code at once.',
             chapter: CHAPTER.skills,
           },
         ],
@@ -941,7 +941,7 @@ permission:
             id: 'home-opencode',
             label: '~/.config/opencode/',
             type: 'folder',
-            oneLiner: 'Your personal opencode setup across all projects.',
+            oneLiner: 'Your personal OpenCode setup across all projects.',
             description:
               'Global counterparts of the project files: `opencode.json`, `AGENTS.md`, and skills/commands/agents directories.',
             chapter: CHAPTER.configuration,
@@ -963,7 +963,7 @@ permission:
                 oneLiner: 'Personal rules - skipped entirely when a project has its own.',
                 when: 'Read at session start only if the project has no AGENTS.md (first-win).',
                 description:
-                  'Because of opencode\'s first-win strategy, this file does not merge with a project AGENTS.md - it is only used when no project file exists.',
+                  'Because of OpenCode\'s first-win strategy, this file does not merge with a project AGENTS.md - it is only used when no project file exists.',
                 chapter: CHAPTER.rules,
               },
               {
@@ -973,7 +973,7 @@ permission:
                 oneLiner: 'Personal skills available in every project.',
                 when: 'Descriptions at session start; body on demand.',
                 description:
-                  'Same frontmatter schema as project skills. opencode also cross-reads `~/.claude/skills/` and `~/.agents/skills/` at the user level.',
+                  'Same frontmatter schema as project skills. OpenCode also cross-reads `~/.claude/skills/` and `~/.agents/skills/` at the user level.',
                 chapter: CHAPTER.skills,
               },
               {
@@ -992,7 +992,7 @@ permission:
                 oneLiner: 'Personal agent definitions.',
                 when: 'Subagents on `@mention`; primary agents at launch.',
                 description:
-                  'Same frontmatter schema as project agents. opencode also ships three built-in subagents: `general` (full access), `explore` (read-only codebase), and `scout` (read-only docs and dependencies).',
+                  'Same frontmatter schema as project agents. OpenCode also ships three built-in subagents: `general` (full access), `explore` (read-only codebase), and `scout` (read-only docs and dependencies).',
                 chapter: CHAPTER.subagents,
               },
             ],
@@ -1135,7 +1135,7 @@ next step (retry, skip, or needs a new source adapter).`,
             oneLiner: 'The cross-tool skills standard - the same directories the other tools read.',
             when: 'Checked alongside `.pi/skills/`, plus ancestor directories up to the repo root.',
             description:
-              'One skills directory can serve Pi, Claude Code, Codex, Cursor, opencode, and Copilot at once. Pi\'s relaxed name-matching rule exists partly for this: a shared skills repo doesn\'t need renaming per tool.',
+              'One skills directory can serve Pi, Claude Code, Codex, Cursor, OpenCode, and Copilot at once. Pi\'s relaxed name-matching rule exists partly for this: a shared skills repo doesn\'t need renaming per tool.',
             chapter: CHAPTER.skills,
           },
         ],
@@ -1221,7 +1221,7 @@ next step (retry, skip, or needs a new source adapter).`,
             oneLiner: 'Personal skills in the cross-tool standard, shared with the other tools.',
             when: 'Descriptions at startup; body on demand.',
             description:
-              'The same user-level directory Codex, Cursor, opencode, and Copilot read - author a skill once, use it everywhere.',
+              'The same user-level directory Codex, Cursor, OpenCode, and Copilot read - author a skill once, use it everywhere.',
             chapter: CHAPTER.skills,
           },
         ],

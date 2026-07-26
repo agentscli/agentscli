@@ -11,7 +11,7 @@ export type SkaToolId = 'claude-code' | 'codex' | 'opencode' | 'cursor' | 'copil
 export const skaToolLabel: Record<SkaToolId, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
-  opencode: 'opencode',
+  opencode: 'OpenCode',
   cursor: 'Cursor',
   copilot: 'Copilot',
 };
@@ -64,7 +64,7 @@ export const skaParts: SkaPart[] = [
     title: 'name',
     what: 'The skill’s identifier - how you invoke it and how the model refers to it. Lowercase-hyphenated by convention (required by the stricter tools).',
     constraints:
-      'Cursor and opencode require it to match the folder name; Copilot and opencode cap it at 64 characters.',
+      'Cursor and OpenCode require it to match the folder name; Copilot and OpenCode cap it at 64 characters.',
     support: {
       'claude-code': { status: 'yes', note: 'required' },
       codex: { status: 'yes', note: 'required' },
@@ -77,7 +77,7 @@ export const skaParts: SkaPart[] = [
     id: 'description',
     title: 'description',
     what: 'The trigger. Every skill’s description is loaded into context at session start; the model matches your intent against it to decide when to pull the body in. It’s the most important line in the file - write it as a "use when…" hint, not a summary.',
-    constraints: 'Capped at 1024 characters where a limit is documented (opencode, Copilot).',
+    constraints: 'Capped at 1024 characters where a limit is documented (OpenCode, Copilot).',
     support: {
       'claude-code': { status: 'yes', note: 'required · drives auto-invocation' },
       codex: { status: 'yes', note: 'required · drives auto-invocation' },
