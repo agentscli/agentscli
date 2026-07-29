@@ -1,0 +1,30 @@
+---
+title: Troubleshooting
+description: "Common failure modes and what to do about them."
+sidebar:
+  label: Troubleshooting
+---
+
+### LSP not starting
+
+Check whether `OPENCODE_DISABLE_LSP_DOWNLOAD` is set in your environment - if it is, OpenCode will not auto-install language servers. Verify the language server itself is installed and on your `PATH` (for Go, that means `gopls`: run `which gopls`). If you have the Go toolchain but not `gopls`, OpenCode will `go install` it on first use - but only if the `go` command is present and LSP downloads are not disabled. Enable LSP in your config if you haven't already; it is off by default.
+
+### MCP server won't connect
+
+Run the server command standalone in your terminal first (e.g. `uvx postgres-mcp --connection-string ...`) and check stderr for errors. Verify the transport type matches what you declared in `opencode.json` - a `stdio` server that expects HTTP, or vice versa, will hang silently. Check that the binary or runtime (`uvx`, `npx`, `node`) is on your `PATH` inside the environment OpenCode runs in.
+
+### `/undo` doesn't revert files
+
+This is a known reliability issue with open reports across multiple releases. `/undo` may roll back the message but leave file edits on disk, or conflict with the file watcher. Use git as your real undo: `git diff` to see what changed, `git checkout -- .` or `git stash` to revert. Commit early and often so you always have a clean checkpoint to return to.
+
+### Compaction loses critical context
+
+Before compacting, write key decisions and findings to disk - a `DECISIONS.md`, a comment in the code, or an `AGENTS.md` rule. Use the structured compaction template (`compaction.template` in `opencode.json`) to control what the summary preserves. Anything that exists only in the conversation and nowhere on disk is at risk when the window compacts.
+
+### `ask` permission stalls headless runs
+
+In `opencode run`, `opencode serve`, or `opencode attach` with no human at the keyboard, an `ask` permission has no one to answer it. The approval can stall indefinitely. For headless and CI use, set every permission to explicit `allow` or `deny` - never leave `ask` in the map. Alternatively, use the `--auto` flag to auto-approve anything not explicitly denied, but a purpose-built agent with a deliberate permission map is the safer default.
+
+### Port 4096 already in use
+
+Check for another OpenCode instance already running (`opencode serve` or a TUI session with its background server). Use `lsof -i :4096` or `ss -tlnp | grep 4096` to find the process. Start your server on a different port with the `--port` flag: `opencode serve --port 4097`.

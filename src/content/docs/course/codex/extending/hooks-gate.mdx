@@ -9,6 +9,8 @@ There's one move in `budgetcli` you treat as sacred: **Codex must never write to
 
 That's a **hook**: a shell command Codex runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason around it. It's deterministic code on a rail - *always runs, model-independent* - and that property is the entire reason it exists. Hooks ship with Codex and are on by default; the full event list and payload detail are on the [Codex hooks docs](https://learn.chatgpt.com/docs/hooks).
 
+The way a hook talks back is equally simple, and it's the second half of the concept: the script's **exit code is the verdict**. Exit 0 - or anything other than 2 - lets the action proceed. **Exit 2 blocks it**, and whatever the script wrote to stderr is fed back to the agent as the reason. No judgment, no negotiation, no model in the loop: a return code the lifecycle machinery is hard-wired to honor.
+
 ## The right moment to fire
 
 Hooks attach to lifecycle **events**. Codex documents a family of them - `SessionStart` when a session opens, `UserPromptSubmit` when you send a message, `PreToolUse` before a tool runs, `PostToolUse` after, `PreCompact`/`PostCompact` around compaction, `PermissionRequest` when the agent asks to do something gated, and `Stop` when the session ends. Picking the right one is most of the design.
@@ -17,9 +19,13 @@ For our wall we want **`PreToolUse`**: it fires *before* a tool call runs, which
 
 ## Wire it up
 
-Hooks are configured next to your active config layers - a `hooks.json` file at `~/.codex/` or in the repo's `.codex/`, or inline as `[hooks]` tables in `config.toml`. You name the event, a **matcher** that narrows which tool calls trigger the hook, and the command to run. The config below is *illustrative* - confirm the exact key names and nesting against the [hooks docs](https://learn.chatgpt.com/docs/hooks) before you rely on it. *Unverified*:
+Hooks are configured next to your active config layers - a `hooks.json` file at `~/.codex/` or in the repo's `.codex/`, or inline as `[hooks]` tables in `config.toml`. You name the event, a **matcher** that narrows which tool calls trigger the hook, and the command to run.
 
-```text
+:::caution[Verify before you trust this with your ledger]
+The config and script in this section are *illustrative* - the shape will look something like this, but the exact key names, nesting, matcher names, and payload field paths are version-sensitive. Confirm all of it against the current [hooks docs](https://learn.chatgpt.com/docs/hooks) before you rely on the gate.
+:::
+
+```json
 // .codex/hooks.json
 {
   "PreToolUse": [
@@ -35,9 +41,9 @@ Hooks are configured next to your active config layers - a `hooks.json` file at 
 
 The matcher narrows this to shell tool calls - `psql`, a migration runner, anything that could touch the database - so the hook isn't woken for every file read.
 
-Codex hands a hook a **JSON payload** describing the call and the session. Verified fields include `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `model`, and `permission_mode`; turn-scoped hooks also receive a `turn_id`. The exact field that carries the *command string* for a `PreToolUse` Bash call (the thing the script below greps) is not something I could confirm from the docs - treat the `tool_input.command` path as a placeholder and verify it. *Unverified*:
+Codex hands a hook a **JSON payload** describing the call and the session - fields like `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `model`, and `permission_mode`, with a `turn_id` on turn-scoped hooks. The script below greps the command string out of that payload; the `tool_input.command` path is the illustrative one, so verify it against the payload schema in the docs.
 
-```text
+```bash
 #!/bin/bash
 # .codex/hooks/protect-ledger.sh
 input=$(cat)
@@ -53,7 +59,7 @@ fi
 exit 0
 ```
 
-The verdict is signalled through the **exit code**. The contract that matters: **exit 2 blocks the action**, and whatever the script wrote to stderr is fed back to the agent as the reason; any other code lets the call proceed. (The exit-code semantics are the standard hook contract, but confirm the block-on-`2` behavior for your installed version. *Unverified*.) Everything in that script is plain shell - nothing here is AI, which is the whole point.
+Everything in that script is plain shell - nothing here is AI, which is the whole point. The `exit 2` and the stderr message are the exit-code contract from the top of the lesson, doing their job.
 
 ## Watch the wall hold
 
@@ -81,8 +87,8 @@ Watch what the agent did with the rejection. It didn't get stuck - it read the s
 
 `PreToolUse` blocks; its sibling **`PostToolUse`** observes *after* a tool runs and can't block - perfect for "do this every time the agent edits a file." The money math in `budgetcli` is the part you least trust to a silent edit, so wire a `PostToolUse` hook on file edits to run the test suite:
 
-```text
-// .codex/hooks.json  (illustrative - verify keys)
+```json
+// .codex/hooks.json
 {
   "PostToolUse": [
     {
@@ -95,6 +101,10 @@ Watch what the agent did with the rejection. It didn't get stuck - it read the s
 }
 ```
 
-Now every edit Codex makes is immediately followed by the money tests, deterministically, whether or not the agent thought to run them. A regression in the cents math surfaces the instant it's introduced instead of three edits later. (Matcher names like `apply_patch` and the post-tool payload shape are version-sensitive - check the [hooks docs](https://learn.chatgpt.com/docs/hooks). *Unverified*.)
+Now every edit Codex makes is immediately followed by the money tests, deterministically, whether or not the agent thought to run them. A regression in the cents math surfaces the instant it's introduced instead of three edits later.
+
+:::tip[Try it]
+Write a simple `PreToolUse` hook script that blocks any `rm` command, using the exit-code contract: exit 0 allows, exit 2 blocks. Test it by asking Codex to delete a file and verify your hook appears in the agent's output when it fires.
+:::
 
 You've now built something categorically different from the MCP servers earlier in this chapter. A server *widened* what Codex can do; a hook *overrules* it. That difference is sharp enough to name precisely - because knowing when to reach for a hook instead of a rule or an approval setting is its own skill, and it's [the next lesson](/course/codex/extending/hooks-vs/).

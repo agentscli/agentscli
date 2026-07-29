@@ -26,6 +26,29 @@ Pi's extension API exposes a broad lifecycle surface. These are the events this 
 
 Two more you'll reach for later in the course: `tool_execution_start` and `tool_execution_end`, which fire around a tool's *actual execution* rather than before it - `tool_execution_end` is how a status line tallies the calls that really completed.
 
+In the order they fire across a session, with the thing that matters most about each - whether you can change what happens next:
+
+```text
+ session_start            read-only    session loaded; note the reason, set things up
+        │
+        ▼
+ before_agent_start       mutable      inject messages or rewrite this turn's system prompt
+        │
+        ▼
+ tool_call                mutable      edit event.input in place, or return { block: true }
+        │
+        ▼
+ tool_result              mutable      modify or replace the result before the model sees it
+        │
+        ▼
+ tool_execution_end       read-only    tally the calls that really completed (status line)
+        │
+        ▼
+ session_shutdown         read-only    clean up anything you opened during the session
+```
+
+The mutable ones are where your extensions get teeth - they're the points where returning a value actually changes what Pi does next.
+
 ## Mutating and blocking: `tool_call`
 
 This is the event with teeth. `event.input` is the actual arguments the tool is about to run with, and you can edit them in place before Pi executes the call - or refuse the call outright:

@@ -245,10 +245,12 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/daily-workflow' },
 										{ label: 'Inline · ! @ paste', slug: 'course/claude-code/daily-workflow/inline-input' },
+										{ label: 'Images & multi-line', slug: 'course/claude-code/daily-workflow/images-and-multiline' },
 										{ label: 'Flow · /btw /recap history', slug: 'course/claude-code/daily-workflow/staying-in-flow' },
 										{ label: 'Ergonomics · vim · /config', slug: 'course/claude-code/daily-workflow/ergonomics' },
 									],
 								},
+								{ label: 'Quick reference', slug: 'course/claude-code/reference' },
 							],
 						},
 						{
@@ -335,7 +337,6 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/extending' },
 										{ label: 'MCP · connect a server', slug: 'course/codex/extending/mcp-connect' },
-										{ label: 'MCP · Codex as a server', slug: 'course/codex/extending/mcp-serve' },
 										{ label: 'Hooks · the determinism gate', slug: 'course/codex/extending/hooks-gate' },
 										{ label: 'Hooks · vs judgment & permissions', slug: 'course/codex/extending/hooks-vs' },
 									],
@@ -356,6 +357,7 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/codex/daily-workflow' },
 										{ label: 'Profiles · the two-profile habit', slug: 'course/codex/daily-workflow/profiles-habit' },
 										{ label: 'Prompting · brief well, edit fast', slug: 'course/codex/daily-workflow/prompting-ergonomics' },
+										{ label: 'Error recovery · steer or restart', slug: 'course/codex/daily-workflow/error-recovery' },
 										{ label: 'Finale · the whole arc', slug: 'course/codex/daily-workflow/finale' },
 									],
 								},
@@ -507,36 +509,32 @@ export default defineConfig({
 										{ label: 'The loop · Four beats', slug: 'course/cursor/daily-edit-loop/the-loop' },
 									],
 								},
-								{
-									label: 'Modes · Ask, Plan, Agent, Debug',
-									items: [
-										{ label: 'Module intro', slug: 'course/cursor/modes' },
-										{ label: 'Ask · Read-only Q&A', slug: 'course/cursor/modes/ask' },
-										{ label: 'Agent · Full execution', slug: 'course/cursor/modes/agent' },
-										{ label: 'Plan · Editable plan first', slug: 'course/cursor/modes/plan' },
-										{ label: 'Debug · Instrument and fix', slug: 'course/cursor/modes/debug' },
-									],
-								},
-								{
-									label: 'Context · @-tag & self-gathering',
-									items: [
-										{ label: 'Module intro', slug: 'course/cursor/context' },
-										{ label: 'Indexing · The substrate', slug: 'course/cursor/context/indexing' },
-										{ label: '@-mentions · The attach menu', slug: 'course/cursor/context/at-mentions' },
-										{ label: 'Self-gathering · Let it search', slug: 'course/cursor/context/self-gathering' },
-										{ label: 'Hand-pinning · Chat continuity', slug: 'course/cursor/context/pinning-and-continuity' },
-									],
-								},
-								{
-									label: 'Models · Auto, Composer, MAX',
-									items: [
-										{ label: 'Module intro', slug: 'course/cursor/models' },
-										{ label: 'Picker · Auto routing', slug: 'course/cursor/models/picker-and-auto' },
-										{ label: 'Composer · In-house model', slug: 'course/cursor/models/composer' },
-										{ label: 'Pricing · Pools and MAX', slug: 'course/cursor/models/pricing-pools' },
-										{ label: 'Mixing · Plan then build', slug: 'course/cursor/models/mixing-models' },
-									],
-								},
+							{
+								label: 'Modes · Ask, Plan, Agent, Debug',
+								items: [
+									{ label: 'Module intro', slug: 'course/cursor/modes' },
+									{ label: 'Ask & Agent · Q&A then execution', slug: 'course/cursor/modes/ask-and-agent' },
+									{ label: 'Plan · Editable plan first', slug: 'course/cursor/modes/plan' },
+									{ label: 'Debug · Instrument and fix', slug: 'course/cursor/modes/debug' },
+								],
+							},
+							{
+								label: 'Context · @-tag & self-gathering',
+								items: [
+									{ label: 'Module intro', slug: 'course/cursor/context' },
+									{ label: '@-mentions · The attach menu', slug: 'course/cursor/context/at-mentions' },
+									{ label: 'Self-gathering · Hand-pinning · Chat', slug: 'course/cursor/context/pinning-and-continuity' },
+								],
+							},
+							{
+								label: 'Models · Auto, Composer, MAX',
+								items: [
+									{ label: 'Module intro', slug: 'course/cursor/models' },
+									{ label: 'Picker · Auto routing', slug: 'course/cursor/models/picker-and-auto' },
+									{ label: 'Pricing · Composer, pools, MAX', slug: 'course/cursor/models/pricing-pools' },
+									{ label: 'Mixing · Plan then build', slug: 'course/cursor/models/mixing-models' },
+								],
+							},
 								{
 									label: 'Rules · .mdc & AGENTS.md',
 									items: [
@@ -547,16 +545,15 @@ export default defineConfig({
 										{ label: 'Sharp edges · Legacy path', slug: 'course/cursor/rules/sharp-edges' },
 									],
 								},
-								{
-									label: 'Permissions · auto-run & sandbox',
-									items: [
-										{ label: 'Module intro', slug: 'course/cursor/permissions' },
-										{ label: 'Auto-run · Three modes', slug: 'course/cursor/permissions/auto-run' },
-										{ label: 'Sandbox · The real wall', slug: 'course/cursor/permissions/sandbox' },
-										{ label: 'Lists · Superseded', slug: 'course/cursor/permissions/allowlist' },
-										{ label: 'Isolation · Cloud Agents', slug: 'course/cursor/permissions/isolation' },
-									],
-								},
+							{
+								label: 'Permissions · auto-run & sandbox',
+								items: [
+									{ label: 'Module intro', slug: 'course/cursor/permissions' },
+									{ label: 'Auto-run & sandbox', slug: 'course/cursor/permissions/auto-run' },
+									{ label: 'Lists · Superseded', slug: 'course/cursor/permissions/allowlist' },
+									{ label: 'Isolation · Cloud Agents', slug: 'course/cursor/permissions/isolation' },
+								],
+							},
 								{
 									label: 'Parallel & remote agents',
 									items: [
@@ -577,17 +574,16 @@ export default defineConfig({
 										{ label: 'Hooks · The gate', slug: 'course/cursor/extending/hooks' },
 									],
 								},
-								{
-									label: 'The CLI, headless & CI',
-									items: [
-										{ label: 'Module intro', slug: 'course/cursor/cli-headless-ci' },
-										{ label: 'Install · the terminal agent', slug: 'course/cursor/cli-headless-ci/install' },
-										{ label: 'Headless · command, key, config', slug: 'course/cursor/cli-headless-ci/headless' },
-										{ label: 'Slash commands · the TUI set', slug: 'course/cursor/cli-headless-ci/slash-commands' },
-										{ label: 'CI · gate the push', slug: 'course/cursor/cli-headless-ci/ci' },
-										{ label: 'Cloud & Bugbot · off your machine', slug: 'course/cursor/cli-headless-ci/cloud-and-bugbot' },
-									],
-								},
+							{
+								label: 'The CLI, headless & CI',
+								items: [
+									{ label: 'Module intro', slug: 'course/cursor/cli-headless-ci' },
+									{ label: 'Install & headless · command, key, config', slug: 'course/cursor/cli-headless-ci/headless' },
+									{ label: 'Slash commands · the TUI set', slug: 'course/cursor/cli-headless-ci/slash-commands' },
+									{ label: 'CI · gate the push', slug: 'course/cursor/cli-headless-ci/ci' },
+									{ label: 'Cloud & Bugbot · off your machine', slug: 'course/cursor/cli-headless-ci/cloud-and-bugbot' },
+								],
+							},
 								{
 									label: 'Daily workflow',
 									items: [
@@ -682,11 +678,12 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/opencode/extending' },
 										{ label: 'MCP servers', slug: 'course/opencode/extending/mcp-servers' },
 										{ label: 'The LSP channel', slug: 'course/opencode/extending/lsp-diagnostics' },
-										{ label: 'Plugin hooks', slug: 'course/opencode/extending/plugins-hooks' },
-									],
-								},
-								{
-									label: 'Sharing & headless',
+									{ label: 'Plugin hooks', slug: 'course/opencode/extending/plugins-hooks' },
+									{ label: 'Custom tools · registerTool', slug: 'course/opencode/extending/custom-tools' },
+								],
+							},
+							{
+								label: 'Sharing & headless',
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/share-and-headless' },
 										{ label: 'Share a session', slug: 'course/opencode/share-and-headless/share-links' },
@@ -700,13 +697,15 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/opencode/daily-workflow' },
 										{ label: 'Codify the chore', slug: 'course/opencode/daily-workflow/custom-commands' },
 										{ label: 'Prompt well & move fast', slug: 'course/opencode/daily-workflow/prompting-and-reflexes' },
-										{ label: 'The week back', slug: 'course/opencode/daily-workflow/the-week-back' },
-									],
-								},
-							],
-						},
-						{
-							label: 'Pi',
+									{ label: 'The week back', slug: 'course/opencode/daily-workflow/the-week-back' },
+								],
+							},
+							{ label: 'Config reference', slug: 'course/opencode/reference' },
+							{ label: 'Troubleshooting', slug: 'course/opencode/troubleshooting' },
+						],
+					},
+					{
+						label: 'Pi',
 							link: '/course/pi/',
 							icon: 'open-book',
 							items: [
@@ -800,15 +799,17 @@ export default defineConfig({
 									label: 'Daily workflow',
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/daily-workflow' },
-										{ label: 'Assemble · one harness', slug: 'course/pi/daily-workflow/assemble' },
-										{ label: 'When to reach for Pi', slug: 'course/pi/daily-workflow/when-pi' },
-										{ label: 'The week back', slug: 'course/pi/daily-workflow/finale' },
-									],
-								},
-							],
-						},
-						{
-							label: 'Playbooks',
+									{ label: 'Assemble · one harness', slug: 'course/pi/daily-workflow/assemble' },
+									{ label: 'Housekeeping · prune and review', slug: 'course/pi/daily-workflow/housekeeping' },
+									{ label: 'When to reach for Pi', slug: 'course/pi/daily-workflow/when-pi' },
+									{ label: 'The week back', slug: 'course/pi/daily-workflow/finale' },
+								],
+							},
+							{ label: 'Troubleshooting', slug: 'course/pi/troubleshooting' },
+						],
+					},
+					{
+						label: 'Playbooks',
 							link: '/playbooks/',
 							icon: 'rocket',
 							items: [

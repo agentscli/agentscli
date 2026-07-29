@@ -15,9 +15,25 @@ It turns out OpenCode does not work the way that other tool does.
 
 ## OpenCode walks up, and combines what it finds
 
-Here's the mechanism, and it's worth holding precisely because most people arrive expecting the opposite. When OpenCode builds its context for a turn, it doesn't read only the rule file in your current directory. It **walks up** from the current working directory toward the worktree root, and at every level it collects the `AGENTS.md` it finds there. Every one of those files is loaded and **combined** into the rules layer - the nested file does not replace the root, it stacks on top of it. {/* VERIFY (OPEN - upper-boundary edge case only; walk-up-combine itself is CONFIRMED): the walk is bounded by `ctx.worktree`. Inside a git repo that resolves to the repository root, so the climb stops there (anomalyco/opencode v1.16.2 `instruction.ts` `systemPaths` → `fs.findUp(file, ctx.directory, ctx.worktree)`; `util/filesystem.ts` `findUp` accumulates every match up to the stop dir; CLOSED #4479 confirms the search halts at the git root and that the `break` only ends the filename-variant loop). With NO `.git` boundary the worktree resolves higher and opencode can pull an AGENTS.md from a parent/home directory you did not intend - #6479 (OPEN as of v1.16.2). So "stops at the worktree root" is exact only inside a git repo; outside one the upper bound is unsettled. Keep the prose's "feedmill is a git repo, so the climb stops at feedmill/" scoping. */}
+Here's the mechanism, and it's worth holding precisely because most people arrive expecting the opposite. When OpenCode builds its context for a turn, it doesn't read only the rule file in your current directory. It **walks up** from the current working directory toward the worktree root, and at every level it collects the `AGENTS.md` it finds there. Every one of those files is loaded and **combined** into the rules layer - the nested file does not replace the root, it stacks on top of it. {/* VERIFY: walk-up-upper-boundary */}
 
 So when you're working from inside `server/`, the walk starts there, picks up `server/AGENTS.md`, keeps climbing to the repo root (`feedmill` is a git repo, so the climb stops at `feedmill/`), picks up the root `feedmill/AGENTS.md` too, and hands the agent both. Your UTC and rate-limit rules from the root file are still in force under `server/`, and the server-only error-envelope rule is added alongside them. You didn't replace your rule set. You extended it for that subtree - which is exactly what you wanted.
+
+The whole walk, from the global file down to the subtree:
+
+```text
+ ~/.config/opencode/AGENTS.md     global rules        (every project)
+        │
+        │   combined, not overridden
+        ▼
+ feedmill/AGENTS.md               repo-root rules     (walk stops here - the git boundary)
+        │
+        │   combined, not overridden
+        ▼
+ feedmill/server/AGENTS.md        subdirectory rules  (read last, most specific)
+
+ result: one rules layer = global + root + subdirectory, all in force at once
+```
 
 The line in OpenCode's own docs that people misread is this one:
 
@@ -31,11 +47,11 @@ So "first match wins" is real, and so is "all the files combine." They're answer
 
 ## Why people expect the opposite
 
-If you've come from a tool that only reads the **nearest** rules file - or only the root one - then dropping a file in `server/` *feels* dangerous, because there it would override rather than add. {/* VERIFY (OPEN - third-party behavior, version-dependent): the directional claim ("some tools don't combine a nested hierarchy") is safe and is the only thing the prose now relies on. A named example was removed because the exact current behavior of other vendors drifts: GitHub Copilot historically read root-level instructions and ignored nested AGENTS.md (microsoft/vscode #271489; github/copilot-cli #3051, #1655 request recursive discovery), and Cursor's .cursor/rules layers files by glob / alwaysApply. If you re-add a named comparison, re-verify that vendor's current behavior at publish time rather than trusting these issue numbers. */}
+If you've come from a tool that only reads the **nearest** rules file - or only the root one - then dropping a file in `server/` *feels* dangerous, because there it would override rather than add. {/* VERIFY: third-party-nesting */}
 
 OpenCode removes that danger, but it introduces a milder one in its place: because nested files *add*, a rule you bury three directories deep is silently in force everywhere below it, and a contradiction between a nested file and the root won't error - it just hands the model two rules and lets it reconcile them. The failure mode isn't "my root rules vanished." It's "I forgot this subtree also inherits everything above it." Different trap, opposite direction.
 
-You can confirm what OpenCode loaded for a given turn rather than guessing - but don't take the model's word for it. Ask OpenCode to *self-report* which files it read and it may confabulate. Look at a deterministic source instead: OpenCode prepends each loaded rules file to the system prompt under an `Instructions from: <path>` header, and when a nested file is pulled in by a read it arrives inside a `<system-reminder>` block naming the same path - so the loaded set is observable, not inferred. {/* VERIFY (OPEN - no single documented flag): in anomalyco/opencode v1.16.2 the system-prompt rules files are emitted with the literal prefix `Instructions from: <path>` (instruction.ts `system()`), and read-triggered nested files are injected as `<system-reminder>` blocks (tool/read.ts ll. 358-359, content prefixed `Instructions from:`). There is NO dedicated `opencode debug instructions` subcommand in v1.16.2 (debug subcommands are: agent, config, file, lsp, ripgrep, skill, snapshot, startup, v2). If you want a copy-paste deterministic check for the lesson, confirm whether the JSON/headless output or a debug command exposes the resolved instruction path list before asserting one exists. */}
+You can confirm what OpenCode loaded for a given turn rather than guessing - but don't take the model's word for it. Ask OpenCode to *self-report* which files it read and it may confabulate. Look at a deterministic source instead: OpenCode prepends each loaded rules file to the system prompt under an `Instructions from: <path>` header, and when a nested file is pulled in by a read it arrives inside a `<system-reminder>` block naming the same path - so the loaded set is observable, not inferred. {/* VERIFY: no-debug-instructions-flag */}
 
 The point of looking is the same either way: confirm the rules layer is what you think it is, before a wrong answer tells you it wasn't.
 
@@ -45,7 +61,7 @@ Walk-up combining covers most of what a project `feedmill`'s size needs - a root
 
 When you want an **explicit, location-independent** set of rule files - load *these* every turn, no matter which directory the task touches - the tool isn't directory nesting at all. It's the `instructions` field in `opencode.json`, which takes explicit file paths and glob patterns and loads every match additively:
 
-```text
+```json
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["AGENTS.md", "packages/*/AGENTS.md"]
@@ -54,7 +70,7 @@ When you want an **explicit, location-independent** set of rule files - load *th
 
 Every matched file is loaded and combined with your `AGENTS.md` files - the docs are explicit that *all instruction files are combined with your `AGENTS.md` files.* The difference from the walk-up isn't combine-versus-replace (both combine); it's **implicit-by-location versus explicit-by-config.** The walk-up gathers whatever sits above your cwd; the `instructions` glob gathers exactly the set you name, from anywhere in the tree, every turn. Entries can be relative paths, globs, `~/`-rooted paths, or even remote `https://` URLs (fetched with a short timeout).
 
-That's the next lesson, in full. You've seen how discovery actually behaves - the walk climbs to the worktree root and combines every `AGENTS.md` on the way, and "first match wins" only chooses among filename variants at a single level - and where the explicit alternative lives. Now wire it up on purpose: split `feedmill`'s long-lived conventions into their own files and load them by name. [Next: point at more instruction files](/course/opencode/rules-agents-md/extra-instructions/).
+That's the next lesson, in full. You've seen how discovery actually behaves - the walk climbs to the worktree root and combines every `AGENTS.md` on the way, and "first match wins" only chooses among filename variants at a single level - and where the explicit alternative lives. Now wire it up on purpose: split `feedmill`'s long-lived conventions into their own files and load them by name.
 
 ## One more way nested files load: when you read into the subtree
 

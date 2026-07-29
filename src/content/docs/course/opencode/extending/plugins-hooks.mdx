@@ -114,39 +114,9 @@ The handler receives `input` (the `tool` name, the `sessionID`, and the `callID`
 
 The model didn't decide to respect the rule - it *couldn't* violate it. That's the difference between `AGENTS.md` and a hook. `AGENTS.md` is an instruction the model usually follows; `tool.execute.before` is a gate the model runs into. For "leave this file alone" you want the gate, because the cost of the one time the instruction slips is a corrupted production sync.
 
-One caveat worth knowing before you trust this as a security boundary rather than a guardrail: there's a reported gap (`#5894`) where `tool.execute.before` did **not** intercept tool calls made by *subagents* spawned via the `task` tool, only the primary agent's - a policy bypass. The issue is now **closed**, but treat subagent coverage as something to verify on your own release rather than assume: I couldn't confirm from the changelog that a propagation fix actually shipped, and a related gap in subagent policy enforcement (`#11324`, "Task tool ignores per-target deny") is still open. {/* VERIFY: #5894 (subagent bypass of tool.execute.before) is CLOSED but ship status is unconfirmed - the issue page exposes no linked fix PR/commit, and related #11324 (task tool ignores per-target deny) is still OPEN as of this writing. Re-check the changelog for the reader's pinned release before presenting the hook as airtight for subagents; if you can reproduce, spawn a subagent that targets the protected path and confirm the throw fires. Honest framing kept: guardrail for the main loop, verify subagent coverage. */} Either way, the defense-in-depth move is the same: treat the hook as a strong guardrail on the main loop and lean on the per-agent permission model from the permissions chapter for anything a subagent could reach - the hook *and* a `permission.edit` deny, not the hook alone.
+One caveat worth knowing before you trust this as a security boundary rather than a guardrail: there's a reported gap (`#5894`) where `tool.execute.before` did **not** intercept tool calls made by *subagents* spawned via the `task` tool, only the primary agent's - a policy bypass. The issue is now **closed**, but treat subagent coverage as something to verify on your own release rather than assume: I couldn't confirm from the changelog that a propagation fix actually shipped, and a related gap in subagent policy enforcement (`#11324`, "Task tool ignores per-target deny") is still open. {/* VERIFY: subagent-hook-bypass */} Either way, the defense-in-depth move is the same: treat the hook as a strong guardrail on the main loop and lean on the per-agent permission model from the permissions chapter for anything a subagent could reach - the hook *and* a `permission.edit` deny, not the hook alone.
 
-## While you're in there: register a custom tool
-
-A plugin isn't only hooks. The same module can hand the model a **new tool** - a capability that didn't exist before, scoped exactly to your project. feedmill has a natural one: "given a feed URL, fetch it once and tell me which parser would claim it," the question you ask every time you onboard a source. Rather than have the agent improvise that with shell each time, register it as a tool:
-
-```ts
-import { type Plugin, tool } from "@opencode-ai/plugin"
-
-export const FeedmillGuard: Plugin = async ({ $, directory }) => {
-  return {
-    event: async ({ event }) => { /* lint on file.edited, as above */ },
-    "tool.execute.before": async (input, output) => { /* gate, as above */ },
-
-    tool: {
-      "feedmill-classify": tool({
-        description: "Fetch a feed URL once and report which feedmill parser handles it",
-        args: {
-          url: tool.schema.string().describe("the feed URL to classify"),
-        },
-        async execute(args) {
-          const out = await $`go run ./cmd/feedmill classify ${args.url}`.cwd(directory).text()
-          return out
-        },
-      }),
-    },
-  }
-}
-```
-
-Now `feedmill-classify` shows up in the model's toolbox alongside `read`, `edit`, and `bash`, and it's gated by the same per-tool permission system as everything else - you can `allow` it for `build` and `deny` it for a read-only auditor exactly as you gated skills. The shape above matches the package: a top-level `tool` key maps each name to a `tool()` definition of `{ description, args, execute }`, where `execute`'s second `context` argument is optional, so `execute(args)` alone is fine.
-
-The line between a custom tool and a skill is worth holding: a [skill](/course/opencode/skills/) is a procedure written in Markdown that the *model* reads and follows step by step; a custom tool is code *you* wrote that the model calls and gets a result from. Reach for a tool when the work is deterministic and you'd rather run it than describe it - fetch-and-classify is exactly that.
+The same plugin module can also register **custom tools** - new capabilities scoped to your project, gated by the same permission system as everything else. That's a big enough topic to get its own lesson: [register a custom tool](/course/opencode/extending/custom-tools/).
 
 ## Which surface, again
 
