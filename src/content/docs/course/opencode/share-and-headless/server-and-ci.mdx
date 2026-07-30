@@ -15,7 +15,7 @@ That reframe is already baked into the tool. The TUI you've used all course isn'
 
 OpenCode is a client/server program. When you launch the TUI it quietly starts a server, picks a port, and connects to it - the interface is a view onto a backend that does the real work. You can start that backend on its own with no interface attached:
 
-```text
+```bash
 $ opencode serve --port 4096
 opencode server listening on http://127.0.0.1:4096
 ```
@@ -24,7 +24,7 @@ That's a headless HTTP server exposing OpenCode's full API - sessions, models, t
 
 By default `serve` binds to `127.0.0.1` and stays local. The moment you bind it anywhere reachable, lock it down. OpenCode reads `OPENCODE_SERVER_PASSWORD` and turns on HTTP basic auth when it's set; the username defaults to `opencode` (override with `OPENCODE_SERVER_USERNAME`). The same basic-auth pair guards `opencode web` too, not just `serve`:
 
-```text
+```bash
 $ OPENCODE_SERVER_PASSWORD=$(openssl rand -hex 16) \
     opencode serve --hostname 0.0.0.0 --port 4096
 ```
@@ -35,20 +35,20 @@ This is the same instinct you carried through the whole share-and-headless chapt
 
 A headless server is great until something goes wrong inside it and you want eyes on the running session rather than a log scrape. You don't restart anything - you attach a client to the server that's already up:
 
-```text
+```bash
 $ opencode attach http://localhost:4096
 ```
 
 That gives you the familiar TUI, but pointed at the existing backend instead of spinning up its own. The session the server is running is right there in front of you. The same `--attach` flag works on `run` when you'd rather drive the live server with a one-shot prompt:
 
-```text
+```bash
 $ opencode run --attach http://localhost:4096 \
     "summarise what the last review session flagged"
 ```
 
 If the server is password-protected, both `attach` and `run` take the creds inline with `--username`/`-u` and `--password`/`-p` - or, if you skip the flags, they fall back to `OPENCODE_SERVER_USERNAME` (default `opencode`) and `OPENCODE_SERVER_PASSWORD` from the environment, the same pair `serve` reads:
 
-```text
+```bash
 $ opencode attach http://feedmill-ci:4096 -u opencode -p "$OPENCODE_SERVER_PASSWORD"
 ```
 
@@ -58,16 +58,63 @@ So the server can run unattended for a feedmill cron or a CI job, and you can st
 
 CI wants one thing from a tool: that it runs the same way every time, on a machine that didn't exist a minute ago. A container gives you exactly that - a fixed OpenCode version, a clean filesystem, and no dependence on whatever happens to be installed on the runner. That's the difference between "the review passed on my laptop" and "the review runs identically on every PR for the next year." There's now an official image at `ghcr.io/anomalyco/opencode` (Debian and Alpine variants) you can base on, but in practice you'll still own a small Dockerfile on top of it: pin OpenCode plus feedmill's toolchain, then make `opencode run` the entrypoint.
 
-{/* VERIFY: opencode publishes a first-party image at ghcr.io/anomalyco/opencode (tags like <version>-debian / <version>-alpine; intro docs reference `docker run ... ghcr.io/anomalyco/opencode`, issue #19474 closed adding the server image). It's framed as a general install/run image, not a branded "CI image", and the docs don't prescribe a canonical CI base - so the roll-your-own-on-top framing above is the safe one. Re-check the exact published tag scheme per release before hard-coding it. */}
+{/* VERIFY: ci-image-tags */}
 
 The pattern is the one you already know from the headless lesson, moved inside an image: a container that has OpenCode and feedmill's Go toolchain, your provider key passed in as a secret, and a single `opencode run` as the entrypoint. Because feedmill is a typed Go codebase wired up with the LSP from earlier in the course, the containerised agent gets the same diagnostics you do locally - a parser change that breaks a type is caught in CI, not in production at 3am when a feed's JSON shifts shape.
 
-```text
-# inside the CI container
-$ opencode run \
-    "review the diff on this PR. flag dedup or feed-parsing regressions
-     and any LSP diagnostics the change introduces. be terse."
+Here's the full workflow, end to end:
+
+```yaml title=".github/workflows/opencode-review.yml"
+name: OpenCode PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Install OpenCode
+        run: curl -fsSL https://opencode.ai/install | bash
+
+      - name: Run OpenCode review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          opencode run \
+            -p "review this diff. flag dedup or feed-parsing regressions and any LSP diagnostics the change introduces. be terse." \
+            --format json > review.json
+
+      - name: Post review as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = JSON.parse(fs.readFileSync('review.json', 'utf8'));
+            const body = review.output ?? review.text ?? 'No output from review.';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `### OpenCode Review\n\n${body}`,
+            });
 ```
+
+The same `opencode run` you used from your terminal, now inside a runner with the Go toolchain and your provider key injected as a secret.
 
 One provider key, one container, one command - and you swap the model per the job exactly like you've done all course: a cheap fast model for routine diff review, a stronger one reserved for the runs that touch the dedup core.
 
@@ -81,7 +128,7 @@ Wrapping OpenCode in your own CI script is the general escape hatch. On GitHub y
 
 On GitHub the fastest path is the guided installer:
 
-```text
+```bash
 $ opencode github install
 ```
 
@@ -99,7 +146,7 @@ The workflow needs the right permissions to do this: `id-token: write` always, p
 
 GitLab is supported but not symmetric - there's no `opencode gitlab install` to mirror the GitHub installer. Instead you wire it into your pipeline by including a CI/CD component in `.gitlab-ci.yml` (or by going through GitLab Duo):
 
-```text
+```yaml
 # .gitlab-ci.yml
 include:
   - component: $CI_SERVER_FQDN/nagyv/gitlab-opencode/opencode@2

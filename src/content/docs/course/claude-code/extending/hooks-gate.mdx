@@ -5,6 +5,8 @@ sidebar:
   label: "Hooks · PreToolUse gate"
 ---
 
+import HookTimeline from '../../../../../components/interactive/HookTimeline.tsx';
+
 There's one rule in the payments service you treat as sacred: **no change to the ledger code lands without a test alongside it.** The ledger is where money is counted; an untested change there is the kind of mistake that's invisible until it's expensive. You could write this rule into your project memory and ask the agent to honor it - and most of the time it would. But "most of the time" is precisely the wrong guarantee for the one thing that must never slip. You don't want a request the agent can forget under a full context window. You want a gate that fires every single time, no matter what the model decided.
 
 That's a **hook**: a shell command Claude Code runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason its way around it. It's deterministic code on a rail, and that property - *always runs, model-independent* - is the whole reason it exists.
@@ -15,11 +17,13 @@ Hooks attach to lifecycle **events**. There are many - `SessionStart` when a ses
 
 For our wall we want **`PreToolUse`**: it fires *before* a tool call executes, and - this is the key - it can **block that call from happening at all**. We want to inspect the commit the agent is about to make and refuse it if the ledger changed without a test. `PreToolUse` is the only event that lets us intervene at that instant, before the bad commit exists.
 
+<HookTimeline client:visible />
+
 ## Wire it up
 
 A hook is configured in `settings.json` under a `hooks` key. You name the event, a `matcher` that narrows *which* tool calls trigger it, and the command to run:
 
-```text
+```json
 // .claude/settings.json
 {
   "hooks": {
@@ -42,7 +46,7 @@ The `matcher: "Bash"` means this only fires when the agent is about to run a she
 
 Now the script. Claude Code hands every hook a JSON blob on **stdin** describing the call it's about to make - for a Bash call, that includes the exact command string under `tool_input.command`. The script reads it, decides, and signals its verdict through its **exit code**. The rule that matters: **exit code 2 blocks the action**, and whatever the script wrote to stderr is fed back to the agent as the reason. Any other exit code lets the call proceed.
 
-```text
+```bash
 #!/bin/bash
 # .claude/hooks/ledger-needs-test.sh
 input=$(cat)

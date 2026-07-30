@@ -1,0 +1,46 @@
+---
+title: "Ask and Agent: read-only Q&A, then full execution"
+description: "Ask when you can't name the change yet - read-only, nothing moves. Agent when you can - describe the outcome, review the diff. The climb between them is the skill."
+---
+
+## Ask: understand before you touch
+
+Reach for **Ask** when the thing you need is *knowledge*, not a change. It's read-only by construction - it will trace code, explain a flow, and answer "where does X happen," but it won't edit a file or run a command that mutates state. That guarantee is the point: you can point it at code you're afraid of and know nothing will move.
+
+The tell for Ask is that you can't yet name the change you want. You're still asking *what is this* and *where does it live*:
+
+```text
+ask ›
+> where does budgetcli decide a transaction is allowed to post
+  against a budget? is the check in this repo, or somewhere shared?
+
+  The budget gate is in src/budget/guard.ts, but the rule it
+  enforces - the spend-limit threshold - isn't local. guard.ts calls
+  policy.allowsSpend(txn), and that function lives in the
+  shared `budget-policy` package, imported by six other services.
+  Nothing here changes the threshold; it only reads it.
+```
+
+That answer just changed the shape of the job. What looked like a one-repo edit is actually a change to a shared module a half-dozen services depend on - a high blast-radius change wearing a low-effort disguise. You learned that for free, in a mode that couldn't have broken anything while you learned it. *That's* what Ask is for.
+
+## Agent: full execution
+
+Once you can name the change, the read-only guarantee stops being protection and starts being friction. That's the moment to climb a detent to **Agent** - the right posture for most work, and the mode you'll spend the most time in. You describe an outcome; it does the whole loop - reads what it needs, edits across however many files it decides are relevant, runs tests, reads the failures, and fixes them - surfacing risky commands for approval as it goes rather than stopping to plan with you first.
+
+Agent is the correct posture when the change is *contained* and you'd rather review a finished diff than co-author the approach. A gnarly algorithm that lives entirely in one file you own is a perfect Agent task even though it's hard - the difficulty is real but the blast radius is small, so letting it run and reviewing the result is cheaper than narrating every step.
+
+```text
+agent ›
+> the retry backoff in src/rates/fetcher.ts is linear; make it exponential
+  with jitter, capped at 30s, and keep the existing max-attempts
+  behaviour.
+
+  ⏵ Read   src/rates/fetcher.ts, tests/rates/fetcher.test.ts
+  ⏵ Edit   src/rates/fetcher.ts   → exponential backoff + jitter, 30s cap
+  ⏵ Run    npx vitest src/rates/
+    • ok  0.18s
+  Done. Backoff now doubles per attempt with ±20% jitter, capped at
+  30s; max-attempts unchanged. Tests pass.
+```
+
+What you're trusting Agent with is *latitude*, not correctness - you still review the diff. The judgment is matching that latitude to the stakes, which is exactly where Plan comes in. [Next: Plan, clarify and research first](/course/cursor/modes/plan/).

@@ -1,0 +1,38 @@
+---
+title: Register a custom tool
+description: "Add a tool to the agent's repertoire with registerTool and a TypeBox schema."
+sidebar:
+  label: "Custom tools · registerTool"
+---
+
+A plugin isn't only hooks. The same module can hand the model a **new tool** - a capability that didn't exist before, scoped exactly to your project. feedmill has a natural one: "given a feed URL, fetch it once and tell me which parser would claim it," the question you ask every time you onboard a source. Rather than have the agent improvise that with shell each time, register it as a tool:
+
+```ts
+import { type Plugin, tool } from "@opencode-ai/plugin"
+
+export const FeedmillGuard: Plugin = async ({ $, directory }) => {
+  return {
+    event: async ({ event }) => { /* lint on file.edited, as above */ },
+    "tool.execute.before": async (input, output) => { /* gate, as above */ },
+
+    tool: {
+      "feedmill-classify": tool({
+        description: "Fetch a feed URL once and report which feedmill parser handles it",
+        args: {
+          url: tool.schema.string().describe("the feed URL to classify"),
+        },
+        async execute(args) {
+          const out = await $`go run ./cmd/feedmill classify ${args.url}`.cwd(directory).text()
+          return out
+        },
+      }),
+    },
+  }
+}
+```
+
+Now `feedmill-classify` shows up in the model's toolbox alongside `read`, `edit`, and `bash`, and it's gated by the same per-tool permission system as everything else - you can `allow` it for `build` and `deny` it for a read-only auditor exactly as you gated skills. The shape above matches the package: a top-level `tool` key maps each name to a `tool()` definition of `{ description, args, execute }`, where `execute`'s second `context` argument is optional, so `execute(args)` alone is fine.
+
+The line between a custom tool and a skill is worth holding: a [skill](/course/opencode/skills/) is a procedure written in Markdown that the *model* reads and follows step by step; a custom tool is code *you* wrote that the model calls and gets a result from. Reach for a tool when the work is deterministic and you'd rather run it than describe it - fetch-and-classify is exactly that.
+
+[Next: sharing & headless](/course/opencode/share-and-headless/).

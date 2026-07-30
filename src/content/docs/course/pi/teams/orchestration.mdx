@@ -43,6 +43,45 @@ There's no ambient "am I a lead" property Pi hands you - a spawned process only 
 
 `dispatch_agent` is the same child-process spawn you already know, just called from inside a lead instead of from your main thread - it hands a worker a scoped brief, waits (or polls), and returns the worker's summary. A lead that only has this one tool available cannot quietly fix something itself, because the tool to do that isn't on its list.
 
+```ts title=".pi/extensions/dispatch.ts"
+import { Type } from "@sinclair/typebox";
+import { spawn } from "node:child_process";
+import readline from "node:readline";
+
+pi.registerTool(
+  "dispatch_agent",
+  {
+    description: "Spawn a worker Pi process with a scoped brief and return its summary",
+    parameters: Type.Object({
+      task: Type.String({ description: "The scoped brief for the worker" }),
+      agent: Type.String({ description: "Which agent name to spawn" }),
+    }),
+  },
+  async ({ task, agent }) => {
+    const child = spawn("pi", [
+      "--mode", "json",
+      "-p", task,
+      "--no-session",
+      "--tools", "read,bash",
+      "--thinking", "off",
+    ]);
+
+    const lines = readline.createInterface({ input: child.stdout });
+    let summary = "";
+
+    for await (const raw of lines) {
+      const event = JSON.parse(raw);
+      if (event.type === "agent_end") {
+        const last = [...event.messages].reverse().find((m) => m.role === "assistant");
+        summary = last?.content ?? "";
+      }
+    }
+
+    return { output: summary || `${agent} completed with no summary` };
+  }
+);
+```
+
 Skip this and you get a specific, predictable failure: a worker stalls or comes back empty, and the lead - reasonable-sounding, in its own output - decides "the task has to get done, let me just write the file myself." That's not a bug in the model, it's the model behaving exactly like a manager who steps in when a report goes quiet. The problem is what it costs you: an unenforced lead is a worker with a bigger title and none of the accountability, and you've lost the one property - one domain, one owner, one place to look when something's wrong - that made the layer worth adding in the first place. Enforce the lock; don't rely on the prompt to hold it.
 
 ## Why decompose at all - and the answer that's *wrong*
@@ -58,5 +97,9 @@ Notice the point isn't that delegation saves tokens - total tokens spent are rou
 ## What you actually have now
 
 Three domains, three leads, a handful of workers apiece, and one rule enforced by a tool lock rather than a hope: nobody above worker tier touches a file. Sketch the roster the way you'd sketch any config - a name per lead, a list of workers underneath it - and it stays exactly this legible however many workers a lead ends up needing, because your own prompt to the orchestrator never gets longer.
+
+:::tip[Try it]
+Define an orchestrator that spawns two workers: one for tests, one for linting. Run it on a small change in stash and read both worker summaries when they come back. Notice how the orchestrator's context stays clean - it never saw the raw tool output, only the two short reports.
+:::
 
 What none of this gives a lead yet is memory of its own lane. Spawn the extraction lead again next session and it starts from zero, even though it spent an entire migration learning exactly which sites break the new extractor. [Next: give each lead a place to keep that](/course/pi/teams/expertise/).

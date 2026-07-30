@@ -5,13 +5,15 @@ sidebar:
   label: "Headless · -p, output formats"
 ---
 
+import HeadlessBuilder from '../../../../../components/interactive/HeadlessBuilder.tsx';
+
 Before any of the CI plumbing, you need the one move everything else is built on: running the agent without the chat. The first time you reach for it on the payments service, the goal is small - get the review pass to run from a script instead of from your keyboard. That single capability is what makes a nightly job or a CI check even possible, because both are just this command, fired by something other than you.
 
 ## Print mode: the `-p` flag
 
 Pass `-p` (or its long form `--print`) with a prompt and Claude Code runs **non-interactively**: it does the work, prints the result, and exits. No TUI, no back-and-forth, just a command that returns. This is documented as [headless mode](https://code.claude.com/docs/en/headless), and it's the foundation of everything in this chapter.
 
-```text
+```bash
 claude -p "Run the payments test suite and summarize any failures" \
   --allowedTools "Bash,Read"
 ```
@@ -22,7 +24,7 @@ That runs to completion and writes its answer to stdout. Because it's an ordinar
 
 Print mode reads **stdin**, so you can feed it data the way you'd feed any Unix tool. This is the cleanest way to hand the agent exactly the input you want it to look at and nothing else:
 
-```text
+```bash
 git diff main | claude -p "You are a reviewer. Flag any change that looks like a regression in the payments flow. Be terse."
 ```
 
@@ -40,15 +42,21 @@ A script that can't read the answer is useless. The `--output-format` flag contr
 
 For automation you almost always want `json`, because it lets the calling script pull out exactly the piece it needs:
 
-```text
+```bash
 git diff main | claude -p "Review this diff for payments regressions. Reply with FOUND or CLEAN and one line of reasoning." \
   --output-format json | jq -r '.result'
 ```
 
 That `jq -r '.result'` is the whole trick to making the agent a *step in a pipeline* rather than a thing you read. The JSON also carries the `session_id`, which you can capture and pass to `--resume` to continue the same conversation in a later call - useful when a loop needs the agent to build on its own earlier output.
 
+<HeadlessBuilder client:visible />
+
 ## A note on what loads
 
 By default `claude -p` loads the same context an interactive session would - your `CLAUDE.md`, project hooks, MCP servers, skills, everything in the working directory and `~/.claude`. That's convenient locally and a liability in automation: a teammate's hook or a stray MCP server can change the result, so the same command gives different answers on different machines. The [headless docs](https://code.claude.com/docs/en/headless) describe a `--bare` mode that skips all that auto-discovery, so only the flags you pass explicitly take effect - exactly what you want for a run that has to be identical everywhere. We'll lean on that determinism when we get to CI.
+
+:::tip[Try it]
+Run a headless prompt on your repo: `claude -p "list all TODO comments" --output-format json`. Pipe the output through `jq -r '.result'` and extract just the text. Then set `--max-turns 3` and run it again.
+:::
 
 You can now run the review from a script and read its verdict programmatically. But notice what we quietly did in every example: we handed the agent `--allowedTools` up front, or piped data so it wouldn't need a tool at all. That wasn't incidental. With no human at the keyboard, *that* pre-grant is the only thing deciding what the agent can and can't do - which is the [next lesson](/course/claude-code/automation/permissions/).

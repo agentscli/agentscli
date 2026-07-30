@@ -1,9 +1,27 @@
 ---
-title: "Headless: the agent as a command, its key, and its config"
-description: "Run the agent non-interactively: output formats, the force flag, the beta caveat, the API key that authenticates a script, and the global-only config rule."
-sidebar:
-  label: "Headless · command, key, config"
+title: "Install, headless, auth, and the config constraint"
+description: "Install the terminal agent, then run it non-interactively: output formats, the force flag, the beta caveat, the API key that authenticates a script, and the global-only config rule."
 ---
+
+## Install the CLI
+
+Cursor's terminal agent installs with a one-line script:
+
+```text
+curl https://cursor.com/install -fsS | bash
+```
+
+The flags drift, and this is a live example of it: Cursor's current CLI install docs show `-fsS`, while an older Cursor blog post used `-fsSL` (with the trailing `L`). Either generally works, but `-fsS` is what the docs say today - confirm the exact command before you put it in a script.
+
+That installs the binary and puts it on your `PATH`. There's a naming wrinkle worth flagging up front, because it bites people reading mixed documentation: Cursor's **current** docs invoke the binary as **`agent`** (`agent --version`, `agent -p ...`). The older name was **`cursor-agent`**, and you'll still see it in mixed sources, but first-party docs and examples now say `agent`. Throughout this chapter we'll write the longer **`cursor-agent`** form on purpose - it's unambiguous when you're skimming and it's the name that disambiguates against anything else called `agent` on your `PATH` - but be aware the docs themselves now use the bare `agent`. The flags are identical either way.
+
+Run it with no arguments and you get the interactive TUI - the same agent loop you know from the sidebar, rendered in the terminal:
+
+```text
+$ cursor-agent
+```
+
+This is the surface for the moments you'd reach for the editor but happen to already be in a shell: a quick question about `budgetcli`'s categoriser, a small fix you'd rather describe than open the app for. It runs the full read-propose-review loop, just text-first. It is *not* the surface this chapter is about. The reason the CLI matters - the reason it earns its own chapter - is the other mode.
 
 ## Headless: the agent as a command
 
@@ -48,7 +66,7 @@ This is the headless equivalent of flipping auto-run to *Always run everything* 
 
 ### The beta caveat - read it, don't skip it
 
-Cursor's CLI launch **blog post** flags the CLI as **in beta**, with the explicit note that its **"security safeguards are still evolving."** Worth being precise about where that comes from: the quote is from Cursor's blog (cursor.com/blog/cli), not the current docs pages - the headless and installation docs no longer foreground a "beta" designation at all, which suggests the status may be maturing. {/* VERIFY: the "still in beta / security safeguards are still evolving" quote is from cursor.com/blog/cli, NOT the docs pages, which carry no beta framing. Attribute to the blog and re-check currency at publish - the CLI may have gone GA. Source: https://cursor.com/blog/cli */} That is not boilerplate to scroll past. It's Cursor telling you that the containment around a headless run is less mature than the editor's, at exactly the moment you're handing the agent the ability to act with no one watching. The takeaway isn't "don't use it" - the docs recommend headless mode for batch processing, code-review scripts, and CI pipelines - it's "don't treat the flags as a security boundary." The boundary is *where you run it*: a sandbox, a CI container, a Cloud Agent's isolated VM. We come back to that in every later lesson of this chapter.
+Cursor's CLI launch **blog post** flags the CLI as **in beta**, with the explicit note that its **"security safeguards are still evolving."** Worth being precise about where that comes from: the quote is from Cursor's blog (cursor.com/blog/cli), not the current docs pages - the headless and installation docs no longer foreground a "beta" designation at all, which suggests the status may be maturing. That is not boilerplate to scroll past. It's Cursor telling you that the containment around a headless run is less mature than the editor's, at exactly the moment you're handing the agent the ability to act with no one watching. The takeaway isn't "don't use it" - the docs recommend headless mode for batch processing, code-review scripts, and CI pipelines - it's "don't treat the flags as a security boundary." The boundary is *where you run it*: a sandbox, a CI container, a Cloud Agent's isolated VM. We come back to that in every later lesson of this chapter.
 
 ## Authentication: `CURSOR_API_KEY`
 
@@ -56,7 +74,7 @@ Interactively, `cursor-agent` can log you in through the browser the first time 
 
 ```text
 $ export CURSOR_API_KEY="$(cat ~/.config/budgetcli/cursor-key)"
-$ cursor-agent -p "summarise the open TODOs in internal/categorise/" --output-format json
+$ cursor-agent -p "summarise the open TODOs in src/categorise/" --output-format json
 ```
 
 You generate the key from the Cursor dashboard and treat it like any other credential: out of the repo, in a secret store, scoped as tightly as your plan allows. In CI it lives as an encrypted secret, never inline in the workflow file. One thing worth knowing: `CURSOR_API_KEY` is named on the headless docs page, but the CLI configuration reference doesn't list it among the env vars it documents (which are `CURSOR_CONFIG_DIR`, `XDG_CONFIG_HOME`, the proxy variables, and `NODE_EXTRA_CA_CERTS`) - so don't reach for an invented `CURSOR_*` sibling on a hunch. The auth variable is real; the surrounding family isn't yours to guess at. If you need to configure something beyond auth, check the actual config surface, which has a constraint worth knowing.
@@ -66,5 +84,9 @@ You generate the key from the Cursor dashboard and treat it like any other crede
 Here's a sharp edge that surprises people coming from the editor, where everything is configurable per-project. For the **CLI**, the configuration model is inverted, and the docs state it flatly: "Only permissions can be configured at the project level. All other CLI settings must be set globally." Concretely, the per-project slice is just `permissions.allow` / `permissions.deny` in `<project>/.cursor/cli.json`; everything else - model, vim mode, attribution, network - lives in the global `~/.cursor/cli-config.json`.
 
 Concretely: your model choice, your default output preferences, your CLI-level behaviour - those are settings on *you*, not on `budgetcli`. What you *can* pin to the repo is the permission posture - what the agent is allowed to touch when it runs against this project. That asymmetry is deliberate and it's the right shape for headless work: the thing that matters most about an unattended run - its blast radius - is the thing you're allowed to scope to the project, while the cosmetic preferences ride along globally. Don't fight it by trying to commit a per-project model setting and wondering why it's ignored.
+
+:::tip[Try it]
+Run `cursor-agent -p "list all TODO comments" --force` in your repo. Read the output. Then run it again with `--output-format json` and pipe through `jq`. Notice the difference between the human-readable and machine-readable output.
+:::
 
 Those are the levers a script gets. Sit back down in the interactive TUI and there's a second control surface - one you type rather than pass as a flag. [Next: the CLI's own slash commands](/course/cursor/cli-headless-ci/slash-commands/).

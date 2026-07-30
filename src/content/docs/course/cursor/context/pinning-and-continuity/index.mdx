@@ -1,11 +1,32 @@
 ---
-title: "When hand-pinning still wins - and chat as your session"
-description: "Two cases where auto-retrieval reliably guesses wrong, the durable disambiguation move, and why a new chat per task keeps every window sharp."
-sidebar:
-  label: "Hand-pinning · Chat continuity"
+title: "Self-gathering, hand-pinning, and chat as your session"
+description: "When to let the agent search on its own, the two cases where auto-retrieval reliably guesses wrong, the durable disambiguation move, and why a new chat per task keeps every window sharp."
 ---
 
 import SessionXray from '../../../../../../components/interactive/SessionXray.tsx';
+
+## Self-gathering context
+
+The headline change in Cursor 2.0 is that you often don't have to point at anything at all. **Self-gathering context** (agentic retrieval) means the agent pulls its own context - it searches the codebase, reads the files it decides are relevant, and follows references on its own, rather than waiting for you to `@`-tag everything up front. The 2.0 changelog puts it directly: the agent "can now self-gather context without needing to manually attach it in the prompt input" - which is exactly why the older `@Web`, `@Definitions`, `@Link`, and `@Linter Errors` menu items were retired. ([source](https://cursor.com/changelog/2-0))
+
+What this looks like in practice: you describe the *problem* in plain language and let the agent find the *code*.
+
+```text
+> transactions from one feed show up with no merchant name. everything
+  else gets one. find why and fix it.
+
+  • Searching: merchant, payee, counterparty
+  • Reading apps/worker/src/extract.ts, apps/worker/src/fetch.ts
+  • Reading packages/shared/src/transaction.ts
+
+  The extractor reads the payee field, but this feed serves it under the
+  key "counterparty" instead of the spec's "merchant". The selector only
+  matches merchant=, so the merchant name is dropped…
+```
+
+No `@`-tags. You named a symptom; the index plus agentic search found `extract.ts` - a file you might not have known to point at. On a repo you don't fully know yet (and an *inherited* `budgetcli` is exactly that), self-gathering is often *better* than hand-pinning, because the agent's search isn't limited by your incomplete mental map of the layout. The honest rule: **for "find where X happens" problems on familiar-enough code, describe the problem and let it gather.** Reaching for `@`-tags first, out of habit, can actually narrow the agent to a worse slice than it would have found itself.
+
+But "often better" is not "always." There are cases where retrieval reliably guesses wrong, and knowing them is what turns two gestures into one skill.
 
 ## When hand-pinning still wins
 
@@ -22,17 +43,11 @@ Self-gathering is a retrieval heuristic, and heuristics have failure modes you c
   • Reading apps/worker/src/extract.ts
 
   Fixing the pending-row branch in this file's parse()…
-```
-
-{/* VERIFY: by-name symbol attachment (the old @Code) is no longer in the @-menu - the @Code docs page now 308-redirects to /docs and symbol autocomplete on "@" broke/was removed with Cursor 2.0 (Cursor staff folded the bug report into a known-issue thread). If a symbol-pinning UX has since returned, re-derive it from the live docs before reinstating any "@Code file > symbol" gesture. Sources: https://cursor.com/docs/context/mentions and https://forum.cursor.com/t/code-stopped-working-for-me-after-cursor-2-0-upgrade/141488 */}
-
-The pattern under both: **auto-gather is a guess; hand-pinning is a constraint.** When the cost of the agent guessing wrong is high - a big repo where wrong means "edited the wrong package," or an ambiguous symbol where wrong means "fixed the wrong function" - spend the two seconds to pin and remove the guess. When the cost is low and your map of the code is incomplete, let it gather. That judgement, not a rule about always- or never-tagging, is the skill.
+``` The pattern under both: **auto-gather is a guess; hand-pinning is a constraint.** When the cost of the agent guessing wrong is high - a big repo where wrong means "edited the wrong package," or an ambiguous symbol where wrong means "fixed the wrong function" - spend the two seconds to pin and remove the guess. When the cost is low and your map of the code is incomplete, let it gather. That judgement, not a rule about always- or never-tagging, is the skill.
 
 ## Continuity: the chat *is* your session
 
-Everything above lives inside a **chat**, and in the editor the chat is also your continuity layer - Cursor keeps a **history** of past conversations you can reopen, so context you built up doesn't vanish when you switch tasks or close the window. The deliberate move that matters here is the *opposite* of resuming: **start a new chat when you switch tasks.** A fresh chat gives the agent a clean window with none of the previous task's material - which both improves output and delays hitting the context limit. Cursor can compact a conversation to free up space in the context window (the CLI exposes this as `/summarize`, with `/compress` as an alias), but compaction is lossy, so you'd rather not lean on it for unrelated work. Riding one long thread across three different bugs is how the agent goes hazy; a new chat per task is how you keep each window sharp. {/* VERIFY: the specific claim that compaction runs on a *smaller* model is not confirmed on Cursor's docs - chat history and /summarize ("free up space in the context window") are documented, but keep the smaller-model phrasing out unless re-confirmed. Source: https://cursor.com/docs/cli/reference/slash-commands */}
-
-Here's that judgment made visible - a session playing out with its context window x-rayed, pausing where you'd have to decide. The commands wear generic names; in Cursor, `/compact` is the CLI's `/summarize` (`/compress` is an alias), and `/clear` is starting a new chat:
+Everything above lives inside a **chat**, and in the editor the chat is also your continuity layer - Cursor keeps a **history** of past conversations you can reopen, so context you built up doesn't vanish when you switch tasks or close the window. The deliberate move that matters here is the *opposite* of resuming: **start a new chat when you switch tasks.** A fresh chat gives the agent a clean window with none of the previous task's material - which both improves output and delays hitting the context limit. Cursor can compact a conversation to free up space in the context window (the CLI exposes this as `/summarize`, with `/compress` as an alias), but compaction is lossy, so you'd rather not lean on it for unrelated work. Riding one long thread across three different bugs is how the agent goes hazy; a new chat per task is how you keep each window sharp. Here's that judgment made visible - a session playing out with its context window x-rayed, pausing where you'd have to decide. The commands wear generic names; in Cursor, `/compact` is the CLI's `/summarize` (`/compress` is an alias), and `/clear` is starting a new chat:
 
 <SessionXray client:visible />
 

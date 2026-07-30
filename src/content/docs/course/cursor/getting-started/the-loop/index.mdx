@@ -1,8 +1,6 @@
 ---
 title: Understand one turn of the Cursor loop
 description: "Watch one turn close on a harmless question, so you can see how the agent reads for context before it is ever allowed to write."
-sidebar:
-  label: "The loop · read → propose → review → commit"
 ---
 
 import LoopStepper from '../../../../../../components/interactive/LoopStepper.tsx';
@@ -19,32 +17,30 @@ You describe the outcome in plain English, the way you'd brief a teammate. You d
   common bank date formats, and add a test that pins the broken case.
 ```
 
-Watch where it goes first. You never said `app/importers/csv.py`, yet that's what it opens:
+Watch where it goes first. You never said `src/importers/csv.ts`, yet that's what it opens:
 
 ```text
   Searched codebase "parse statement date from imported CSV row"   (semantic)
-  Grepped  strptime|datetime.strptime                              (3 matches)
-  Read     app/importers/csv.py, tests/test_csv_import.py          (2 files)
+  Grepped  Date.parse|new Date                                     (3 matches)
+  Read     src/importers/csv.ts, tests/csv-import.test.ts          (2 files)
 ```
 
-That first line is the part worth slowing down on. Cursor indexes your repo into a vector database with its own embedding model - each function and class becomes an embedding that captures what the code *means*, not just the words in it - so a request phrased as "parse statement date from a CSV row" lands on the importer even though your prompt and the code share almost no literal tokens. You don't pick the search tool; the agent does. Abstract asks like yours trigger **semantic search**, exact symbols trigger grep, and a real task chains both - semantic search to find the entry point, grep to trace references, then a couple of file reads to build full context. {/* VERIFY: tool-routing description ("Agent picks the right tool based on your prompt", semantic + grep + reads chained) - confirmed against cursor.com/docs/agent/tools/search and cursor.com/blog/semsearch; re-check at publish. */}
-
-The reason this matters on day one: on a repo you didn't write, *you* don't know where the date parsing lives either - and the agent finding it by description is exactly the help you're here for. It read the existing test too, so anything it adds matches the house style instead of inventing its own.
+That first line is the part worth slowing down on. Cursor indexes your repo into a vector database with its own embedding model - each function and class becomes an embedding that captures what the code *means*, not just the words in it - so a request phrased as "parse statement date from a CSV row" lands on the importer even though your prompt and the code share almost no literal tokens. You don't pick the search tool; the agent does. Abstract asks like yours trigger **semantic search**, exact symbols trigger grep, and a real task chains both - semantic search to find the entry point, grep to trace references, then a couple of file reads to build full context. The reason this matters on day one: on a repo you didn't write, *you* don't know where the date parsing lives either - and the agent finding it by description is exactly the help you're here for. It read the existing test too, so anything it adds matches the house style instead of inventing its own.
 
 ## Propose: a diff, staged in the sidebar
 
 Having read enough, it proposes. On Cursor that proposal isn't a sentence in a terminal - it's a set of **inline diffs** rendered right in the files, red for removed lines and green for added, gathered into a review bar in the Agent sidebar. One task, two files touched:
 
 ```text
-  app/importers/csv.py
-    - txn_date = datetime.strptime(row["date"], "%m/%d/%Y").date()
-    + txn_date = parse_statement_date(row["date"])
-    + # parse_statement_date tries the common bank formats in order,
-    + # raising ValueError if a row matches none.
+  src/importers/csv.ts
+    - const txnDate = new Date(row["date"])
+    + const txnDate = parseStatementDate(row["date"])
+    + // parseStatementDate tries the common bank formats in order,
+    + // throwing if a row matches none.
 
-  tests/test_csv_import.py
-    + def test_dmy_statement_date_parses_to_correct_day():
-    +     # the format that was previously silently mis-parsed
+  tests/csv-import.test.ts
+    + it("parses dmy statement date to correct day", () => {
+    +     // the format that was previously silently mis-parsed
     +     ...
 ```
 
@@ -52,9 +48,7 @@ Two beats are done - read, then propose - and the diff is sitting in your tree a
 
 ## Review: you drive it with Keep and Undo
 
-Here is the beat that's distinct from a terminal agent, and the one worth getting right. Cursor's agent writes its edits to the files as it works, then hands you a review surface to **accept or reject** them - not a yes/no gate *before* each write, but a diff you adjudicate *after*. The review bar gives you **Keep** and **Undo** per change (and a **Keep All** / **Undo All** for the whole batch), with next-file / previous-file navigation to step through every hunk. {/* VERIFY: control labels "Keep"/"Undo" and "Keep All"/"Undo All" + per-file review-bar navigation - confirmed via cursor.com/changelog/2-3 ("keep/undo all buttons") and cursor.com/docs/agent/review; re-verify labels at publish since the review UI has shifted across recent versions (see forum.cursor.com reports on v2.6.x). */}
-
-So you read the diff before you keep it - and on inherited code holding your own money, that read is the whole point:
+Here is the beat that's distinct from a terminal agent, and the one worth getting right. Cursor's agent writes its edits to the files as it works, then hands you a review surface to **accept or reject** them - not a yes/no gate *before* each write, but a diff you adjudicate *after*. The review bar gives you **Keep** and **Undo** per change (and a **Keep All** / **Undo All** for the whole batch), with next-file / previous-file navigation to step through every hunk. So you read the diff before you keep it - and on inherited code holding your own money, that read is the whole point:
 
 ```text
 > walk the importer diff - does anything touch how amounts get parsed?
@@ -71,11 +65,11 @@ Reviewing only tells you the change is *good*. It doesn't make it *safe* - until
 ```text
 > run the importer tests, and if they pass commit with a sensible message
 
-  Ran  pytest tests/test_csv_import.py                              (9 passed)
+  Ran  npx vitest tests/csv-import.test.ts                          (9 passed)
   Ran  git commit -am "Parse multiple bank date formats in CSV importer"
 ```
 
-This is the single most valuable habit in the chapter. **Git is the floor that doesn't vanish.** Every time the agent reaches a genuinely working, reviewed state, a commit locks it in - and then the next experiment, however badly it goes, can never cost you more than the work since your last commit. Commit at every green, reviewed checkpoint and you can let the agent take bigger swings later, because the downside is always capped at "go back to the last commit." On a week-long build in someone else's codebase, that floor is what lets you move fast without fear.
+Commit at every green checkpoint - git is the floor that doesn't vanish (you'll build this habit in [your first change](/course/cursor/getting-started/first-change/)).
 
 Before the beats become muscle memory, it's worth seeing the engine under them once in slow motion. This stepper traces a different small fix through the loop in its generic form - *gather* is your read beat, each *act* is an edit that in Cursor would land in the review bar as a red/green hunk waiting for your Keep - and the failed verify in the middle is precisely why the commit waits for green:
 

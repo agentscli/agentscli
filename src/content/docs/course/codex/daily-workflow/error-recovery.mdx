@@ -1,0 +1,47 @@
+---
+title: "Recover when a run goes sideways"
+description: "A run that loops or drifts is not a crisis. Interrupt early, review the damage with git diff --stat before you read a line, and know when to steer vs. when to /clear."
+sidebar:
+  label: "Error recovery · steer or restart"
+---
+
+Even with sharp briefs and the right posture, runs go sideways. The agent latches onto a fix that doesn't hold and keeps retrying it. It misreads the taxonomy and starts recategorising in the wrong direction, confidently, across a hundred rows. It edits a file, the test fails, it edits it back, the test fails again - a loop. None of this is a crisis. It's the ordinary failure mode of working with an agent, and the recovery is a small, repeatable procedure. The operators who trust the tool are not the ones whose runs never go wrong; they're the ones who notice early, assess cheaply, and choose the right reset.
+
+## Interrupt the moment you see the loop
+
+The expensive mistake is watching. A loop costs tokens and time for every turn you let it spin, and the diff grows with each pass, so the cleanup you'll owe later is bigger the longer you wait. The moment you recognise the pattern - the same edit reappearing, the same failing test rerun with a cosmetic tweak - interrupt. Don't wait to see if the next iteration is the one that works; you've already seen it won't.
+
+Interrupt, then *look before you speak*. The instinct is to immediately type "no, stop, do it differently," but that's a nudge on top of a confused context, and [the last lesson](/course/codex/daily-workflow/prompting-ergonomics/) explained why nudging a misread run is the slow road. First find out what actually happened.
+
+## Review the damage cheaply
+
+Before you read a single line of the diff, get the shape of it. `git diff --stat` tells you which files changed and by how much, in one glance:
+
+```text
+> !git diff --stat
+
+ src/importers/monzo.py        | 42 ++++++++++++-----------
+ src/categorise/rules.py       |  8 ++---
+ tests/test_categorise.py      |  3 +-
+ 3 files changed, 26 insertions(+), 27 deletions(-)
+```
+
+That one command answers the first question - *how big is this, and where* - without reading anything. Three files, modest churn, and the test file barely moved, which already tells you the agent was editing implementation against an unchanged expectation. Only now do you read, and you read *targeted*: the specific hunk that's wrong, not the whole diff top to bottom. `git diff src/categorise/rules.py` for the one file you suspect, or your editor's diff view for the rest. The discipline is the same one you'd apply to a colleague's pull request - survey first, then zoom into the suspicious part - and it's faster here because you're the one who has to decide whether to keep any of it.
+
+This is also where the [read-only profile](/course/codex/daily-workflow/profiles-habit/) pays off in reverse: if the run was exploratory and you'd kept the sandbox read-only, there is no diff to review at all, and "recovery" is just asking a better question.
+
+## Steer the session, or clear it
+
+With the damage assessed, you have two choices, and the decision is simpler than it feels.
+
+**Steer the current session** when the context is still mostly right and only the last move went wrong. The agent knows the codebase, the brief, the constraints - you just need to point it off the one bad path. A short, specific correction works: "the running balance is per-account; you're summing across accounts. Fix only `rules.py`." Steer when the loop was a *local* mistake in an otherwise sound run, because you'd otherwise throw away good context to fix a small error.
+
+**`/clear` and restart** when the context itself is poisoned - the agent has talked itself into a wrong interpretation, the loop has run several turns and the transcript is now mostly noise about the wrong approach, or you simply can't tell what it still believes. A fresh session with a sharper brief is then *cheaper* than steering, because every correction you type into a confused context has to fight the wrong turns already in it. You met this in [sessions & context](/course/codex/sessions-context/): `/clear` resets the window entirely, and you re-enter with the brief you wish you'd written the first time.
+
+The tiebreaker is a single question: *is the wrong part small relative to the whole context?* Small - steer. The whole thing has drifted - clear. And when you do clear, fold what you learned into the new brief: the misreading that caused the loop becomes an explicit constraint this time, so the restart isn't just fresh, it's sharper.
+
+:::tip[Try it]
+Deliberately give Codex a slightly ambiguous task and watch it take a wrong turn. Interrupt, run `!git diff --stat` to size the damage, then decide out loud: steer or `/clear`. Notice that the decision takes seconds once you've seen the shape of the diff.
+:::
+
+That's the recovery reflex: interrupt early, survey the diff before you read it, and clear or steer by how far the context has drifted. With profiles, sharp briefs, and this reset discipline in hand, the daily friction is mostly gone. [Close the course](/course/codex/daily-workflow/finale/) - look back at the whole week on `budgetcli` and where to go from here.
