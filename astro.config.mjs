@@ -93,7 +93,7 @@ export default defineConfig({
 				...(CF_BEACON_TOKEN
 					? [
 						{
-							tag: 'script',
+							tag: /** @type {'script'} */ ('script'),
 							attrs: {
 								defer: true,
 								src: 'https://static.cloudflareinsights.com/beacon.min.js',
@@ -112,7 +112,7 @@ export default defineConfig({
 			// NOTE: the starlight-blog PLUGIN is intentionally not registered - the blog
 			// is served entirely by custom routes under src/pages/blog/ (listing,
 			// posts, tags, rss.xml). The starlight-blog PACKAGE stays installed only
-			// for the blogSchema import in src/content/config.ts, which validates
+			// for the blogSchema import in src/content.config.ts, which validates
 			// blog frontmatter (date, authors, tags, draft, …).
 			plugins: [
 				starlightSidebarTopics(

@@ -28,12 +28,12 @@ pnpm preview
 
 ### Content Collections
 
-The project has **two** content config files:
-- `src/content/config.ts` - **Primary** (edit this one)
-- `content.config.ts` - Duplicate (legacy, ignore)
+The active content config is `src/content.config.ts` (Astro's root content-config location).
+Blog posts use a separate `blog` collection so custom blog routes do not overlap
+with Starlight's documentation route. Do not recreate `src/content/config.ts`.
 
 Content structure:
-- `src/content/docs/` - Guides, reference docs, and blog posts (using Starlight's docsLoader)
+- `src/content/docs/` - Guides and reference docs (using the Starlight docs schema)
 - `src/content/docs/blog/` - Blog posts as MDX files
 
 ### Routing
@@ -41,8 +41,7 @@ Content structure:
 - **Documentation routes**: Handled by Starlight based on `src/content/docs/` structure
 - **Custom pages**: `src/pages/` contains custom routes:
   - `index.astro` - Custom homepage (non-Starlight)
-  - `guides.astro` - Custom guides listing page
-  - `blog/` - Blog routes (custom + Starlight blog plugin)
+  - `src/pages/blog/` - Custom blog routes and RSS feed
 
 ### Components
 
