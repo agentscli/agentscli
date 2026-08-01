@@ -27,12 +27,20 @@ on:
 jobs:
   regression:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - run: npm ci
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: "Run the full payments test suite against main. If anything fails or looks like a regression, open a GitHub issue titled 'Nightly regression' with the details. If everything passes, do nothing."
-          claude_args: "--max-turns 15"
+          claude_args: "--max-turns 15 --permission-mode dontAsk --allowedTools Read,Bash(npm test),Bash(git status *),Bash(gh issue create *)"
 ```
 
 Same action, same secret as CI - the only real change is `schedule` with a cron expression instead of `pull_request`. Run it as a raw script instead of an action and the shape is the same: a cron line calling `claude -p` with your prompt, `--permission-mode dontAsk`, and a tight `--allowedTools`, piping the result somewhere durable.
@@ -41,7 +49,7 @@ Same action, same secret as CI - the only real change is `schedule` with a cron 
 
 An interactive run that goes wrong, you catch in seconds - you're watching. A nightly loop that goes wrong runs to completion, alone, and you find out in the morning. So the guardrails aren't polish; they're the reason the job is allowed to exist at all. Four of them carry the weight:
 
-- **Fail closed on permissions.** This is the [permissions lesson](/course/claude-code/automation/permissions/) cashed in. `dontAsk` plus a tight `--allowedTools` means the run can execute the suite and open an issue, and *refuse everything else by default* - there's no human to wave through the thing you didn't anticipate. Deny rules wall off secrets and prod config so a poisoned input can't reach them even if the loop runs every night for a year.
+- **Fail closed on permissions.** This is the [permissions lesson](/course/claude-code/automation/permissions/) cashed in. `dontAsk` plus a tight `--allowedTools` means the run can execute the suite and open an issue, and *refuse everything else by default* - there's no human to wave through the thing you didn't anticipate. Deny rules add another layer while permission checks are active; they do not make bypass mode safe.
 
 - **Cap the run.** `--max-turns` is a hard ceiling on how long the agent can iterate before it stops. Without it, a confused run can loop on a failing fix for hours, burning tokens and minutes with no one to interrupt it. For an unattended job, an explicit cap is non-negotiable.
 

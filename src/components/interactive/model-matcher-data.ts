@@ -184,7 +184,7 @@ export const mmtTools: MmtToolSpec[] = [
     tiers: {
       flagship: {
         model: 'Opus 4.7 · GPT-5 · Gemini 3 Pro',
-        note: 'Caveat: several frontier thinking models auto-enable MAX Mode when selected - whether a per-request override has landed is unverified.',
+        note: 'Caveat: MAX Mode changes context and pricing behavior; model-specific activation and per-request override availability vary by Cursor release.',
       },
       default: {
         model: 'Sonnet 4.6 · Composer',

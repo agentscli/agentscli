@@ -116,7 +116,7 @@ export const cxpTools: CxpToolSpec[] = [
     notes: {
       invoke:
         'In the editor’s Agent chat, the `/` picker lists subagents, skills, and custom commands (since 1.6). The CLI’s slash set is fixed built-ins (`/model`, `/rules`, `/commands`, …).',
-      args: 'Unverified - argument-passing semantics aren’t documented, and community requests for richer templating are still open. We show the body verbatim, so no arguments in the example.',
+      args: 'Argument-passing semantics are not established here, so this example shows the body verbatim without arguments.',
       caveat:
         '`/` runs something, `@` attaches context - a deliberate split. On Enterprise, Team Commands push commands centrally with no local file edit.',
     },

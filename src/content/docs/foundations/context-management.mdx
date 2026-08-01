@@ -102,7 +102,7 @@ Knowing that cost is what turns compact-or-clear from a guess into a call you ca
 
 ## The shape compaction is converging on
 
-The vocabulary differs; the mechanism has standardised. Every tool in scope, when the window approaches full, makes a single summarisation call and replaces the bulk of the history with a **structured Markdown summary**. They reached that design independently, and the structure is nearly identical across them:
+The vocabulary differs; the broad goal is shared, but the implementation is not. Tools may summarize, truncate, or otherwise transform older context when a window fills. Do not assume that every tool uses one summarization call or a portable **structured Markdown summary**. A useful summary, when a tool exposes one, usually preserves:
 
 - **Goal** - what the session set out to do.
 - **What was done** - the work already completed.
@@ -110,7 +110,7 @@ The vocabulary differs; the mechanism has standardised. Every tool in scope, whe
 - **Important files** - which paths matter, by name.
 - **Next steps** - where the thread picks back up.
 
-Several tools expose a manual `/compact` that takes optional instructions (`/compact focus on the API changes`) so you can bias what the summary preserves. Understand compaction in one tool and you understand it in all of them. What still differs is *how much control you get over when it fires and what it keeps* - that is the [comparison](#comparison) below.
+Several tools expose a manual `/compact` that takes optional instructions (`/compact focus on the API changes`) so you can bias what the summary preserves. The operational idea transfers, but the exact trigger, format, and controls remain tool-specific - that is the [comparison](#comparison) below.
 
 ## Why this and not...
 
@@ -122,7 +122,7 @@ Several tools expose a manual `/compact` that takes optional instructions (`/com
 | Make a fact survive *every* turn and every compaction | [Rules](/foundations/rules/) | Restating it in chat |
 | See what's actually consuming the window | **Inspect** (`/context`, `/status`, usage gauge) | Waiting for coherence to drop |
 | Pick up a previous session with context intact | **Resume / continue** | New window + re-explaining |
-| Explore a risky branch without losing the current thread | **Fork** (where supported) | Compacting, then regretting it |
+| Explore a risky branch without losing the current thread | **Fork / branch** (where supported) | Compacting, then regretting it |
 
 Compaction is a *recovery* tool - it salvages a window that's already heavy. The cheaper move is usually to keep the window light in the first place: delegate noise to [subagents](/foundations/subagents/), keep [rules](/foundations/rules/) lean, and lean on [MCP tool-schema deferral](/foundations/mcp-servers/) so unused tool definitions don't sit in the window as permanent weight.
 
@@ -134,14 +134,14 @@ Compaction is a *recovery* tool - it salvages a window that's already heavy. The
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Inspect usage | `/context`, `/usage`, status line | `/status` | status indicator *Unverified* | input-box gauge | chat input context control | - (*Unverified*) |
+| Inspect usage | `/context`, `/usage`, status line | `/status` | Status display is surface-dependent | input-box gauge | chat input context control | Not listed in this comparison |
 | Manual compaction | `/compact [instructions]` | `/compact` | agent-/auto-driven | `/summarize` | `/compact [instructions]` | Auto compaction, extensible |
 | Automatic compaction | Yes, near limit | Yes (`model_auto_compact_token_limit`) | Yes, on overflow | Yes, near limit (uses a faster model) | Yes (~80% of window) | Yes (built-in, extension-adjustable) |
-| Custom compact instructions | Yes (inline + `CLAUDE.md`) | Yes - `compact_prompt` (inline string) or `experimental_compact_prompt_file` (file path, experimental) <sup>1</sup> | Fixed structured template | Not exposed *Unverified* | Yes (inline) | Via extension |
-| Disable auto-compaction | Via config *Unverified* | n/a | `compaction.auto=false` / `OPENCODE_DISABLE_AUTOCOMPACT` | Not exposed *Unverified* | `github.copilot.chat.summarizeAgentConversationHistory.enabled=false` | Via extension |
+| Custom compact instructions | Yes (inline + `CLAUDE.md`) | Yes - `compact_prompt` (inline string) or `experimental_compact_prompt_file` (file path, experimental) <sup>1</sup> | Fixed structured template | Not listed in the public comparison docs | Yes (inline) | Via extension |
+| Disable auto-compaction | Check current Claude Code settings | n/a | `compaction.auto=false` / `OPENCODE_DISABLE_AUTOCOMPACT` | Not listed in the public comparison docs | `github.copilot.chat.summarizeAgentConversationHistory.enabled=false` | Via extension |
 | Fresh window (same app) | `/clear` | `/new`, `/clear` | new session | New Chat | New Chat | New tree session |
 | Resume prior session | `/resume`, `claude --continue`/`-c` | `/resume`, `codex resume` | `opencode --continue`/`-c`, `--session`/`-s` | Chat history | Chat history | `/tree` session picker |
-| Fork / branch a session | `--fork-session` (CLI), `/branch` (TUI) | `/fork`, `/side` | `opencode --fork` | `/fork` (CLI) | - | **Yes** - native tree-of-sessions (`/tree`) |
+| Fork / branch a session | `--fork-session`, `/branch` (verify current command) | `/fork`, `/side` | `opencode --fork` | `/fork` (CLI) | - | **Yes** - native tree-of-sessions (`/tree`) |
 
 <sup>1</sup> Codex's custom prompt only governs its *local* compaction path. Providers that support remote compaction skip the local path entirely, and `compact_prompt` isn't read on that path either, per the Codex source (as of 2026-07).
 
@@ -155,7 +155,7 @@ Three rows carry the real difference: **Inspect usage**, **Custom compact instru
 - **"Summarize" vs "compact".** Cursor and Copilot surface the behaviour as "summarising conversation history"; the terminal tools call the same operation "compaction." Same mechanism, different label.
 - **"Session" is overloaded.** In [how agents work](/foundations/how-agents-work/) a *session* is one run of the loop with one window. OpenCode also has an `opencode session` CLI noun and `/share`-able sessions; don't read the CLI sense as a different concept.
 - **Compaction vs memory.** Compaction works *within* a session to fit the window. Agent-managed **memory** persists facts *across* sessions and is a separate primitive (deferred; distinct from [rules](/foundations/rules/)). Resuming a session is not the same as the agent remembering it.
-- **Claude Code's `/branch` vs `/fork`.** These are two different commands, not one renamed. `/branch` is the session-branching command - it splits your current window into a new one you can diverge from. `/fork` now spawns a background subagent instead, inheriting the conversation but running independently. Don't reach for `/fork` expecting a session branch.
+- **Claude Code's `/branch` vs `/fork`.** Current Claude Code documents `/fork` as an alias for `/branch` by default; a separate environment setting can opt into forked-subagent behavior. Verify the active version and environment before relying on either meaning.
 
 Next session, run your tool's inspect command from the table above *before* the agent starts getting hazy, not after. If the weight turns out to be a bloated rules file or a giant file read rather than the conversation itself, compaction only buys it back for another hour - move the weight out instead.
 

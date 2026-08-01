@@ -44,42 +44,53 @@ There's no ambient "am I a lead" property Pi hands you - a spawned process only 
 `dispatch_agent` is the same child-process spawn you already know, just called from inside a lead instead of from your main thread - it hands a worker a scoped brief, waits (or polls), and returns the worker's summary. A lead that only has this one tool available cannot quietly fix something itself, because the tool to do that isn't on its list.
 
 ```ts title=".pi/extensions/dispatch.ts"
-import { Type } from "@sinclair/typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { spawn } from "node:child_process";
 import readline from "node:readline";
 
-pi.registerTool(
-  "dispatch_agent",
-  {
+export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "dispatch_agent",
+    label: "Dispatch agent",
     description: "Spawn a worker Pi process with a scoped brief and return its summary",
     parameters: Type.Object({
       task: Type.String({ description: "The scoped brief for the worker" }),
       agent: Type.String({ description: "Which agent name to spawn" }),
     }),
-  },
-  async ({ task, agent }) => {
-    const child = spawn("pi", [
-      "--mode", "json",
-      "-p", task,
-      "--no-session",
-      "--tools", "read,bash",
-      "--thinking", "off",
-    ]);
+    async execute(_toolCallId, { task, agent }, signal) {
+      const child = spawn("pi", [
+        "--mode", "json",
+        "-p", task,
+        "--no-session",
+        "--tools", "read,bash",
+        "--thinking", "off",
+      ], { stdio: ["ignore", "pipe", "pipe"] });
 
-    const lines = readline.createInterface({ input: child.stdout });
-    let summary = "";
+      const lines = readline.createInterface({ input: child.stdout! });
+      let summary = "";
 
-    for await (const raw of lines) {
-      const event = JSON.parse(raw);
-      if (event.type === "agent_end") {
-        const last = [...event.messages].reverse().find((m) => m.role === "assistant");
-        summary = last?.content ?? "";
+      signal.addEventListener("abort", () => child.kill(), { once: true });
+      for await (const raw of lines) {
+        const event = JSON.parse(raw);
+        if (event.type === "agent_end") {
+          const last = [...(event.messages ?? [])].reverse().find((m) => m.role === "assistant");
+          summary = typeof last?.content === "string"
+            ? last.content
+            : (last?.content ?? [])
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("\n");
+        }
       }
-    }
 
-    return { output: summary || `${agent} completed with no summary` };
-  }
-);
+      return {
+        content: [{ type: "text", text: summary || `${agent} completed with no summary` }],
+        details: { agent },
+      };
+    },
+  });
+}
 ```
 
 Skip this and you get a specific, predictable failure: a worker stalls or comes back empty, and the lead - reasonable-sounding, in its own output - decides "the task has to get done, let me just write the file myself." That's not a bug in the model, it's the model behaving exactly like a manager who steps in when a report goes quiet. The problem is what it costs you: an unenforced lead is a worker with a bigger title and none of the accountability, and you've lost the one property - one domain, one owner, one place to look when something's wrong - that made the layer worth adding in the first place. Enforce the lock; don't rely on the prompt to hold it.

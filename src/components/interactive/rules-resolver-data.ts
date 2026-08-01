@@ -290,7 +290,7 @@ export const rlrTools: RlrTool[] = [
     slug: 'pi',
     label: 'Pi',
     model:
-      'Walk + concatenate - global, then each ancestor down to cwd; closest file wins where guidance overlaps.',
+      'Walk + concatenate - global, then each ancestor down to cwd; closer files appear later but do not automatically override earlier guidance.',
     results: {
       root: {
         outcomes: [
@@ -327,17 +327,17 @@ export const rlrTools: RlrTool[] = [
             path: 'AGENTS.md',
             status: 'loaded',
             order: 2,
-            note: 'Root file still loads; overlaps yield to the closer file.',
+            note: 'Root file still loads; the closer file is appended after it.',
           },
           {
             path: 'packages/api/AGENTS.md',
             status: 'loaded',
             order: 3,
-            note: 'Closest file on the walk - wins where it conflicts with the root file.',
+            note: 'Closest file on the walk; its content is appended after the root file.',
           },
         ],
         summary:
-          'All three load; on conflict the nested packages/api file wins. Disable context files entirely with --no-context-files.',
+          'All three load in order; the nested packages/api file appears last but does not formally override the others. Disable context files entirely with --no-context-files.',
       },
       web: {
         outcomes: [
@@ -360,7 +360,7 @@ export const rlrTools: RlrTool[] = [
           },
         ],
         summary:
-          'Global + root only - no nested file under packages/web, so the root AGENTS.md is the most specific project voice.',
+          'Global + root only - no nested file under packages/web, so the root AGENTS.md is the last project file in the assembled context.',
       },
     },
   },

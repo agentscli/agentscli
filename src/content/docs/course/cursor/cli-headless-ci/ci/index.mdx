@@ -24,16 +24,16 @@ jobs:
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          cursor-agent -p "Recategorise the transactions added in this push.
+          cursor-agent -p "Inspect the transactions added in this push without editing files.
             Reply with exactly PASS or FAIL: FAIL if any move sends an account
             negative or lands in 'uncategorised', otherwise PASS." \
-            --output-format json --force > result.json
+            --output-format json > result.json
           test "$(jq -r '.result' result.json)" = "PASS"
 ```
 
-The assertion here reads the documented `.result` field - the headless JSON output carries `.result`, so `jq -r '.result'` pulls the agent's answer and `test` turns it into the step's exit code. An earlier draft of this example asserted a `.ok` boolean; there is no documented `.ok` field, so don't reach for one. Everything load-bearing here you've already met. The install line is the same one-liner. The key is the same `CURSOR_API_KEY`, now an encrypted GitHub secret rather than an inline export. The command is a headless `-p` run with `--force`, because there's no human on the runner to approve a write - which is exactly the moment to remember the beta caveat and the fact that a CI container *is* your containment. The runner is disposable and isolated; that's what makes `--force` tolerable here in a way it wouldn't be against your laptop's working tree.
+The assertion here reads the documented `.result` field - the headless JSON output carries `.result`, so `jq -r '.result'` pulls the agent's answer and `test` turns it into the step's exit code. An earlier draft of this example asserted a `.ok` boolean; there is no documented `.ok` field, so don't reach for one. This example deliberately omits `--force`: the prompt is read-only, so the runner does not need unattended write permission. If a real CI task must edit files, use `--force` only inside a disposable, isolated runner and review the prompt and permissions separately.
 
-The one genuinely new thing is the gate: reading `.result` and comparing it turns the agent's JSON answer into the step's exit code, so a failed check fails the push. That's the difference between an agent that *comments* and an agent that *blocks* - and for guarding `budgetcli`'s financial history, you want it to block.
+The one genuinely new thing is the gate: reading `.result` and comparing it turns the agent's JSON answer into the step's exit code, so a failed workflow fails after the push. To prevent merging, configure branch protection or required status checks; a workflow triggered by `push` cannot retroactively prevent that push.
 
 The gate is also where an unattended run's honesty comes from. With no one at the keyboard, `PASS` is just the agent's opinion until something the agent can't sweet-talk - a build, the suite, a full-path run - has to agree. Which checks you wire into the job decide what its green actually means:
 

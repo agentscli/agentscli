@@ -1,15 +1,15 @@
 ---
 title: Gate a risky move with a hook
-description: "Codex must never write to your real ledger. Wire a hook that refuses the write and runs the tests after money changes - a wall the model cannot reason around."
+description: "Codex must never write to your real ledger. Wire a hook that refuses the write and runs the tests after money changes - a deterministic guardrail alongside the sandbox and database controls."
 sidebar:
   label: "Hooks · the determinism gate"
 ---
 
-There's one move in `budgetcli` you treat as sacred: **Codex must never write to your real ledger database.** It can read it, reason about it, generate a migration for you to review - but the live table where your actual account balances are counted is off-limits to automated writes. An accidental `UPDATE` there isn't a bug you find in code review; it's wrong numbers in your own money. You could put this in `AGENTS.md` and ask the agent to honor it, and most of the time it would. But "most of the time" is precisely the wrong guarantee for the one thing that must never slip. You want a wall that fires every single time, no matter what the model decided.
+There's one move in `budgetcli` you treat as sacred: **Codex must never write to your real ledger database.** It can read it, reason about it, generate a migration for you to review - but the live table where your actual account balances are counted is off-limits to automated writes. An accidental `UPDATE` there isn't a bug you find in code review; it's wrong numbers in your own money. You could put this in `AGENTS.md` and ask the agent to honor it, and most of the time it would. But "most of the time" is precisely the wrong guarantee for the one thing that must never slip. Use a hook as one deterministic check, and back it with database permissions, credentials, and sandboxing for the hard boundary.
 
-That's a **hook**: a shell command Codex runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason around it. It's deterministic code on a rail - *always runs, model-independent* - and that property is the entire reason it exists. Hooks ship with Codex and are on by default; the full event list and payload detail are on the [Codex hooks docs](https://learn.chatgpt.com/docs/hooks).
+That's a **hook**: a shell command Codex runs at a matching lifecycle point. It is deterministic and independent of the model's reasoning, but it is not a complete security boundary: hooks can require trust review, and specialized tool paths may not use the normal hook path. Use hooks as defense-in-depth alongside sandboxing, CI, database permissions, and network controls. The full event list and payload detail are on the [Codex hooks docs](https://learn.chatgpt.com/docs/hooks).
 
-The way a hook talks back is equally simple, and it's the second half of the concept: the script's **exit code is the verdict**. Exit 0 - or anything other than 2 - lets the action proceed. **Exit 2 blocks it**, and whatever the script wrote to stderr is fed back to the agent as the reason. No judgment, no negotiation, no model in the loop: a return code the lifecycle machinery is hard-wired to honor.
+The way a hook talks back is equally simple, and it's the second half of the concept: the handler's documented decision contract determines whether the action proceeds or is blocked, and diagnostic output can be returned to the agent. Follow the current hook contract for the Codex release you deploy; do not treat an illustrative exit-code detail as a substitute for the documented enforcement path.
 
 ## The right moment to fire
 
@@ -25,8 +25,9 @@ Hooks are configured next to your active config layers - a `hooks.json` file at 
 The config and script in this section are *illustrative* - the shape will look something like this, but the exact key names, nesting, matcher names, and payload field paths are version-sensitive. Confirm all of it against the current [hooks docs](https://learn.chatgpt.com/docs/hooks) before you rely on the gate.
 :::
 
+`.codex/hooks.json`:
+
 ```json
-// .codex/hooks.json
 {
   "PreToolUse": [
     {
@@ -81,14 +82,15 @@ Codex finishes some balance-reconciliation work and reaches for the database:
     -- review and apply this yourself
 ```
 
-Watch what the agent did with the rejection. It didn't get stuck - it read the stderr the hook fed back, understood *why*, and rerouted to the safe path: a migration you apply by hand. The gate didn't just stop a bad action; it steered Codex toward the right one. And it would have fired identically with approvals set to `never`, in a headless run, at 2am with nobody watching.
+Watch what the agent did with the rejection. It didn't get stuck - it read the diagnostic output the hook provided, understood *why*, and rerouted to the safe path: a migration you apply by hand. The gate didn't just stop a bad action; it steered Codex toward the right one. In a headless run, it can provide the same guardrail when the invocation reaches the supported, trusted hook path.
 
 ## The other shape: run the tests after the money math changes
 
 `PreToolUse` blocks; its sibling **`PostToolUse`** observes *after* a tool runs and can't block - perfect for "do this every time the agent edits a file." The money math in `budgetcli` is the part you least trust to a silent edit, so wire a `PostToolUse` hook on file edits to run the test suite:
 
+`.codex/hooks.json`:
+
 ```json
-// .codex/hooks.json
 {
   "PostToolUse": [
     {
@@ -101,10 +103,10 @@ Watch what the agent did with the rejection. It didn't get stuck - it read the s
 }
 ```
 
-Now every edit Codex makes is immediately followed by the money tests, deterministically, whether or not the agent thought to run them. A regression in the cents math surfaces the instant it's introduced instead of three edits later.
+Now every matching edit Codex makes can be followed by the money tests, whether or not the agent thought to run them. A regression in the cents math surfaces close to the edit instead of three edits later; keep the test suite or CI as the authoritative gate.
 
 :::tip[Try it]
-Write a simple `PreToolUse` hook script that blocks any `rm` command, using the exit-code contract: exit 0 allows, exit 2 blocks. Test it by asking Codex to delete a file and verify your hook appears in the agent's output when it fires.
+Write a simple `PreToolUse` hook script that blocks any `rm` command, following the current hook decision contract. Test it by asking Codex to delete a file and verify the trusted hook appears in the agent's output when it fires.
 :::
 
 You've now built something categorically different from the MCP servers earlier in this chapter. A server *widened* what Codex can do; a hook *overrules* it. That difference is sharp enough to name precisely - because knowing when to reach for a hook instead of a rule or an approval setting is its own skill, and it's [the next lesson](/course/codex/extending/hooks-vs/).

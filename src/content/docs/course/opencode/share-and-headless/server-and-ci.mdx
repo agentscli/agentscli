@@ -56,9 +56,7 @@ So the server can run unattended for a feedmill cron or a CI job, and you can st
 
 ## Put it in a container for CI
 
-CI wants one thing from a tool: that it runs the same way every time, on a machine that didn't exist a minute ago. A container gives you exactly that - a fixed OpenCode version, a clean filesystem, and no dependence on whatever happens to be installed on the runner. That's the difference between "the review passed on my laptop" and "the review runs identically on every PR for the next year." There's now an official image at `ghcr.io/anomalyco/opencode` (Debian and Alpine variants) you can base on, but in practice you'll still own a small Dockerfile on top of it: pin OpenCode plus feedmill's toolchain, then make `opencode run` the entrypoint.
-
-{/* VERIFY: ci-image-tags */}
+CI wants one thing from a tool: that it runs the same way every time, on a machine that didn't exist a minute ago. A container gives you exactly that - a fixed OpenCode version, a clean filesystem, and no dependence on whatever happens to be installed on the runner. That's the difference between "the review passed on my laptop" and "the review runs identically on every PR for the next year." Treat any published OpenCode image and its tags as release-specific: verify the registry entry for the exact version you pin. If it is unavailable or you need tighter reproducibility, own a small Dockerfile with OpenCode plus feedmill's toolchain, then make `opencode run` the entrypoint.
 
 The pattern is the one you already know from the headless lesson, moved inside an image: a container that has OpenCode and feedmill's Go toolchain, your provider key passed in as a secret, and a single `opencode run` as the entrypoint. Because feedmill is a typed Go codebase wired up with the LSP from earlier in the course, the containerised agent gets the same diagnostics you do locally - a parser change that breaks a type is caught in CI, not in production at 3am when a feed's JSON shifts shape.
 
@@ -96,16 +94,20 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           opencode run \
-            -p "review this diff. flag dedup or feed-parsing regressions and any LSP diagnostics the change introduces. be terse." \
-            --format json > review.json
+            --format json \
+            "review this diff. flag dedup or feed-parsing regressions and any LSP diagnostics the change introduces. be terse." \
+            > review.jsonl
+
+      - name: Extract review text
+        run: |
+          jq -r 'select(.type == "text") | (.part.text // .text // empty)' review.jsonl > review.txt
 
       - name: Post review as PR comment
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const review = JSON.parse(fs.readFileSync('review.json', 'utf8'));
-            const body = review.output ?? review.text ?? 'No output from review.';
+            const body = fs.readFileSync('review.txt', 'utf8').trim() || 'No output from review.';
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,

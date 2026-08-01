@@ -36,15 +36,15 @@ That's the whole first axis: from "check with me constantly" to "don't interrupt
 
 ## Axis two - how far it can reach
 
-The **sandbox** controls the agent's actual reach: what the operating system will *let* it touch, regardless of whether it asked. You set it with `--sandbox` (short form `-s`), and it also takes three values:
+The **sandbox** sets the agent's default reach: what the execution environment lets it touch without an approval-mediated exception. You set it with `--sandbox` (short form `-s`), and it takes three common values:
 
 ```text
--s read-only            can read files, cannot write anything or run commands that change state
--s workspace-write      can read, and can write inside the project - but not outside it, and no network
+-s read-only            can read files; edits and blocked commands need approval
+-s workspace-write      can read and write inside the project; outside access and network need approval
 -s danger-full-access   no fence at all - whole filesystem, full network
 ```
 
-This axis is enforced by the sandbox itself, not by the agent's good behaviour. In `read-only`, a write *can't* happen - there's nothing to approve, because the OS won't permit it. That's a stronger guarantee than "the agent agreed not to," and it's why the two axes aren't redundant: approval is a checkpoint the agent passes through; the sandbox is a wall it can't.
+The sandbox is enforced by the execution environment, not by the agent's good behaviour, but it is not automatically an absolute wall: an interactive approval can allow an operation beyond the default boundary. That's why the two axes are still useful: the sandbox defines the default capability boundary, while approval decides whether an exceptional request is allowed. If you need a non-mutating unattended audit, pair `read-only` with `approval_policy = "never"` so no escalation can be approved.
 
 ## They combine
 
@@ -62,11 +62,11 @@ Because the two are orthogonal, you pick one value from each, and the pair defin
  └─────────────┴─────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
-Read that grid as two questions answered separately. The cell that fits today's money refactor is **`on-request` × `workspace-write`**: let the agent edit freely inside the project and only stop you for the genuinely risky moves, while the sandbox guarantees it can't escape the directory or touch the network no matter how the approval dial is set. You get an uninterrupted refactor *and* a hard fence - which a single slider could never give you at once.
+Read that grid as two questions answered separately. The cell that fits today's money refactor is **`on-request` × `workspace-write`**: let the agent edit freely inside the project and stop for genuinely risky moves, including requests to go beyond the default boundary. You get a productive default *and* a checkpoint for exceptions. If the work must never escalate, use `never` with the tightest sandbox that still permits the task.
 
 A couple of things worth nailing down now, because they trip people up:
 
-- **There are no named "modes."** You may have seen references to `suggest`, `auto-edit`, or `full-auto` presets - those aren't a thing in Codex. There's only the two-axis pairing. (There's a deprecated `--full-auto` flag floating around; it just sets `workspace-write` and prints a warning telling you to use `-s workspace-write` directly. Ignore it.)
+- **The flags are not the whole UX.** The CLI exposes the `--ask-for-approval` × `--sandbox` axes, and current Codex surfaces can also expose named or custom permission profiles. You may see references to `suggest`, `auto-edit`, or `full-auto` presets; treat those as surface/version-specific. The deprecated `--full-auto` flag should not be the basis of a new workflow.
 - **The default is deliberately cautious.** Launch Codex with neither flag and it picks a safe pairing for you - closer to the top-left of that grid than the bottom-right. You loosen on purpose, per task, not by accident.
 
 You'll often set both dials persistently rather than typing flags every time - the config keys are `approval_policy` and `sandbox_mode` in `config.toml`, and they take the same values. We'll bundle them into a named profile in the [last lesson](/course/codex/approvals-sandbox/profiles-for-trust/). The authoritative list of values and their precise behaviour lives in the [Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference); pin to that rather than trusting a fixed memory, since the granular options grow over time.

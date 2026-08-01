@@ -22,7 +22,7 @@ git diff main | claude -p "Review this diff for payments regressions." \
   --allowedTools "Read,Bash(npm test),Bash(git diff *)"
 ```
 
-`Bash(npm test)` lets it run the suite; `Bash(git diff *)` lets it inspect changes; nothing else gets through. The trailing ` *` is prefix matching - note the space, which keeps `git diff *` from also matching `git diff-index`. This is the [rules lesson](/course/claude-code/permissions-modes/rules/) doing exactly what it was built for, except now there's no human backstop if you scope it too loosely.
+`Bash(npm test)` pre-approves the suite; `Bash(git diff *)` pre-approves inspection. `--allowedTools` does not remove unlisted tools by itself, so pair it with `--permission-mode dontAsk`, `--tools`, and deny rules as appropriate. The trailing ` *` is prefix matching - note the space, which keeps `git diff *` from also matching `git diff-index`. This is the [rules lesson](/course/claude-code/permissions-modes/rules/) doing exactly what it was built for, except now there's no human backstop if you scope it too loosely.
 
 The general rule for unattended runs: **pre-approve the boring, specific things the job actually does, and nothing broad.** A blanket `Bash(*)` on a machine you can't watch is how a hijacked run runs anything it likes.
 
@@ -44,9 +44,9 @@ This is the right tool for our job. Resist the temptation to reach instead for `
 
 ## Layer three: the wall that can't be loosened
 
-There's one more piece, and it's the one that lets you sleep. Allow rules and modes describe what the run *may* do. A [deny rule](/course/claude-code/permissions-modes/deny/) describes what it may *never* do - in any mode, regardless of what else is granted. For an unattended run, that asymmetry is everything:
+There's one more piece, and it's the one that lets you sleep. Allow rules and modes describe what the run *may* do. A [deny rule](/course/claude-code/permissions-modes/deny/) describes what it may *never* do while the permission layer is active. `bypassPermissions` is an explicit exception, so do not use it as a security boundary in unattended work:
 
-```json
+```jsonc
 // .claude/settings.json
 {
   "permissions": {
@@ -59,7 +59,7 @@ There's one more piece, and it's the one that lets you sleep. Allow rules and mo
 }
 ```
 
-A `Read` deny means a secret can't enter the agent's context at all - so a nightly job that gets a malicious instruction smuggled into a file it reads still can't exfiltrate your keys, because it was never allowed to read them. That guarantee held interactively too, but interactively you were also there as a second line of defense. Headless, the deny rule *is* the defense. This is the [deny lesson](/course/claude-code/permissions-modes/deny/) graduating from good hygiene to non-negotiable.
+A `Read` deny means a secret can't enter the agent's context at all while permission checks are active. That is useful, but it is not the entire defense: use `--bare` or explicit project configuration, least-privilege credentials, network isolation, and OS sandboxing for unattended work. This is the [deny lesson](/course/claude-code/permissions-modes/deny/) graduating from good hygiene to one layer of a defense-in-depth posture.
 
 ## The shape of a safe unattended grant
 

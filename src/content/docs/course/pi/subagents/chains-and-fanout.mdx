@@ -13,14 +13,14 @@ One spawn call handles one article. The re-extraction backlog is a few hundred o
 
 Some jobs are only expressible as a sequence. Before you touch the backlog at all, you actually want to know which articles need re-extraction - and that's naturally three steps where each one needs what the last one found: **audit** which saved URLs still read wrong, **re-extract** exactly that list, **verify** the search index picked up the changes. Step two can't run until step one hands it a list; step three can't run until step two hands it a result.
 
-Pi has no built-in "pipeline" primitive either - you get there with the same spawn call as before, just looped sequentially instead of fired once, with each step's prompt built from the previous step's raw output:
+Pi has no built-in "pipeline" primitive either - you get there with the same spawn call as before, just looped sequentially instead of fired once, with each step's prompt built from the previous step's raw output. The YAML below is a design sketch for a driver you write; Pi does not load this file automatically:
 
 ```yaml
 # .pi/agents/reextract-chain.yaml
 steps:
-  - agent: auditor      # find URLs that need re-extraction
-  - agent: reextractor   # prompt seeded with $INPUT - auditor's list
-  - agent: verifier      # prompt seeded with $INPUT - reextractor's result
+  - prompt: "Audit saved URLs that still need re-extraction"
+  - prompt: "Re-extract the URLs from $INPUT"
+  - prompt: "Verify the result from $INPUT"
 ```
 
 `$INPUT` is a plain string substitution - whatever the previous step's child agent wrote as its final answer, dropped into the next step's prompt verbatim. `$ORIGINAL` carries the very first task through the whole chain, so a step three levels deep still knows what it's ultimately in service of. A driver script walks the steps with a plain `for...await` loop - spawn, wait for `agent_end`, capture the output, build the next prompt, spawn again. Nothing about this is more sophisticated than the single spawn call from the last lesson; it's that same call, three times, each one seeded by the last.
@@ -30,7 +30,7 @@ steps:
 | `steps` | array | Ordered list of prompts to run sequentially |
 | `steps[].prompt` | string | The prompt for this step. `$INPUT` = previous step's output, `$ORIGINAL` = the initial input |
 | `model` | string | Optional model override for the chain |
-| `max_turns` | number | Optional turn cap per step |
+| `max_turns` | number | Optional cap enforced by your driver; Pi itself has no `--max-turns` flag |
 
 :::note
 Error handling: if a step fails, the chain stops. Use `Promise.allSettled` in fan-out to collect partial results.

@@ -1,8 +1,8 @@
 ---
-title: Reach for the Agents SDK when exec runs out of room
+title: Reach for the Codex SDK when exec runs out of room
 description: "codex exec is one prompt, one result, one exit code. Once a job needs several stages with real logic between them, you have outgrown it - move to the SDK."
 sidebar:
-  label: "Agents SDK · when to leave exec"
+  label: "Codex SDK · when to leave exec"
 ---
 
 Everything in this chapter has run through `codex exec`: one prompt in, one result out, one exit code the calling script reads. That shape carries an enormous amount - the monthly report, the transaction check, both reproducible in CI. For most automation it's all you'll ever need. This last lesson is about the cases where it isn't, and about not reaching for heavier machinery before you have to.
@@ -15,17 +15,16 @@ The heuristic to carry: **if the job fits in a shell script, keep it in `codex e
 
 ## What the SDK buys you beyond `exec`
 
-The **Agents SDK** is a programmatic framework for composing multi-stage agent pipelines - the thing you move to when shell glue stops scaling. Instead of stringing `exec` calls together by hand, you describe the pipeline in code and let the framework run it. The capabilities that justify the switch:
+The **Codex SDK** is the programmatic interface for controlling coding-focused Codex threads - the thing you move to when your application needs more control than a one-shot shell command. It starts, continues, and resumes Codex work from server-side TypeScript or Python:
 
-- **Stages as first-class agents.** Each role - a categoriser, a budget-checker, a test-runner - is its own agent with its own instructions and tools, instead of one mega-prompt trying to be all of them at once. That's the same isolation instinct you used with [subagents](/course/codex/subagents/), made programmatic.
-- **Typed handoffs and gates between stages.** Control passes from one stage to the next as a structured, recorded transfer rather than a fragile pipe - and you can *gate* a handoff on a concrete signal. The durable rule here: gate on evidence, not on status. "Advance only when the categorised file exists on disk" is far more reliable than "advance when the categoriser says it's done."
-- **Quality gates in code, not in the prompt.** Where `exec` trusts the agent's own reading of "did the tests pass," the SDK lets you enforce it with a real function the framework calls - a programmatic check that won't be talked out of its verdict.
-- **Traces.** The framework records what each stage did, what it handed off, and how long it took. When a multi-stage run goes wrong, a trace tells you *where* and *why* - the question a single `exec` exit code can't answer.
+- **Programmatic lifecycle control.** Start a thread, run a prompt, continue it, or resume it later without parsing terminal output.
+- **Application integration.** Put Codex inside a server-side CI service, internal tool, or engineering workflow while keeping the coding task in Codex.
+- **A real thread boundary.** Keep related turns together when they need shared context, and create a new thread when the task should start clean.
 
-Under the hood, Codex itself does the code work inside each stage while the SDK handles the orchestration around it - the planning, gating, and sequencing between stages. Critically, the SDK **does not widen your safety surface**: each Codex stage inherits the sandbox and approval policy of the process that launched it, exactly as `codex exec` does. The SDK orchestrates; it doesn't escalate. Everything you learned in [Approvals & sandboxing](/course/codex/approvals-sandbox/) still applies, one layer down.
+The SDK is not a replacement for a general workflow engine, and it does not automatically provide typed handoffs, quality gates, or traces. Put those controls in your surrounding application and validate them with ordinary program logic. For broader multi-agent orchestration where Codex is one specialist, the official guidance is to run Codex CLI as an MCP server and orchestrate it with the Agents SDK. Keep the [Approvals & sandboxing](/course/codex/approvals-sandbox/) posture explicit for every process you launch.
 
 :::note
-The SDK surface - the package names, the exact class and method signatures, the constructor options - moves faster than the rest of Codex and differs between the Python and TypeScript clients. *Unverified* at the level of specific symbols; treat the capabilities above as durable and pin the current API to the [official Codex docs](https://learn.chatgpt.com/docs) before you write against it. This lesson deliberately teaches the *decision* - when to cross over - not a code listing that will drift.
+The current SDK docs list the TypeScript package [`@openai/codex-sdk`](https://learn.chatgpt.com/docs/codex-sdk) for Node 18+ and the Python package `openai-codex` for Python 3.10+. Method signatures and options remain versioned API surface, so check the [official SDK documentation](https://learn.chatgpt.com/docs/codex-sdk) before pinning symbols. This lesson deliberately teaches the *decision* - when to cross over - not a code listing that will drift.
 :::
 
 ## When *not* to reach for it
@@ -35,7 +34,7 @@ The SDK is more setup than a shell script: a language runtime, the framework wir
 - **If the workflow is a linear sequence the agent just follows** - do this, then this, then this, no branching - that's a [Skill](/course/codex/skills/), a markdown procedure, not a pipeline. You already have that pattern in your toolkit from the CSV-import skill.
 - **If it's a single self-contained task**, however involved, it's still a `codex exec` call. One prompt, one result. The report and the transaction check both live here, and most of your automation will too.
 
-Reach for the SDK only when the job genuinely needs *conditional routing between stages*, *structured validation at the boundaries*, or *a trace you can audit* - the things shell and skills can't give you. Start with one agent and fragment only when a real boundary demands it; an extra stage you didn't need just inflates the prompts, the traces, and the surface you have to reason about, with nothing to show for it.
+Reach for the Codex SDK when you need programmatic control of Codex threads or need to embed Codex in another service. Reach for the Agents SDK only when you are building a broader orchestrated workflow and Codex is one specialist inside it. Keep deterministic validation in your application rather than assuming either SDK turns a model response into a reliable test verdict.
 
 ## The week, made reflex
 
