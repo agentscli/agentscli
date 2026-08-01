@@ -852,7 +852,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
             oneLiner: 'The rules layer - OpenCode has no separate rules file.',
             when: 'Read at session start, every invocation.',
             description:
-              'Follows the open `agents.md` spec and is portable from Codex unchanged. Nesting uses a first-win strategy: a subdirectory\'s AGENTS.md replaces a parent\'s rather than merging with it - the opposite of Claude Code\'s additive layering.',
+              'Follows the open `agents.md` spec and is portable from Codex unchanged. Project discovery walks upward and uses the first matching project instruction file; it does not stack every ancestor\'s AGENTS.md. Use `instructions` when you need an explicit additive set.',
             chapter: CHAPTER.rules,
           },
           {
@@ -903,7 +903,7 @@ mode: subagent
 model: anthropic/claude-sonnet-4-6
 permission:
   edit: deny
-  bash: { "git *": allow, "*": ask }
+  bash: { "*": ask, "git *": allow }
   skill: { "security-*": allow }
 ---`,
                 chapter: CHAPTER.subagents,
@@ -960,10 +960,10 @@ permission:
                 id: 'home-oc-agents-md',
                 label: 'AGENTS.md',
                 type: 'file',
-                oneLiner: 'Personal rules - skipped entirely when a project has its own.',
-                when: 'Read at session start only if the project has no AGENTS.md (first-win).',
+                oneLiner: 'Personal rules applied alongside project rules.',
+                when: 'Read at session start for every project.',
                 description:
-                  'Because of OpenCode\'s first-win strategy, this file does not merge with a project AGENTS.md - it is only used when no project file exists.',
+                  'Global rules are combined with the selected project instruction file. Within each category, the first matching filename wins (for example, AGENTS.md before CLAUDE.md).',
                 chapter: CHAPTER.rules,
               },
               {
@@ -1013,10 +1013,10 @@ permission:
             label: 'AGENTS.md',
             type: 'file',
             badge: 'committed',
-            oneLiner: 'Project context collected on a directory walk - closest file wins.',
+            oneLiner: 'Project context collected on a directory walk - matching files are concatenated.',
             when: 'Collected at startup: global first, then each parent directory down to your cwd.',
             description:
-              'Injected into the system prompt\'s project-context block as guidance - deliberately weaker than `APPEND_SYSTEM.md`, which is for rules the model must not treat as optional. Layering works like `.gitignore`: every file on the walk contributes and the closest wins on overlap. Disable with `--no-context-files`.',
+              'Injected into the system prompt\'s project-context block as guidance - deliberately weaker than `APPEND_SYSTEM.md`, which is for rules the model must not treat as optional. Pi concatenates every matching file on the walk in order; closer files appear later but do not implement a formal override rule. Disable with `--no-context-files`.',
             chapter: CHAPTER.rules,
           },
           {

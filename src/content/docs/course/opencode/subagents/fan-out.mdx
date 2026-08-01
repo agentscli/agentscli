@@ -23,7 +23,7 @@ The audit passes both. So we split it.
 
 ## Dispatch a worker per slice
 
-In OpenCode the parent agent fans work out through the **Task tool** - the same mechanism a single `@mention` uses, but here the parent calls it once per slice and the workers run in parallel. You don't drive that by hand; you describe the partition and the per-worker brief, and the primary agent dispatches the workers.
+In OpenCode the parent agent fans work out through the **Task tool** - the same mechanism a single `@mention` uses, but here the parent calls it once per slice and the workers can run concurrently. You don't drive that by hand; you describe the partition and the per-worker brief, and the primary agent dispatches the workers.
 
 ```text
 > Audit every feed adapter under internal/adapters/ for the UTC-normalisation
@@ -49,7 +49,6 @@ Each worker OpenCode spins up gets its **own session** - a fresh context window,
   6 of 6 returned. 3 FAIL, 3 PASS.
 ```
 
-{/* VERIFY: fanout-transcript-illustrative */}
 
 When the workers finish, their results return to the parent session, and the parent does the merge you defined up front - here, the three-column table. The reduction is trivial *because* you wrote it before you spawned. Notice what you have now and what you don't: a precise list of which adapters are broken and where, without a single one of the file reads that produced it sitting in your context. The workers ate the journey; you got the map.
 
@@ -75,9 +74,8 @@ steps: 6
 
 `steps` caps the maximum agentic iterations a worker can take before OpenCode forces it to stop and respond with a summary of where it got - so a stuck worker degrades into "here's what I found and what's left," never an open-ended loop. (The legacy `maxSteps` field does the same thing and is deprecated; use `steps`.)
 
-The sharp edge follows from the isolation itself: because each worker is its own child session with its own budget, `steps` is best understood as a **per-worker cap, not a per-fan-out one**. Set `steps: 6` and dispatch twenty workers and you've authorised on the order of a hundred and twenty iterations across the spread, each one a real call. So the cap and the width multiply - which is the practical reason to **start narrow**. Three or four workers shows real speedup with rate-limit headroom; widen only if the slowdown is genuinely the lack of concurrency and not something else. Pairing a tight `steps` with a cheap model like Haiku on the read-only workers keeps the whole fan-out cheap even when it's wide - the audit doesn't need your most expensive model to spot a missing `.UTC()`.
+The sharp edge follows from the isolation itself: because each worker is its own child session with its own budget, `steps` is best understood as a **per-worker cap, not a per-fan-out one**. Set `steps: 6` and dispatch twenty workers and the per-worker caps permit up to roughly a hundred and twenty iterations across the spread, each one a potential call. So the cap and the width can multiply - which is the practical reason to **start narrow**. Three or four workers may show useful speedup with rate-limit headroom; widen only if the slowdown is genuinely the lack of concurrency and not something else. Pairing a tight `steps` with a cheap model like Haiku on the read-only workers keeps the whole fan-out cheap even when it's wide - the audit doesn't need your most expensive model to spot a missing `.UTC()`.
 
-{/* VERIFY: per-worker-steps-budget */}
 
 ## The findings are a proposal, not an instruction
 
@@ -100,4 +98,3 @@ There's why you gate. Two of three are real; the third is a worker that called F
 So the shape that works: fan out across independent, heavy slices; brief each worker to come back terse; write the merge before you spawn; cap each with `steps` and remember it multiplies by width; and treat what returns as a proposal you review, never a result you apply. That's the difference between leverage and a faster way to break things.
 
 That closes the Subagents chapter - you can isolate noisy work, shape a worker to fit, and scatter the parallel jobs across a fleet of them. Which raises the question you've been deferring since you first let a worker run unattended: a fleet of agents is a fleet of things that can touch your filesystem. Next you'll write down exactly what each one is allowed to do, per tool and per agent, and see where that guarantee stops. [Next chapter: Permissions](/course/opencode/permissions/).
-

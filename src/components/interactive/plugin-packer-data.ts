@@ -117,7 +117,7 @@ export const ppkTools: PpkToolSpec[] = [
     },
     dist: 'The inherited surfaces: OpenVSX-backed extensions (the VS Code model, with thinner coverage than upstream) and the MCP Marketplace. Neither bundles rules + skills + agents into one unit.',
     caveat:
-      'A first-class plugin format is a live community request - unverified whether an official rules/skills marketplace ships in 2026.',
+      'Cursor’s public marketplace documentation does not establish a first-class registry that bundles rules, skills, agents, and hooks; verify any such product claim against the current docs.',
   },
   {
     id: 'copilot',

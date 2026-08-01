@@ -1,6 +1,6 @@
 ---
 title: "Hooks: the gate that can say no"
-description: "A hook is a subprocess Cursor runs at a fixed point in the agent loop, model-independent: the event surface, the stdin/stdout contract, the fail-open default."
+description: "A hook is a subprocess Cursor runs at a fixed point in the agent loop. Learn the version-sensitive event surface, stdin/stdout contract, and how to make a policy hook fail closed."
 ---
 
 import ConfigExplorer from '../../../../../../components/interactive/ConfigExplorer.tsx';
@@ -9,7 +9,7 @@ import ConfigExplorer from '../../../../../../components/interactive/ConfigExplo
 
 MCP *widened* what the agent can reach. Skills and commands *packaged* what you keep repeating. None of them is a guarantee - they all depend, in the end, on the model choosing to do the right thing. There's one move in `budgetcli` where "the model usually chooses right" is precisely the wrong assurance: **Cursor must never write to your real ledger database.** It can read it, reason about it, generate a migration for you to review - but the live table where your actual balances are counted is off-limits to automated writes. An accidental `UPDATE` there isn't a bug you catch in review; it's wrong numbers in your own money.
 
-You could put that in `AGENTS.md` and ask nicely. But for the one thing that must never slip, you want a wall that fires *every single time*, no matter what the model decided. That's a **Hook** - introduced in **Cursor 1.7** to let you "observe, control, and extend the Agent loop using custom scripts": a subprocess Cursor runs automatically at a fixed point in its lifecycle. The agent doesn't choose to run it and can't reason around it.
+You could put that in `AGENTS.md` and ask nicely. But for the one thing that must never slip, you want a wall that fires *every single time*, no matter what the model decided. That's a **Hook** - introduced in **Cursor 1.7** to let you "observe, control, and extend the Agent loop using custom scripts": a subprocess Cursor runs at a fixed point in its lifecycle. The agent doesn't choose to invoke it and can't reason around it - though the hook still has to be configured and loaded, and a broken one can fail in ways you have to design for (more on that below).
 
 ### Where hooks live and the schema
 
@@ -26,7 +26,7 @@ The schema names an event and the command(s) it triggers:
   "version": 1,
   "hooks": {
     "beforeShellExecution": [
-      { "command": "./.cursor/hooks/protect-ledger.sh" }
+      { "command": "./.cursor/hooks/protect-ledger.sh", "matcher": ".*" }
     ]
   }
 }
@@ -34,7 +34,7 @@ The schema names an event and the command(s) it triggers:
 
 ### The event surface - pick the right moment
 
-Hooks attach to lifecycle **events**, and Cursor's event surface is the broadest in this course - wider than Claude Code's. Picking the right event is most of the design. Cursor exposes 21 events across three groups - 18 agent-lifecycle, two Tab, and one app-lifecycle (the list does drift between releases, so re-check it against the hooks docs before you depend on a specific name):
+Hooks attach to lifecycle **events**, and Cursor's event surface is the broadest in this course - wider than Claude Code's. Picking the right event is most of the design. The event list changes between releases, so re-check the current hooks documentation before you depend on a specific name. The following is a representative grouping rather than a promise of an exact count:
 
 - **Agent** - `sessionStart`, `sessionEnd`, `preToolUse`, `postToolUse`, `postToolUseFailure`, `subagentStart`, `subagentStop`, `beforeShellExecution`, `afterShellExecution`, `beforeMCPExecution`, `afterMCPExecution`, `beforeReadFile`, `afterFileEdit`, `beforeSubmitPrompt`, `preCompact`, `stop`, `afterAgentResponse`, `afterAgentThought`.
 - **Tab** (inline completion) - `beforeTabFileRead`, `afterTabFileEdit`.
@@ -48,9 +48,12 @@ Cursor hands the hook a JSON payload on **stdin** describing the call, and reads
 
 ```bash title=".cursor/hooks/protect-ledger.sh"
 #!/bin/bash
-# Field path below is illustrative - verify against the hooks payload schema.
+set -euo pipefail
+trap 'exit 2' ERR
+
+# Field paths are illustrative - verify them against the installed hooks schema.
 input=$(cat)
-command=$(echo "$input" | jq -r '.command')
+command=$(jq -er '.command' <<<"$input")
 
 # Refuse any write that targets the live ledger database.
 if echo "$command" | grep -Eqi 'ledger_prod|UPDATE .*ledger|INSERT .*ledger|DELETE .*ledger'; then
@@ -62,7 +65,7 @@ echo '{"permission":"allow"}'
 exit 0
 ```
 
-There are two ways to signal a verdict, and the script above uses the explicit one. The **`permission`** field - `"allow"`, `"deny"`, or `"ask"` - is the nuanced channel: emit it as JSON on stdout with exit `0`, optionally with `agent_message` (fed back to the model as the reason) and `user_message` (shown to you). The blunt channel is the **exit code**: exit `2` blocks outright, equivalent to `"permission": "deny"`; any *other* non-zero code is **fail-open** - the action proceeds. That fail-open default is the one to internalize: a crashing hook does *not* silently block your agent, but it also means a buggy gate can leak. Test the deny path.
+There are two ways to signal a verdict, and the script above uses the explicit one. The **`permission`** field - `"allow"`, `"deny"`, or `"ask"` - is the nuanced channel: emit it as JSON on stdout with exit `0`, optionally with `agent_message` (fed back to the model as the reason) and `user_message` (shown to you). The blunt channel is the **exit code**: Cursor documents exit `2` as a block, equivalent to `"permission": "deny"`. Other failure behavior is version-sensitive, so this example deliberately traps parsing and command errors and exits `2` rather than allowing a broken safety hook to proceed. Test the deny, malformed-input, timeout, and allowed-command paths before relying on it.
 
 ### Watch the wall hold
 
@@ -86,7 +89,7 @@ Cursor finishes some balance-reconciliation work and reaches for the database:
     -- review and apply this yourself
 ```
 
-Watch what the agent did with the rejection. It didn't get stuck - it read the `agent_message` the hook fed back, understood *why*, and rerouted to the safe path: a migration you apply by hand. The gate didn't just stop a bad action; it steered Cursor toward the right one. And it would fire identically with auto-run set to run everything, in a [headless CLI](/course/cursor/cli-headless-ci/) run, at 2am with nobody watching. That's the property no rule, skill, or permission setting can give you: **always runs, model-independent.**
+Watch what the agent did with the rejection. It didn't get stuck - it read the `agent_message` the hook fed back, understood *why*, and rerouted to the safe path: a migration you apply by hand. The gate didn't just stop a bad action; it steered Cursor toward the right one. And once it's configured and loaded, it fires the same way with auto-run set to run everything, in a [headless CLI](/course/cursor/cli-headless-ci/) run, at 2am with nobody watching. That's the property no rule, skill, or permission setting can give you: **the model doesn't get a say in whether it runs.**
 
 ## What you've built - and which surface to reach for
 
@@ -103,4 +106,4 @@ All four surfaces - plus the rules layers from the earlier chapter - live in a s
 
 The distinction worth carrying out of this chapter is the one that's easy to blur: **reach when the agent can't see the system; structure when you're repeating yourself; a gate when the model's judgment isn't a guarantee you can accept.** Reach for the wrong one and you'll fight it - a hook where you wanted a skill, a command where you needed a subagent. Reach for the right one and the agent stops re-deriving, re-asking, and occasionally getting the unforgivable thing wrong.
 
-The property that sets a hook apart from the other three surfaces - always runs, model-independent - matters most in the setting this chapter kept gesturing at: the agent running at 2am with nobody watching. The next chapter takes `budgetcli`'s agent out of the editor entirely, into one-shot scripts, CI steps, and pull-request review, where whatever containment you settled in advance is the only containment there is. [Next: the CLI, headless & CI](/course/cursor/cli-headless-ci/).
+The property that sets a configured hook apart from the other three surfaces - it runs at the lifecycle event without asking the model whether to invoke it - matters most in the setting this chapter kept gesturing at: the agent running at 2am with nobody watching. The next chapter takes `budgetcli`'s agent out of the editor entirely, into one-shot scripts, CI steps, and pull-request review, where whatever containment you settled in advance is the only containment there is. [Next: the CLI, headless & CI](/course/cursor/cli-headless-ci/).

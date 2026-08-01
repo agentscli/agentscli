@@ -13,7 +13,7 @@ curl https://cursor.com/install -fsS | bash
 
 The flags drift, and this is a live example of it: Cursor's current CLI install docs show `-fsS`, while an older Cursor blog post used `-fsSL` (with the trailing `L`). Either generally works, but `-fsS` is what the docs say today - confirm the exact command before you put it in a script.
 
-That installs the binary and puts it on your `PATH`. There's a naming wrinkle worth flagging up front, because it bites people reading mixed documentation: Cursor's **current** docs invoke the binary as **`agent`** (`agent --version`, `agent -p ...`). The older name was **`cursor-agent`**, and you'll still see it in mixed sources, but first-party docs and examples now say `agent`. Throughout this chapter we'll write the longer **`cursor-agent`** form on purpose - it's unambiguous when you're skimming and it's the name that disambiguates against anything else called `agent` on your `PATH` - but be aware the docs themselves now use the bare `agent`. The flags are identical either way.
+That installs the binary and puts it on your `PATH`. There's a naming wrinkle worth flagging up front, because it bites people reading mixed documentation: Cursor uses both **`agent`** and **`cursor-agent`** across CLI generations and official examples. Check the executable installed by your current version (`agent --version` or `cursor-agent --version`) and use that consistently in scripts. The flags are otherwise the same for the commands documented here.
 
 Run it with no arguments and you get the interactive TUI - the same agent loop you know from the sidebar, rendered in the terminal:
 
@@ -36,17 +36,15 @@ If you watched the loop in [Getting started](/course/cursor/getting-started/), n
 
 Because it's an ordinary command-line program, it composes with everything a shell can do - redirect it to a file, drop it in a cron entry, pipe it into the next command, gate a CI step on its exit. That composability is the whole point of headless mode: the categoriser check that was a thing you *did* in the editor becomes a thing your repo *runs*.
 
-### Output formats: text, json, stream-json
+### Output formats: stream-json, json, and text
 
-The default output is `text` - formatted for a human reading a terminal, which is fine for a check you run by hand. But a script wants something it can act on, not prose to scrape. Headless mode takes an output format for exactly that:
+The current CLI default is `stream-json`, a stream of structured events. For a script, choose an explicit format rather than relying on the default. Headless mode takes an output format for exactly that:
 
-- **`text`** - the default; "clean, final-answer-only responses," formatted for a human reading a terminal.
+- **`text`** - clean final-answer-only responses, formatted for a human reading a terminal.
 - **`json`** - the run as a single structured JSON result for "structured analysis" a script can parse.
-- **`stream-json`** - "message-level progress tracking": the run as a stream of JSON events as they happen, rather than one blob at the end.
+- **`stream-json`** - message-level progress tracking, with JSON events as they happen rather than one blob at the end. This is the current default.
 
 You select the format with the `--output-format` flag (`--output-format json`). All three format names and the flag spelling are straight from the headless docs.
-
-Paired with `stream-json` there's a `--stream-partial-output` flag that provides "incremental streaming of deltas" as they're produced rather than waiting for each event to complete - useful when you want to surface progress from a long run instead of staring at a blank pipe.
 
 The `json` format is the one you'll reach for first when wiring `budgetcli` into a script: ask the agent a question, get a parseable answer back, branch on it.
 
@@ -56,11 +54,11 @@ $ cursor-agent -p "Did any account go negative last month? Answer with the
     | jq -r '.result'
 ```
 
-That `--output-format json` and the `.result` field it produces are both documented - the headless JSON output carries a `.result` field, which is what `jq -r '.result'` is pulling here. The *shape* of the move is stable; just re-read the schema at publish time, since the exact field set can grow.
+That `--output-format json` and the `.result` field it produces are both documented - the headless JSON output carries a `.result` field, which is what `jq -r '.result'` is pulling here. The *shape* of the move is stable; re-read the [current output-format reference](https://docs.cursor.com/en/cli/reference/output-format) at publish time, since the exact event and field set can grow.
 
 ### `--force`: writing without the confirmation
 
-In the editor, when the agent wants to write a file or run a command, you see it and you approve it - that's the leash from the permissions chapter. Headless, there's no one to click *Run*. The `--force` flag is how you tell a non-interactive run to act without waiting on a confirmation that will never come: the docs say `--force` "allows the agent to make direct file changes without confirmation," and that without it "changes are only proposed, not applied." So the default for a `-p` run is *propose, don't apply* - `--force` is the switch that lets it actually write. (The docs also list `--yolo` as a synonym for `--force`; they do the same thing.)
+In the editor, when the agent wants to write a file or run a command, you see it and approve it - that's the leash from the permissions chapter. Headless, there's no one to click *Run*. The `--force` flag is how you tell a non-interactive run to act without waiting on a confirmation that will never come: the docs say `--force` allows direct file changes without confirmation. Use only flags listed in the [current CLI parameter reference](https://docs.cursor.com/en/cli/reference/parameters); aliases and safety flags can change between releases.
 
 This is the headless equivalent of flipping auto-run to *Always run everything* in the editor - and it carries the same warning, sharpened, because there's no human watching. A `cursor-agent -p ... --force` run does what it decides to do, to the files in front of it, with no pause. The discipline from [Permissions, auto-run & the sandbox](/course/cursor/permissions/) doesn't soften here; it becomes the only thing you've got. Run `--force` against a throwaway clone or inside an isolated environment, not against your live `budgetcli` working tree, until you trust exactly what the prompt can reach.
 

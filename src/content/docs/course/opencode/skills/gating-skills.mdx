@@ -13,19 +13,32 @@ The reason this is even a question - and why it has a clean answer - is *how* sk
 
 OpenCode permissions are per-tool *and* per-agent, and the `skill` tool gets its own map keyed by skill name. You write glob patterns that resolve to `allow`, `deny`, or `ask`:
 
+```yaml
+# .opencode/agents/auditor.md frontmatter
+permission:
+  skill:
+    "*": deny
+    "audit-*": allow
+```
+
+The equivalent `opencode.json` form nests the agent definition under `agent`:
+
 ```jsonc
-// .opencode/agents/auditor.md frontmatter, or opencode.json under `agent`
 {
-  "permission": {
-    "skill": {
-      "*": "deny",
-      "audit-*": "allow"
+  "agent": {
+    "auditor": {
+      "permission": {
+        "skill": {
+          "*": "deny",
+          "audit-*": "allow"
+        }
+      }
     }
   }
 }
 ```
 
-Read that the way OpenCode reads it: deny everything, then carve back the audit family. The `add-feed` skill matches `*`, hits `deny`, and never appears as something the auditor can load - while an `audit-parser-coverage` skill stays available. Write the catch-all *first* and the specific exceptions after it - the same idiom you used for `bash` command maps in the [permissions chapter](/course/opencode/permissions/per-tool-per-agent/), and for the same reason: it reads top-down the way you'd reason about it, and it lands the outcome you want without you having to know which internal rule breaks the tie. {/* VERIFY: skill-rule-resolution */} Flip the polarity when the agent is broadly trusted and you only want to fence off a few procedures:
+Read that the way OpenCode reads it: deny everything, then carve back the audit family. The `add-feed` skill matches `*`, hits `deny`, and never appears as something the auditor can load - while an `audit-parser-coverage` skill stays available. The [skills documentation](https://opencode.ai/docs/skills/) says denied skills are hidden and rejected; permission patterns are order-sensitive, so write the catch-all *first* and specific exceptions after it, as in the [permissions chapter](/course/opencode/permissions/per-tool-per-agent/). Flip the polarity when the agent is broadly trusted and you only want to fence off a few procedures:
 
 ```jsonc
 {
@@ -42,8 +55,6 @@ Read that the way OpenCode reads it: deny everything, then carve back the audit 
 Now the agent can load any skill except the deploy ones, and has to stop and ask you before loading anything that rotates credentials. The globs match against the skill's `name` field - `deploy-*` covers `deploy-staging` and `deploy-prod` without you listing each one. Note the patterns are simple `*`/`?` wildcards over the skill name, not recursive `**` path globs; you're matching names, not directory trees.
 
 You can watch the gate hold. Tell the gated agent to do the thing the skill would handle, and instead of silently loading it, OpenCode refuses the `skill` tool call - a `deny` rule rejects the load and hides the skill from the agent entirely (per the skills docs, a denied skill is "hidden from agent, access rejected"). The transcript below is illustrative - the verified *behavior* is the rejected load, not this exact wording:
-
-{/* VERIFY: denied-skill-tui-string */}
 
 ```text
 @auditor onboard the new Reuters feed using the add-feed skill

@@ -29,12 +29,15 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: "Review this pull request for regressions in the payments flow. Be terse: flag anything risky, stay quiet if it's clean."
-          claude_args: "--max-turns 10"
+          claude_args: "--max-turns 10 --permission-mode dontAsk --allowedTools Read,Bash(git diff *),Bash(git status *)"
 ```
 
 A few things worth pinning, because they're easy to get wrong and they change between versions:
@@ -45,7 +48,7 @@ A few things worth pinning, because they're easy to get wrong and they change be
 
 ## Permissions still carry, even here
 
-It's tempting to think the CI sandbox makes the permission discipline moot - it's GitHub's runner, not your laptop. It doesn't. The runner has a checkout of your repo and your `ANTHROPIC_API_KEY` sitting in its environment; a review that reads a malicious instruction out of a PR's own diff is exactly the prompt-injection surface deny rules exist for. Your `.claude/settings.json` deny rules travel with the repo into CI, so the secrets you walled off in the [permissions lesson](/course/claude-code/automation/permissions/) stay walled off on the runner too. Pass your allow rules through `claude_args` the same way, and the CI run inherits the same high-floor-low-ceiling posture you'd give it locally.
+It's tempting to think the CI sandbox makes the permission discipline moot - it's GitHub's runner, not your laptop. It doesn't. The runner has a checkout of the repository and your `ANTHROPIC_API_KEY` in its environment; PR diffs, repository instructions, and generated files are untrusted prompt-injection inputs. Do not treat repository configuration as the complete security boundary. Use least-privilege workflow permissions, a trusted base checkout, explicit tool restrictions, and avoid exposing secrets to untrusted code. The [GitHub Actions security guidance](https://github.com/anthropics/claude-code-action/blob/main/docs/security.md) covers the current threat model.
 
 There's a related ready-made path worth knowing about: Anthropic ships a **code-review** capability you can invoke as a packaged skill from the action, for teams that want a maintained review rather than a hand-written prompt. The [GitHub Actions docs](https://code.claude.com/docs/en/github-actions) show the workflow that installs and runs it. Reach for it when you'd rather not own the prompt; keep the explicit-prompt version above when the review needs to know something specific about your payments flow.
 
