@@ -25,7 +25,7 @@ You pasted an image, typed "build this," and got back roughly the right layout, 
   ```
 
   ```bash
-  $ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/X.tsx   # zero hits = wired right
+  $ rg -n '#[0-9a-fA-F]{3,8}\b|[0-9]+px' src/components/X.tsx   # first-pass heuristic; the full check lives in the kit below
   ```
 </Aside>
 
@@ -300,7 +300,7 @@ The eye runs one of these two checks well. Put the rendered output and the mocku
 The eye cannot run the second one at all. An element can render the correct color as a hardcoded hex while ignoring the token: invisible today, wrong the day the brand color changes. So route the agent's claim through a check that can say no - a grep, not a squint, because the checks that get run every time are the ones a machine can run.
 
 ```bash
-$ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/PricingCard.tsx
+$ rg -n '#[0-9a-fA-F]{3,8}\b|[0-9]+px' src/components/PricingCard.tsx
 9:  <Card className={cn('p-4', highlighted && 'border-[#8b7af8]')}>
 14: <h3 className="mt-[13px] font-semibold">Pro</h3>
 29: <Button className="w-full bg-[#7c69f7]">Start free trial</Button>
@@ -412,15 +412,15 @@ The ledger is identical everywhere. What differs is how the image gets in, and w
 | Tool | Image input | Structured design connection |
 | --- | --- | --- |
 | Claude Code | Drag-and-drop or paste directly into the prompt | Figma [MCP server](/foundations/mcp-servers/), when the file is disciplined enough to be worth it |
-| Codex | Attach in the ChatGPT and IDE surfaces alike | MCP configured like any other server |
+| Codex | Attach in supported ChatGPT and IDE surfaces; verify which surface you are using | MCP is configured in local Codex clients; hosted ChatGPT connections are separate |
 | Cursor | Pasted or dragged in chat | MCP config is per-project: `.cursor/mcp.json` |
 | Copilot | Pasted or dragged in chat | Depends on the surface (VS Code vs. Coding Agent) - check which one your Figma connection actually reaches before assuming it's live everywhere you work |
 | OpenCode | Supported in the TUI | MCP servers configure in `opencode.json` |
-| Pi | Whatever the harness supports | None - no native [MCP](/foundations/mcp-servers/), so every ledger row has to be carried by the anchor text |
+| Pi | Whatever the harness supports | No built-in MCP in core; extensions and packages can add it, otherwise every ledger row has to be carried by the anchor text |
 
 ## Off the shelf
 
-If your designs live in Figma, some of the plumbing already ships. Figma's official [skills for MCP](https://help.figma.com/hc/en-us/articles/39166810751895-Figma-skills-for-MCP) (verified mid-2026) come bundled with the official Figma plugin: `figma-generate-design` builds full screens from your design system, `figma-code-connect` wires components to their code counterparts.
+If your designs live in Figma, some of the plumbing already ships. Figma's official [skills for MCP](https://help.figma.com/hc/en-us/articles/39166810751895-Figma-skills-for-MCP) include `figma-code-connect-components` for wiring components to their code counterparts and `figma-generate-design` for building full screens from your design system, alongside surface-specific skills such as `figma-use` and other skills listed in Figma's current documentation.
 
 They automate the mechanics of getting the design in and much of the anchoring. They inherit the source-file discipline caveat above, and they don't do the two things that decide the outcome: reading the plan before code, and the binding check after.
 
@@ -453,10 +453,10 @@ The generic versions, ready to swap names into. The worked ones stay in the sect
   tokens - before writing code.
 ```
 
-**Binding check** (after every build, against exactly the new file):
+**Binding check** (after every build, against exactly the new file; this is a heuristic, not proof):
 
 ```bash
-$ grep -nE '#[0-9a-f]{6}|[0-9]+px' src/components/<Name>.tsx   # zero hits = wired right
+$ rg -n '#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b|[0-9]+(px|rem|em|vh|vw|%)\b' src/components/<Name>.tsx   # zero hits = no common literals found
 ```
 
 Two artifacts are too long to repeat and live once, above: the [token usage table](#values-bind-by-usage-not-by-name) and the [rules-file block](#make-the-anchor-durable).
@@ -467,4 +467,6 @@ The kit runs the procedure. The judgment it can't carry is this page's actual su
 
 Each anchored pass leaves the next one cheaper. The token table, the named sibling and the captured skill accumulate into a system prompt your design system effectively wrote for itself - a design system that explains itself in a usage table needs less explaining every time, which is the same bet [AI-ready code](/playbooks/ai-ready-code/) makes about the rest of the codebase.
 
-What holds the whole ledger up, though, is the least impressive line on the page. A mockup is a picture of a result, and a picture cannot tell you whether the blue on screen came from your token or from a literal somebody typed. Your eye can't either - the two are pixel-identical, which is exactly why this failure survives review. The grep can. Run it against the new file, read zero hits, and every row of the ledger is settled at once; read one hit and you have found the thing that would otherwise have shipped looking correct. That is the whole trade this play makes: give up the satisfaction of judging by eye, and get back a check that can say no.
+The grep is deliberately a first-pass heuristic, not proof. It catches common literal values in the new source file, but CSS functions, variables, arbitrary utility values, and styles outside that file can still escape it. Use token-aware linting or static analysis for a hard gate.
+
+What holds the whole ledger up, though, is the least impressive line on the page. A mockup is a picture of a result, and a picture cannot tell you whether the blue on screen came from your token or from a literal somebody typed. Your eye can't either - the two are pixel-identical, which is exactly why this failure survives review. The grep can. Run it against the new file, read zero hits, and every common literal is ruled out at once; read one hit and you have found the thing that would otherwise have shipped looking correct. That is the whole trade this play makes: give up the satisfaction of judging by eye, and get back a check that can say no.

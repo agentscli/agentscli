@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import type { Verdict } from './permission-sim-data';
 import {
   VERDICT_LABEL,
@@ -14,8 +14,32 @@ import {
 import { withCode } from './with-code';
 import './permission-sim.css';
 import { useWidgetFrame } from './widget-frame';
+import { useAccessibleTabs } from './use-accessible-tabs';
+import { useSyncedToolIndex } from './use-synced-tool';
 
-const TABS = ['Claude Code', 'Codex', 'OpenCode'];
+const TABS = [
+  { id: 'claude-code', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'cursor', label: 'Cursor' },
+  { id: 'copilot', label: 'Copilot' },
+  { id: 'pi', label: 'Pi' },
+] as const;
+
+function UnmodeledPanel({ tool }: { tool: string }) {
+  return (
+    <div className="psim-gap">
+      <p>
+        This simulator does not model {tool}'s permission surface yet. That is a
+        coverage boundary, not evidence that {tool} has no equivalent.
+      </p>
+      <p>
+        Use the full <a href="/foundations/permissions/#comparison">comparison</a>
+        and the {tool} tab below for the current documented behavior.
+      </p>
+    </div>
+  );
+}
 
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
   return (
@@ -217,27 +241,28 @@ function OpenCodePanel() {
 }
 
 export default function PermissionSim() {
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useSyncedToolIndex(TABS);
+  const tabs = useAccessibleTabs(TABS.length, tab, setTab);
 
   return (
     <div className={useWidgetFrame('psim-root')}>
-      <div className="psim-tabs" role="tablist" aria-label="Tool">
-        {TABS.map((label, i) => (
+      <div className="psim-tabs" {...tabs.tabListProps} aria-label="Tool">
+        {TABS.map((tool, i) => (
           <button
-            key={label}
-            role="tab"
-            aria-selected={i === tab}
+            key={tool.id}
+            {...tabs.getTabProps(i)}
             className={i === tab ? 'psim-tab psim-tab-active' : 'psim-tab'}
             onClick={() => setTab(i)}
           >
-            {label}
+            {tool.label}
           </button>
         ))}
       </div>
-      <div className="psim-body">
+      <div className="psim-body" {...tabs.panelProps}>
         {tab === 0 && <ClaudeCodePanel />}
         {tab === 1 && <CodexPanel />}
         {tab === 2 && <OpenCodePanel />}
+        {tab > 2 && <UnmodeledPanel tool={TABS[tab].label} />}
       </div>
     </div>
   );

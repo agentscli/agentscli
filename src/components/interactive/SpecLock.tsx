@@ -1,4 +1,3 @@
-import React from 'react';
 import { specLockScript } from './spec-lock-data';
 import TerminalReplay from './terminal-replay';
 

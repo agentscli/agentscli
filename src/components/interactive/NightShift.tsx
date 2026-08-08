@@ -1,4 +1,3 @@
-import React from 'react';
 import { nightShiftScript } from './night-shift-data';
 import TerminalReplay from './terminal-replay';
 

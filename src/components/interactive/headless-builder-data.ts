@@ -130,7 +130,7 @@ export const hlbTools: HlbToolSpec[] = [
       },
     },
     footnote:
-      'Known issue: `--output-schema` is silently ignored when MCP servers are active (codex #15451). `codex cloud exec` runs the same job on a remote environment.',
+      'Historical issue #15451 was closed on 2026-04-03; verify `--output-schema` with MCP on the installed Codex version. `codex cloud exec` runs the same job on a remote environment.',
   },
   {
     id: 'opencode',

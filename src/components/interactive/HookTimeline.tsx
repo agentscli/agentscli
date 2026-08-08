@@ -1,28 +1,33 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { hookTools } from './hook-timeline-data';
 import { withCode } from './with-code';
 import './hook-timeline.css';
 import { useWidgetFrame } from './widget-frame';
+import { useAccessibleTabs } from './use-accessible-tabs';
+import { useSyncedToolIndex } from './use-synced-tool';
 
 export default function HookTimeline() {
-  const [toolIdx, setToolIdx] = useState(0);
+  const [toolIdx, setToolIdx] = useSyncedToolIndex(hookTools);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const tool = hookTools[toolIdx];
 
+  // Both the click path and the hook's arrow-key path go through this, so an
+  // event expanded under the old tool can't stay open under the new one.
   const switchTool = (i: number) => {
     setToolIdx(i);
     setOpenId(null);
   };
 
+  const tabs = useAccessibleTabs(hookTools.length, toolIdx, switchTool);
+
   return (
     <div className={useWidgetFrame('hkt-root')}>
-      <div className="hkt-tabs" role="tablist" aria-label="Tool">
+      <div className="hkt-tabs" {...tabs.tabListProps} aria-label="Tool">
         {hookTools.map((t, i) => (
           <button
             key={t.slug}
-            role="tab"
-            aria-selected={i === toolIdx}
+            {...tabs.getTabProps(i)}
             className={i === toolIdx ? 'hkt-tab hkt-tab-active' : 'hkt-tab'}
             onClick={() => switchTool(i)}
           >
@@ -31,7 +36,7 @@ export default function HookTimeline() {
         ))}
       </div>
 
-      <div className="hkt-body">
+      <div className="hkt-body" {...tabs.panelProps}>
         <p className="hkt-config-note">{withCode(tool.configNote)}</p>
         {tool.orderNote && <p className="hkt-order-note">{tool.orderNote}</p>}
 

@@ -78,7 +78,7 @@ Running example throughout: a seasonal-discount bug where, on the *last day* of 
    <Tabs>
      <TabItem label="Red that counts">
        ```bash
-       $ npm test discount.test.ts
+       $ npm test -- discount.test.ts
        ✗ applies the sale rate through the last second of the sale
          Expected: 0.3
          Received: 0.1
@@ -87,7 +87,7 @@ Running example throughout: a seasonal-discount bug where, on the *last day* of 
      </TabItem>
      <TabItem label="Red that proves nothing">
        ```bash
-       $ npm test discount.test.ts
+       $ npm test -- discount.test.ts
        ✗ applies the sale rate through the last second of the sale
          Cannot find module '../pricing/discount' - did you mean './discount'?
        ```
@@ -134,9 +134,9 @@ The boundary is a literal in the test, and the operator is the whole story:
   ⏵ Read   src/pricing/discount.ts
   ⏵ Read   src/pricing/discount.test.ts
   ⏵ Edit   src/pricing/discount.ts     # first try: still uses `<`
-  ⏵ Bash   npm test discount.test.ts  →  still Expected 0.3 / Received 0.1
+  ⏵ Bash   npm test -- discount.test.ts  →  still Expected 0.3 / Received 0.1
   ⏵ Edit   src/pricing/discount.ts     # second try: `now <= saleEndsAt`
-  ⏵ Bash   npm test discount.test.ts  →  1 passed
+  ⏵ Bash   npm test -- discount.test.ts  →  1 passed
 
 $ git diff -- src/pricing/discount.test.ts   # empty - good
 $ git diff -- src/pricing/discount.ts
@@ -319,14 +319,14 @@ The loop is identical everywhere. What differs is how the "don't touch the test"
 | Claude Code | `PreToolUse` [hook](/foundations/hooks/) in `settings.json`; `/clear` between commits keeps the two intents from blending | Blocks the edit outright |
 | Codex | `config.toml` `[hooks]` table (or `hooks.json`); nonzero exit blocks the write | Blocks the edit outright |
 | Cursor | `hooks.json` declares the same before-write gate; rules in `.cursor/rules` | Blocks the edit outright |
-| Copilot | Thinner here - lean on the pre-commit hook and repo custom instructions | Commit-time only |
+| Copilot | Lifecycle hooks can block tool calls; keep the pre-commit hook and repo custom instructions as a second wall | Blocks before the tool call when configured; commit-time fallback |
 | OpenCode | A plugin's tool-call hook - you must write the plugin, unlike the declarative config elsewhere | Blocks, with work |
 | Pi | No declarative `hooks.json`; a TypeScript extension lifecycle hook instead | Blocks, code not config |
 
 The pre-commit gate and the rules-file line work identically under all six.
 
 <Aside type="note" title="Off the shelf - verified mid-2026">
-  You don't have to hand-roll the discipline. [superpowers](https://github.com/obra/superpowers) ships a `test-driven-development` skill enforcing the red-green-refactor order (`/plugin install superpowers@claude-plugins-official`; the skill format is portable across tools). [mattpocock/skills](https://github.com/mattpocock/skills) has a leaner `/tdd` that builds one vertical slice at a time (`npx skills add mattpocock/skills`). A skill encodes the procedure; this page is the judgment.
+  You don't have to hand-roll the discipline. [superpowers](https://github.com/obra/superpowers) ships a `test-driven-development` skill enforcing the red-green-refactor order (`/plugin install superpowers@claude-plugins-official`; the skill format is portable across tools). [mattpocock/skills](https://github.com/mattpocock/skills) has a leaner `/tdd` that builds one vertical slice at a time (`npx skills@latest add mattpocock/skills`). A skill encodes the procedure; this page is the judgment.
 </Aside>
 
 ## Questions that come up in practice
@@ -349,7 +349,7 @@ The pre-commit gate and the rules-file line work identically under all six.
 ## Testing discipline
 - Never edit an existing test's assertions to make it pass.
 - If a test looks wrong, argue the case in chat and stop - don't fix it silently.
-- Run tests non-interactively: `npm test <file>`. No watch mode.
+- Run tests non-interactively: `npm test -- <file>`. No watch mode.
 ```
 
 **Kickoff prompt** (after the red test is committed, alone):
@@ -372,18 +372,19 @@ $ git diff -- <path/to/test>    # must stay empty until the fix commit
   actually assert what its name claims?
 ```
 
-**Pre-commit gate** (`.git/hooks/pre-commit` - plain git, works under every tool; catches deleted *and* commented-out assertions):
+**Pre-commit gate** (`.git/hooks/pre-commit` - plain git, works under every tool; rejects any staged change to the locked test file):
 
 ```bash
 #!/usr/bin/env sh
 LOCKED="<path/to/test>"
-removed=$(git diff --cached -- "$LOCKED" | grep -c '^-\s*expect(')
-if [ "${removed:-0}" -gt 0 ]; then
-  echo "BLOCKED: this commit removes $removed expect(...) call(s) from $LOCKED."
-  echo "If the assertion is genuinely wrong, argue the case in chat first."
+if ! git diff --cached --quiet -- "$LOCKED"; then
+  echo "BLOCKED: this commit changes the locked test file: $LOCKED"
+  echo "If the test is genuinely wrong, argue the case in chat first."
   exit 1
 fi
 ```
+
+Install the hook *after* the red commit - it rejects any staged change to the locked file, including the commit that creates it. And hooks can be bypassed with `git commit --no-verify`, so keep the runtime tool-call gate and CI review in place for unattended work.
 
 **Runtime gate**, for unattended runs: block edits to the locked file at the tool-call layer - per-tool syntax in the table above.
 

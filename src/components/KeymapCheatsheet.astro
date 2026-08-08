@@ -1,0 +1,555 @@
+---
+/**
+ * Static, build-time keyboard reference. No JavaScript.
+ *
+ * The reader picks one or two tools and the whole page filters to them - most
+ * people use one tool, or are migrating between two, and nobody wants six
+ * columns at once. Filtering is pure CSS (`:has()` on checkbox state), so it
+ * survives JS being off, slow, or broken. That matters here: this table is what
+ * the page is *for*. The KeymapExplorer widget is an enhancement over the same
+ * data, never the only way to read it.
+ *
+ * Sections are rendered by separate calls so prose can sit between them; the
+ * `picker` call must come first and appear exactly once, since it emits both
+ * the checkboxes and the global filter CSS.
+ */
+import { KM_TOOLS, KM_COLLISIONS, KM_TASKS } from './interactive/keymap-explorer-data';
+
+interface Props {
+  section: 'picker' | 'tasks' | 'collisions' | 'reference';
+}
+const { section } = Astro.props;
+
+const key = (t: (typeof KM_TOOLS)[number]) => `${t.slug}:${t.surface}`;
+const cbId = (t: (typeof KM_TOOLS)[number]) => `kcs-t-${t.slug}-${t.surface}`;
+
+/** Shown by default: enough to demonstrate the comparison, few enough to read. */
+const DEFAULT_ON = new Set(['claude-code:tui', 'codex:tui']);
+
+const CTX_ORDER = ['input', 'global', 'transcript', 'dialog', 'permission-prompt', 'approval-prompt'];
+const CTX_LABEL: Record<string, string> = {
+  input: 'Input line',
+  global: 'Anywhere',
+  transcript: 'Transcript / pager',
+  dialog: 'Dialogs and pickers',
+  'permission-prompt': 'Permission prompts',
+  'approval-prompt': 'Approval prompts',
+};
+const SEV_LABEL: Record<string, string> = {
+  destructive: 'can lose work',
+  'silent-difference': 'silently different',
+  harmless: 'harmless',
+};
+const CONF_LABEL: Record<string, string> = {
+  'source-code': 'source',
+  firsthand: 'first-hand',
+  documented: 'docs',
+};
+
+// One rule per tool: when its checkbox is unchecked, every element tagged with
+// that tool disappears anywhere on the page.
+const filterCss = KM_TOOLS.map(
+  (t) =>
+    `html:has(#${cbId(t)}:not(:checked)) [data-tool="${key(t)}"]{display:none}`
+).join('\n');
+
+const grouped = KM_TOOLS.map((t) => {
+  const buckets = new Map<string, typeof t.bindings>();
+  for (const b of t.bindings) {
+    const k = b.ctx || 'global';
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k)!.push(b);
+  }
+  const order = [
+    ...CTX_ORDER.filter((c) => buckets.has(c)),
+    ...[...buckets.keys()].filter((c) => !CTX_ORDER.includes(c)).sort(),
+  ];
+  return { tool: t, groups: order.map((c) => ({ ctx: c, rows: buckets.get(c)! })) };
+});
+
+// Collisions carry per-tool keys already; map them onto our surface keys.
+const collKey = (slug: string) =>
+  slug.includes(':') ? slug : `${slug}:tui`;
+
+const firstWebSource = (sources: string[]) =>
+  sources.find((source) => source.startsWith('https://'));
+---
+
+{section === 'picker' && (
+  <>
+    <style is:inline set:html={filterCss} />
+    <fieldset class="kcs-pick">
+      <legend>Show</legend>
+      {KM_TOOLS.map((t) => (
+        <>
+          <input
+            type="checkbox"
+            class="kcs-cb"
+            id={cbId(t)}
+            checked={DEFAULT_ON.has(key(t))}
+          />
+          <label class="kcs-cb-label" for={cbId(t)}>
+            {t.label}
+            <span class="kcs-cb-surface">{t.surface === 'ide' ? 'IDE' : 'CLI'}</span>
+          </label>
+        </>
+      ))}
+      <p class="kcs-pick-hint">
+        Pick the one you use - or two, if you're migrating between them.
+      </p>
+    </fieldset>
+  </>
+)}
+
+{section === 'tasks' && (
+  <div class="kcs kcs-scroll">
+    <table class="kcs-table kcs-table--tasks">
+      <thead>
+        <tr>
+          <th scope="col" class="kcs-stick">Task</th>
+          {KM_TOOLS.map((t) => (
+            <th scope="col" data-tool={key(t)}>
+              {t.label}
+              {t.surface === 'ide' && <span class="kcs-th-sub">IDE</span>}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {KM_TASKS.map((task) => (
+          <tr>
+            <th scope="row" class="kcs-stick">{task.label}</th>
+            {KM_TOOLS.map((t) => {
+              const hit = task.keys[key(t)];
+              return (
+                <td data-tool={key(t)}>
+                  {hit ? (
+                    <kbd title={hit.all !== hit.k ? `${hit.all} - ${hit.d}` : hit.d}>{hit.k}</kbd>
+                  ) : (
+                    <span class="kcs-none">-</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
+
+{section === 'collisions' && (
+  <div class="kcs kcs-scroll">
+    <table class="kcs-table kcs-table--coll">
+      <thead>
+        <tr>
+          <th scope="col">Key</th>
+          <th scope="col">You expect</th>
+          <th scope="col">What it actually does</th>
+        </tr>
+      </thead>
+      <tbody>
+        {KM_COLLISIONS.map((c) => (
+          <tr class={`kcs-sev-${c.severity}`}>
+            <th scope="row">
+              <kbd>{c.key}</kbd>
+              <span class={`kcs-sev kcs-sev--${c.severity}`}>{SEV_LABEL[c.severity]}</span>
+            </th>
+            <td class="kcs-expect">{c.reflex}</td>
+            <td>
+              <ul class="kcs-inline">
+                {Object.entries(c.tools).map(([slug, v]) => (
+                  <li data-tool={collKey(slug)}>
+                    <span class="kcs-tool">{slug.split(':')[0]}</span> {v.actual}
+                  </li>
+                ))}
+              </ul>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
+
+{section === 'reference' && (
+  <div class="kcs">
+    {grouped.map(({ tool, groups }) => (
+      <section class="kcs-tool-block" data-tool={key(tool)}>
+        <h3 id={`ref-${tool.slug}-${tool.surface}`}>
+          {tool.label}
+          <span class="kcs-surface">
+            {tool.surface === 'ide' ? `${tool.host ?? 'editor'} extension` : 'terminal'}
+          </span>
+        </h3>
+        <p class="kcs-meta">
+          {tool.version && <><code>{tool.version}</code> · </>}
+          {tool.bindings.length} bindings · checked {tool.checkedAt}
+          {firstWebSource(tool.sources) && (
+            <> · <a href={firstWebSource(tool.sources)} target="_blank" rel="noopener noreferrer">source</a></>
+          )}
+        </p>
+        {groups.map(({ ctx, rows }) => (
+          <>
+            <h4 class="kcs-ctx">{CTX_LABEL[ctx] ?? ctx}</h4>
+            <div class="kcs-scroll">
+            <table class="kcs-table kcs-table--ref">
+              <thead>
+                <tr>
+                  <th scope="col">Keys</th>
+                  <th scope="col">Does</th>
+                  <th scope="col">Src</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((b) => (
+                  <tr>
+                    <th scope="row">
+                      <kbd>{b.keys}</kbd>
+                      {b.macKeys !== b.keys && (
+                        <span class="kcs-mac"><kbd>{b.macKeys}</kbd> macOS</span>
+                      )}
+                    </th>
+                    <td>
+                      {b.desc}
+                      {b.origin === 'readline-inherited' && (
+                        <span class="kcs-rl" title="Inherited readline / emacs line editing">rl</span>
+                      )}
+                      {((b.action ?? []).length > 0 || b.cmd) && (
+                        <span class="kcs-act">
+                          {(b.action ?? []).map((a) => <code>{a}</code>)}
+                          {b.cmd && <code>{b.cmd}</code>}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <span class={`kcs-conf kcs-conf--${b.conf.replace(/[^a-z]/g, '')}`}>
+                        {CONF_LABEL[b.conf]}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          </>
+        ))}
+      </section>
+    ))}
+  </div>
+)}
+
+<style>
+  /* ---------------------------------------------------------- picker */
+
+  .kcs-pick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 1.25rem 0 1.5rem;
+    background: var(--ac-surface);
+  }
+
+  .kcs-pick legend {
+    font-family: var(--sl-font-mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--sl-color-gray-3);
+    padding: 0 6px;
+  }
+
+  .kcs-cb {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+  }
+
+  .kcs-cb-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 7px;
+    background: var(--sl-color-bg);
+    color: var(--sl-color-gray-2);
+    font-family: var(--sl-font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 6px 11px;
+    min-height: 32px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .kcs-cb-label:hover {
+    border-color: var(--sl-color-accent);
+    color: var(--sl-color-text-accent);
+  }
+
+  .kcs-cb:checked + .kcs-cb-label {
+    background: var(--sl-color-accent-low);
+    border-color: var(--sl-color-accent);
+    color: var(--sl-color-text-accent);
+  }
+
+  .kcs-cb:focus-visible + .kcs-cb-label {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
+  .kcs-cb-surface {
+    font-size: 0.58rem;
+    letter-spacing: 0.06em;
+    opacity: 0.55;
+    border-left: 1px solid currentColor;
+    padding-left: 6px;
+  }
+
+  .kcs-pick-hint {
+    flex-basis: 100%;
+    margin: 2px 0 0;
+    font-size: 0.75rem;
+    color: var(--sl-color-gray-3);
+  }
+
+  /* ----------------------------------------------------------- tables */
+
+  .kcs { margin: 1.25rem 0; }
+
+  /* The tables must be allowed to exceed the content column and scroll, rather
+   * than obediently shrinking to fit it. `width: 100%` alone crushed cells to
+   * unreadable widths as soon as four or more tools were shown, and the scroll
+   * wrapper never engaged because the table never overflowed. */
+  .kcs-scroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .kcs-scroll > .kcs-table {
+    width: auto;
+    min-width: 100%;
+  }
+
+  .kcs-tool-block { margin-bottom: 2.25rem; }
+
+  .kcs-tool-block h3 {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 0 4px;
+    scroll-margin-top: 5rem;
+  }
+
+  .kcs-surface {
+    font-family: var(--sl-font-mono);
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--sl-color-gray-3);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 4px;
+    padding: 2px 6px;
+  }
+
+  .kcs-meta {
+    margin: 0 0 12px;
+    font-family: var(--sl-font-mono);
+    font-size: 0.7rem;
+    color: var(--sl-color-gray-3);
+  }
+
+  .kcs-ctx {
+    margin: 16px 0 6px;
+    font-family: var(--sl-font-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--sl-color-text-accent);
+  }
+
+  .kcs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    margin: 0 0 6px;
+    display: table;
+  }
+
+  .kcs-table th,
+  .kcs-table td {
+    text-align: left;
+    vertical-align: top;
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--sl-color-hairline);
+    line-height: 1.45;
+  }
+
+  .kcs-table thead th {
+    font-family: var(--sl-font-mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--sl-color-gray-3);
+    font-weight: 600;
+    border-bottom-color: var(--sl-color-gray-5);
+    white-space: nowrap;
+  }
+
+  .kcs-table tbody th { font-weight: 400; white-space: nowrap; }
+
+  .kcs-table kbd {
+    font-family: var(--sl-font-mono);
+    font-size: 0.72rem;
+    background: var(--sl-color-bg-inline-code);
+    color: var(--ac-inline-code-text);
+    border: 1px solid var(--sl-color-hairline);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+  }
+
+  .kcs-table code {
+    font-family: var(--sl-font-mono);
+    font-size: 0.68rem;
+    background: none;
+    color: var(--sl-color-gray-3);
+    display: block;
+  }
+
+  .kcs-same, .kcs-none { color: var(--sl-color-gray-3); font-size: 0.72rem; }
+
+  .kcs-rl {
+    font-family: var(--sl-font-mono);
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 3px;
+    padding: 0 4px;
+    margin-left: 6px;
+    color: var(--sl-color-gray-3);
+    vertical-align: 1px;
+  }
+
+  .kcs-conf {
+    font-family: var(--sl-font-mono);
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sl-color-gray-3);
+    white-space: nowrap;
+  }
+
+  .kcs-conf--sourcecode,
+  .kcs-conf--firsthand { color: var(--sl-color-text-accent); }
+
+  /* ---- tasks ---- */
+
+  .kcs-table--tasks tbody th {
+    white-space: normal;
+    font-weight: 600;
+    min-width: 10rem;
+  }
+
+  .kcs-table--tasks td { white-space: nowrap; }
+
+  /* The task name stays put while the tool columns scroll under it - without
+   * this, scrolling right loses the row label and the keys mean nothing. */
+  .kcs-stick {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--sl-color-bg);
+  }
+
+  .kcs-th-sub {
+    font-size: 0.55rem;
+    opacity: 0.6;
+    margin-left: 4px;
+  }
+
+  /* ---- collisions ---- */
+
+  .kcs-table--coll tbody th {
+    min-width: 8.5rem;
+    white-space: normal;
+  }
+
+  .kcs-table--coll tbody th .kcs-sev {
+    display: block;
+    margin-top: 3px;
+  }
+
+  .kcs-expect { color: var(--sl-color-gray-3); min-width: 9rem; }
+  .kcs-table--coll td:last-child { min-width: 18rem; }
+
+  /* ---- reference ---- */
+
+  .kcs-mac {
+    display: block;
+    margin-top: 3px;
+    font-family: var(--sl-font-mono);
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sl-color-gray-3);
+  }
+
+  .kcs-act {
+    display: block;
+    margin-top: 2px;
+  }
+
+  .kcs-table--ref tbody th { white-space: normal; min-width: 8rem; }
+  .kcs-table--ref td:nth-child(2) { min-width: 16rem; }
+
+  .kcs-inline { list-style: none; margin: 0; padding: 0; }
+
+  .kcs-inline li {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr;
+    gap: 8px;
+    padding: 1px 0;
+  }
+
+  .kcs-tool {
+    font-family: var(--sl-font-mono);
+    font-size: 0.7rem;
+    color: var(--sl-color-text-accent);
+  }
+
+  .kcs-sev {
+    font-family: var(--sl-font-mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .kcs-sev--destructive { color: #e5484d; }
+  .kcs-sev--silent-difference { color: #d98324; }
+  .kcs-sev--harmless { color: var(--sl-color-gray-3); }
+
+  :global(:root[data-theme='light']) .kcs-sev--destructive { color: #c2181d; }
+  :global(:root[data-theme='light']) .kcs-sev--silent-difference { color: #9a5b0d; }
+
+  tr.kcs-sev-destructive th kbd { border-color: #e5484d; }
+
+  @media (max-width: 720px) {
+    .kcs-table { font-size: 0.74rem; }
+    .kcs-table th, .kcs-table td { padding: 4px 5px; }
+    .kcs-inline li { grid-template-columns: 1fr; gap: 0; }
+    .kcs-expect { min-width: 7rem; }
+    .kcs-table--coll td:last-child { min-width: 14rem; }
+    .kcs-table--ref td:nth-child(2) { min-width: 13rem; }
+    .kcs-table--tasks tbody th { min-width: 8.5rem; }
+  }
+</style>

@@ -11,7 +11,7 @@ You've started a fresh session on the same repo for the fifth time this week. Th
 
 You're not telling the agent anything new. You're telling *this session* what you already told *last session*, because sessions don't remember each other. It can read any file and grep anything; what it can't do is know the unwritten conventions of the team that owns the repo. So every session starts at zero on the same five facts.
 
-**Rules** are how you stop re-teaching. They are the persistent, human-authored context each CLI reads at session start and injects into the model's context: a file (or set of files) you write and check into the repo, holding the facts you would otherwise repeat - "we use pnpm not npm," "never edit migrations after they've been merged." Write them down once and they load before your first message. The agent walks in already knowing.
+**Rules** are how you stop re-teaching. They are persistent, human-authored context that many tools read when a session starts and attach to the model's context: a file (or set of files) you write and check into the repo, holding the facts you would otherwise repeat - "we use pnpm not npm," "never edit migrations after they've been merged." Discovery, path scoping, and load timing vary by tool, so the per-tool tabs matter.
 
 The file format has partly converged. Several tools read [`AGENTS.md`](https://agents.md/) natively, while Claude Code's primary file is `CLAUDE.md` and can pull the other in with an `@AGENTS.md` import. So the clean pattern is one `AGENTS.md` at your repo root, imported into `CLAUDE.md` where needed - a single source of truth for the tools that support it. The [Comparison](#comparison) table has the per-tool filenames.
 
@@ -38,7 +38,7 @@ The test: if you've corrected the agent on the same thing twice across sessions,
 | Apply guidance only when working in a specific path/subdir | Path-scoped rules (see below) | Bloating root `CLAUDE.md` |
 | Share knowledge across multiple repos | User-global rules file | Per-repo rules |
 
-Rules are *always loaded, every turn*. That makes them powerful - and expensive on context. Anything that doesn't need to be present every single turn belongs in a skill instead. Anything that needs to *enforce* (not just inform) belongs in a hook.
+Rules that a tool attaches to a session are typically present on every turn, which makes them powerful - and expensive on context. Path-scoped and intelligently attached instructions may load only when relevant. Anything that doesn't need durable context belongs in a skill; anything that needs to *enforce* (not just inform) belongs in a hook.
 
 The tabs won't tell you which files win when several apply at once. That needs the per-tool paths first, so it waits until [after the tabs](#which-files-load-and-in-what-order).
 
@@ -50,21 +50,24 @@ The tabs won't tell you which files win when several apply at once. That needs t
 
 Tools agree on *where* rules files live but not on *how they combine* - and the differences bite in monorepos. Same repo, same files, a different answer per tool: pick where the agent is working and see exactly which files each one loads. In OpenCode, nested rule selection and configured `instructions` are separate mechanisms: the former uses precedence, while the latter can be combined with `AGENTS.md`.
 
+The resolver currently models Claude Code, Codex, OpenCode, and Pi. Cursor and Copilot remain covered by the tabs and comparison table, but their resolution data is not modeled in this widget yet.
+
 <RulesResolver client:visible />
+<noscript><p class="widget-noscript">This rules resolver needs JavaScript. The <a href="#comparison">comparison table</a> below remains available without it.</p></noscript>
 
 ## Comparison
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Default project file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` | `.cursor/rules/*.mdc` or `AGENTS.md` | `.github/copilot-instructions.md` or `AGENTS.md` | `AGENTS.md` / `CLAUDE.md` (+ `APPEND_SYSTEM.md` / `SYSTEM.md`) |
-| Cross-tool standard | Via `@AGENTS.md` import | Native (`agents.md`) | Native (`agents.md`) | Native (`AGENTS.md`) | Native (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) | Native (`agents.md`) |
-| User-global file | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | `~/.config/opencode/AGENTS.md` | User Rules (UI; no local file) | Personal instructions (github.com) | `~/.pi/agent/` |
+| Default project file | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md`, or `CLAUDE.md` as fallback | `.cursor/rules/*.mdc` or `AGENTS.md` | `.github/copilot-instructions.md` or `AGENTS.md` | `AGENTS.md` / `CLAUDE.md` (+ `APPEND_SYSTEM.md` / `SYSTEM.md`) |
+| Cross-tool standard | Via `@AGENTS.md` import | Native (`agents.md`) | Native (`agents.md` / `CLAUDE.md`) | Native (`AGENTS.md`) | Native (`AGENTS.md` / `CLAUDE.md` / `GEMINI.md`) | Native (`agents.md`) |
+| User-global file | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | `~/.config/opencode/AGENTS.md`, then `~/.claude/CLAUDE.md` | User Rules (UI; no local file) | Personal instructions (github.com) | `~/.pi/agent/` |
 | Path-scoped rules | `.claude/rules/` with `paths:`¹ | - | `instructions:` in `opencode.json` | `globs:` in `.mdc` frontmatter | `.instructions.md` with `applyTo:` | - (nested walk only, no glob targeting) |
 | Nested files per subdir | Concatenated (additive) | Concatenated; deeper files override by appearing later | First match wins (no merging) | Nested `AGENTS.md` auto-applied in subtree | Nearest `AGENTS.md` takes precedence | Nested walk, concatenated; closer files appended later, no formal override |
 | `@path` imports | Yes (bare `@path`) | No | No | `@RuleName` only (manual invocation) | No | No |
 | Managed/org override | Yes | Yes | Yes | Yes (Team Rules) | Yes (Business / Enterprise) | - (project resources are trust-gated, not org-policy-gated) |
 
-¹ `paths:` is the documented, current key - not `globs:` (that's Cursor's). As of 2026-07 it has open reliability bugs: user-level (`~/.claude/rules/`) scoping can be silently ignored, and a rule may load on read but not on write. See the Claude Code tab above for detail.
+¹ `paths:` is the documented, current key - not `globs:` (that's Cursor's). *Unverified:* community reports describe user-level (`~/.claude/rules/`) scoping being ignored and rules loading on read but not on write. Reproduce the behavior on the installed version before treating it as a product guarantee.
 
 ## Name collisions
 
@@ -74,7 +77,7 @@ Tools agree on *where* rules files live but not on *how they combine* - and the 
 |---|---|
 | Claude Code | The path-scoped Markdown files in `.claude/rules/` only - a subset. The main file is `CLAUDE.md`. |
 | Codex | No separate "Rules" concept; `AGENTS.md` is the entire layer. |
-| OpenCode | No separate "Rules" file; `AGENTS.md` carries the role, supplemented by the `instructions` field in `opencode.json`. |
+| OpenCode | No separate "Rules" file; `AGENTS.md` carries the role (with `CLAUDE.md` read as a fallback), supplemented by the `instructions` field in `opencode.json`. |
 | Cursor | The umbrella name for the whole layer: `.cursor/rules/*.mdc`, User Rules, Team Rules, plus `AGENTS.md`. |
 | Copilot | Called "instructions" throughout: `copilot-instructions.md`, `.instructions.md`, personal and org instructions. |
 | Pi | No "Rules" concept; `AGENTS.md` / `CLAUDE.md` is the context layer, with `APPEND_SYSTEM.md` / `SYSTEM.md` as a stronger layer above it. |
@@ -86,7 +89,7 @@ In this chapter, "rules" is the cross-tool umbrella term. Two more collisions wo
 
 Start with one `AGENTS.md` at the repo root and let corrections fill it: the second time you tell the agent the same thing, that line goes in the file. When it stops fitting - the Claude Code tab suggests holding it under ~200 lines - the overflow has somewhere to go. Procedures move to [skills](/foundations/skills/), path-specific guidance to path-scoped rule files, and anything that has to be enforced rather than remembered to [hooks](/foundations/hooks/).
 
-<UpstreamRefs
+<UpstreamRefs checkedAt="2026-08-07"
   links={[
     {
       tool: 'Claude Code',
@@ -96,7 +99,7 @@ Start with one `AGENTS.md` at the repo root and let corrections fill it: the sec
     {
       tool: 'Codex',
       label: 'AGENTS.md',
-      url: 'https://developers.openai.com/codex/guides/agents-md',
+      url: 'https://learn.chatgpt.com/docs/agent-configuration/agents-md',
     },
     {
       tool: 'OpenCode',
@@ -111,7 +114,7 @@ Start with one `AGENTS.md` at the repo root and let corrections fill it: the sec
     {
       tool: 'Copilot',
       label: 'Custom instructions',
-      url: 'https://docs.github.com/en/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot',
+      url: 'https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions',
     },
     {
       tool: 'Pi',

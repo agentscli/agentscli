@@ -228,7 +228,7 @@ matcher = "Bash"
         phase: 'Session & messages',
         kind: 'reactive',
         fires:
-          'Session lifecycle, server, message, and TUI event families - the richest taxonomy of the three tools, at the cost of writing code instead of config.',
+          'Session lifecycle, server, message, and TUI event families - the richest taxonomy of the four modeled tools, at the cost of writing code instead of config.',
       },
     ],
   },

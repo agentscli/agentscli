@@ -63,7 +63,7 @@ export const primitiveEntries: PrimitiveEntry[] = [
     primitive: 'Subagents',
     href: '/foundations/subagents/',
     cost: 'isolated',
-    why: 'The sub-task runs in its own fresh window and returns only a summary. Forty-five thousand tokens of log-reading never touch your context.',
+    why: 'The sub-task runs in its own fresh window and returns a distilled result. Forty-five thousand tokens of log-reading never automatically touch your context.',
     notThis:
       'Doing it inline and compacting afterwards - by then the noise has already crowded out the signal.',
   },
@@ -144,6 +144,22 @@ export const primitiveEntries: PrimitiveEntry[] = [
     notThis:
       'Treating the agent as a chatbot that occasionally edits files - the mental model that makes every cost and every failure surprising.',
   },
+  {
+    id: 'trust',
+    statement: 'I need to know what can stop a bad action',
+    primitive: 'Trust, security & evaluation',
+    href: '/foundations/trust-and-evaluation/',
+    why: 'Map the input paths, action gates, runtime boundaries, and regression checks before giving an agent more reach. Sandboxing limits impact; tests and trace evidence tell you whether the result is correct.',
+    notThis: 'Calling a mode “safe” without checking what it can read, write, execute, or send.',
+  },
+  {
+    id: 'keyboard',
+    statement: 'I keep pressing the wrong key',
+    primitive: 'Keyboard shortcuts',
+    href: '/foundations/keyboard-shortcuts/',
+    why: 'See the same chord across tools, find the action you meant, and check whether a binding comes from the terminal, the agent, or the host editor.',
+    notThis: 'Assuming a familiar readline or editor shortcut means the same thing in every agent.',
+  },
 ];
 
 /**
@@ -173,7 +189,7 @@ export const problemClusters: ProblemCluster[] = [
     id: 'control',
     label: 'It won’t stay in its lane',
     hint: 'gates · guardrails · approval',
-    entryIds: ['hooks', 'permissions', 'plan-mode'],
+    entryIds: ['hooks', 'permissions', 'plan-mode', 'trust'],
   },
   {
     id: 'bottleneck',
@@ -192,5 +208,11 @@ export const problemClusters: ProblemCluster[] = [
     label: 'I can’t tell how any of this is wired',
     hint: 'the loop · config precedence · what loads when',
     entryIds: ['loop', 'configuration', 'rules'],
+  },
+  {
+    id: 'reference',
+    label: 'I need to look something up',
+    hint: 'security posture · keyboard corrections',
+    entryIds: ['trust', 'keyboard'],
   },
 ];

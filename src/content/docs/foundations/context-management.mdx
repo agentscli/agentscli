@@ -36,6 +36,7 @@ The test: if the agent is getting *less* sharp the longer you work - not wrong, 
 A whole session compressed into eleven steps. Walk through it and watch the window fill: the fixed overhead you pay before typing, the exploration spikes, a subagent detour that keeps 45k of noise out entirely, the auto-compact threshold - and what `/compact` actually keeps. Token counts are illustrative; the shape is the point.
 
 <ContextSimulator client:visible />
+<noscript><p class="widget-noscript">This context simulator needs JavaScript. The surrounding explanation and <a href="#comparison">comparison table</a> remain available without it.</p></noscript>
 
 That's the failure context management addresses, and the rest of this chapter is what each lever does about it.
 
@@ -92,13 +93,14 @@ Most items on one side have a shadow on the other. The summary keeps the *label*
 
 The practical consequence: **write unsaved work to disk before compacting.** A diff that exists only in the conversation gets flattened into "edited `auth.ts`," and after compaction the agent may need to re-read the file to see its own change.
 
-This is also the cleanest restatement of the [rules](/foundations/rules/) argument: a constraint stated in conversation can be summarised away, but a constraint in the rules file is reloaded every turn and survives every compaction. Durable facts belong in always-loaded context, not in the chat.
+This is also the cleanest restatement of the [rules](/foundations/rules/) argument: a constraint stated in conversation can be summarised away, but a rule file that the active tool attaches to the session can survive compaction and remain present on later turns. Durable facts belong in the tool's persistent context layer, not only in the chat.
 
 ## Compact or clear, and when
 
 Knowing that cost is what turns compact-or-clear from a guess into a call you can rehearse. The session below plays until the window is three-quarters full, then hands you the keyboard: keep going, `/compact`, or `/clear`. Play all three and watch what each one carries across.
 
 <SessionXray client:visible />
+<noscript><p class="widget-noscript">This session replay needs JavaScript. The surrounding explanation and <a href="#comparison">comparison table</a> remain available without it.</p></noscript>
 
 ## The shape compaction is converging on
 
@@ -134,16 +136,16 @@ Compaction is a *recovery* tool - it salvages a window that's already heavy. The
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Inspect usage | `/context`, `/usage`, status line | `/status` | Status display is surface-dependent | input-box gauge | chat input context control | Not listed in this comparison |
-| Manual compaction | `/compact [instructions]` | `/compact` | agent-/auto-driven | `/summarize` | `/compact [instructions]` | Auto compaction, extensible |
+| Inspect usage | `/context`, `/usage`, status line | `/status` | Status display is surface-dependent | input-box gauge | chat input context control | Status display is surface-dependent |
+| Manual compaction | `/compact [instructions]` | `/compact` | `/compact` (alias `/summarize`) | `/summarize` | `/compact [instructions]` | `/compact [instructions]` |
 | Automatic compaction | Yes, near limit | Yes (`model_auto_compact_token_limit`) | Yes, on overflow | Yes, near limit (uses a faster model) | Yes (~80% of window) | Yes (built-in, extension-adjustable) |
-| Custom compact instructions | Yes (inline + `CLAUDE.md`) | Yes - `compact_prompt` (inline string) or `experimental_compact_prompt_file` (file path, experimental) <sup>1</sup> | Fixed structured template | Not listed in the public comparison docs | Yes (inline) | Via extension |
-| Disable auto-compaction | Check current Claude Code settings | n/a | `compaction.auto=false` / `OPENCODE_DISABLE_AUTOCOMPACT` | Not listed in the public comparison docs | `github.copilot.chat.summarizeAgentConversationHistory.enabled=false` | Via extension |
-| Fresh window (same app) | `/clear` | `/new`, `/clear` | new session | New Chat | New Chat | New tree session |
-| Resume prior session | `/resume`, `claude --continue`/`-c` | `/resume`, `codex resume` | `opencode --continue`/`-c`, `--session`/`-s` | Chat history | Chat history | `/tree` session picker |
-| Fork / branch a session | `--fork-session`, `/branch` (verify current command) | `/fork`, `/side` | `opencode --fork` | `/fork` (CLI) | - | **Yes** - native tree-of-sessions (`/tree`) |
+| Custom compact instructions | Yes (inline + `CLAUDE.md`) | Yes - `compact_prompt` (inline string) or `experimental_compact_prompt_file` (file path, experimental) <sup>1</sup> | Fixed structured template | Not listed in the public comparison docs | Yes (inline) | Yes (inline) |
+| Disable auto-compaction | `autoCompactEnabled` in settings | n/a | `compaction.auto=false` (preflight check only, not compaction itself) | Not listed in the public comparison docs | `github.copilot.chat.summarizeAgentConversationHistory.enabled=false` | Via extension |
+| Fresh window (same app) | `/clear` | `/new`, `/clear` | `/new` (alias `/clear`) | New Chat | New Chat | New tree session |
+| Resume prior session | `/resume`, `claude --continue`/`-c` | `/resume`, `codex resume` | `opencode --continue`/`-c`, `--session`/`-s`, `/sessions` | Chat history | Chat history | `/resume`, `pi -r` |
+| Fork / branch a session | `--fork-session`, `/branch` (switch into a copy) and `/fork` (background session); `/subtask` for a forked subagent | `/fork`, `/side` (both TUI-only) | `opencode --fork` | `/fork` (CLI) · IDE "Fork Chat" | - | **Yes** - `/fork`, `/clone`, navigable with `/tree` |
 
-<sup>1</sup> Codex's custom prompt only governs its *local* compaction path. Providers that support remote compaction skip the local path entirely, and `compact_prompt` isn't read on that path either, per the Codex source (as of 2026-07).
+<sup>1</sup> Codex documents `compact_prompt` and `experimental_compact_prompt_file` as local compaction overrides. Whether a remote-compaction path skips those keys is implementation behavior rather than a documented product guarantee - verify against your provider path before relying on it.
 
 Three rows carry the real difference: **Inspect usage**, **Custom compact instructions**, and **Disable auto-compaction**. Auto-compaction is now the default everywhere it's offered, so the axis that still separates the tools is **control** - whether you can see the window filling, steer what the summary keeps, and turn the automation off. The terminal CLIs expose the most knobs; the IDE tools manage it for you with the fewest.
 
@@ -155,11 +157,11 @@ Three rows carry the real difference: **Inspect usage**, **Custom compact instru
 - **"Summarize" vs "compact".** Cursor and Copilot surface the behaviour as "summarising conversation history"; the terminal tools call the same operation "compaction." Same mechanism, different label.
 - **"Session" is overloaded.** In [how agents work](/foundations/how-agents-work/) a *session* is one run of the loop with one window. OpenCode also has an `opencode session` CLI noun and `/share`-able sessions; don't read the CLI sense as a different concept.
 - **Compaction vs memory.** Compaction works *within* a session to fit the window. Agent-managed **memory** persists facts *across* sessions and is a separate primitive (deferred; distinct from [rules](/foundations/rules/)). Resuming a session is not the same as the agent remembering it.
-- **Claude Code's `/branch` vs `/fork`.** Current Claude Code documents `/fork` as an alias for `/branch` by default; a separate environment setting can opt into forked-subagent behavior. Verify the active version and environment before relying on either meaning.
+- **Claude Code's `/branch` vs `/fork` vs `/subtask`.** These diverged across the 2.1.x line, so older writing conflates them. On current docs (v2.1.212+): `/branch` switches you into a copy of the conversation; `/fork` copies it into an independent **background session**; `/subtask` is the forked **subagent** that reports back. On v2.1.161 - 2.1.211, `/fork` was the subagent path; before that it aliased `/branch`. Check which one your version does before relying on either.
 
 Next session, run your tool's inspect command from the table above *before* the agent starts getting hazy, not after. If the weight turns out to be a bloated rules file or a giant file read rather than the conversation itself, compaction only buys it back for another hour - move the weight out instead.
 
-<UpstreamRefs
+<UpstreamRefs checkedAt="2026-08-07"
   links={[
     {
       tool: 'Claude Code',
@@ -169,7 +171,7 @@ Next session, run your tool's inspect command from the table above *before* the 
     {
       tool: 'Codex',
       label: 'Slash commands',
-      url: 'https://developers.openai.com/codex/cli/',
+      url: 'https://learn.chatgpt.com/docs/codex/cli',
     },
     {
       tool: 'OpenCode',
@@ -179,7 +181,7 @@ Next session, run your tool's inspect command from the table above *before* the 
     {
       tool: 'Cursor',
       label: 'Summarization',
-      url: 'https://docs.cursor.com/en/agent/chat/summarization',
+      url: 'https://cursor.com/docs/agent/overview',
     },
     {
       tool: 'Copilot',
@@ -189,7 +191,7 @@ Next session, run your tool's inspect command from the table above *before* the 
     {
       tool: 'Pi',
       label: 'Docs',
-      url: 'https://pi.dev/',
+      url: 'https://pi.dev/docs/latest',
     },
   ]}
 />

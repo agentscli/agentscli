@@ -68,7 +68,7 @@ export const skaParts: SkaPart[] = [
     support: {
       'claude-code': { status: 'yes', note: 'required' },
       codex: { status: 'yes', note: 'required' },
-      opencode: { status: 'yes', note: 'required · 1–64 chars, must match folder' },
+      opencode: { status: 'yes', note: 'required · 1 - 64 chars, must match folder' },
       cursor: { status: 'yes', note: 'required · must match folder' },
       copilot: { status: 'yes', note: 'required · ≤64 chars, lowercase-hyphenated' },
     },
@@ -76,12 +76,12 @@ export const skaParts: SkaPart[] = [
   {
     id: 'description',
     title: 'description',
-    what: 'The trigger. Every skill’s description is loaded into context at session start; the model matches your intent against it to decide when to pull the body in. It’s the most important line in the file - write it as a "use when…" hint, not a summary.',
+    what: 'The trigger. Eligible skill descriptions are commonly indexed up front; the model matches your intent against them to decide when to pull the body in. Indexing can be bounded or lazy, so verify the active tool. Write this as a "use when…" hint, not a summary.',
     constraints: 'Capped at 1024 characters where a limit is documented (OpenCode, Copilot).',
     support: {
       'claude-code': { status: 'yes', note: 'required · drives auto-invocation' },
       codex: { status: 'yes', note: 'required · drives auto-invocation' },
-      opencode: { status: 'yes', note: 'required · 1–1024 chars' },
+      opencode: { status: 'yes', note: 'required · 1 - 1024 chars' },
       cursor: { status: 'yes', note: 'required · drives auto-select' },
       copilot: { status: 'yes', note: 'required · ≤1024 chars' },
     },

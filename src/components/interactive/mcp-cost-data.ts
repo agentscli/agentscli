@@ -1,6 +1,6 @@
 /**
  * Illustrative MCP servers for the context-cost meter. Tool counts and
- * schema sizes are order-of-magnitude estimates (~600–800 tokens per tool
+ * schema sizes are order-of-magnitude estimates (~600 - 800 tokens per tool
  * definition), not measurements - the point is the shape of the cost, not
  * the exact numbers. Window + built-in baseline match context-sim-data.ts.
  */

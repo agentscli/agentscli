@@ -1,0 +1,106 @@
+---
+title: Trust, security & evaluation
+description: How to reason about agent risk, choose the strongest enforcement boundary, and measure whether a workflow actually works.
+---
+
+import ToolTabs from '../../../components/ToolTabs.astro';
+import UpstreamRefs from '../../../components/UpstreamRefs.astro';
+
+An agent can be useful and still be unsafe. A repository can contain prompt injection, a skill can smuggle in an instruction, an MCP server can expose a destructive tool, and a headless run can repeat a mistake without anyone present to stop it.
+
+The practical question is not “is this agent trusted?” It is: **which inputs can influence it, which actions can it take, and which layer can still stop a bad action?**
+
+The test: if you cannot name the input boundary, action gate, execution boundary, and deterministic postcondition for a workflow, it is not ready for unattended use.
+
+## The guarantee ladder
+
+Treat these as progressively stronger controls. A lower layer can guide behavior; a higher layer can prevent or contain it.
+
+| Layer | What it does | What it cannot promise |
+|---|---|---|
+| Prompt, rules, and skills | Tells the model what to do | The model will follow it or resist hostile context |
+| Model-selected skill or agent | Packages a role, procedure, or tool surface | The selected component is benign or current |
+| Approval policy | Puts a human or preconfigured policy in the action path | A person will read every approval, especially in CI |
+| Hook or runtime gate | Blocks, rewrites, or audits supported lifecycle events | Unsupported paths or actions outside the runtime are covered |
+| OS sandbox | Limits filesystem, process, and network reach | The task result is correct or secrets are available safely |
+| Repository or server-side enforcement | Protects branches, deploys, credentials, and external systems | Local work before the request reaches the boundary |
+
+This is why “plan mode,” “auto,” and “deny” need qualification. They are product labels, not universal security guarantees. See [Permissions & sandboxing](/foundations/permissions/), [Hooks](/foundations/hooks/), and [Plan mode](/foundations/plan-mode/) for the tool-specific boundaries.
+
+## Threat-model the input path
+
+Before enabling a new capability, ask what can arrive through each channel:
+
+- **Repository content:** source files, issues, fixtures, generated files, and comments can contain instructions aimed at the model rather than the developer.
+- **Tool output:** search results, logs, webpages, and MCP resources can carry untrusted text. Treat tool descriptions and annotations as data, not policy.
+- **Installed components:** skills, plugins, extensions, and MCP servers are executable supply-chain dependencies. Review their source, pin versions where possible, and remove unused access.
+- **Credentials and reach:** give a workflow only the tokens, directories, network access, and worktree it needs. A read-only task should not inherit deployment credentials.
+- **Unattended execution:** headless and background runs need preconfigured approval, sandbox, hook, timeout, output-validation, and rollback policies because no person may be present at the moment of action.
+
+The [MCP security principles](https://modelcontextprotocol.io/specification/2025-06-18/index) and [authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) are useful reference points: servers can perform arbitrary actions on connected systems, and consent must remain explicit and under host control.
+
+## Evaluate the workflow, not just the prompt
+
+An agent configuration is a small software system. Give it a regression loop:
+
+1. Define a task with a fixture, an acceptance test, and explicit forbidden outcomes.
+2. Run it in a disposable worktree with the smallest useful tool and credential set.
+3. Capture the trace: model, rules, skills, tool calls, approvals, files changed, duration, and cost.
+4. Grade the result against deterministic postconditions before reading the model's explanation.
+5. Repeat on representative failures and adversarial inputs, then compare against the previous configuration.
+
+Track at least:
+
+| Metric | Why it matters |
+|---|---|
+| Task success rate | Did the workflow satisfy the acceptance test? |
+| Intervention rate | How often did a human need to rescue or redirect it? |
+| Rework / regression rate | Did the “successful” change create follow-up work or break tests? |
+| Cost and latency | Is the workflow economical enough to run at its intended frequency? |
+| Unsafe-action rate | Did it attempt a forbidden or out-of-scope action? |
+| Context/retrieval failures | Did it miss the right file, rule, skill, or tool before generation began? |
+
+Keep the task set small and versioned. A five-case regression suite that runs on every rules, skill, hook, model, or plugin change is more useful than a large benchmark nobody reruns.
+
+## A preflight for new capabilities
+
+Before installing or enabling a component:
+
+- What does it read, write, execute, and send over the network?
+- Which product surfaces support it, and is it preview or stable?
+- Can its permissions be narrowed or its version pinned?
+- What happens if the model follows hostile text returned by the component?
+- What deterministic check catches a bad result?
+- Can the run be stopped, inspected, reverted, and attributed?
+
+If the answers are unclear, keep the component out of unattended workflows until they are documented and tested.
+
+## How it works in each tool
+
+<ToolTabs chapter="trust-and-evaluation" />
+
+## Comparison
+
+| Question | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
+|---|---|---|---|---|---|---|
+| What influences the agent? | Project context, tools, hooks, MCP, skills | Instructions, tools, profiles, MCP | Instructions, agent config, tools, plugins | Rules, prompts, tools, extensions | Instructions, tools, agents, MCP | Context files, trusted project resources, extensions |
+| What gates actions? | Allow/ask/deny rules and hooks | Approval policy and sandbox mode | Per-tool and per-agent permissions | Approval, permissions, and sandbox controls | Approval settings, permissions, hooks | External containment and extension/tool policy |
+| What is the hard boundary? | OS sandbox, workspace, or managed policy | Sandbox/worktree/container boundary | The host or external sandbox | Host/CLI sandbox and repository controls | Hosted runner or local sandbox | No native sandbox; use a container or VM |
+| What should evaluation assert? | Tests, hooks, trace, diff | Tests, approval trace, output, diff | Tests, tool policy, output | Tests, diff, policy outcome | Tests, hook logs, output | Tests, container logs, diff |
+
+## Name collisions
+
+- **Trust** is not a single toggle. A trusted repository, a trusted tool, and a trusted action are different decisions.
+- **Evaluation** is not “the model says it succeeded.” It is a testable postcondition plus evidence from the run.
+- **Sandboxing** limits impact; it does not prove correctness. Pair it with acceptance tests and output validation.
+
+<UpstreamRefs checkedAt="2026-08-07"
+  links={[
+    { tool: 'Claude Code', url: 'https://code.claude.com/docs/en/security', label: 'security and sandboxing' },
+    { tool: 'Codex', url: 'https://learn.chatgpt.com/docs/codex/cli', label: 'CLI documentation' },
+    { tool: 'OpenCode', url: 'https://opencode.ai/v2/docs/permissions', label: 'permissions' },
+    { tool: 'Cursor', url: 'https://cursor.com/docs/hooks', label: 'hooks and controls' },
+    { tool: 'Copilot', url: 'https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-copilot-cli', label: 'CLI controls' },
+    { tool: 'Pi', url: 'https://pi.dev/docs/latest/security', label: 'security and project trust' },
+  ]}
+/>

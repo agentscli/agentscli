@@ -189,7 +189,7 @@ export const ocAgents = [
   {
     id: 'plan',
     label: 'plan',
-    permissions: { read: 'allow', edit: 'deny', bash: 'ask' } as Record<string, Verdict>,
+    permissions: { read: 'allow', edit: 'ask', bash: 'ask' } as Record<string, Verdict>,
   },
 ];
 

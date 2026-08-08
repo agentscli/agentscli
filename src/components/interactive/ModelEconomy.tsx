@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   MDE_EFFORT_LABELS,
   MDE_EFFORT_MULT,

@@ -33,24 +33,32 @@ The test: if the answer to *"why did you do it that way?"* is *"I had to guess b
 
 ## What MCP actually is
 
-MCP is a protocol - a wire format. There are exactly two roles:
+MCP is a protocol - a wire format - with three architectural roles:
 
 <StackDiagram
   panels={[
     {
+      title: 'MCP host',
+      rows: [
+        { label: '(your AI CLI or app)' },
+        { label: 'owns user consent and policy' },
+        { label: 'contains one or more clients' },
+      ],
+    },
+    {
       title: 'MCP client',
       rows: [
-        { label: '(your AI CLI)' },
-        { label: 'discovers tools' },
-        { label: 'exposes them to the model' },
+        { label: '(connection inside the host)' },
+        { label: 'maintains the protocol session' },
+        { label: 'exposes server capabilities to the host' },
       ],
     },
     {
       title: 'MCP server',
       rows: [
         { label: '(jira, postgres, figma, your own…)' },
-        { label: 'exposes a typed set of tools' },
-        { label: 'runs the call against the real system (Jira API…)' },
+        { label: 'exposes prompts, resources, and tools' },
+        { label: 'serves context or runs calls against a real system' },
       ],
     },
   ]}
@@ -63,12 +71,12 @@ MCP is a protocol - a wire format. There are exactly two roles:
   ]}
 />
 
-Note how little the right-hand panel commits to. Anything that speaks the protocol qualifies as a server: a tiny stdio binary, a remote HTTP service, a one-off Python script you wrote this morning. That is the entire bar for entry.
+Note how little the server panel commits to. Anything that speaks the protocol qualifies as a server: a tiny stdio binary, a remote HTTP service, a one-off Python script you wrote this morning. The server can expose three different kinds of capability: **prompts** (user-controlled templates), **resources** (application-controlled context), and **tools** (model-controlled actions). That is the entire bar for entry.
 
 Three things follow from this shape, and they explain most of the per-tool quirks below:
 
 - **Discovery is dynamic.** The server defines what tools exist. Change the server, you change the agent's surface area without changing the CLI.
-- **Cost lands in the context window.** Every tool the server registers is a tool definition that has to live in the model's context from startup, called or not. A server exposing 60 tools is a 60-tool tax on the window - which is why most CLIs in scope now [defer MCP schemas until they're used](/foundations/how-agents-work/#three-cost-profiles-to-keep-in-mind), and why [`/mcp`](#comparison) commands exist to inspect what each server is costing you.
+- **Cost can land in the context window.** A client may put registered tool definitions in the model's context immediately, defer schemas until use, or apply its own search/indexing layer. A server exposing 60 tools can therefore become a 60-tool tax, depending on the host - which is why [`/mcp`](#comparison) commands exist to inspect what each server is costing you.
 - **One side or the other.** Most tools in scope are MCP *clients* only. Codex is the only one that can also *be* a server - exposing its own coding capabilities as tools that another agent (or another Codex) can call. When someone says *"I'm using Codex over MCP,"* ask which direction.
 
 The unusual property of MCP - and the reason it spread fast - is that the client and server are decoupled. The Jira MCP server you wrote for Claude Code works in Codex, OpenCode, Cursor, and Copilot unchanged. Compare with [skills](/foundations/skills/), which needed a published spec before other tools could converge on `SKILL.md` - MCP was a shared protocol from day one, with no spec-publication moment to wait for.
@@ -78,6 +86,7 @@ The unusual property of MCP - and the reason it spread fast - is that the client
 The second consequence is the one you can put a number on. Toggle servers on and off and watch the window fill before you have typed a single message - then flip on schema deferral to see why it exists.
 
 <McpCostMeter client:visible />
+<noscript><p class="widget-noscript">This MCP cost meter needs JavaScript. The <a href="#comparison">comparison table</a> below remains available without it.</p></noscript>
 
 ## Why this and not...
 
@@ -113,12 +122,12 @@ MCP is about *reach* - letting the agent touch systems outside the CLI. Skills, 
 ## Name collisions
 
 - "MCP" specifically refers to the [Model Context Protocol](https://modelcontextprotocol.io/). Don't confuse with generic "plugins" - see [Plugins & marketplaces](/foundations/plugins/) for distribution-layer packaging.
-- Codex's dual MCP role - both *consumer* and *producer* - is unique in the foundations set, so "an MCP server" in a Codex conversation can mean either something Codex calls or Codex itself.
+- Codex's dual MCP role - both *consumer* and *producer* - is the only one in the foundations set, so "an MCP server" in a Codex conversation can mean either something Codex calls or Codex itself.
 - Copilot's MCP surface spans VS Code Chat agent mode, the Coding Agent, and the CLI - they share the protocol but not the config schema or capabilities. The IDE story (VS Code Chat, `.vscode/mcp.json`) is what this chapter focuses on.
 
-The next server you install, install it and then measure it. Claude Code, Codex, and OpenCode all answer `/mcp` with the servers currently connected; in Claude Code that view also breaks out token cost per server and flags connections that have quietly died mid-session. A server whose schema tax outweighs how often the agent actually calls it is the one to drop - or the one to leave to tool search rather than keep resident.
+The next server you install, install it and then measure it. Claude Code, Codex, and OpenCode all answer `/mcp` with the servers currently connected, including ones that have quietly died mid-session. For the token side of the question in Claude Code, `/context` is the view that breaks down what's occupying the window; `/mcp` answers connection state, not cost. A server whose schema tax outweighs how often the agent actually calls it is the one to drop - or the one to leave to tool search rather than keep resident.
 
-<UpstreamRefs
+<UpstreamRefs checkedAt="2026-08-07"
   links={[
     {
       tool: 'Claude Code',
@@ -129,7 +138,7 @@ The next server you install, install it and then measure it. Claude Code, Codex,
     {
       tool: 'Codex',
       label: 'MCP',
-      url: 'https://developers.openai.com/codex/mcp',
+      url: 'https://learn.chatgpt.com/docs/extend/mcp?surface=cli',
     },
 
     {
@@ -147,13 +156,13 @@ The next server you install, install it and then measure it. Claude Code, Codex,
     {
       tool: 'Copilot',
       label: 'MCP servers in VS Code',
-      url: 'https://code.visualstudio.com/docs/copilot/chat/mcp-servers',
+      url: 'https://code.visualstudio.com/docs/agent-customization/mcp-servers',
     },
 
     {
       tool: 'Pi',
       label: 'Docs (no native MCP, by design)',
-      url: 'https://pi.dev/',
+      url: 'https://pi.dev/docs/latest',
     },
   ]}
 />

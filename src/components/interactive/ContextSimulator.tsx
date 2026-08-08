@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { SimSegment } from './context-sim-types';
 import {
   AUTO_COMPACT_AT,
@@ -110,7 +110,7 @@ export default function ContextSimulator() {
 
       <div
         className="cxs-bar-wrap"
-        role="img"
+        role="group"
         aria-label={`Context window: ${total}k of ${WINDOW_TOKENS}k tokens used (${pct}%)`}
       >
         <div className="cxs-bar">
