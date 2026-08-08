@@ -12,7 +12,7 @@ You asked the agent to debug a flaky test. Forty messages later, it's read seven
 
 The cost wasn't the debugging. It was that the debugging happened *in the same window as the rest of your work*. Everything the agent learned to find the bug is now polluting the context it needs to write the fix.
 
-A **subagent** is an isolated worker the main agent spawns to do a discrete task - it runs its own loop, in a fresh context window that doesn't touch yours, and when it finishes the parent receives only a summary.
+A **subagent** is an isolated worker the main agent spawns to do a discrete task - it runs its own loop in a fresh context window that doesn't become part of yours. The parent normally receives a distilled result; some clients also keep the worker thread or detailed activity inspectable.
 
 Hand the debug task to one: it spawns fresh, burns through whatever context it needs, and returns *"the bug is in `auth/session.ts:142`, the session token is being mutated by the middleware before the test asserts on it."* One sentence back. Forty messages of investigation: gone. Whatever the subagent read, tried, backtracked through, or threw away never lands in your conversation - your main context stays clean for the actual fix.
 
@@ -52,7 +52,7 @@ The subagent's defining property is that it runs in its own context window - sep
   ]}
 />
 
-The parent receives the one-sentence summary and nothing else. Whatever the subagent learned to *find* the answer is gone the moment it returns; whatever you needed to *act* on the answer is still there, uncluttered.
+The parent normally receives the useful result rather than the worker's full transcript. Whatever the subagent learned to *find* the answer may remain inspectable in the client, but it does not automatically expand the parent's working context. Whatever you needed to *act* on the answer is still there, uncluttered.
 
 The trade-off is also right there in the picture. The subagent starts with no shared history. It doesn't know what you discussed earlier, what you've already ruled out, what you care about. You have to brief it in the task description - the more precisely, the better. Subagents shine for self-contained work; they're a poor fit for tasks that need ongoing back-and-forth with you, because every "wait, also…" is a fresh subagent with no memory of the last one.
 
@@ -61,6 +61,7 @@ The trade-off is also right there in the picture. The subagent starts with no sh
 One delegation keeps a window clean; fan-out is where subagents change what's *possible*. The same audit - "find dead code across `api/`, `ui/`, and `tests/`" - run both ways. Token counts are illustrative; toggle and watch your window.
 
 <SubagentFanout client:visible />
+<noscript><p class="widget-noscript">This fan-out example needs JavaScript. The <a href="#comparison">comparison table</a> below remains available without it.</p></noscript>
 
 ## A worked example
 
@@ -120,7 +121,7 @@ A subagent returns once. It doesn't continue the conversation. If you need a bac
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Built-in subagents | `Explore`, `Plan`, `general-purpose` | `default`, `worker`, `explorer` | `general`, `explore`, `scout` | None by default | None named - native `runSubagent`/`agent` tool spawns isolated subagents | None |
+| Built-in subagents | `Explore`, `Plan`, `general-purpose` | `default`, `worker`, `explorer` | `general`, `explore`, `scout` | None by default | `explore`, `task`, `general-purpose`, and others vary by surface | None |
 | Custom subagent path | `.claude/agents/*.md` | `.codex/agents/*.toml` | `.opencode/agents/*.md` | `.cursor/agents/*.md` (also reads `.claude/agents/`, `.codex/agents/`) | `.github/agents/*.agent.md` (also reads `.claude/agents/`) - any custom agent doubles as a subagent | No native primitive - via extension/package, or spawn a second `pi` process (e.g. in `tmux`) |
 | Invocation | Via `Agent` tool from parent | Natural-language dispatch from parent | `@<name>` mention | Auto-delegation, `/name`, or natural-language mention | Agent-initiated via `runSubagent`; not typically user-invoked by name | Whatever the extension/package defines; or manual (separate `pi` session) |
 | Tool restriction | Frontmatter `tools:` field | No explicit allowlist field; shape via `mcp_servers` / `sandbox_mode` | `permission` (preferred) or deprecated `tools` | Frontmatter `readonly` flag | Frontmatter `tools:` (own surface) and `agents:` (allowed delegates) | - |
@@ -139,7 +140,7 @@ A subagent returns once. It doesn't continue the conversation. If you need a bac
 
 Next time a task is about to fill your window with work you'll never look at again, ask what you actually need back. If the answer is a paragraph rather than the trail that produced it, delegate it - and write the brief, because a subagent starts with none of what you already know. That discarded window is the [isolated cost profile](/foundations/how-agents-work/#three-cost-profiles-to-keep-in-mind) in practice: paid for once, never carried.
 
-<UpstreamRefs
+<UpstreamRefs checkedAt="2026-08-07"
   links={[
     {
       tool: 'Claude Code',
@@ -150,7 +151,7 @@ Next time a task is about to fill your window with work you'll never look at aga
     {
       tool: 'Codex',
       label: 'Subagents',
-      url: 'https://developers.openai.com/codex/subagents',
+      url: 'https://learn.chatgpt.com/docs/agent-configuration/subagents',
     },
 
     {

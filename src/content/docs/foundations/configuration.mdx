@@ -13,7 +13,7 @@ The second version of this chore is swapping whole setups. A locked-down posture
 
 Both problems come from the same place: the CLI's settings are not one file, they are a stack of files with a resolution order, and the order is invisible until you go looking. Learn the stack and the twenty-minute hunt becomes a two-minute check, and the hand-edit becomes `codex --profile safe`.
 
-The shape is broadly shared. Every CLI in scope reads a project-level file that can be checked into the repo, a user-level file in your home directory, and optional managed-policy overrides for orgs. These hold the settings that don't belong in a prompt or a skill: the default model, permission rules, MCP server registrations, hook bindings, theme, output defaults.
+The shape is broadly shared, but the layers are not. Most tools have project and user configuration; managed or organization policy is product-specific, and Pi has project trust rather than a native managed-policy layer. These files hold settings that don't belong in a prompt or a skill: the default model, permission rules, MCP server registrations, hook bindings, theme, and output defaults.
 
 **Real-world examples of what teams put in configuration (vs. in code or skills):**
 
@@ -32,27 +32,32 @@ The test: if the same setting is being typed at the CLI more than once, or copy-
 Each CLI's full config surface as one tree. Click any entry for what it does, when it loads, whether it belongs in git, and a working example.
 
 <ConfigExplorer client:visible />
+<noscript><p class="widget-noscript">This configuration explorer needs JavaScript. The <a href="#comparison">comparison table</a> below remains available without it.</p></noscript>
 
 ## When two files disagree
 
 This is the part that costs the twenty minutes, and it is the one place the tools genuinely diverge rather than just renaming things.
 
-The intuition most people bring is that the more specific file wins: project beats user, because the project is closer to the work. That intuition is right in some tools and backwards in others.
+The intuition most people bring is that the more specific file wins: project beats user, because the project is closer to the work. On the precedence question that intuition mostly holds. What breaks it is a different mechanism entirely, and it's the one worth learning.
 
 | Tool | Order when project and user config disagree | Precondition that can void the project file entirely |
 |---|---|---|
-| Claude Code | Managed policy, then **user**, then project-local, then project-shared | - |
+| Claude Code | Managed policy, then CLI flags, then project-local, then project-shared, then **user** last | - |
 | Codex | Project config is merged when the project is trusted; user and managed settings also participate | Directory trust: config in an untrusted project directory does not apply at all |
 | OpenCode | **Project**, merged over global rather than replacing it; managed layers above | - |
-| Cursor | VS Code's `settings.json` model; `.vscode/settings.json` is honoured; exact scope precedence follows the VS Code/Cursor settings model | The CLI accepts only *permissions* per project; every other CLI setting is global |
+| Cursor | VS Code settings plus Cursor project files; the CLI also has project-scoped `.cursor/cli.json` configuration | Persistent CLI permissions are project-scoped, while per-run flags such as model and output format are separate |
 | Copilot | VS Code's `settings.json` model, with github.com org policy above it | Org policy can exclude models and content outright, whatever the repo says |
 | Pi | **Project**, deep-merged into global key by key, so a project overrides only what it names | Trust gate: `.pi/` resources load only after the project is trusted |
 
-Two things to take from the table. First, **Claude Code resolves user above project**, the reverse of OpenCode and Pi and the reverse of what most people guess. Check a model into `.claude/settings.json`, and if your own user settings pin a different one, yours wins and the repo's does not.
+Two things to take from the table. First, **the real divergence is merge-versus-replace, not order.** Knowing that project outranks user tells you less than you'd think, because the tools disagree about what "outranks" does to the *rest* of the file.
+
+Pi deep-merges key by key, so a project file overrides only the keys it actually names and everything else falls through to your global settings. OpenCode likewise merges over global rather than replacing it. Where a tool replaces instead of merging, a project file that sets one key can silently drop every other setting you had. That, not the ordering, is what produces the setting that "isn't winning" for no visible reason.
 
 Second, **a trust gate is not precedence.** It is a switch that turns the project layer off entirely. A Codex or Pi project file in an untrusted directory is not losing a merge, it is never being read. From the outside the two failures look identical, and they are fixed differently: one by editing a file, the other by trusting the directory.
 
-For Codex, the [current config reference](https://developers.openai.com/codex/config-reference/) is the source of truth: project config is conditional on trust, and profile files are versioned configuration details rather than a portable convention.
+A practical consequence of Claude Code's order: `.claude/settings.json` is checked in and beats your personal `~/.claude/settings.json`, so a teammate's committed default really does override yours. If you need a personal override to stick, `.claude/settings.local.json` sits above it and stays out of git.
+
+For Codex, the [current config reference](https://learn.chatgpt.com/docs/config-file/config-reference) is the source of truth: project config is conditional on trust, and profile files are versioned configuration details rather than a portable convention.
 
 ## Why this and not...
 
@@ -90,7 +95,7 @@ The current Codex config reference documents profile files next to the main conf
 
 Everything above is a default. The next time a setting doesn't take effect, work the stack rather than the file: confirm the project directory is trusted, check whether your user config is shadowing the repo's, and only then edit. Most of the twenty minutes is spent editing the wrong layer confidently.
 
-<UpstreamRefs
+<UpstreamRefs checkedAt="2026-08-07"
   links={[
     {
       tool: 'Claude Code',
@@ -101,7 +106,7 @@ Everything above is a default. The next time a setting doesn't take effect, work
     {
       tool: 'Codex',
       label: 'Config reference',
-      url: 'https://developers.openai.com/codex/config-reference',
+      url: 'https://learn.chatgpt.com/docs/config-file/config-reference',
     },
 
     {
@@ -119,13 +124,13 @@ Everything above is a default. The next time a setting doesn't take effect, work
     {
       tool: 'Copilot',
       label: 'VS Code settings reference',
-      url: 'https://code.visualstudio.com/docs/copilot/reference/copilot-settings',
+      url: 'https://code.visualstudio.com/docs/agents/reference/ai-settings',
     },
 
     {
       tool: 'Pi',
       label: 'Docs',
-      url: 'https://pi.dev/',
+      url: 'https://pi.dev/docs/latest',
     },
   ]}
 />

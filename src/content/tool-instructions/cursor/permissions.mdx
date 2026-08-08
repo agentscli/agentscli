@@ -1,11 +1,15 @@
-Cursor documents an **Agent Sandbox** for macOS in the course's target release. Keep this claim platform-scoped: the public material checked here does not establish equivalent Linux/Windows behavior, so do not generalize the macOS statement.
+Three **run modes**, set under Settings > Agents > Approvals & Execution:
 
-Three **run modes**, set in Cursor Settings or via `/run-everything` in the CLI (`/auto-run` is an alias):
-
-- **Auto-review** (default since Cursor 3.6) - allowlisted calls run immediately, other shell commands run in the sandbox when possible, and anything left over goes to the Auto-review classifier.
-- **Allowlist** - actions on your allowlist run without approval. Sandboxing is a layer within this mode (folded in as of Cursor 3.5, no longer a separate mode) - with it enabled, supported shell commands can also run in the sandbox.
+- **Auto-review** - allowlisted calls run immediately, other shell commands run in the sandbox when possible, and anything left over goes to the Auto-review classifier. The recommended setting for most people.
+- **Allowlist** - actions on your allowlist run without approval, and sandboxing is optional rather than automatic. Deterministic, and worth it when you have a small set of trusted repeat actions.
 - **Run Everything** - the historical "YOLO mode," no gating.
 
-There are **command allowlist** and **denylist** fields for fine-grained control. Two caveats worth flagging honestly: community reports note that sandboxed Allowlist runs can **silently bypass the explicit allowlist** in some builds, and the **denylist has historically been bypassable via `&&` chaining**. Treat the allowlist/denylist as advisory and the sandbox as the load-bearing control.
+**Sandboxing sits on top of the modes, not inside one.** It decides *where* a supported terminal command runs, not whether the mode consults the classifier - which is why Auto-review both sandboxes and reviews. A sandboxed command reads and writes inside the workspace, is blocked from the network by default, and can't touch protected paths like `.git/config`, `.git/hooks`, or `.vscode`. Commands needing full system access can't be sandboxed at all: Cursor flags those and asks you to approve them. Implementation is Seatbelt via `sandbox-exec` on macOS (Cursor v2.0+).
+
+**Keep the surfaces separate.** Cursor CLI documents persistent project permissions in `<project>/.cursor/cli.json` and user defaults in `~/.cursor/cli-config.json`; per-run flags such as model and output format are a separate layer. Sandbox configuration controls filesystem and network reach, not the whole approval policy. Do not treat IDE agent approvals, CLI permissions, and sandbox settings as interchangeable. *As of 2026-08-07.*
+
+The CLI reference uses `.cursor/cli.json` for project-scoped permissions. Do not copy older `permissions.json` examples into the CLI or assume an IDE approval setting has the same schema.
+
+That is also the caveat. Cursor's classifier-based review is not a complete security boundary: it can allow a call you would have blocked, or block one you would have allowed. Treat approval automation as a convenience, and put the decisive boundary in the sandbox, repository policy, CI, or service controls.
 
 **Cloud Agents** run inside isolated VMs in Cursor's cloud - full sandbox-by-construction, with the local-machine threat model not applicable. Environment is reproducible from `.cursor/environment.json` (Dockerfile supported).

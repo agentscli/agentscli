@@ -1,4 +1,4 @@
-Cursor has a deterministic **Hooks** primitive (introduced in Cursor 1.7). Hooks are spawned subprocesses that communicate via stdin/stdout JSON.
+Cursor has a **Hooks** primitive. Hooks are spawned subprocesses that communicate via stdin/stdout JSON. The event set and response contract are version-sensitive; verify the exact reference for the Cursor surface you deploy. *As of 2026-08-07.*
 
 **Config files:**
 
@@ -8,7 +8,7 @@ Cursor has a deterministic **Hooks** primitive (introduced in Cursor 1.7). Hooks
 
 **Schema:** `{"version": 1, "hooks": { "<event>": [{ "command": "..." }] }}`.
 
-**Event surface is the broadest in the foundations set - 21+ events, wider than Claude Code's.**
+**Event surface:** the current reference documents agent, shell, MCP, file, prompt, and workspace lifecycle events. The exact event list is version-sensitive. *Unverified:* the older “21+ events” count is not a stable contract.
 
 **Agent hooks:** `sessionStart`, `sessionEnd`, `preToolUse`, `postToolUse`, `postToolUseFailure`, `subagentStart`, `subagentStop`, `beforeShellExecution`, `afterShellExecution`, `beforeMCPExecution`, `afterMCPExecution`, `beforeReadFile`, `afterFileEdit`, `beforeSubmitPrompt`, `preCompact`, `stop`, `afterAgentResponse`, `afterAgentThought`.
 
@@ -16,7 +16,9 @@ Cursor has a deterministic **Hooks** primitive (introduced in Cursor 1.7). Hooks
 
 **App lifecycle:** `workspaceOpen`.
 
-**Enforcement:** exit codes and JSON output drive policy - exit `0` + JSON for nuanced responses, exit `2` to block (equivalent to `"permission": "deny"`); any other non-zero is fail-open. Hook responses can return `"permission": "allow" | "deny" | "ask"` plus optional `user_message` and `agent_message` fields.
+**Enforcement:** JSON output and exit codes drive policy. A hook signals a block by emitting a deny response, conventionally with exit code `2`. Confirm the exact blocking and error behavior against the [current Hooks reference](https://cursor.com/docs/hooks) before treating a hook as a security boundary. *Unverified:* the older claim that every other non-zero exit is fail-open should not be relied on without a first-hand test.
+
+If a security hook must fail closed, make its wrapper catch scanner errors and emit that explicit deny itself, rather than letting the process crash with an arbitrary non-zero status and assuming Cursor will read the crash as a block. Do not rely on an undocumented `failClosed` setting to protect a write.
 
 The combination of `beforeShellExecution`, `beforeReadFile`, and `beforeMCPExecution` covers most policy-enforcement use cases (secret scanning, command allowlists, audit logging) - `beforeReadFile` and `beforeMCPExecution` have no direct analog in Claude Code or Codex.
 

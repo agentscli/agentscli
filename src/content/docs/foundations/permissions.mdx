@@ -20,9 +20,11 @@ Both postures give a single answer to a set of actions that don't share one:
 | Push to a remote | Tell me first |
 | `chmod` a system file | No |
 
-Collapsing that column into a single "do you approve?" prompt is what produces both the fatigue and the accidents. Permissions let you answer it *once*, declaratively: which tools are always fine, which always need you in the loop, which are flatly forbidden. The agent then runs unattended through the boring 80% and only interrupts you for the genuinely risky 20% - and the truly dangerous things can't happen at all, even if the agent decides they're a good idea.
+Collapsing that column into a single "do you approve?" prompt is what produces both the fatigue and the accidents. Permissions let you answer it *once*, declaratively: which tools are always fine, which always need you in the loop, which are flatly forbidden. The agent then runs unattended through the boring 80% and only interrupts you for the genuinely risky 20%, and the things you flatly forbid are refused rather than offered to you as a prompt you might click through at 6pm.
 
-Every CLI in scope encodes exactly that three-way decision - *do it without asking*, *ask me first*, or *refuse outright* - on every action the agent attempts. Same job, then: decide what the agent can do unattended.
+Worth setting expectations before the detail: in most of these tools a deny rule is a *pattern match at the tool-dispatch layer*, not an OS-level wall. Commands can be chained, aliased, or wrapped in a script, and a rule written against one spelling won't catch another. That's why the sandbox row in the comparison below matters independently of the rules row - the rules encode intent, the sandbox is what holds when the intent is evaded. Treat permissions as the first layer of defence, not the only one.
+
+Many tools in scope expose some form of *allow*, *ask*, and *deny* decision, but they place the boundary differently. Pi, for example, has no native per-tool approval prompt, and Copilot's controls vary by product surface. Use the comparison and tool tabs as the source of truth rather than assuming one universal policy model.
 
 What they don't share is the shape. This is the most divergent area in the section - different mental models, different vocabulary, different layers, and no two tools put the gate in the same place. The [Comparison](#comparison) table below is the map between them.
 
@@ -42,6 +44,7 @@ The test: if you've ever caught yourself approving a command without actually re
 Those mental models, side by side: Claude Code walks allow/ask/deny rule lists, Codex passes two gates in sequence (sandbox, then approval policy), and OpenCode looks up a per-agent permission map. Pick a tool, set the policy, and trace a command through it.
 
 <PermissionSim client:visible />
+<noscript><p class="widget-noscript">This permission simulator needs JavaScript. The <a href="#comparison">comparison table</a> below remains available without it.</p></noscript>
 
 ## Why this and not...
 
@@ -57,19 +60,28 @@ Permissions are *coarse and declarative* - "Bash is ask, Read is allow." Hooks a
 
 ## How it works in each tool
 
+The simulator models Claude Code, Codex, and OpenCode. Cursor, Copilot, and Pi
+are shown as explicit coverage boundaries; use their tabs and the comparison
+table for their current documented behavior rather than reading an unmodeled
+state as “no permissions.”
+
 <ToolTabs chapter="permissions" />
 
 ## Comparison
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Primary axis | Permission mode + allow/ask/deny rules per tool | Sandbox tier × approval policy | Per-tool per-agent | Auto-run mode + allow/denylist | Per-call approval + auto-approve knobs | Trust gate on project resources; no per-tool permission popups |
-| OS-level sandbox | No | Yes (`read-only` / `workspace-write` / `danger-full-access`) | No (wrap in a container if you need it) | Yes (Agent Sandbox: macOS/Linux native, Windows via WSL2) - a layer inside Allowlist mode, not a mode of its own | Optional (`chat.agent.sandbox.enabled`, macOS/Linux) | Via container/extension, not built-in |
-| Approval modes | Named modes: `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` (Shift+Tab to cycle), over allow/ask/deny rules - walked through in the [modes ladder](/course/claude-code/permissions-modes/modes-ladder/) | `untrusted` / `on-request` / `never` | `allow` / `ask` / `deny` | Auto-review / Allowlist / Run Everything | `default` / `autoApprove` / `autopilot` | None - YOLO by default; gates come from a container or extension |
+| Primary axis | Permission mode + allow/ask/deny rules per tool | Sandbox tier × approval policy | Per-tool per-agent | IDE run mode plus CLI project permissions | Per-call approval + auto-approve knobs | Trust gate on project resources; no per-tool permission popups |
+| OS-level sandbox | No | Yes (`read-only` / `workspace-write` / `danger-full-access`) | No (wrap in a container if you need it) | Yes (Seatbelt on macOS, Cursor v2.0+) - a layer on top of the run modes, not a mode of its own | Optional (`chat.agent.sandbox.enabled`, macOS/Linux) | Via container/extension, not built-in |
+| Approval modes | Named modes over allow/ask/deny rules: `default` (shown as Manual) / `acceptEdits` / `plan` / `auto` / `dontAsk` / `bypassPermissions`. Only the first three are in the base Shift+Tab cycle; `auto` and `bypassPermissions` join it conditionally and `dontAsk` is flag-only¹ - walked through in the [modes ladder](/course/claude-code/permissions-modes/modes-ladder/) | `untrusted` / `on-request` / `never` | `allow` / `ask` / `deny` | Auto-review / Allowlist / Run Everything | `default` / `autoApprove` / `autopilot` | None - YOLO by default; gates come from a container or extension |
 | Org/managed override | Yes (managed `settings.json`) | Yes (managed config) | Yes (managed config) | Yes (Team / Enterprise) | Yes (Business / Enterprise; content exclusions, MCP policy) | - |
-| Evaluation order | Deny > Ask > Allow | Sandbox blocks first, then approval gate | Last match wins | Sandbox first, then allow/denylist (with caveats) | Per-call gate unless auto-approve set | N/A |
+| Evaluation order | Deny > Ask > Allow | Sandbox blocks first, then approval gate | Last match wins | Allowlist, then sandbox where supported, then the classifier² | Per-call gate unless auto-approve set | N/A |
 | Per-agent profile | No (single profile per session) | No (single mode per session) | **Yes** (per primary agent) | - | - | - |
 | "YOLO mode" | `bypassPermissions` mode (`--dangerously-skip-permissions`) | `danger-full-access` + `never` | All tools `allow` | "Run Everything" | `chat.tools.global.autoApprove` | The default posture |
+
+¹ `auto` appears in the cycle when your account and model qualify for it; `bypassPermissions` only after you start the session with an enabling flag. `auto` is worth knowing as its own category: rather than a fixed rule list, a separate classifier model reviews each action and blocks escalations, which is a different failure mode from a pattern match - it can be wrong in both directions, and Anthropic's own documentation says it reduces prompts without guaranteeing safety.
+
+² Cursor states plainly that Auto-review **is not a security boundary** - the classifier can allow a call you would have blocked, or block one you would have allowed. The sandbox is the part that actually holds a line.
 
 ## Translation: "make it stop asking"
 
@@ -89,7 +101,7 @@ Permissions are *coarse and declarative* - "Bash is ask, Read is allow." Hooks a
 
 You don't have to design the whole policy up front, and nobody does. Start from your tool's default posture and let the next session tell you what to change: the command you approved three times without reading becomes an allow rule, the one that made you flinch becomes an `ask`, and the handful you can name in advance as never-acceptable become `deny`. That last group is the only part worth writing before you've felt the friction, because it's the only part that has to hold when you're not watching.
 
-<UpstreamRefs
+<UpstreamRefs checkedAt="2026-08-07"
   links={[
     {
       tool: 'Claude Code',
@@ -100,7 +112,7 @@ You don't have to design the whole policy up front, and nobody does. Start from 
     {
       tool: 'Codex',
       label: 'Approvals & sandbox',
-      url: 'https://developers.openai.com/codex/agent-approvals-security',
+      url: 'https://learn.chatgpt.com/docs/agent-approvals-security',
     },
 
     {
@@ -118,13 +130,13 @@ You don't have to design the whole policy up front, and nobody does. Start from 
     {
       tool: 'Copilot',
       label: 'VS Code settings reference',
-      url: 'https://code.visualstudio.com/docs/copilot/reference/copilot-settings',
+      url: 'https://code.visualstudio.com/docs/agents/reference/ai-settings',
     },
 
     {
       tool: 'Pi',
       label: 'Docs',
-      url: 'https://pi.dev/',
+      url: 'https://pi.dev/docs/latest',
     },
   ]}
 />
