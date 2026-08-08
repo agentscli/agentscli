@@ -4,6 +4,8 @@ import { configExplorerTools } from './config-explorer-data';
 import { withCode } from './with-code';
 import './config-explorer.css';
 import { useWidgetFrame } from './widget-frame';
+import { useAccessibleTabs } from './use-accessible-tabs';
+import { useSyncedToolIndex } from './use-synced-tool';
 
 const BADGE_LABEL: Record<string, string> = {
   committed: 'committed',
@@ -69,10 +71,7 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
   const tools = configExplorerTools;
   // Course pages open on their own tool's tab; a deep-link hash still wins
   // because the hash effect below runs after mount and overrides this.
-  const [toolIdx, setToolIdx] = useState(() => {
-    const i = tools.findIndex((t) => t.slug === initialTool);
-    return i === -1 ? 0 : i;
-  });
+  const [toolIdx, setSyncedToolIdx] = useSyncedToolIndex(tools, initialTool);
   // Per-tool memory: each tool keeps its own selection + collapse state for
   // the session, so switching tabs and back restores where you left off
   // instead of dumping you back to the empty state.
@@ -82,6 +81,18 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
   const detailRef = useRef<HTMLDivElement>(null);
 
   const tool = tools[toolIdx];
+
+  // Defined above the tab hook so arrow-key switching and clicking take the
+  // exact same path: both must restore the target tab's saved state, or the
+  // effect below writes the outgoing tab's selection under the incoming index.
+  const switchTool = (i: number) => {
+    const saved = tabStateRef.current.get(i) ?? emptyTabState();
+    setSyncedToolIdx(i);
+    setSelectedId(saved.selectedId);
+    setCollapsed(saved.collapsed);
+  };
+
+  const tabs = useAccessibleTabs(tools.length, toolIdx, switchTool);
 
   // Keep the active tool's entry in the state map current so it's there to
   // restore from when the user switches away and back.
@@ -100,7 +111,7 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
         const nodeId = hash.slice(tools[i].slug.length + 1);
         if (findNode(tools[i], nodeId)) {
           const saved = tabStateRef.current.get(i) ?? emptyTabState();
-          setToolIdx(i);
+          setSyncedToolIdx(i);
           setSelectedId(nodeId);
           setCollapsed(saved.collapsed);
           requestAnimationFrame(() => {
@@ -119,7 +130,7 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
       window.removeEventListener('hashchange', apply);
       window.removeEventListener('pageshow', apply);
     };
-  }, [tools]);
+  }, [setSyncedToolIdx, tools]);
 
   useEffect(() => {
     if (detailRef.current) detailRef.current.scrollTop = 0;
@@ -149,21 +160,13 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
     });
   };
 
-  const switchTool = (i: number) => {
-    const saved = tabStateRef.current.get(i) ?? emptyTabState();
-    setToolIdx(i);
-    setSelectedId(saved.selectedId);
-    setCollapsed(saved.collapsed);
-  };
-
   return (
     <div className={useWidgetFrame('cx-root')}>
-      <div className="cx-tabs" role="tablist" aria-label="Tool">
+      <div className="cx-tabs" {...tabs.tabListProps} aria-label="Tool">
         {tools.map((t, i) => (
           <button
             key={t.slug}
-            role="tab"
-            aria-selected={i === toolIdx}
+            {...tabs.getTabProps(i)}
             className={i === toolIdx ? 'cx-tab cx-tab-active' : 'cx-tab'}
             onClick={() => switchTool(i)}
           >
@@ -177,10 +180,12 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
         <span className="cx-legend-text">in git, shared with your team</span>
         <span className="cx-badge cx-badge-gitignored">gitignored</span>
         <span className="cx-legend-text">local only, never shared</span>
+        <span className="cx-badge cx-badge-auto-generated">auto-generated</span>
+        <span className="cx-legend-text">written by the tool; do not hand-edit</span>
       </div>
 
-      <div className="cx-body">
-        <div className="cx-tree" aria-label={`${tool.label} config files`}>
+      <div className="cx-body" {...tabs.panelProps}>
+        <div className="cx-tree" role="group" aria-label={`${tool.label} config files`}>
           {tool.scopes.map((scope, scopeIdx) => (
             <div key={scope.label} className="cx-scope">
               <div className="cx-scope-label">{scope.label}</div>
@@ -222,6 +227,7 @@ export default function ConfigExplorer({ initialTool }: { initialTool?: string }
                           <span
                             className={`cx-badge cx-badge-${node.badge}`}
                             title={BADGE_HINT[node.badge]}
+                            aria-label={`${BADGE_LABEL[node.badge]}: ${BADGE_HINT[node.badge]}`}
                           >
                             {BADGE_LABEL[node.badge]}
                           </span>
@@ -258,7 +264,11 @@ function DetailPanel({ node }: { node: ExplorerNode }) {
       <div className="cx-detail-header">
         <span className="cx-detail-title">{node.label}</span>
         {node.badge && (
-          <span className={`cx-badge cx-badge-${node.badge}`} title={BADGE_HINT[node.badge]}>
+          <span
+            className={`cx-badge cx-badge-${node.badge}`}
+            title={BADGE_HINT[node.badge]}
+            aria-label={`${BADGE_LABEL[node.badge]}: ${BADGE_HINT[node.badge]}`}
+          >
             {BADGE_LABEL[node.badge]}
           </span>
         )}

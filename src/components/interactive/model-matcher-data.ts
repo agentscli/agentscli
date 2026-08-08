@@ -71,16 +71,16 @@ export const mmtTools: MmtToolSpec[] = [
     label: 'Claude Code',
     tiers: {
       flagship: {
-        model: 'claude-opus-4-7',
-        note: 'The reasoning ceiling of the lineup, with a 1M-token context window.',
+        model: 'opus',
+        note: 'Use the live alias or picker; the resolved model ID and context window depend on the current account and provider.',
       },
       default: {
-        model: 'claude-sonnet-4-6',
-        note: 'The tool’s own default - balanced, with the same 1M-token window.',
+        model: 'sonnet',
+        note: 'A balanced choice; the resolved model ID and context window vary with the current roster.',
       },
       light: {
-        model: 'claude-haiku-4-5',
-        note: 'Fastest and cheapest, 200K window - built for sweeps and exploration subagents.',
+        model: 'haiku',
+        note: 'A fast choice when available; confirm the current model and context window in the picker.',
       },
     },
     scopes: {
@@ -109,16 +109,16 @@ export const mmtTools: MmtToolSpec[] = [
     label: 'Codex',
     tiers: {
       flagship: {
-        model: 'gpt-5.5',
-        note: 'Top of the documented lineup - the catalog isn’t static, so run `codex debug models` for what your account can actually drive.',
+        model: 'current flagship',
+        note: 'Use the live picker or `codex debug models`; the available flagship and its ID vary by account and release.',
       },
       default: {
-        model: 'gpt-5.5',
-        note: 'The default for ChatGPT sign-in (with `gpt-5.4` as fallback); API-key sessions default to `gpt-5.2-codex`.',
+        model: 'current default',
+        note: 'The default varies by client, authentication method, account, and release. Confirm it in the picker before scripting it.',
       },
       light: {
-        model: 'gpt-5.4-mini',
-        note: 'The small fast tier - the one to hand to exploration subagents.',
+        model: 'current lightweight',
+        note: 'Choose the currently available small/fast model for exploration work; the roster is not static.',
       },
     },
     scopes: {
@@ -127,16 +127,16 @@ export const mmtTools: MmtToolSpec[] = [
         how: 'Switches the model mid-session.',
       },
       launch: {
-        code: 'codex --model {model}',
-        how: 'Sets the model for that run.',
+        code: 'codex --model <id from `codex debug models`>',
+        how: 'Sets the model for that run; resolve the ID from the live catalog first.',
       },
       pin: {
-        code: 'model = "{model}"',
+        code: 'model = "<id from `codex debug models`>"',
         how: 'In `config.toml` - or inside a profile, so one `--profile` flag swaps model and settings together.',
       },
       subagent: {
-        code: 'model = "{model}"',
-        how: 'In the agent’s TOML file.',
+        code: 'model = "<id from `codex debug models`>"',
+        how: 'In the agent’s TOML file; use a model ID that is available to the target account.',
       },
     },
     roster:
@@ -217,16 +217,16 @@ export const mmtTools: MmtToolSpec[] = [
     label: 'Copilot',
     tiers: {
       flagship: {
-        model: 'Claude Opus 4.7',
-        note: 'Pro+ / Enterprise plans only - the roster is plan-gated, and premium models bill against a monthly quota with per-model multipliers.',
+        model: 'current premium model',
+        note: 'Availability and cost depend on the Copilot surface, plan, model roster, and organization policy.',
       },
       default: {
-        model: 'Claude Sonnet 4.6 · GPT-5',
-        note: 'The Pro-tier additions. Auto model selection picks for you at a 10% premium-request discount.',
+        model: 'Auto / current default',
+        note: 'Auto model selection chooses from the models available to your surface and policy; verify current pricing before relying on it.',
       },
       light: {
-        model: 'GPT-5 mini · Claude Haiku 4.5',
-        note: 'Free-tier models, unlimited on paid plans - the quota-safe workhorses.',
+        model: 'current low-cost model',
+        note: 'Choose a currently supported mini/fast model when cost and throughput matter more than maximum reasoning depth.',
       },
     },
     scopes: {
@@ -241,10 +241,10 @@ export const mmtTools: MmtToolSpec[] = [
         how: 'No project pin documented. On Business / Enterprise, org admins allow or deny models - the picker only shows what policy permits.',
       },
       subagent: {
-        how: 'Not supported - Copilot has no per-subagent model override.',
+        how: 'Custom agents can declare a `model` frontmatter field where the active Copilot surface supports it; availability remains plan- and policy-dependent.',
       },
     },
     roster:
-      'Curated multi-vendor roster (Claude, GPT, Gemini), gated by plan and org policy. Watch premium-request burn: Coding Agent runs consume the quota fast.',
+      'Curated multi-vendor roster, gated by plan and org policy. Copilot now uses AI Credits/token rates on supported plans; check the current billing table before estimating cost.',
   },
 ];

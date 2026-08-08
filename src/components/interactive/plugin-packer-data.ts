@@ -138,8 +138,8 @@ export const ppkTools: PpkToolSpec[] = [
     ship: {
       text: 'Install from a plugin marketplace - `github/copilot-plugins` (official) and `github/awesome-copilot` (community) are registered by default; marketplaces can live on GitHub, any Git server, or disk.',
     },
-    dist: 'Plugins (preview, 2026) bundle agents + skills + hooks + MCP + LSP for both VS Code and the Copilot CLI. Enterprise admins can set baseline plugins for every user.',
+    dist: 'Plugins bundle agents + skills + hooks + MCP + LSP for both VS Code and the Copilot CLI. Enterprise admins can set baseline plugins for every user (enterprise-managed plugins remain in public preview).',
     caveat:
-      'Don’t conflate plugins with Copilot Extensions - Extensions are `@`-invocable Chat apps from the GitHub Marketplace, a different primitive.',
+      'Don’t reach for Copilot Extensions - the GitHub-App, `@`-invocable Marketplace extensions were disabled on 2025-11-10. Plugins and MCP are the live surfaces.',
   },
 ];

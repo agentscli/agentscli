@@ -12,19 +12,42 @@ const { chapter } = Astro.props;
 const loaded = await Promise.all(
   tools.map(async (tool) => {
     const entry = await getEntry('toolInstructions', `${tool.slug}/${chapter}`);
-    if (!entry) return null;
+    if (!entry) {
+      throw new Error(
+        `Missing tool-instruction entry for ${tool.slug}/${chapter}. Add the file before using ToolTabs.`,
+      );
+    }
     const { Content } = await render(entry);
     return { tool, Content };
   })
 );
-
-const rendered = loaded.filter((e): e is NonNullable<typeof e> => e !== null);
 ---
 
 <Tabs syncKey="tool">
-  {rendered.map(({ tool, Content }) => (
+  {loaded.map(({ tool, Content }) => (
     <TabItem label={tool.label}>
       <Content />
     </TabItem>
   ))}
 </Tabs>
+
+<script>
+  // Starlight syncs its own tab groups. Extend that contract to the React
+  // comparators above each chapter without reaching into their implementation.
+  window.addEventListener('agentscli:tool-preference', (event) => {
+    const label = (event as CustomEvent<{ label?: string }>).detail?.label;
+    if (!label) return;
+
+    for (const element of document.querySelectorAll('starlight-tabs[data-sync-key="tool"]')) {
+      const tabs = [...element.querySelectorAll<HTMLAnchorElement>('[role="tab"]')];
+      const index = tabs.findIndex((tab) => tab.textContent?.trim() === label);
+      const selected = tabs[index];
+      if (index < 0 || !selected || selected.getAttribute('aria-selected') === 'true') continue;
+
+      const controller = element as HTMLElement & {
+        switchTab?: (tab: HTMLAnchorElement, index: number, shouldSync: boolean) => void;
+      };
+      controller.switchTab?.(selected, index, false);
+    }
+  });
+</script>

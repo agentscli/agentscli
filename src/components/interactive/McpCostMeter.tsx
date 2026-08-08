@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   MCM_BUILTIN_TOKENS,
   MCM_DEFERRED_STUB_TOKENS,
@@ -80,9 +80,9 @@ export default function McpCostMeter() {
         <span>
           <strong>Defer schemas until first use</strong> - each server shrinks to
           a ~{MCM_DEFERRED_STUB_TOKENS}k stub (name + description); the full
-          schema loads only when a tool is actually called. Claude Code ships
-          this (tool search, on by default); the other tools in scope load
-          schemas up front.
+          schema loads only when a tool is actually called. Availability and
+          thresholds are client- and configuration-dependent, so check yours
+          before budgeting around it.
         </span>
       </label>
 
@@ -115,7 +115,7 @@ export default function McpCostMeter() {
       </ul>
 
       <p className="mcm-footnote">
-        Tool counts and schema sizes are illustrative (~600–800 tokens per tool
+        Tool counts and schema sizes are illustrative (~600 - 800 tokens per tool
         definition). The shape is the point: every registered server is paid
         for in window space whether the session uses it or not.
       </p>

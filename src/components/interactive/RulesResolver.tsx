@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { rlrLocations, rlrTools } from './rules-resolver-data';
 import { withCode } from './with-code';
 import './rules-resolver.css';
 import { useWidgetFrame } from './widget-frame';
+import { useAccessibleTabs } from './use-accessible-tabs';
+import { useSyncedToolIndex } from './use-synced-tool';
 
 const STATUS_LABEL: Record<string, string> = {
   loaded: 'loaded',
@@ -11,20 +13,20 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function RulesResolver() {
-  const [toolIdx, setToolIdx] = useState(0);
+  const [toolIdx, setToolIdx] = useSyncedToolIndex(rlrTools);
   const [locId, setLocId] = useState(rlrLocations[0].id);
 
   const tool = rlrTools[toolIdx];
   const result = tool.results[locId];
+  const tabs = useAccessibleTabs(rlrTools.length, toolIdx, setToolIdx);
 
   return (
     <div className={useWidgetFrame('rlr-root')}>
-      <div className="rlr-tabs" role="tablist" aria-label="Tool">
+      <div className="rlr-tabs" {...tabs.tabListProps} aria-label="Tool">
         {rlrTools.map((t, i) => (
           <button
             key={t.slug}
-            role="tab"
-            aria-selected={i === toolIdx}
+            {...tabs.getTabProps(i)}
             className={i === toolIdx ? 'rlr-tab rlr-tab-active' : 'rlr-tab'}
             onClick={() => setToolIdx(i)}
           >
@@ -33,7 +35,7 @@ export default function RulesResolver() {
         ))}
       </div>
 
-      <div className="rlr-body">
+      <div className="rlr-body" {...tabs.panelProps}>
         <div className="rlr-picker">
           <span className="rlr-picker-label">The agent is working on:</span>
           <div className="rlr-picker-options">

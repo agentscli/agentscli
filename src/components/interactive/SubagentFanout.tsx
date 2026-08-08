@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { withCode } from './with-code';
 import './subagent-fanout.css';
 import { useWidgetFrame } from './widget-frame';

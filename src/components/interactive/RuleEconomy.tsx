@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   RLE_CLASS_META,
   RLE_SESSIONS_PER_WEEK,

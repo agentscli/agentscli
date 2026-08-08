@@ -68,7 +68,7 @@ export const configExplorerTools: ToolData[] = [
                 oneLiner: 'Shared project settings: permissions, hooks, model defaults.',
                 when: 'Read at session start; changes take effect next session.',
                 description:
-                  'The team\'s enforced configuration - unlike CLAUDE.md, which Claude reads as guidance, these settings are applied by the harness. Layering order: managed > user > project local > project shared. Hooks defined here fire on events like tool use and session start, and every matching hook from every config level runs.',
+                  'The team\'s enforced configuration - unlike CLAUDE.md, which Claude reads as guidance, these settings are applied by the harness. Layering order: managed > CLI flags > project local > project shared > user, so this committed file beats each contributor\'s personal settings. Hooks defined here fire on events like tool use and session start, and every matching hook from every config level runs.',
                 exampleIntro:
                   'A PreToolUse hook that vets shell commands before they run:',
                 example: `{
@@ -183,7 +183,7 @@ skills: [security-checklist]
                 oneLiner: 'User-wide defaults: permissions, model, theme, hooks, MCP servers.',
                 when: 'Read at session start in every project.',
                 description:
-                  'Your personal baseline. Takes precedence over a project\'s shared settings.json but not over managed org policy or your project-local overrides.',
+                  'Your personal baseline, and the lowest-priority layer: a project\'s shared settings.json, project-local overrides, CLI flags and managed org policy all beat it. Use .claude/settings.local.json when a personal override needs to win inside one repo.',
                 chapter: CHAPTER.configuration,
               },
               {
@@ -257,16 +257,10 @@ skills: [security-checklist]
                 oneLiner: 'Project settings and named profiles - Codex\'s signature feature.',
                 when: 'Read on invocation; applies only in trusted directories.',
                 description:
-                  'TOML config with feature flags, MCP server tables (`[mcp_servers.<name>]`, stdio or streamable HTTP), and named profiles - separate config bundles you swap with `codex --profile <name>` at launch. No other tool in scope has profiles.',
-                exampleIntro: 'Two profiles: a sandboxed work setup and a full-access one:',
-                example: `[profiles.work]
-model = "gpt-5-..."
-sandbox = "workspace-write"
-
-[profiles.yolo]
-model = "gpt-5-..."
-sandbox = "danger-full-access"
-approval_policy = "never"`,
+                  'TOML config with feature flags and MCP server tables (`[mcp_servers.<name>]`, stdio or streamable HTTP). Named profiles are Codex\'s signature feature, and they live in their own files: `$CODEX_HOME/<name>.config.toml`, swapped with `codex --profile <name>` at launch. Older examples show inline `[profiles.<name>]` tables in this file; that is the previous format. No other tool in scope has profiles.',
+                exampleIntro: 'Directory trust, which gates whether this project config applies at all:',
+                example: `[projects."/abs/path/to/repo"]
+trust_level = "trusted"`,
                 chapter: CHAPTER.configuration,
               },
               {
@@ -314,7 +308,7 @@ model = "gpt-5.4"`,
                 type: 'file',
                 badge: 'committed',
                 oneLiner: 'A project skill; invoke via `/skills` or `$name`.',
-                when: 'Descriptions indexed at session start; full body loads on invocation.',
+                when: 'Eligible descriptions are indexed progressively; full body loads on invocation.',
                 description:
                   'Only `name` and `description` are required in frontmatter. Codex reads Claude Code\'s `disable-model-invocation`, `context: fork`, and `allowed-tools` keys but does not enforce them.',
                 chapter: CHAPTER.skills,
@@ -325,7 +319,7 @@ model = "gpt-5.4"`,
                 type: 'file',
                 badge: 'committed',
                 oneLiner: 'Codex-specific sidecar: invocation policy and metadata.',
-                when: 'Read when skill descriptions are indexed at session start.',
+                when: 'Read when the skill index discovers this skill.',
                 description:
                   'Set `policy.allow_implicit_invocation: false` (default true) to stop Codex auto-invoking the skill. Also carries UI metadata and declared MCP/tool dependencies.',
                 chapter: CHAPTER.skills,
@@ -373,7 +367,7 @@ model = "gpt-5.4"`,
                 oneLiner: 'Custom prompt templates, invoked as `/name`.',
                 when: 'Indexed at session start; invoked from the TUI by filename.',
                 description:
-                  'Markdown templates with placeholder support: `$1`–`$9` positional, `$ARGUMENTS` for the full tail, named placeholders like `$FILE`. Simpler than skills - and now flagged as deprecated by OpenAI in favor of skills.',
+                  'Markdown templates with placeholder support: `$1` - `$9` positional, `$ARGUMENTS` for the full tail, named placeholders like `$FILE`. Simpler than skills - and now flagged as deprecated by OpenAI in favor of skills.',
                 chapter: CHAPTER.slashCommands,
               },
               {

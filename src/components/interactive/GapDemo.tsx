@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GapMode } from './gap-demo-data';
 import { gapChips, gapPrompt, gapRuns } from './gap-demo-data';
 import { withCode } from './with-code';

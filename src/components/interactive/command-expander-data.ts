@@ -70,7 +70,7 @@ export const cxpTools: CxpToolSpec[] = [
     notes: {
       invoke:
         'The filename minus `.md` is the command name. Unique to Codex: press Tab to queue the command - it fires when the current turn finishes.',
-      args: '`$1`–`$9` positional, `$ARGUMENTS` for the full tail, named placeholders like `$FILE`, and `$$` escapes a literal dollar.',
+      args: '`$1` - `$9` positional, `$ARGUMENTS` for the full tail, named placeholders like `$FILE`, and `$$` escapes a literal dollar.',
       caveat:
         'Prompts and skills are separate primitives with separate syntax - `/name` fires a prompt, `$name` fires a skill - and the docs now steer new work toward skills.',
     },

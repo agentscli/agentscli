@@ -28,7 +28,7 @@ import { useWidgetFrame } from './widget-frame';
  */
 
 /**
- * Color slot. 'a'–'f' are built into terminal-replay.css; any other name
+ * Color slot. 'a' - 'f' are built into terminal-replay.css; any other name
  * needs an entry in the script's `slotColors`.
  */
 export type TrSlot = string;
@@ -97,7 +97,7 @@ export interface TrScript {
    */
   slots?: Record<TrSlot, string>;
   /**
-   * scene-defined colors for slots beyond the built-in a–f; a bare string is
+   * scene-defined colors for slots beyond the built-in a - f; a bare string is
    * used in both themes
    */
   slotColors?: Record<TrSlot, string | { light: string; dark: string }>;
@@ -335,7 +335,6 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
     e: React.KeyboardEvent,
     members: number[],
     pos: number,
-    beat: number,
     move: (target: number) => void,
     onPin: () => void,
     group: HTMLElement | null,
@@ -402,7 +401,6 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
               e,
               activeLineIdx,
               activeLineIdx.indexOf(idx),
-              beat,
               focusLine,
               () => togglePin(beat),
               termRef.current,
@@ -434,7 +432,6 @@ export default function TerminalReplay({ script }: { script: TrScript }) {
               e,
               blocks.map((_, i) => i),
               idx,
-              beat,
               focusBlock,
               () => {
                 togglePin(beat);

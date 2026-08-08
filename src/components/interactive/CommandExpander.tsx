@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { CxpSeg, CxpToolId } from './command-expander-data';
 import { cxpTools } from './command-expander-data';
 import { withCode } from './with-code';
 import './command-expander.css';
 import { useWidgetFrame } from './widget-frame';
+import { useAccessibleTabs } from './use-accessible-tabs';
+import { useSyncedToolIndex } from './use-synced-tool';
 
 function Segs({ segs, markClass }: { segs: CxpSeg[]; markClass: string }) {
   return (
@@ -22,26 +24,33 @@ function Segs({ segs, markClass }: { segs: CxpSeg[]; markClass: string }) {
 }
 
 export default function CommandExpander() {
-  const [toolId, setToolId] = useState<CxpToolId>('claude-code');
+  const [toolIdx, setToolIdx] = useSyncedToolIndex(cxpTools);
+  const toolId = cxpTools[toolIdx].id as CxpToolId;
   const tool = cxpTools.find((t) => t.id === toolId)!;
+  const tabs = useAccessibleTabs(cxpTools.length, toolIdx, setToolIdx);
 
   return (
     <div className={useWidgetFrame('cxp-root')}>
-      <div className="cxp-tools" role="tablist" aria-label="Tool">
+      <div className="cxp-tools" {...tabs.tabListProps} aria-label="Tool">
         {cxpTools.map((t) => (
           <button
             key={t.id}
-            role="tab"
-            aria-selected={toolId === t.id}
+            {...tabs.getTabProps(cxpTools.indexOf(t))}
             className={toolId === t.id ? 'cxp-tool cxp-tool-active' : 'cxp-tool'}
-            onClick={() => setToolId(t.id)}
+            onClick={() => setToolIdx(cxpTools.indexOf(t))}
           >
             {t.label}
           </button>
         ))}
       </div>
+      <p className="cxp-scope-note">
+        This explainer covers five tools. Pi&apos;s prompt and skill surfaces are documented in the comparison below.
+      </p>
 
-      <div className="cxp-flow" aria-live="polite">
+      <div className="cxp-flow" {...tabs.panelProps}>
+        <span className="cxp-sr-only" aria-live="polite">
+          Showing the {tool.label} command expansion.
+        </span>
         <div className="cxp-stage">
           <span className="cxp-stage-tag">you type</span>
           <pre className="cxp-typed">

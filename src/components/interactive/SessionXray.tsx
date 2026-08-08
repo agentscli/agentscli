@@ -1,4 +1,3 @@
-import React from 'react';
 import { sessionXrayScript } from './session-xray-data';
 import TerminalReplay from './terminal-replay';
 

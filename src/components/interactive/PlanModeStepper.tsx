@@ -4,31 +4,34 @@ import { pmsStages, pmsTools } from './plan-mode-stepper-data';
 import { withCode } from './with-code';
 import './plan-mode-stepper.css';
 import { useWidgetFrame } from './widget-frame';
+import { useAccessibleTabs } from './use-accessible-tabs';
+import { useSyncedToolIndex } from './use-synced-tool';
 
 export default function PlanModeStepper() {
-  const [toolId, setToolId] = useState<PmsToolId>('claude-code');
+  const [toolIdx, setToolIdx] = useSyncedToolIndex(pmsTools);
+  const toolId = pmsTools[toolIdx].id as PmsToolId;
   const [stageIdx, setStageIdx] = useState(0);
 
   const stage = pmsStages[stageIdx];
   const cell = stage.detail[toolId];
+  const tabs = useAccessibleTabs(pmsTools.length, toolIdx, setToolIdx);
 
   return (
     <div className={useWidgetFrame('pms-root')}>
-      <div className="pms-tools" role="tablist" aria-label="Tool">
+      <div className="pms-tools" {...tabs.tabListProps} aria-label="Tool">
         {pmsTools.map((t) => (
           <button
             key={t.id}
-            role="tab"
-            aria-selected={toolId === t.id}
+            {...tabs.getTabProps(pmsTools.indexOf(t))}
             className={toolId === t.id ? 'pms-tool pms-tool-active' : 'pms-tool'}
-            onClick={() => setToolId(t.id)}
+            onClick={() => setToolIdx(pmsTools.indexOf(t))}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      <div className="pms-ribbon" role="img" aria-label={`Stage ${stageIdx + 1} of ${pmsStages.length}: ${stage.title}`}>
+      <div className="pms-ribbon" role="group" aria-label={`Stage ${stageIdx + 1} of ${pmsStages.length}: ${stage.title}`}>
         {pmsStages.map((s, i) => (
           <React.Fragment key={s.id}>
             {i > 0 && (
@@ -46,6 +49,7 @@ export default function PlanModeStepper() {
               }
               onClick={() => setStageIdx(i)}
               aria-label={`Go to stage ${i + 1}: ${s.title}`}
+              aria-pressed={i === stageIdx}
             >
               {s.label}
             </button>
@@ -53,7 +57,10 @@ export default function PlanModeStepper() {
         ))}
       </div>
 
-      <div className="pms-panel" aria-live="polite">
+      <div className="pms-panel" {...tabs.panelProps}>
+        <span className="pms-sr-only" aria-live="polite">
+          {stage.title}: {cell.text}
+        </span>
         <div className="pms-panel-head">
           <span className="pms-stage-count">
             {stageIdx + 1} / {pmsStages.length}

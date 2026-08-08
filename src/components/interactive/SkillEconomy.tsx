@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   SKE_HOME_LABELS,
   SKE_SESSIONS_PER_WEEK,

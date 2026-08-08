@@ -1,4 +1,3 @@
-import React from 'react';
 import { approvalLedgerScript } from './approval-ledger-data';
 import TerminalReplay from './terminal-replay';
 
