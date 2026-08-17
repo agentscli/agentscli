@@ -1,41 +1,70 @@
 ---
-title: "Run your whole eval suite on every commit and you'll stop running it."
-description: "The fix for slow, flaky agent evals isn't a faster suite - it's two loops. A cheap deterministic gate on every PR, and a slow judge suite on a schedule."
+title: "Split one eval suite into two clocks and win back 156 minutes of blocked PR time a week."
+description: "A suite thorough enough to catch a real regression is too slow and noisy to gate every PR. Split the same 50 cases into a 32-case deterministic gate and an 18-case nightly judge sweep, and a team merging 8 PRs a day gets 156 minutes of blocked PR time back every week - without dropping a single case."
+seoTitle: "AI Agent Evals in CI: Run Two Loops, Not One Suite"
+seoDescription: "A 50-case eval suite split into a 32-case PR gate and an 18-case nightly judge sweep saves an 8-PR/day team 156 minutes a week."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, headless, hooks, subagents]
 draft: false
 ---
 
-You wired up evals because you got burned: an agent shipped a prompt change that silently broke half your tool-calling, and nobody noticed for a week. So you did the responsible thing. You built a suite - forty cases, a judge model scoring each one, the works - and bolted it to CI. Every commit now runs the whole thing.
+You wired up evals because you got burned once: an agent shipped a prompt change that quietly broke half your tool calls, and nobody caught it for a week. So you did the responsible thing. You built a suite - deterministic checks and a judge model scoring the hard cases - and bolted it to CI. Every commit now runs the whole thing.
 
-For about three weeks, this is glorious. Then someone's PR sits for eleven minutes waiting on the eval job. Then the judge flakes on case 19 because the model phrased a correct answer slightly differently, and the build goes red on a docs typo fix. Then the bill arrives. By month two, the line `if: false` has appeared above the eval step, with a commit message that says "temporarily skip, too slow." It is never un-skipped.
+For a few weeks this is glorious. Then a PR sits for four and a half minutes waiting on the eval job. Then the judge flakes on a case that was actually fine, and the build goes red on a one-line docs fix. Then someone adds `if: false` above the eval step, with a commit message that says "temporarily skip, too slow." It is never turned back on.
 
-**The suite that runs on every commit is the suite that gets disabled.** This is the failure mode nobody designs for, because it looks like diligence right up until it collapses. The mainstream advice - "treat evals like tests, run them in CI" - is correct in spirit and ruinous in practice, because evals are not tests. Tests are fast, deterministic, and free. Agent evals are slow, probabilistic, and metered. Pretending otherwise is how good intentions become a disabled job.
+Here's the tension underneath that story. A suite thorough enough to catch a real regression has to run a judge model over the cases a plain comparison can't grade - tone, completeness, whether the agent picked the right strategy - and a judge model is slow and occasionally inconsistent in a way a string comparison never is. A suite fast enough that nobody resents running it on every PR has to drop exactly those cases, which means dropping the ones most likely to hide a real regression. No single suite can be both. A team that tries ends up disabling the one it built.
 
-So here's the open question: if you can't afford to run the real evals on every commit, *when* do you run them - and what runs on every commit instead?
+The fix isn't a faster suite. It's the same suite, paid for on two different clocks: a fast deterministic gate on every PR, and a slow judge sweep on a schedule. Split it that way and a team merging 8 PRs a day gets back **156 minutes of blocked PR time every week** - 2.6 hours, down from just under 3 - without cutting a single case from the suite. Here's exactly where that number comes from, and you can check every step of it with a calculator.
 
-## Split the eval into two loops with two different jobs
+## Check whether you already have this
 
-The mistake is treating "evals" as one thing. It's two jobs, and they want opposite tradeoffs.
+Before any of the arithmetic below, thirty seconds on your own CI config settles whether this piece is for you.
 
-The **inner loop** answers one question on every PR: *did this change break something we already know about?* It must be fast, deterministic, and cheap enough that nobody resents it. The **outer loop** answers a different question on a schedule: *what's broken that we don't know about yet?* It can be slow, judge-based, and expensive, because it runs while everyone's asleep.
+Open the eval job that runs on every pull request. Find the step that scores an agent's output as "tone is right," "answer is complete," "the agent picked a reasonable strategy," or anything else a model has to judge rather than a script comparing values. Now ask one more question: has anyone, ever, temporarily skipped that job under deadline pressure?
 
-Conflating them is the original sin. You don't need the judge model to tell you that a regex extractor stopped parsing a date - a string comparison does that in 40 milliseconds. And you don't need to block a PR for nine minutes to discover semantic drift that's been creeping in for two weeks; that can wait until tonight.
+**A judge-scored check on the critical path, and at least one skip in the git history: you have this problem, and the rest of this is worth reading.** No judge call in your PR gate, or your whole suite is a dozen exact-match and schema cases: you don't have this problem yet. Everything below is one worked example of what the split buys and what it costs. Close the tab if your own answer was no.
 
-## The inner loop is a deterministic gate, not a judge
+## What one full run costs today
 
-Carve out the subset of your eval cases that have a *checkable* answer - exact match, schema validation, a tool got called with the right arguments, a number falls in range. No model in the loop. These are the regressions you've already seen and never want to see again. Run them as a [hook](/foundations/hooks/) so they fire before the change ever lands:
+Fix one concrete case and keep it for the rest of the piece: an **invoicing agent** that answers billing questions and calls tools like `fetch_invoice`. Its eval suite has 50 cases, and they split by how they get graded, not by what they cover:
+
+| What happens, per case | Cost | Time |
+|---|---:|---:|
+| Trace the agent (every case, either loop) | $0.004 | 1 s |
+| Deterministic grade (exact match / schema / tool-call args) | $0 | 0 s |
+| Judge grade (tone, completeness, refusal explanations, strategy) | $0.03 | 12 s |
+
+Thirty-two of the fifty cases are **deterministic**: exact match, a schema check, "did it call `fetch_invoice` with a numeric id." Eighteen are **judge-scored**: the ones where "correct" isn't a single string, so a model has to read the output and decide. That composition - 32 and 18 - is a stated assumption for this piece, chosen to be a plausible mid-size suite, not a measurement of your repo. Swap in your own counts later; the mechanism doesn't change.
+
+Compute the obvious way, before naming any fix. One full run traces all 50 cases, then hands the 18 judge-scored ones to the judge model on top of that:
+
+```text
+cost = 50 x $0.004  +  18 x $0.03  =  $0.20 + $0.54  =  $0.74
+time = 50 x 1s       +  18 x 12s    =   50s + 216s    =   266s
+```
+
+**One full run: $0.74, 266 seconds. That's what a PR sits through today, before either loop exists.**
+
+## The inner loop alone
+
+Now carve out only the deterministic third of the suite - no judge, no model call, just comparisons - and run that alone:
+
+```text
+cost = 32 x $0.004  =  $0.128
+time = 32 x 1s       =   32s
+```
+
+That's the shape of a gate you'd actually run as a [hook](/foundations/hooks/), firing before a change lands:
 
 ```bash
 #!/usr/bin/env bash
-# .git-hooks/pre-push - the inner loop
-# Deterministic eval subset only. No judge, no API calls.
+# .git-hooks/pre-push - the deterministic gate. No judge, no API calls.
 set -euo pipefail
 
 npx vitest run evals/deterministic/ --reporter=dot
 
-# 14 cases, ~3s, $0. Fails closed: a broken extractor
+# 32 cases, ~32s, $0.128. Fails closed: a broken extractor
 # or a malformed tool call blocks the push.
 ```
 
@@ -49,11 +78,19 @@ test("invoice agent calls fetch_invoice with a numeric id", async () => {
 });
 ```
 
-Three seconds. Zero dollars. No flake, because there's no model deciding whether the answer is "good enough" - the answer is either `4471` or it isn't. **This is the gate you can leave on forever**, because it never costs enough to be worth disabling. The same logic belongs in [CI](/foundations/headless/) as a required check, so the gate survives the one developer who skips local hooks.
+Thirty-two seconds. Thirteen cents. No flake, because there's no model deciding whether the answer is "good enough" - the answer is either `4471` or it isn't.
 
-## The outer loop runs the expensive suite headless, on a clock
+Now check the two numbers against each other. Dropping the judge doesn't just drop 18 of 50 cases (36% of the suite by count). It drops 87.97% of the full run's time and 82.70% of its cost. Eighteen cases - a little over a third of the suite - are responsible for nearly nine-tenths of what a PR sits through. That's not a coincidence of this toy; it's what a 12-second judge call sitting next to a 1-second trace always does to the average. **The full run is 8.3125x slower and 5.7812x more expensive than the deterministic third of it alone, and that ratio comes from the same six numbers in the first table above** - nothing rounded, nothing estimated.
 
-The judge-based cases - the ones scoring tone, completeness, whether the agent picked the right strategy - go in the outer loop. You run them [headless](/foundations/headless/) on a schedule, against `main`, where slow and pricey are fine because no human is waiting:
+**A third of the suite is carrying nine-tenths of the wait. That's not a suite problem. That's a placement problem.**
+
+## Two loops, not one job
+
+If this shape looks familiar, it should. It's the same logic behind the **test pyramid**: run the cheap, fast checks constantly and push the expensive, slow ones to run less often. The one place this diverges from that lineage: the slow tier here isn't just a bigger scope of the same kind of check, the way a full regression suite is a bigger scope of unit tests. It's a **nondeterministic judge** - rerun it on an unchanged case and you are not guaranteed the same number back. That's a different kind of slow, and it's why the split has to be by grading method, not by test count.
+
+None of this is a new idea, and it shouldn't read like one. Search any current writeup on evaluating AI agents in CI and you'll find the same shape already documented: a fast deterministic-or-classifier check gating the PR, a full judge sweep running on a schedule. What follows is one worked example of that pattern with the arithmetic behind it, not a claim to have invented the split.
+
+Call the two halves what they are. The **inner loop** is the 32-case deterministic gate above, and it answers one question on every PR: *did this change break something we already know about?* The **outer loop** is the 18 judge-scored cases, run on a schedule instead of on a push, and it answers a different question: *what's broken that we don't know about yet?*
 
 ```yaml
 # .github/workflows/nightly-eval.yml - the outer loop
@@ -66,60 +103,106 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npx tsx evals/run-full.ts --judge --all
-        # 40 cases, judge model scores each, writes scores.json
+        # all 50 cases, 18 judge-scored, writes scores.json
       - run: npx tsx evals/diff-baseline.ts
-        # compares to yesterday; opens an issue if any score drops >5%
+        # compares to a trailing baseline; opens an issue on a real drop
 ```
 
-The outer loop's output isn't a pass/fail on a PR - it's a *trend*. Last night the "explain a refused action" case scored 0.91; tonight it's 0.78. Something drifted. That's not a build to turn red; it's an issue to file with the failing transcript attached.
+Two things belong to the outer loop and nowhere else: the judge model, and the "compares to a trailing baseline" step. A naive version of that comparison - flag anything more than 5% below yesterday - looks precise and isn't. A judge that can't reliably reproduce its own score has a noise floor, and a threshold set below that floor manufactures a phantom regression most nights on cases that never actually changed. The honest version measures the judge's own spread first (run an unchanged case a handful of times, record how much the score moves on its own) and gates on something like a paired comparison against a trailing baseline rather than a bare percentage - a real statistical test, not a rule of thumb. That measurement is its own piece of work; this one hands it forward rather than building it out.
 
-And here's where it compounds: **every new failure the outer loop finds becomes a new deterministic case in the inner loop.** The drift you caught last night gets distilled into a checkable assertion this morning. The slow loop is a discovery engine; the fast loop is a ratchet. Discoveries flow inward and become free, permanent guarantees.
+**The inner loop asks about the past. The outer loop asks about the future. Confusing the two is how you end up blocking a PR on a question that can wait until tonight.**
 
-## Why the judge can't sit on the critical path
+## Name the trick: the ratchet
 
-It's worth being precise about *why* a judge model is the wrong thing to block a PR, because "it's slow and expensive" is only half of it. The deeper problem is that the judge is non-deterministic in a way your code isn't. Recent work on LLM-as-judge has a name for it - self-inconsistency, or "rating roulette": run the same transcript through the same judge twice and you can get 0.82, then 0.74, with nothing changed but the sampling. Judges also carry systematic biases - position effects, verbosity preference, a pull toward agreeing with whatever phrasing sounds confident - that shift a score without any real change in agent behavior.
+Say the outer loop's nightly run does its job. A case that's been stable for weeks - the one where the agent explains why it refused a request - comes back lower tonight than the trailing baseline says it should. Nobody's PR is blocked while that happens. No one gets paged. The finding just sits in `scores.json` by the time anyone's at a keyboard.
 
-Put that on the critical path and you've built a gate that fails for reasons the author can't act on. The developer sees a red check, reruns it, watches it go green, and learns the lesson every flaky test teaches: *this signal is noise, ignore it.* That lesson generalizes. Once one eval check is known to flake, the whole suite loses authority, and you're back to `if: false`. A deterministic assertion can't teach that lesson, because rerunning it never changes the answer.
-
-This is also the edge case that bites the outer loop, so design for it. That "opens an issue if any score drops >5%" line is a trap if you haven't measured the judge's own variance first. If the judge's noise floor on a given case is ±6%, a 5% threshold will manufacture a phantom regression most nights - and a morning spent chasing drift that was never there is how you learn to ignore the nightly issue too. So before you trust a threshold, run each case a handful of times against an unchanged baseline and record the spread. Set the alarm above the noise floor, not below it, and treat a single bad night as a data point, not a verdict - only a drop that *reproduces* across runs is real. The whole point of moving the judge off the PR was to stop gating on a noisy signal; don't quietly re-import the noise as a hair-trigger threshold.
-
-## Hand the discovered failures to an agent to triage
-
-The outer loop produces transcripts, not verdicts, and reading forty transcripts every morning is its own quiet path to giving up. Hand that work to a [subagent](/foundations/subagents/) with one job: read last night's failing cases in an isolated context, cluster them, and propose which ones are worth promoting to the inner loop.
+Hand that transcript to a [subagent](/foundations/subagents/) whose only job is triage, so nobody's morning starts with reading raw transcripts:
 
 ```text
 You are the eval triage agent. Input: scores.json + transcripts
-for every case that dropped >5% vs baseline.
+for every judge-scored case that dropped vs the trailing baseline.
 
 For each regression:
 1. One-line root cause (prompt drift / tool change / model update).
-2. Is the failure deterministically checkable? If yes, write the
-   assertion for evals/deterministic/.
+2. Is the failure deterministically checkable - exact match, schema,
+   a specific tool-call argument? If yes, write the assertion for
+   evals/deterministic/.
 3. Rank by blast radius. Output a triage table only.
 ```
 
-The subagent burns its own context window on noisy transcripts so your main session never sees them. You wake up to a ranked table and a few ready-to-paste assertions - the discovery-to-ratchet pipeline, automated.
+Now ask the question that actually matters: what happens to that discovery next? Leave it where it is, and the outer loop will find the same drift again tomorrow night, and the night after - a real cost paid on repeat, and one that never once stops it from landing in a PR, because the outer loop isn't on the PR's path. Or write the check once, as a deterministic assertion, and add it to the inner loop. Next time, a $0.03 judge call that took 12 seconds becomes a $0.004 comparison that takes 1 second and runs on every push, forever.
 
-## "But caching and cheaper judges make the full suite affordable"
+Call that **the ratchet**: every discovery the outer loop makes gets promoted into a permanent case in the inner loop, so the fast gate only ever grows and the guarantee it provides is never re-earned from scratch. The suite that catches a real regression tonight is catching it on every PR by next week, at inner-loop prices.
 
-The obvious objection: tooling has gotten good. Semantic caching means an unchanged case doesn't re-hit the judge; a small open-weight judge model running on your own hardware drops the per-case cost toward zero. So why not just make the one suite cheap enough to run on every commit and skip the whole split?
+**The outer loop finds what you didn't know. The ratchet is what stops you having to find it twice.**
 
-Because cost was never the only problem - it was the most visible one. Caching attacks the bill and the clock, which is real, but it does nothing for the two failures that actually disable evals: variance and timing. A cached score is still a *judge's* score, with the same noise floor; you've made the roulette wheel cheaper to spin, not more deterministic. And a smaller, cheaper judge is usually a *noisier* judge - it agrees with human ratings less often and wobbles more between runs, which is exactly the wrong trade when the output is going to block a teammate's push. You'd be spending your savings to put a worse signal on the critical path. The split isn't a workaround for expensive evals that you can optimize away. It's an acknowledgement that "did I break a known thing" and "what unknown thing is drifting" are different questions with opposite latency budgets, and no amount of caching collapses them into one.
+## Scaled to a week
 
-## When one loop is still the right call
+Back to the running example: 8 PRs merged a day, 5 workdays a week - the team's own stated cadence, not a universal one. Under the one-loop design, every one of those 8 PRs pays the full $0.74 and sits through the full 266 seconds:
 
-Don't build this machinery before you've earned it. If your suite is a dozen cases and they're all deterministic - schema checks, exact matches, tool-call assertions - you don't have an outer loop yet, you have an inner loop and no judge. Run it on every commit and move on. The two-loop split is a response to a specific pain: a suite that has grown slow, flaky, and metered enough that someone is tempted to disable it. Before that pain exists, the split is just ceremony, and a second CI workflow you have to maintain for no gain.
+```text
+one loop / day:  8 x $0.74 = $5.92     8 x 266s = 2,128s = 35.4667 min blocked
+```
 
-The signal that you've crossed the line is concrete: the moment your eval job adds judge calls, starts taking minutes instead of seconds, or goes red on a run where nothing changed. That's when "evals are tests" stops being a useful lie. Until then, one loop is honest. The skill is noticing the crossing in time - before the `if: false` commit, not after.
+Under the two-loop design, each PR only pays the inner loop's $0.128 and 32 seconds. The full $0.74 judge sweep still runs, but once, overnight, off the critical path - its cost persists, its 266 seconds don't block anyone:
+
+```text
+two loop / day:  8 x $0.128 + $0.74 = $1.764     8 x 32s = 256s = 4.2667 min blocked
+```
+
+Run that out over a five-day week, 40 PRs:
+
+| | Weekly cost | Weekly PR-blocking wait |
+|---|---:|---:|
+| One loop | $29.60 | 177.3333 min (2.9556 h) |
+| Two loops | $8.82 | 21.3333 min |
+| **Saved** | **$20.78** | **156.00 min** |
+
+There's the number from the top of the piece, reconciled exactly: **156 minutes a week**, not an estimate, the same six inputs run forward through a week instead of a run. And it isn't only wait time - the two-loop design also cuts the week's judge bill from $29.60 to $8.82, because the judge sweep runs once a night instead of once per PR. Eight PRs paying for eight separate judge passes on cases that hadn't changed since yesterday was always the expensive part; running the judge once and gating PRs on the cheap third of the suite is what the split actually buys.
+
+**Same fifty cases, same two clocks, run five days instead of one: $20.78 and 156 minutes, and neither number moved because anyone worked faster. They moved because the judge stopped riding along on every PR.**
+
+## The table, run out
+
+Scale the same arithmetic across team size, holding everything else - the suite, the per-case costs, the five-day week - at the running example's values:
+
+| PRs/day | One-loop wait (min/week) | Two-loop wait (min/week) | Saved (min/week) |
+|---:|---:|---:|---:|
+| 1 | 22.17 | 2.67 | 19.50 |
+| 2 | 44.33 | 5.33 | 39.00 |
+| 4 | 88.67 | 10.67 | 78.00 |
+| **8** | **177.33** | **21.33** | **156.00** |
+| 16 | 354.67 | 42.67 | 312.00 |
+| 32 | 709.33 | 85.33 | 624.00 |
+
+Row 8 is the running example, and it lands exactly on the spoiler from the top: 156 minutes. Look at row 32 next to it. The ratio between one-loop and two-loop wait never moves - it's 8.3125x at every row, the same number from the per-run ratio two sections back, because doubling the PR count doubles both columns equally. What changes is the size of the number that ratio is multiplying. **The teams merging fastest - the ones under the most pressure to disable a slow gate - are exactly the teams the split pays back the most, because they're the ones paying the full-run price most often today.**
+
+## Two objections, answered before you finish reading
+
+**"Just run the judge three times and take the majority - doesn't that fix the noise?"** It reduces the noise, and it's worth doing on cases you do run through the judge. But it doesn't touch cost or latency, and if it's still sitting on the PR's critical path, it multiplies both: three judge calls instead of one is $0.09 and 36 seconds per case instead of $0.03 and 12. Self-consistency sampling is an argument for what to do with the judge once it's off the critical path. It isn't an argument for keeping it on.
+
+**"Caching and cheaper judges make the full suite affordable - why split at all?"** Semantic caching means an unchanged case skips a repeat judge call. A smaller, cheaper judge model drops the per-case dollar cost. Both are real and worth doing regardless. Neither one fixes the reason the split exists: a cached score is still a judge's score, with the same noise floor, and a cheaper judge is usually a noisier one - it agrees with a human less often and wobbles more between runs, which is precisely the wrong direction for something you're about to put back on a PR's critical path. Cost was never the whole problem. Timing and reliability were the other two-thirds, and no amount of caching moves either one.
+
+**Both objections assume the judge is the fixed cost and the schedule is negotiable. This piece assumes the reverse.**
+
+## What this doesn't solve
+
+**It relocates the judge's cost and latency. It does not fix the judge's reliability.** A threshold that isn't calibrated to the judge's own noise floor still manufactures false alarms on the nightly run - it just does it without blocking anyone while it happens. This is a documented property of LLM judges, not a guess: "Rating Roulette: Self-Inconsistency in LLM-As-A-Judge Frameworks" (Haldar & Hockenmaier, Findings of the Association for Computational Linguistics: EMNLP 2025, arXiv 2510.27106, Oct 2025) finds that the same judge scoring the same output more than once shows low agreement across those runs - the judge disagreeing with itself, not with a human. Moving the judge overnight buys you a window to notice that before it costs anyone a blocked push. It doesn't make the judge more consistent.
+
+**An all-deterministic suite gets nothing from this split.** Run the same arithmetic on a 12-case suite with zero judge-scored cases, and the full run and the inner-loop-only run are identical: $0.048, 12 seconds, both ways. There's nothing to carve out. Building the two-clock machinery before a judge-scored case exists in your suite is pure ceremony - a second CI config, maintained, for the same outcome as the first one.
+
+**The nightly clock has a fixed cost whether or not anyone merges.** On a day with zero PRs, the one-loop design pays $0 - it only ever runs when a push triggers it. The two-loop design still pays $0.74 that night, for a suite nobody needed yet. A team merging steadily, 8 PRs a day, comes out $20.78 and 156 minutes ahead every week. A bursty or low-cadence team - a few PRs some days, none on others - pays that fixed nightly bill on the quiet days and sees a worse deal than the running example's numbers suggest. Check your own cadence before assuming the savings transfer.
+
+**The ratchet only turns one way, and this piece didn't say what stops it.**
 
 ## What you do Monday
 
-Stop asking your eval suite to be fast *and* thorough on every commit. It can't be, and the contradiction is exactly why teams abandon evals - not because they don't care, but because the one-loop design taxes the wrong moment. Split it. Put the cheap, deterministic, already-known regressions on the PR as a gate. Put the slow, judge-scored, still-unknown failures on a nightly clock. Wire the outer loop's discoveries back into the inner loop's gate, and let an agent do the triage.
+Stop asking one suite to be fast and thorough on the same clock. Split the cases you already have by how they're graded, not by what they cover: the deterministic third becomes a hook that runs on every push and never gets skipped, because it's never slow enough to be worth skipping. The judge-scored two-thirds becomes a nightly job that runs while nobody's waiting on it, and its discoveries get promoted into the fast gate one assertion at a time. Row 8 of the table above is the payoff for an 8-PR-a-day team: $20.78 and 156 minutes back, every single week, off the same 50 cases you already had.
 
-This is context engineering in its plainest form: the agent doesn't know which of your forty cases are load-bearing or which failures are old news - *you* do, and the two-loop split is how you encode that judgment into the system instead of re-litigating it on every push.
-
-A suite that's too expensive to run is a suite that doesn't exist. Make the fast one cheap enough to never turn off, and the slow one quiet enough to never get in the way.
+That leaves the ratchet's own cost as the open question this piece didn't answer. The inner loop only ever grows - every promoted discovery adds a permanent case, and nothing in this design pages anyone the day the "fast" gate stops being fast. A ratchet that's been turning for a year is a bigger suite than the one you started with, growing on a schedule nobody set. What prunes it, or budgets it, before the fast loop becomes the next version of the exact problem this piece opened with - just with a slower-growing fuse - is a question for whoever's still running this suite twelve months from now.
 
 ---
+
+**About the numbers.** The suite's composition (32 deterministic cases, 18 judge-scored) and the six per-case cost/time constants are toy values, invented for traceability and sized to be faithful to the real shape of the problem - a judge call costs and takes longer than a string comparison - without claiming to be measured. The team's cadence (8 PRs a day, 5 workdays a week) is a stated assumption, not an observation of any real team. Every other number in this piece - the full-run and inner-loop-only cost and time, the 8.3125x/5.7812x ratios, the judge cases' 87.97%/82.70% share of time and cost, the daily and weekly rollups, the master table, the all-deterministic and quiet-day limiting cases - is exact arithmetic derived from those inputs and checked against an independent script before publishing. The Rating Roulette citation is quoted and dated: the paper's title, authors, venue, and existence were verified directly; its finding is described only in the general terms the paper itself uses (low agreement across repeated judge runs), with no specific score invented to illustrate it.
 
 For the per-tool mechanics, see [Headless & CI](/foundations/headless/) for running suites unattended, [Hooks](/foundations/hooks/) for the pre-push gate, and [Subagents](/foundations/subagents/) for isolating the triage pass.

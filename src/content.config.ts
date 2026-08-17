@@ -14,7 +14,17 @@ export const collections = {
   blog: defineCollection({
     loader: glob({ pattern: '**/[^_]*.{md,mdx}', base: './src/content/docs/blog' }),
     schema: docsSchema({
-      extend: (context) => blogSchema(context),
+      // `title` and `description` are the on-page headline and subtitle, and
+      // they are written as claims. `seoTitle` and `seoDescription` are the
+      // search surface, written the way a reader would phrase the query. Both
+      // are optional and fall back to their on-page counterpart.
+      extend: (context) =>
+        blogSchema(context).and(
+          z.object({
+            seoTitle: z.string().max(70).optional(),
+            seoDescription: z.string().max(160).optional(),
+          }),
+        ),
     }),
   }),
   toolInstructions: defineCollection({

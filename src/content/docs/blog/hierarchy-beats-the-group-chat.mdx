@@ -1,37 +1,127 @@
 ---
-title: "Flat agent swarms demo beautifully and ship terribly."
-description: "Let peer agents talk freely and a query hot-potatoes between them while your bill climbs. Route everything through one orchestrator with a turn cap instead."
+title: "At three agents a swarm and a hierarchy tie. At ten, the swarm has 45 ways to lose a request."
+description: "Full mesh and hub-and-spoke need exactly the same number of channels at three agents, which is why every swarm demo looks fine. Add a fourth specialist and the mesh pulls ahead for good - 45 paths against 10 by the time you reach ten."
+seoTitle: "Multi-Agent Orchestrator vs Swarm: the Channel Math"
+seoDescription: "Flat multi-agent swarms tie with hierarchy at three agents and lose past four. Why a hub-and-spoke orchestrator cuts 45 coordination paths to 10."
 authors: sourabh
 date: 2026-05-29
 tags: [context-engineering, subagents, plan-mode]
 draft: false
 ---
 
-Two specialist agents spent forty turns passing one customer refund back and forth. The billing agent said, "this is a policy question, routing to legal." The legal agent said, "this is a billing question, routing back." Neither was wrong. Neither resolved anything. The transcript reads like a Slack thread where everyone's been added and nobody owns the ticket - except this one cost eleven dollars in tokens and the customer is still waiting.
+A request lands that touches two specialists. The billing agent looks at it and says this is a policy question, routes it to the legal agent. The legal agent looks at the same request and says this is a billing question, routes it back. Both messages are reasonable. Neither one is wrong. And there is no third party in the system whose job it is to notice that the request has now gone in a circle.
 
-That transcript is what a flat agent swarm looks like in production. In a demo it looks like emergent intelligence: autonomous specialists, negotiating, self-organizing, no central bottleneck. Ship it, and the emergence you get is emergent *cost*. The agents don't converge. They debate.
+If you've wired up more than one specialist agent and let them address each other directly, some version of that has probably already happened to you - a request that bounces, a specialist pulled in "just in case" who adds a third voice to a question that had two, a run you can't point to the exact turn where anyone decided who owned it. Nothing crashed. Nothing errored. The system just never produced an owner.
 
-**The seductive part is exactly the broken part.** A swarm of peers talking freely *looks* like the org chart we wish we had - flat, fast, no manager in the loop. But coordinating peers without a lead is hard for humans, and we have shared context, social pressure, and a calendar that forces a decision by Friday. Strip all of that away and hand the problem to language models, each of which only sees its own slice, and "who owns this?" becomes an unanswerable question they will cheerfully pass around forever.
+That's what a flat agent swarm looks like once it leaves the demo. In the demo it looks like emergent intelligence: independent specialists, no central bottleneck, nobody waiting on a manager. In production the emergence you get is emergent indecision, and the fix is not "make the agents better at agreeing." It's routing every request through one node whose only job is to decide who owns it. This post is the arithmetic for why, and the arithmetic is exact enough to check with a pencil.
 
-## The gap a swarm makes worse, not better
+## Check whether you already have this
 
-This site has one recurring argument: an AI agent is **broad and shallow**, and the human SME is **narrow and deep**. The whole discipline of context engineering is closing that gap - giving the broad agent the narrow context it doesn't have.
+Open your multi-agent setup - subagent definitions, a crew file, a group-chat roster, whatever declares your specialist roles - and count two things: how many distinct specialist agents exist, and whether any two of them can message each other directly without going through a lead agent first.
 
-A flat swarm inverts the fix. Each peer agent has a slice of context: the refund agent knows refund rules, the legal agent knows policy, the discount agent knows promo logic. None of them holds the whole picture, and none of them is responsible for assembling it. So when a query lands that touches two slices, every agent looks at it, sees the part that isn't theirs, and disclaims. The context isn't getting closed. It's getting fragmented across negotiators who each see a different shadow of the same problem.
+**Three specialists or fewer, and no direct channel between any pair of them: close the tab.** You don't have this problem yet, and adding a hub today wouldn't save you anything - the math below shows exactly why, and it isn't close.
 
-You didn't reduce the gap. You distributed it and removed the one thing that could close it: a single point of view that sees the request, decides who handles it, and owns the outcome.
+**Four or more specialists, or any pair that can already talk without a lead in the loop: keep reading.** The section below isn't a hypothetical. It's your system, with the headcount plugged in.
 
-## The fix is an org chart, not a group chat
+## Why the demo never shows you this
 
-Organizations converged on hierarchy for a reason, and the reason transfers directly to agents: someone has to decide *who does what*, and someone has to own *what happens if no one does*. You get that by routing every request through one **orchestrator** - a [subagent](/foundations/subagents/) whose only job is to read the request, pick the right specialist, hand off cleanly, and enforce a stopping condition. Specialists never talk to each other. They talk to the orchestrator. The orchestrator talks to the user.
+Here's the tension the rest of the post turns on. Letting every agent talk to every other agent is the structure that looks flattest and fastest. It's also the structure whose cost grows the fastest, and the two facts are connected: the same freedom that makes a swarm look emergent is what makes its channel count explode.
 
-There's a structural reason this scales and a swarm doesn't, and it's just counting. Let every agent talk to every other agent and the number of channels you have to reason about grows as the square of the headcount: four peers have six possible handoff paths, ten peers have forty-five. Every one of those paths is a place context can leak and a loop can form. Route everything through one orchestrator and the count collapses to linear - N specialists, N channels, each a single spoke to the hub and nothing else. You haven't just added a manager. You've deleted most of the graph, and with it most of the surface where things go wrong.
+Two shapes, and every multi-agent setup is one of them. A **full mesh** connects every specialist to every other specialist directly - that's the group chat, the swarm, the peer setup. A **hub-and-spoke** connects every specialist to exactly one central node and nowhere else - that's the hierarchy this post is arguing for.
 
-This is the difference between a recipe and a runaway debate. We're going to combine three primitives - [subagents](/foundations/subagents/) for the split, [rules](/foundations/rules/) for the handoff contract, and [plan mode](/foundations/plan-mode/) for the routing decision - into one workflow that's predictable enough to test.
+Start with the smallest real case: three specialists - a refund agent, a legal agent, a discount agent. Let every pair talk directly (a full mesh) and you get three channels: refund-legal, refund-discount, legal-discount. Route the same three through one hub instead, and you also get three channels: each specialist to the hub, and nothing else.
 
-### Split the work, but name a single router
+**Three and three. At three specialists, a full mesh and a hub need exactly the same number of channels.** Nothing about that is surprising once you've counted it, and it's why a three-agent demo can't show you the problem. At that size there's no problem to show.
 
-Start with the same specialists you'd put in a swarm. The structural change is small and total: nobody is a peer.
+Now grow the same team to ten specialist roles - refunds, legal, discounts, shipping, payments, fraud, subscriptions, and so on, the roster any support product accumulates within a year. Full mesh: every pair gets a channel, which is forty-five channels. Hub-and-spoke: every specialist still gets exactly one, which is ten.
+
+**Grow the team from three specialists to ten - a little more than tripling the headcount - and the mesh doesn't grow by even that much. It grows fifteen-fold, from three channels to forty-five. The hub grows from three to ten, a little more than tripling, the same as the headcount. By ten specialists, the mesh is carrying 4.5 times the hub's channel count, for the same team doing the same work.**
+
+That 4.5x is the number this post owes you, and it's re-derived from nothing but counting, below.
+
+**The freedom that makes a swarm look flat is the same freedom that makes its channel count quadratic. You can't have one without the other.**
+
+## The toy: draw four specialists and count
+
+Take the smallest team where the mesh has already pulled ahead: four specialists. Call them refund, legal, discount, shipping - one more than the tied demo above, added because the team started covering shipping disputes too.
+
+Draw four dots. Connect every pair with a full mesh, and list what you drew:
+
+```text
+refund - legal
+refund - discount
+refund - shipping
+legal  - discount
+legal  - shipping
+discount - shipping
+```
+
+Six lines. Count them yourself - there's no shortcut needed at this size, just six pairs from four names.
+
+Now draw the hub instead: one center, four spokes, one line from each specialist to the center and no lines between specialists.
+
+```text
+        ┌──────┐
+   refund      legal
+        \      /
+         \    /
+        ┌──────┐
+        │ hub  │
+        └──────┘
+         /    \
+        /      \
+   discount   shipping
+```
+
+Four lines.
+
+**Six mesh channels against four hub channels, at only four specialists. That's a ratio of 1.5x. Remember 1.5 - it only grows from here, and it grows in a way you can predict exactly.**
+
+## The pairwise tax
+
+Here's the rule the toy just demonstrated. A full mesh of *N* specialists needs one channel per pair, which is *N* × (*N* − 1) ÷ 2 - the same count as "how many handshakes happen in a room of *N* people," because it's the identical problem. A hub needs one channel per specialist, which is just *N*.
+
+Divide one by the other and the specialist count itself cancels out of the interesting part: mesh channels ÷ hub channels equals (*N* − 1) ÷ 2. Call that ratio **the pairwise tax** - what a mesh costs you per specialist, on top of what a hub costs, purely for letting every pair talk.
+
+At four specialists, the tax is (4 − 1) ÷ 2 = 1.5. That's the number the toy just drew. At ten specialists, the tax is (10 − 1) ÷ 2 = 4.5 - the exact number from the spoiler above, arrived at the same way, with no new arithmetic invented to get there.
+
+Be exact about what that ratio counts, because it's easy to read it as a bill. A channel is not a message and it's not a dollar. Ten specialists who never address each other cost the same as ten who do, and you only pay for a channel on the runs where a request actually uses one. What the count measures is *surface*: every channel is a route a request can take that nobody planned, and a place a loop can close. The reason the surface matters is that in a mesh you can't say in advance which routes a request will take. In a hub you can, because there's only one.
+
+The tax has no ceiling. It isn't a fixed penalty you pay once for choosing a mesh; it's a multiplier that climbs with every specialist you add, forever, because every new specialist has to open a channel to every specialist already there. A hub's cost per new specialist is one more spoke. A mesh's cost per new specialist is one more spoke *to every existing specialist* - the marginal cost of the *n*-th agent is *n* − 1 new channels, not one.
+
+**A hub adds one channel per specialist. A mesh adds one channel per specialist, per specialist already there.**
+
+## The table, and why row 3 is the trap
+
+| Specialists | Mesh channels | Hub channels | Pairwise tax |
+|---:|---:|---:|---:|
+| 2 | 1 | 2 | 0.5x |
+| 3 | 3 | 3 | 1.0x |
+| 4 | 6 | 4 | 1.5x |
+| 5 | 10 | 5 | 2.0x |
+| 6 | 15 | 6 | 2.5x |
+| 10 | 45 | 10 | 4.5x |
+| 20 | 190 | 20 | 9.5x |
+
+Keep this table. Every section below is a row of it.
+
+**Row 2 is the one nobody mentions.** Below three specialists, the hub costs *more* channels than the mesh does - two spokes against one direct line. If your whole system is two agents, wiring a hub between them is pure overhead. That row is true, and it isn't the one that matters.
+
+**Row 3 is the trap.** Mesh and hub tie. A three-specialist proof of concept - the size most demos ship at - genuinely shows zero difference between the two designs, because at that exact size there is none. Anyone who built their intuition about multi-agent systems from a three-agent demo built it on the one team size where hierarchy has no visible payoff yet. That's not a coincidence to be suspicious of; it's the same formula producing a tie at exactly the point most people stop testing.
+
+**Row 4 is where it turns, and it never turns back.** One more specialist than the tied demo, and the mesh is already 1.5x the hub. There is no size above four where the mesh catches back up - the tax only grows.
+
+**Row 20 is where "add one more specialist" stops being a small decision.** At twenty specialists a mesh needs 190 channels to a hub's 20. The twenty-first specialist would add 20 new mesh channels by itself - one to each existing agent - against one new spoke for the hub.
+
+**Every row after 3 says the same thing louder: the tie was the exception, and it only happens once.**
+
+## Build the hub, not just count its channels
+
+The counting says why hierarchy wins. Building it is a smaller step than it looks, because the pieces already exist as separate primitives on this site: a [subagent](/foundations/subagents/) for each specialist, a [rules](/foundations/rules/) file for the handoff contract, and [plan mode](/foundations/plan-mode/) for the routing decision.
+
+The hub itself needs a name. Call it the **orchestrator**: the one specialist whose job is reading the request, picking who handles it, and owning the outcome. Every other specialist reports to it and to nothing else.
+
+### One router, specialists with no sideways door
 
 ```text
                  ┌─────────────┐
@@ -45,7 +135,7 @@ Start with the same specialists you'd put in a swarm. The structural change is s
      └─────────┘  └─────────┘  └──────────┘
 ```
 
-In a subagent-capable tool, you declare each specialist with a tight description and a restricted toolset. Here's the refund specialist as a Claude Code subagent definition - the shape is the same in Codex or opencode, only the file location differs:
+Declare each specialist as a subagent with a tight description and a restricted toolset. Here's the refund specialist as a Claude Code subagent definition - the shape carries over to Codex or opencode, only the file location changes:
 
 ```markdown
 ---
@@ -58,14 +148,16 @@ You process refunds. You receive a request from the orchestrator with the
 full customer context already attached. Decide the refund outcome and return
 it. You do not contact other specialists. If the request requires a policy
 exception you are not authorized to make, return `ESCALATE: <reason>` to the
-orchestrator. You never route directly to another agent.
+orchestrator.
 ```
 
-Three things do the load-bearing work. The `description` tells the orchestrator exactly when to pick this agent - that's the routing signal. The instruction `You never route directly to another agent` states the contract. And the tight `tools` list is what actually enforces it: a modern Claude Code subagent can spawn its own subagents - nested up to five levels deep - whenever it's handed the agent-spawning tool, so the prose instruction alone is a request, not a guarantee. Withhold that tool, as the `tools: Read, get_order, issue_refund` line does, and sideways routing isn't merely discouraged - it's unavailable. A specialist has only two exits: resolve, or hand control back up. It can never hand sideways, not because the model is obedient, but because the door was never installed.
+Two things do the real work here, and only one of them is the prose. The `description` is the routing signal the orchestrator reads to pick this specialist. The `tools` line is what actually closes the sideways door: a plain subagent already returns exactly once, to whoever spawned it, and has no built-in way to address a peer - that's the primitive's own shape, not a rule someone has to remember to follow. What the instruction adds is scope: the specialist knows it should resolve or escalate, and nothing else.
 
-### Write the handoff contract as rules, not vibes
+**The specialist isn't well-behaved. It's boxed in - the door to its peers was never installed.**
 
-The reason swarms loop is that "hand off" is undefined. Each agent invents its own notion of when to pass and what to pass, so handoffs lose context and nobody owns the result. Pin it down in a [rules](/foundations/rules/) file - your `AGENTS.md` or `CLAUDE.md` - so every agent in the system reads the same contract on every session.
+### The handoff contract goes in the rules file, not in anyone's memory
+
+The reason a mesh loops is that "hand this off" is undefined - every agent invents its own idea of when to pass and what to include, so context drops and nobody owns the result. Write the contract down once, in the [rules](/foundations/rules/) file every agent reads on every session:
 
 ```markdown
 ## Multi-agent handoff contract
@@ -84,15 +176,13 @@ The reason swarms loop is that "hand off" is undefined. Each agent invents its o
   transcript attached. Never loop, never guess a refund amount.
 ```
 
-Read that and notice what's now impossible. A specialist *can't* route to a peer - its toolset doesn't include the one that spawns other agents, so the only sideways door is bricked over. Handoffs *can't* drop context, because "carries full context" is the contract, not a hope. And the debate *can't* run to forty turns, because turn six is a hard wall with a defined exit. You've converted an open-ended negotiation into a state machine with named states and a guaranteed terminal.
+The turn cap is the one number in this contract that isn't derived from the channel count - it's a policy choice, the same way a timeout value is a choice. Six is just a round number small enough to bite. What matters structurally is that it exists at all: a mesh has no equivalent, because no single node in a mesh owns deciding when to stop. The hub has one node whose job includes stopping.
 
-The turn cap is the cheapest insurance you'll ever write. Eleven dollars of circular argument becomes, at most, six bounded invocations and then a human. That's the line item that separates a system you can budget from one you discover on the invoice.
+**A mesh can loop forever because nobody in it is responsible for noticing. A hub can't, because somebody always is.**
 
-### Make the routing decision in plan mode
+### The router decides before it spends a specialist call
 
-Here's the part most swarm designs skip: the orchestrator should *decide who does what before it spends a single specialist call*. That's what [plan mode](/foundations/plan-mode/) is for - it forces the agent to produce a plan you (or a gate) can inspect before any action runs.
-
-Give the orchestrator a plan-first instruction:
+The orchestrator should pick who handles a request *before* it invokes anyone, not discover the right specialist by trial and error. [Plan mode](/foundations/plan-mode/) is built for exactly this: it makes an agent produce a plan you or a gate can inspect before any action runs.
 
 ```markdown
 ---
@@ -109,33 +199,65 @@ specialist:
 
 Only after the plan is set do you invoke the named specialist. If a
 specialist returns ESCALATE, you re-plan - you do not blind-forward to
-another agent. Enforce the 6-invocation turn cap from AGENTS.md.
+another agent. Enforce the 6-invocation turn cap from the rules file.
 ```
 
-Now the refund-vs-legal standoff resolves before it starts. Faced with "customer wants a refund the policy might not allow," the orchestrator's plan reads: *mixed request; legal decides the exception first, then refund executes if approved; default is human escalation.* One decision, made once, by the node that can see the whole request. The specialists execute a sequence instead of negotiating an order. The plan is also the thing you trace later when you ask "who did what and why" - it's right there, written before the work.
+Faced with "customer wants a refund the policy might not allow," the plan now reads: mixed request, legal decides the exception first, refund executes if approved, default is human escalation. One decision, made once, by the only node that sees the whole request. The specialists execute a sequence instead of negotiating one.
 
-## When the group chat is actually fine
+**The mesh negotiates an order at runtime. The hub decides one before any specialist has spent a token.**
 
-Hierarchy earns its keep when work has to *converge* - one request, one owner, one answer. It's dead weight when work fans *out* and never has to agree. Spin up ten agents to summarize ten unrelated files and there's no ownership to settle, no handoff to drop, no order to negotiate. Parallel fan-out with a single join at the end is a perfectly good pattern; forcing each of those ten through a router would only add latency for a decision nobody needed. The rule isn't *always orchestrate*. It's narrower and more useful than that: orchestrate the moment two agents could disagree about who owns the result. Independent work doesn't need a boss. Contested work does.
+## This already has three names
 
-The honest objection to all of this: doesn't the orchestrator become the bottleneck the swarm was supposed to abolish? Yes - and that's the feature. A bottleneck is just a place where decisions serialize, and serialized decisions are the only kind you can cap, trace, and budget. The orchestrator stays cheap precisely because it doesn't do the work; it reads, routes, and stops. What the swarm was avoiding was never a manager's overhead. It was a single point of accountability - and that turned out to be the one thing you actually wanted.
+None of the pieces above are new primitives. The arithmetic just tells you which existing shape to reach for.
+
+**The substrate is the subagent you already have.** [Subagents](/foundations/subagents/) return once, to their caller, by default - across every tool this site covers, none of them ships peer-to-peer messaging as the default subagent behavior. Peer coordination is a separate, named primitive: Claude Code calls it agent teams and marks it experimental; other stacks reach it through their own multi-agent SDK layer. Choosing "specialists that only report to a hub" isn't a workaround - it's the primitive's resting shape. Choosing a mesh means reaching past it for something else.
+
+**The calling convention is "agents as tools."** When the orchestrator invokes a specialist and gets a return value back, with the specialist never initiating contact on its own, that's the same shape a function call has: caller invokes, callee returns, caller decides what happens next. Some frameworks describe this explicitly as treating each specialist as a callable tool of the orchestrator rather than as an independent peer. It's worth knowing the phrase, because it's the same hub-and-spoke shape wearing different words.
+
+**Frameworks are converging on naming both modes.** Several multi-agent frameworks now document something they call a supervisor or hierarchical topology as a distinct option from their original free-for-all group chat. Exactly which framework ships which default, and how the two modes differ under the hood, changes often enough that it isn't worth pinning to this post - check your framework's own docs for a supervisor or hierarchical mode before assuming you have to hand-roll one. If it has one, this post is the arithmetic for why to pick it.
+
+**So doesn't the hub just become the bottleneck the swarm was avoiding?** Yes - and that's the point, not a flaw. A bottleneck is a place where decisions serialize, and a serialized decision is the only kind you can cap, trace, and test. The orchestrator stays cheap because it doesn't do the specialist work itself; it classifies, routes, and stops. What the mesh was avoiding was never overhead. It was a single place accountable for the outcome - which turns out to be the thing you wanted the whole time.
+
+**None of this is a new primitive. It's the arithmetic telling you which of your existing primitives to wire together, and which one not to reach for.**
+
+## When the mesh is the right call
+
+Hierarchy earns its cost when work has to *converge*: one request, one owner, one answer. It's dead weight when work fans *out* and never has to agree. Spin up ten agents to summarize ten unrelated files and there's no ownership question to settle - no handoff to drop, no order to negotiate, no channel where a request can get stuck arguing with itself. Parallel fan-out with a single join at the end doesn't need a router in the middle; forcing all ten through a hub only adds a hop nobody needed.
+
+The rule isn't "always route through a hub." It's narrower: route through a hub the moment two agents could disagree about who owns the result.
+
+**Independent work doesn't need a boss. Contested work does.**
 
 ## What you can test now that you couldn't before
 
-A flat swarm has no testable surface. "Did the agents agree?" isn't an assertion. There's no defined path, so there's nothing to assert against. Every run is a new improvisation.
+A mesh has no testable surface for this failure. "Did the agents agree?" isn't an assertion - there's no defined path for a request to take, so there's nothing to check it against.
 
-The orchestrated version has seams you can pin:
+The hub gives you three seams to pin:
 
-- **Routing is deterministic enough to assert.** Feed it a pure refund request and assert the plan names `refund-specialist` first. Feed it a mixed one and assert it sequences legal before refund. The classification step is now a unit with an expected output.
-- **The turn cap is a guarantee, not a hope.** You can write a test that hands the system a deliberately unresolvable request and assert it terminates at six invocations with a human escalation - not at forty with an empty wallet.
-- **Handoffs are inspectable.** Because context travels as a defined payload, you can assert the legal agent received the customer record the refund agent already fetched, instead of re-fetching it. No silent context loss.
+- **Routing is deterministic enough to assert.** Feed the orchestrator a pure refund request and assert the plan names `refund-specialist` first. Feed it a mixed request and assert it sequences legal before refund.
+- **The turn cap is a guarantee, not a hope.** Hand the system a deliberately unresolvable request and assert it stops at six invocations with a human escalation - not at some open-ended count with nobody watching.
+- **Handoffs are inspectable.** Because context travels as a defined payload, you can assert the legal specialist received the customer record the refund specialist already fetched, instead of re-fetching it.
 
-That's the whole trade. You give up the *appearance* of emergent intelligence - the demo where agents seem to think together - and you get a system with named states, a bounded cost, and a transcript that reads like an audit log instead of an argument.
+**Cutting the paths from forty-five to ten is what makes the remaining ten worth writing a test against.**
 
-## The line that should survive this post
+## What hierarchy doesn't fix
 
-A swarm of peers is the org structure we romanticize and the one that, even among humans, mostly produces meetings. Agents are worse at it than we are, because each one sees less and owns nothing. Put one of them in charge, write down how control moves and when it stops, and the chaos stops being emergent and starts being a system. Hierarchy isn't the boring choice. It's the only one you can trace, cap, and ship.
+A 4.5x cut in channel count at ten specialists is a real number, and it is not the whole story. The hub removes the channel-count problem specifically. It doesn't remove every problem a mesh has, and it's worth saying which ones survive.
+
+**The hub is a single point of failure for availability, not just for decisions.** If the orchestrator's process stalls or its own context gets corrupted, the whole system stops - every specialist is idle, waiting on a router that isn't answering. A mesh degrades messier but doesn't have one node whose failure halts everyone; a hub trades that gradual messiness for a hard stop at one place. Retries and a fallback path for the orchestrator itself are a separate piece of work this post doesn't cover.
+
+**A hub with a bad routing prompt is not an improvement.** Cutting the channel count doesn't cut the need for the orchestrator's classification step to actually be right. A hub that misroutes confidently is a mesh's confusion delivered faster and by one voice instead of three - the arithmetic caps how many places a bad decision can travel, it doesn't cap how bad the decision can be.
+
+**Fewer channels is not the same claim as fewer mistakes. This post only argued the first one.**
+
+## The line worth keeping
+
+A three-agent demo can't show you this, because at three agents there's nothing to show - mesh and hub cost the same. Add a fourth specialist and the tie breaks for good: 1.5x at four, 2.5x at six, 4.5x at ten, and no size above three where the mesh catches back up. Route every request through one node that decides who owns it, and the count that was about to run away from you stays linear instead.
+
+That leaves the hub's own arithmetic as the next open question this post didn't answer. Channel count on a hub grows linearly, which is the whole win - but the orchestrator's own prompt, its routing rules, and its turn-cap logic all have to live somewhere, and that somewhere is one context window carrying more of the system's judgment as the specialist roster grows. A hub that scales past the channel-count problem still has to answer what happens to that one window at fifty specialists instead of ten. This post counted the edges. It didn't count what's sitting on the node in the middle.
 
 ---
+
+**About the numbers.** Every count in this post - mesh channels, hub channels, the pairwise tax, the master table - is combinatorics derived from one declared rule (mesh connects every pair, hub connects every node to one center) and re-checked against an independent script before publishing. None of it is a measurement: there's no real transcript, no observed token count, and no dollar figure anywhere in this post, because none was needed or available to verify. The turn cap of six specialist invocations is a policy choice, not a derived number, stated once and used consistently. One thing the table doesn't charge the hub for: the hub is an extra agent, so ten specialists behind a router is eleven agents against the mesh's ten. That's one node, and it doesn't change the shape of either curve. Swap in your own specialist count and the shape doesn't change: mesh grows as the square of the headcount, hub grows linearly, and the two are tied exactly at three.
 
 For the per-tool mechanics, see [Subagents](/foundations/subagents/) for the orchestrator-and-specialist split, [Rules](/foundations/rules/) for the handoff contract every agent reads, and [Plan mode](/foundations/plan-mode/) for the routing decision before any specialist call.

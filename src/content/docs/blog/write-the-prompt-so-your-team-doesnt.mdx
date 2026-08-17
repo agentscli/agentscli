@@ -1,29 +1,62 @@
 ---
-title: "The best prompt your team writes is the one nobody writes twice."
-description: "Ship your team's recurring workflows as server-side MCP prompts that pre-load their own data. A teammate types a slash command and the context is attached."
+title: "Every re-typed team prompt pays 600 tokens and 7.2 seconds of plumbing. Written server-side, the team pays once."
+description: "The triage prompt your team keeps re-typing makes the agent reassemble, through three round trips, context one expert already knew how to assemble once. That costs 600 plumbing tokens and 7.2 seconds per run. A server-side MCP prompt pays the assembly once, for everybody."
+seoTitle: "MCP Prompts: Ship Team Workflows as Slash Commands"
+seoDescription: "A re-typed team prompt costs 600 tokens and 7.2 seconds of agent plumbing per run. A server-side MCP prompt pays that once. Here is the math."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, mcp-servers, slash-commands]
 draft: false
 ---
 
-It's 6pm. A test just went flaky in CI, and the one engineer who knows how to triage it - pull the last three runs, check the ownership tag, read the retry-policy doc *before* you ask the model anything - is in a meeting. So you write your own version of that prompt. You get a worse answer. You quietly conclude the agent isn't very good at triage.
+It's 6pm. A test just went flaky in CI, and the one engineer who knows how to triage it - pull the last three runs, check the ownership tag, read the retry-policy doc *before* asking the model anything - is in a meeting. So you write your own version of that prompt. The agent gets a worse answer, and you quietly conclude it isn't very good at triage.
 
-Every team has a prompt like that: one person knows how to write it, everyone else writes a degraded copy. And the degraded copy is what trains the whole team to distrust the tool.
+Every team has a prompt like that. One person knows how to write it; everyone else writes a degraded copy under deadline pressure. Most teams also have the doc that was supposed to fix it - the `PROMPTS.md` entry, the wiki page - and here is the tension that doc creates instead of solving: writing the standard down feels like closing the problem, while every invocation still has to reassemble, live and through a contextless model, the exact context an expert already knew how to assemble once. The doc describes the procedure. It doesn't attach the data, doesn't run, and doesn't stop anyone skipping a step at 6pm.
 
-The agent is fine. The **context** is missing - and the person who knows which context to attach is in a meeting.
+One boundary before the arithmetic, because "prompt" now sits in more than one title on this blog, and the nearest one is easy to mistake for this piece. [Package the workflow, not the prompt](/blog/package-the-workflow-not-the-prompt/) operates one altitude up: it bundles subagents, hooks, commands, and servers into one installable plugin so a new teammate inherits the whole loop. This piece stays inside a single primitive - the MCP prompt - and prices what it costs to keep re-typing a procedure instead of shipping it.
 
-## The standard lives in a doc nobody opens
+Here is the claim, stated up front and re-derived below with arithmetic you can check with a pencil. Every hand-rolled invocation of the team's flaky-test triage prompt costs the model 3 round trips: **600 tokens of plumbing and 7.2 seconds of turn-taking latency**, before it has looked at the failure at all. A server-side prompt returns the same three pieces of context in one assembled turn. At ten triages a day, that is **30,000 tokens and 6 minutes a week** back, from a function written once.
 
-The instinct is to fix this with documentation. You write a `PROMPTS.md`: "When triaging a flaky test, paste the last three runs, include the ownership tag, link the retry policy." It's correct. It's thorough. It is also a document a tired engineer at 6pm will not read, will half-remember, and will execute by hand - re-typing the same scaffolding, re-fetching the same data, getting it subtly wrong.
+## First, check whether your team has this
 
-A doc describes the standard. It doesn't *run* it. So the prompt drifts: ten engineers produce ten dialects of the same request, and the model burns its first three turns making tool calls to assemble context that someone already knew how to assemble. Hold onto the question that exposes the waste: **why are we paying the round-trip cost for context the author already had at authoring time?**
+Before any arithmetic below, one minute on your own team's writing settles whether this piece is for you.
 
-## A prompt is a thing you can ship, not just a string you type
+Open the doc your team keeps for the procedure you re-type most often - the `PROMPTS.md` entry, the wiki page, the pinned message with the triage steps or the review gates. It lists steps; that is what docs do. Now one question: has anyone, under deadline pressure, ever run a version of it that skipped a step the doc lists? Pulled the CI runs but not the ownership tag. Asked for a review without pasting the gates.
 
-The fix is to stop treating "the right prompt" as tribal knowledge and start treating it as an artifact you deploy. [MCP servers](/foundations/mcp-servers/) expose three things to an agent: tools (functions the model can call), resources (data the model can read), and **prompts** - parameterized templates the server hands back, fully assembled, when invoked.
+A yes means you have this problem in the exact shape this piece works on: the standard is written down, and it still degrades on every re-telling. The rest is worth your time.
 
-That last one is the underused primitive. A server-side prompt is a function that takes arguments and returns a ready-to-run message - and crucially, it can **embed resources directly into the returned message** instead of leaving the model to go fetch them.
+No such doc exists anywhere, or the doc exists and nobody has ever quietly shortchanged it? Close the tab. Either the procedure isn't recurring or your team already runs it faithfully, and the numbers below price a problem you don't have.
+
+**A written-down standard that still gets skipped under deadline pressure is the exact problem this piece prices.**
+
+## What one hand-rolled triage costs
+
+Fix one concrete case and carry it through every section that follows: flaky test **#4823**. The team's known-good triage needs three pieces of context in the window before anyone reasons about the failure - the last three CI runs, the ownership tag, and the retry-policy doc.
+
+Watch the hand-rolled version assemble that, and count what each round trip through the model costs. These six constants are the only inputs this piece has. They are toy values, invented for traceability and sized to be faithful to the shape of a real round trip; every number downstream is arithmetic on them.
+
+| What one round trip costs | Value |
+|---|---:|
+| Tool-call emission - the model writing out the call | 45 tok |
+| Inter-call reasoning - deciding what to call next | 155 tok |
+| Plumbing per round trip | 200 tok |
+| One model turn | 2.4 s |
+| One tool execution | 1.2 s |
+| Latency per round trip | 3.6 s |
+
+The hand-rolled agent has the three fetches available as tools, so it calls them itself, one turn at a time. That is what exposing them as tools means: the model decides, emits, waits, decides again. Compute the total the obvious way, before any fix is named. Three round trips x 200 plumbing tokens is **600 tokens**. Three round trips x 3.6 seconds is **10.8 seconds**.
+
+The content it was fetching all along - 780 tokens of run logs, a 25-token ownership tag, 1,150 tokens of retry policy, 1,955 in total - arrives on top of that, and keep an eye on that figure: it comes back at the honesty section.
+
+Two costs the table cannot price, so they stay qualitative and this piece never invents numbers for them: each round trip is a fresh chance to fetch the wrong run, skip the tag, or never discover that the policy exists at all. The plumbing bill is the cost you can count. The skipped step is the cost you find out about later.
+
+**600 tokens and 10.8 seconds to reassemble a checklist the expert wrote down once - and the bug hasn't been looked at yet.**
+
+## A prompt you can ship
+
+The fix is to stop treating the right prompt as tribal knowledge and start treating it as an artifact you deploy. An [MCP server](/foundations/mcp-servers/) can expose a **prompt**: a parameterized template that takes arguments and returns a ready-to-run message when someone invokes it. Because the template is server-side code, it can **embed resources** - attach the data itself into the returned message - instead of leaving the model to go fetch them.
+
+The declaration is small:
 
 ```json
 {
@@ -35,7 +68,7 @@ That last one is the underused primitive. A server-side prompt is a function tha
 }
 ```
 
-When a user invokes it, the server does the assembly the senior engineer would have done by hand:
+And the handler is a function:
 
 ```python
 @server.get_prompt()
@@ -46,40 +79,68 @@ async def triage_flaky_test(test_id: str):
         messages=[
             PromptMessage(role="user", content=TextContent(
                 text=f"Triage flaky test {test_id}. "
-                     f"Owner: {owner_tag}. Follow the retry-policy below."
+                     f"Owner: {owner_tag}. Follow the retry policy below."
             )),
-            # the data the model needs, embedded - no round-trip
+            # the data the model needs, embedded - no round trip
             PromptMessage(role="user", content=EmbeddedResource(
                 resource=read_resource("policy://retry-policy")
             )),
             PromptMessage(role="user", content=EmbeddedResource(
                 resource=TextResourceContents(
                     uri=f"ci://runs/{test_id}", text=runs
-                )
-            )),
+                ))
+            ),
         ]
     )
 ```
 
-The expert prompt, the ownership tag, the last three runs, and the retry policy arrive in one shot. The model can answer on turn one.
+The expert's wording, the ownership tag, the last three runs, and the retry policy arrive in one message. The model starts its first turn already holding what the senior engineer would have handed it.
 
-## The slash command is the whole point
+**The assembly moves into a function the expert writes once, and every invocation inherits it.**
 
-Here's what makes this stick where the doc failed. Most agent clients surface MCP prompts as **[slash commands](/foundations/slash-commands/)** - auto-discovered, autocompleted, listed right where the user is already typing. (Claude Code namespaces them as `/mcp__<server>__<name>`, so the exact string is `/mcp__testkit__triage_flaky_test`; the point is that it appears in the menu unprompted.) The standard stops being something you opt into and becomes something you trip over on purpose.
+## One triage, two paths
 
-A teammate types `/triage_flaky_test`, the client prompts for the one argument that actually varies, they fill in `test_id`, and they get the senior engineer's exact procedure - pre-loaded with the data, every time. Nobody read a doc. Nobody re-engineered the prompt. The non-expert just invoked the expert.
+Now the walkthrough, both paths side by side. The same three fetches happen either way. The only difference is who does the assembling: the model, one turn at a time, or the server, with no model turn between its fetches.
 
-It gets one step better. The spec defines a [completion API](/foundations/mcp-servers/) - a `completion/complete` request the client fires as the user types an argument value. Your server can answer it with live data: open the `test_id` field and the menu fills with the test IDs that actually went red this week, not a blank box the user has to copy a string into. The argument that "varies" stops being something the user has to know and becomes something the system suggests. That's the same gap-closing move applied one layer down - the expert encodes not just the procedure but the *valid inputs* to it.
+| Path | Round trips | Plumbing tokens | Latency |
+|---|---:|---:|---:|
+| Hand-rolled | 3 | 600 | 10.8 s |
+| Server-side prompt | 1 | 0 | 3.6 s |
+| **Saved** | | **600** | **7.2** |
 
-That is the difference between *describing* a standard and *shipping* one. A `PROMPTS.md` entry is skippable by definition; it sits behind a deliberate act of reading. A slash command is in the autocomplete menu. One is a suggestion. The other is the path of least resistance - and path-of-least-resistance is the only thing that survives contact with a deadline.
+Check what the 7.2 is made of, because the honesty of the whole claim hangs on it. It is exactly 3 x 2.4 - the three model turns that no longer happen - and nothing else. The tool executions, 3 x 1.2 = 3.6 seconds, appear in both rows and cancel completely: the server still performs all three fetches, back to back, on every invocation. Nothing was rounded and nothing got faster. What disappeared is the model's turn-taking between fetches, which made the hand-rolled path 3.0x slower to the same content.
+
+Hold onto that pair, because the rest of the piece pays it off exactly twice: **600 tokens and 7.2 seconds**, per invocation, from the first shipped line of server code.
+
+The 7.2 also carries one assumption, and it belongs here rather than in a footnote: the hand-rolled agent makes its three calls one at a time, as traced above. A client or model that batches tool calls - issuing several in a single turn and running them together - keeps the 600-token plumbing saving but shrinks the latency saving toward roughly one eliminated model turn, about 2.4 seconds. The token number is robust to how your client schedules calls. The seconds number is not.
+
+**A server-side prompt eliminates the turn-taking, 600 tokens and 7.2 seconds of it. It never eliminates the fetch.**
+
+## The prepaid prompt
+
+Call the mechanism **the prepaid prompt**: the assembly cost is paid once, up front, in a function, and every later invocation cashes it in instead of paying the round-trip tax live.
+
+The name is also the honest description. The server does not skip the three fetches - it still runs them, 3.6 seconds of them, on every call. What it prepays is the deciding: which runs, which tag, which doc, in which order, weighted how. That judgment was made once, by the person who knew. The 600 tokens and 7.2 seconds were the price of re-making that judgment through a contextless model, on every single invocation.
+
+This is also why the doc never worked. A `PROMPTS.md` entry prepays nothing. It asks every future reader to re-pay the assembly themselves, out of their own patience, at 6pm. The function is the doc that runs.
+
+**The expert pays once; everyone else cashes it in.**
+
+## The slash command is how it reaches everyone
+
+In clients that render the prompts primitive, a server prompt appears as a [slash command](/foundations/slash-commands/), auto-discovered in the menu where your teammate is already typing. Claude Code namespaces them, so yours reads `/mcp__testkit__triage_flaky_test` and shows up unprompted. The teammate fills in the one argument that varies, and the senior engineer's procedure arrives with its data attached. Nobody read a doc. The non-expert invoked the expert.
+
+This is the part a doc can never buy: placement. A `PROMPTS.md` entry is skippable by definition - it sits behind a deliberate act of reading. A command in the autocomplete menu is the path of least resistance, and the path of least resistance is the only thing that survives contact with a deadline.
+
+The spec defines one more layer: a **completion** API, where the client asks the server to autocomplete argument values as the user types. Open the `test_id` field and the menu fills with the tests that actually went red this week, not a blank box to paste into. It is young in practice - as of 2026 its main users are the TypeScript SDK and the MCP Inspector reference client - so treat it as a capability to grow into, not something your whole team gets today.
+
+**The standard stops being something you opt into and becomes something you trip over in the menu.**
 
 ## The same move, a harder prompt
 
-Triage is the easy case because the procedure is small. The payoff is bigger on the prompt nobody enjoys writing: the team's PR-review pass.
+Triage is the easy case: three fetches, one argument. The move scales up to the prompt nobody enjoys writing - the team's PR-review pass.
 
-Hand-rolled, it degrades the same way. An engineer pastes a diff and types "review this." The model dutifully flags a missing null check and a typo - and says nothing about the three things your team actually gates on, because nothing told it they exist: this service's public API has a backward-compatibility contract, schema changes require a migration runbook entry, and anything touching the billing path needs a second reviewer named in the description. A generic reviewer can't enforce a standard it was never given.
-
-Ship it as a prompt and the gates travel with the request:
+Hand-rolled, it degrades the same way. An engineer pastes a diff and types "review this." The model flags a missing null check and a typo, and says nothing about the three things the team actually gates on, because nothing told it they exist: the public API in `billing/` has a backward-compatibility contract, schema changes need a migration runbook entry, and billing-path changes need a named second reviewer. Shipped as a prompt, the gates travel with the request:
 
 ```python
 @server.get_prompt()
@@ -94,54 +155,70 @@ async def review_pr(pr_number: str):
                   "Report each gate as pass/fail with the line that triggers it.")
         )),
         PromptMessage(role="user", content=EmbeddedResource(
-            resource=read_resource("docs://review-gates")
-        )),
-        PromptMessage(role="user", content=EmbeddedResource(
             resource=TextResourceContents(
-                uri=f"git://pr/{pr_number}.diff", text=diff
-            )
+                uri=f"git://pr/{pr_number}.diff", text=diff)
         )),
     ])
 ```
 
-The single varying argument is `pr_number` - and the completion API can populate it with the open PRs assigned to the caller. Everything that makes the review *yours* - the gates, the runbook reference, the diff - is assembled server-side. The reviewer who's never internalized those three rules now applies them perfectly, because they didn't have to remember them. The standard moved from the senior engineer's head into a function that runs on every invocation.
+No new arithmetic here, deliberately. The PR-review case is the same prepaid mechanism one gate higher: what the author knew - the three gates, weighted as gates - is encoded once, and the reviewer who never internalized them now applies them, because they didn't have to remember them.
 
-## Embedding the data is a context-engineering move, not a convenience
+**A standard the model was never given is a standard it cannot enforce.**
 
-It's tempting to read "pre-load the resources" as a latency optimization. It's deeper than that. When the model has to fetch its own context, *it* decides what's relevant - and a contextless agent decides badly. It pulls the wrong CI run, skips the ownership tag because nothing told it that tag matters, never reads the retry policy because it didn't know one existed.
+## Two objections, answered where they form
 
-Embedding the resources moves that judgment back to the author. **The person who knows which context matters encodes that knowledge once, server-side, and every invocation inherits it.** You're not saving a round-trip; you're closing the gap between what the agent can fetch and what an expert knows to fetch. That's the entire discipline, compressed into one function.
+**"Just expose the fetches as tools and let the agent call them."** That is exactly how the 600 tokens got spent. Tool exposure gives the model the ability to gather the context; it does not give it the judgment about which context matters. The agent has to decide to call all three, in order, and to weight the retry policy as binding rather than advisory - and nothing in the request says the policy is load-bearing, so each round trip is a fresh chance to skip it. The division that falls out: embed the context the author already knows is needed; expose as tools only what genuinely depends on what the model finds along the way.
 
-This pairs naturally with [rules](/foundations/rules/): rules are the always-on context every session carries; a server-side prompt is the *on-demand* expert procedure, invoked by name, arriving with its data attached. Rules set the baseline; prompts deliver the specialist move. Use rules for "this is how we always work," and prompts for "this is the exact play, run it."
+**"Why stand up a server at all? A local command file does this."** A `.claude/commands/*.md` file, or a skill - no infrastructure, and it eliminates the same discovery round trips. Sometimes it is the right answer, and this blog has already made that case: the parameterized primer in [deterministic-context](/blog/deterministic-context/) is a local command that loads a fixed file set you can name in advance, with no server and no live fetch. The line between the two is what the template can contain. A local file can declare context that is fixed and known in advance. It cannot declare "the last three runs of this test" or "the diff of this PR," because those exist only at call time and change with the argument. That is what the server is for: its fetch runs when the command runs, against the `test_id` that was just passed. A server prompt also reaches every teammate on any MCP client, not just the ones using the same tool's command directory on one machine. Fixed file set, one client: the local file wins, and cheaper. Live content that varies per call, or a team on mixed clients: the server earns its keep.
 
-## "Just give the agent the tools and let it fetch"
+Two boundary notes while we are here. If the thing you keep re-typing is a correction rather than a procedure - "don't push yet" - it belongs in a standing instruction, and [stop-re-typing-the-same-correction](/blog/stop-re-typing-the-same-correction/) covers it; a rules file can carry a correction fine, but it cannot fetch this test's runs at call time. And for the full sort of which primitive to reach for - resources, tools, prompts, and who pulls the trigger on each - see [nouns-verbs-and-slash-commands](/blog/nouns-verbs-and-slash-commands/); this piece deliberately stays inside one of the three.
 
-The obvious objection: why pre-assemble anything? Expose `get_ci_runs`, `get_owner_tag`, and `get_retry_policy` as MCP *tools*, and a capable agent will call them itself. That's true, and sometimes correct - but it quietly relocates the expertise problem instead of solving it. The agent now has to *decide* to call all three, in the right order, and to weight the retry policy as binding rather than advisory. The whole premise of this site is that the agent is broad but contextless: it doesn't know the policy is load-bearing because nothing in the request says so. Tool exposure gives the model the *ability* to gather context; a prompt gives it the *judgment* about which context to gather - and judgment is exactly the thing the meeting-bound senior engineer was supplying.
+**A local file wins when the context is fixed; the server earns its keep when the context is live and varies per call.**
 
-There's a second-order cost too. Every tool call the model makes to assemble known context is a turn it spends reasoning about plumbing instead of the actual problem, and each round-trip is a fresh chance to pull the wrong run or skip a step. Embedding collapses that to a single hop. The right division is usually: embed the context the author *already knows* is needed; expose tools for the context that genuinely depends on what the model finds along the way.
+## The numbers, run out
 
-## Where this breaks
+The running example's cadence is a stated assumption, not a measurement: ten triages a day, a five-day week, fifty invocations. The planted pair scales without modification - no new inputs, just multiplication. 50 x 600 tokens is 30,000. 50 x 7.2 seconds is 360 seconds, which is 6.0 minutes.
 
-This pattern has sharp edges, and the spec flags the sharpest one itself: implementations **MUST** carefully validate prompt inputs and outputs to prevent injection. An embedded resource is untrusted text you are splicing directly into the model's context. If `docs://review-gates` is editable by anyone, or the CI run output contains an attacker-influenced string, you've built a clean delivery channel for prompt injection - the model can't tell your instructions from instructions that rode in on the data. Treat embedded resources as you'd treat any user-supplied input crossing a trust boundary: pin them to sources you control, and don't embed free-text fields that outsiders can write.
+| Invocations/day | Invocations/week | Tokens saved/week | Minutes saved/week |
+|---:|---:|---:|---:|
+| 2 | 10 | 6,000 | 1.2 |
+| 5 | 25 | 15,000 | 3.0 |
+| **10** | **50** | **30,000** | **6.0** |
+| 20 | 100 | 60,000 | 12.0 |
+| 40 | 200 | 120,000 | 24.0 |
 
-Two quieter failure modes. The first is **token cost**: embedding is generous by default, and a prompt that pre-loads a 4,000-line policy doc and a full diff on every invocation can spend more context than the hand-rolled version it replaced. If the resource is large and only a slice is usually relevant, embedding the whole thing is the wrong trade - let the model fetch the slice. The second is **staleness**: a prompt that embeds "the retry policy" is only as current as whatever `read_resource` returns. Point it at the live source, not a snapshot you pasted into the server six weeks ago, or you'll ship yesterday's standard with tomorrow's confidence.
+Row 10 is the running example, and it is the spoiler from the top, reconciled exactly: the same 600 and 7.2 multiplied by fifty. The ratio never moves across the table - tokens and minutes both scale linearly with cadence, because every row is the same mechanism times a headcount of invocations. A team triaging 40 times a day gets 24 minutes back; a team at twice a day gets 1.2. Same function, same pair, different multiplier.
 
-## When not to ship a prompt
+**Every row is the same prepaid pair - 600 tokens, 7.2 seconds - times a cadence.**
 
-The technique earns its keep when a procedure is *stable* and *shared*. Reach for something else when either condition fails.
+## What this does not solve
 
-If the procedure is still being figured out - you're discovering the right triage steps as you go - freezing it into a server function is premature; you'll spend more time redeploying the prompt than running it. Let it stabilize as a doc or a habit first, then ship it once it stops changing.
+**The 1,955 content tokens never disappear.** The prepaid prompt relocates the plumbing; the fetch itself still runs on every invocation. Embedding is also generous by default: a prompt that pre-loads a 4,000-line policy doc and a full diff on every call can spend more context than the hand-rolled version it replaced. When a resource is large and only a slice is usually relevant, embed a pointer and let the model fetch the slice.
 
-And if the prompt needs five or six arguments to be useful, that's a signal it isn't one reusable procedure - it's a workflow with too many degrees of freedom to be a single command. The whole value here is that exactly one thing varies and the system fills in the rest. When many things vary, you're past what a prompt should carry; reach for a [subagent](/foundations/subagents/) with its own tools and room to reason, and keep the prompt for the genuinely fixed plays.
+**Client support is uneven, and one gap is total.** OpenAI's ChatGPT MCP integration does not implement the prompts primitive at all as of 2026 (SurePrompts, "Model Context Protocol (MCP): The Complete 2026 Guide," 2026), so a team living in ChatGPT gets none of this until that changes. The completion API is younger still: the TypeScript SDK and the MCP Inspector reference client are its main users as of 2026 (dev.to, "MCP Prompts and Resources: The Primitives You're Not Using," 2026).
 
-## What to do Monday
+**An embedded resource is an injection surface.** It is untrusted text spliced straight into the model's context, and the MCP spec's own security guidance names prompt injection as a live risk here. If the retry-policy resource is editable by anyone, or the CI output contains an attacker-influenced string, the prompt becomes a delivery channel - the model cannot tell your instructions from instructions that rode in on the data. Pin embedded resources to sources you control, and don't embed free-text fields outsiders can write.
 
-Find the prompt one person on your team knows how to write - the triage, the incident summary, the PR-review pass with your team's specific gates. Don't document it. Define it as a server-side MCP prompt: one or two arguments for what genuinely varies, the rest of the context embedded as resources the server assembles.
+**The skipped steps stay unpriced.** This piece puts no number on how often a hand-rolled prompt quietly skips the ownership tag or never finds the policy, because no measured rate exists to cite and inventing one is the thing this site does not do. The 600 and the 7.2 cover the plumbing only. The completeness failure is real, probably larger, and qualitative here.
 
-Then watch where it shows up: in everyone's slash-command menu, named, autocompleted, impossible to skip and cheaper to run than the hand-rolled version. The senior engineer's knowledge stops evaporating into Slack threads and starts compounding as infrastructure.
+**Know when not to ship one.** A procedure still being figured out should not be frozen into a server function; let it stabilize as a habit first, then ship it once it stops changing. And a prompt that needs five or six varying arguments carries too many degrees of freedom for a single command. That is a workflow, and a [subagent](/foundations/subagents/) with its own tools and room to reason is the better home for it.
 
-A prompt-library doc makes the standard *available*. A server-side prompt makes it *executable, pre-loaded, and unavoidable.* Stop writing down how to write the prompt. Write the prompt, ship it, and let your team invoke it.
+**The arithmetic is the smaller payoff.** Six minutes a week is honest, and modest. What the numbers cannot carry: the judgment about which context matters now travels to everyone on the team, the procedure arrives complete instead of degraded, and the standard sits in the menu instead of in a doc nobody opens. Those are the case. The tokens are a bonus.
+
+**Take the judgment transfer and the completeness; count the 6 minutes as interest.**
+
+## Back to the table
+
+Row 10, one more time: **30,000 tokens and 6.0 minutes a week**, the claim from the top reconciled against the table - the planted 600 and 7.2 times fifty invocations, nothing else added, the same linear mechanism every other row runs on.
+
+What to do Monday fits in a sentence. Take the procedure one person on your team knows how to prompt - the triage, the incident summary, the review pass with your gates - and define it server-side: one argument for what genuinely varies, the rest embedded as resources the server assembles.
+
+Which leaves the cost this fix itself created, and hands forward rather than solves. A prompt is frozen at the moment its server code ships. The runs it fetches are live, but the decision of which three pieces of context matter - and which doc is the current standard - was made once, by whoever wrote the function. When the team's standard moves and the prompt doesn't, it keeps shipping yesterday's procedure with total confidence, on every invocation, to everyone. A doc nobody reads goes stale quietly; a command in everyone's menu goes stale loudly.
+
+**The prepaid prompt buys back the plumbing. Who re-verifies the standard it froze - and how often - is the bill still outstanding.**
 
 ---
 
-For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for exposing prompts and resources, [slash commands](/foundations/slash-commands/) for how clients surface them, and [Rules](/foundations/rules/) for the always-on context they complement.
+**About the numbers.** The six per-round-trip constants (45 and 155 tokens, 2.4 and 1.2 seconds, and their 200-token and 3.6-second sums) and the three content sizes (780, 25, and 1,150 tokens) are toy values, invented for traceability and sized to be faithful to the shape of a real round trip - a model turn takes time, a fetch takes time, plumbing tokens sit on the meter - without claiming to be measured. The cadence (10 triages a day, a 5-day week) is a stated assumption, not an observation of any real team. Every other figure - the 600, the 10.8, the 3.6, the 7.2, the 1,955, the 30,000 tokens and 6.0 minutes, and every row of the master table - is exact arithmetic on those inputs, checked against an independent script before publishing. The client-support and completion-adoption claims are quoted and dated: SurePrompts' 2026 MCP guide for ChatGPT's missing prompts primitive, and dev.to's "MCP Prompts and Resources: The Primitives You're Not Using" (2026) for the completion API's thin adoption.
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for exposing prompts and embedded resources, [slash commands](/foundations/slash-commands/) for how clients surface them, and [Rules](/foundations/rules/) for the always-on context they complement.

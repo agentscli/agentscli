@@ -1,0 +1,103 @@
+---
+title: "Reallocating the same 60-minute review budget by blast radius cuts the expected cost of a missed bug 52%."
+description: "Your daily review-minute budget is fixed, but a missed bug's dollar cost isn't. Spend the same minutes unevenly by blast radius and cut expected losses by roughly half, without reviewing more."
+seoTitle: "Review AI-Generated Code by Blast Radius, Not Uniformly"
+seoDescription: "Reallocate a fixed daily review budget by blast radius and cut the expected cost of a missed agent bug by 52%, same minutes, no extra review time."
+authors: sanjay
+date: 2026-05-31
+tags: [context-engineering, permissions, plan-mode, rules]
+draft: false
+---
+
+Yesterday the agent opened twenty pull requests. Eighteen touched `src/ui/`, `src/components/`, and `docs/` - a button color, a copy fix, a README update. Two touched `src/billing/` - a change to how upgrades get charged. You have sixty minutes this morning before standups start, and by the time you close the last tab, every one of those twenty PRs will have gotten roughly the same three minutes of your attention. That's how review time gets spent by default: evenly, across whatever landed in the queue, regardless of what it touches. No one chose that policy; it falls out of twenty tabs sitting in a row and one clock that is the same for all of them.
+
+Two pieces on this site have already gone after what happens once you approve one of those PRs. [Approve the plan, not the diff](/blog/approve-the-plan-not-the-diff/) gates the destructive call itself, so a bad idea gets caught in the plan instead of the merge. [Full autonomy is a small blast radius](/blog/full-autonomy-is-a-small-blast-radius/) shrinks what an unattended run can reach if nobody's watching at all. Both assume you get to the review. Neither one asks how you should spend the sixty minutes you actually have once you're there, and that's the question this piece answers.
+
+**Blast radius** is the size of the mess one wrong line can make - a button that's the wrong shade of blue against a customer charged twice. Split your codebase by it and you get two zones: low-stakes paths where a mistake costs a follow-up commit, and high-stakes paths where a mistake is silent and expensive. Your review-minute budget is fixed: you have the hour, and there is no way to buy a second one. The dollar cost of a bug that slips through isn't fixed at all. Spend the same three minutes on both zones and you choose, every single morning, to under-review the expensive path and over-review the cheap one, without ever deciding to.
+
+Here's the payoff, stated before it's earned: reallocating that same sixty-minute budget by blast radius - giving the low-stakes PRs just enough time to skim, and flooding everything left over onto the high-stakes ones - cuts the expected dollar cost of a missed bug by about **52%**, on that same batch, in that same hour. Not by reviewing more. By reviewing unevenly.
+
+## Check whether you're already doing this
+
+Thirty seconds, no arithmetic needed yet.
+
+Pull up yesterday's batch of merged agent PRs. Find one that touched a path like `src/billing/`, `src/auth/`, or a migration file, and one that touched CSS, copy, or docs. Think honestly about how many real minutes you spent on each, not how many you meant to spend, and not how long the diff happened to be.
+
+If the billing-shaped PR got noticeably more of your morning than the CSS one, you're already weighting review time by risk, even if you never wrote the rule down anywhere. Close the tab; this piece just gives you the arithmetic for how much more it should be.
+
+If the honest answer is "about the same either way" or "however long the diff was," keep reading. **The rest of this piece is for the reviewer who spends attention like it's free, because on any given morning it feels like it is.**
+
+## What a missed bug actually costs
+
+Start with why review matters at all. Veracode's 2026 GenAI Code Security Report found that AI-generated code's overall security pass rate has stalled at 56% year over year, and that roughly 44% of code-generation tasks introduce a risky vulnerability when the agent gets no security-specific guidance. The agent that wrote your billing code is exactly as likely to have a latent bug in it as the agent that wrote your settings page - same model, same confidence, regardless of which directory it happened to land in.
+
+What differs is what happens if that bug ships. Fix the running example once and reuse it everywhere below: one engineer, a sixty-minute morning review budget, twenty of yesterday's agent-authored PRs. Eighteen land in `src/ui/`, `src/components/`, and `docs/` - low-stakes. Two land in `src/billing/` - high-stakes, because they touch a webhook handler that charges a card on a plan upgrade, generates a fresh idempotency key per charge, and writes a dedupe record keyed on Stripe's event ID. Stripe holds an idempotency key for **24 hours** and purges it after that, and retries a failed webhook on exponential backoff for up to **72 hours** - both confirmed against Stripe's own documentation. A three-minute read catches almost everything wrong with a button color: does it look right, does it compile, done. It catches almost nothing wrong with whether a dedupe table survives 72 hours of retries, because that isn't a bug you can see by skimming a diff - you have to trace the logic and hold both windows against each other, and that takes longer than a glance. A garbage-collection job that quietly cleans the dedupe table after a day, for instance, looks completely fine in isolation and only breaks the moment a webhook lands on hour fifty.
+
+That's the real shape of the problem: the longer you look at a PR, the more of what's actually wrong with it you catch, but with steeply diminishing returns - the first minute buys a lot, the tenth buys much less. Call that a PR's **catch odds**: the chance a given number of review minutes actually surfaces a real bug that's there. And the climb isn't the same shape for every PR. A low-stakes change is quick to build confidence in: a reviewer is already about even odds of catching a real problem after roughly a minute. A high-stakes change takes longer to trust - that same even-odds point doesn't arrive until roughly ten minutes in, because "does this actually dedupe correctly" isn't visible at a glance, no matter how carefully you glance.
+
+Assume every PR, regardless of zone, ships with a latent bug 10% of the time - same agent, same confidence, per the numbers above. Assume a missed low-stakes bug costs **$50**: a support ticket and a follow-up commit, annoying but forgotten by lunch. Assume a missed high-stakes bug costs **$4,000**: a chargeback plus the reconciliation it triggers. Both dollar figures are toy, invented for traceability; the load-bearing part is the ratio between them, eighty to one. **A missed bug's cost depends entirely on where it landed, and the agent gives you no signal about that at all - the directory is the only signal you have.**
+
+## The toy: five PRs, twenty-five minutes
+
+Shrink the batch to something you can trace by hand: five PRs, four low-stakes and one high-stakes, a twenty-five-minute budget. Everything else carries over unchanged - same agent, same bug rate, same two dollar figures, same catch-odds curve; only the count shrank. Compute the obvious way first - split the budget evenly, five minutes a PR, the policy everyone already runs by default without ever naming it as a policy.
+
+At five minutes, a low-stakes PR's catch odds are about 83%. Miss the other 17% of the time: ten percent of PRs have a bug, four PRs, fifty dollars a miss - **$3.33** in expected cost across all four. At five minutes, a high-stakes PR's catch odds are only about 33%, because five minutes barely dents a ten-minute confidence curve. Miss the other 67% of the time: one PR, ten percent chance of a bug, four thousand dollars a miss - **$266.67** in expected cost, on a single PR.
+
+Add them: uniform review of this batch costs **$270.00** in expected missed-bug dollars, before you change anything about how the twenty-five minutes get spent. That's the ground truth, computed the obvious way, before any cleverness enters the picture. **Remember $270.**
+
+## Floor-and-flood
+
+Look at where that $270 actually sits: $266.67 of it, 98.8% of the whole expected loss, is riding on the one PR that got the exact same five minutes as the button color sitting next to it in the queue. Uniform review isn't neutral. It's a specific, costly choice to under-fund the one PR that needed the time most.
+
+The fix costs nothing extra, because it only reallocates the same twenty-five minutes: give every low-stakes PR a fixed floor, just enough to skim for an obvious tell, and flood every minute left over onto the high-stakes PRs. Call it **floor-and-flood**. Give the four low-stakes PRs one minute each - four minutes total - and flood the remaining twenty-one minutes onto the single high-stakes PR.
+
+At one minute, a low-stakes PR's catch odds drop to an even 50%, worse than before - but a missed low-stakes bug only costs $50, so that drop is cheap to absorb. Four PRs, ten percent bug rate, 50% miss rate, fifty dollars a miss: **$10.00** in expected cost, up from $3.33. At twenty-one minutes, a high-stakes PR's catch odds climb to about 68%. One PR, ten percent bug rate, 32% miss rate, four thousand dollars a miss: **$129.03**, down from $266.67.
+
+Total: **$139.03**, against the $270.00 uniform-review cost you were told to remember. That's a $130.97 reduction, **48.5% off**, on the exact same twenty-five minutes, and the arithmetic above lands on it to the cent. **Nobody reviewed longer. The minutes just moved to where a miss was expensive.**
+
+## The same trade on your actual morning
+
+Scale up to the real batch: sixty minutes, twenty PRs, eighteen low-stakes and two high-stakes. Uniform review gives every PR three minutes. At three minutes, low-stakes catch odds are 75%, high-stakes catch odds are about 23% - worse than the toy's five-minute case, because three minutes buys even less confidence on a ten-minute curve. Run the same arithmetic across eighteen low-stakes PRs and two high-stakes ones, and uniform review's expected cost comes to **$637.88**.
+
+Floor-and-flood gives the eighteen low-stakes PRs one minute each - eighteen minutes total - and floods the remaining forty-two minutes across the two high-stakes PRs, twenty-one minutes apiece. That's the same twenty-one minutes the toy's single high-stakes PR landed on, which the arithmetic explains on its own: flood two PRs instead of one across a proportionally larger leftover budget, and the per-PR minutes converge on the same number. At twenty-one minutes, catch odds are the same 68% as before, and the total expected cost drops to **$303.06**.
+
+$637.88 down to $303.06 is a $334.82 reduction, **52.5% off, on the same sixty minutes** - the number promised at the top of this piece, reconciled exactly. That saving isn't free: the low-stakes catch odds just dropped from 75% to 50%, so those eighteen PRs really are getting less scrutiny than they got under uniform review. The saving comes from buying certainty on the two PRs where a miss is expensive, and paying for it with the thinner skim on the other eighteen. **Same review time, same twenty PRs, less than half the expected cost of a missed bug - the only thing that changed is which PR got which minute.**
+
+## When the reallocation backfires
+
+Floor-and-flood isn't a win at every stakes ratio. Run the same batch, the same sixty minutes, the same two formulas, at two other cost assumptions, and the shape changes:
+
+| Scenario | Budget | Low n | High n | $/miss (high) | Uniform | Floor+flood | Change |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Toy (5 PRs, 25 min) | 25 | 4 | 1 | $4,000.00 | $270.00 | $139.03 | -48.5% |
+| One day's batch (20 PRs, 60 min) | 60 | 18 | 2 | $4,000.00 | $637.88 | $303.06 | -52.5% |
+| Same batch, $20,000/miss | 60 | 18 | 2 | $20,000.00 | $3,099.42 | $1,335.32 | -56.9% |
+| Same batch, $100/miss (misdrawn zone) | 60 | 18 | 2 | $100.00 | $37.88 | $51.45 | +35.8% |
+
+Raise the stakes and the win grows: at $20,000 a miss, a migration or a data-loss scenario instead of a chargeback, the same reallocation cuts cost **56.9%**, more than the $4,000 case, because the two zones are now further apart in what a miss actually costs. The further the zones diverge, the more the arithmetic rewards moving minutes toward the expensive one, and the less it matters that the low-stakes PRs are only getting a one-minute skim.
+
+Shrink the stakes and the reallocation actively hurts. Row 4 is the honest case: a "high-stakes" miss that only costs $100, barely above the $50 low-stakes cost - the zone boundary was drawn somewhere that isn't really high-stakes at all. Floor-and-flood still starves the eighteen low-stakes PRs down to one minute each and floods twenty-one minutes each onto the two "high-stakes" ones, but there's almost nothing to gain from the extra attention when a miss there barely costs more than a miss anywhere else. The eighteen PRs you under-reviewed lose more than the two you over-reviewed gain, and the total goes up **35.8%**. This is the practical warning: a flat `src/` zone drawn too broadly, or a "high-stakes" label stapled onto a path that isn't actually expensive to get wrong, dilutes the whole trade. A "high-stakes" folder that turns out to hold nothing riskier than an internal admin form is exactly this row, and the only way to know is to have priced the miss honestly before reaching for the label. **Floor-and-flood only pays off when the zones are genuinely unequal in what a miss costs; misdraw the boundary and the same reallocation costs you money.**
+
+## What this doesn't solve
+
+None of this is a new idea at the level of "review risky code harder." Cortex's own guide to risk-based code review proposes categorical effort labels - minimal, low, medium, high - and cites a cognitive-ceiling study on how much diff a reviewer can actually hold in their head past 200 to 400 lines. What it leaves open is the arithmetic. A label says a PR deserves more effort, and stops there; how many of your sixty minutes that label is worth, and which of the other nineteen PRs gives them up, stays a judgment call. Floor-and-flood is the arithmetic version of the same instinct - a category becomes a number of minutes, and the minutes have to come from somewhere specific.
+
+At a scale no individual reviewer works at, Meta's RADAR system (arXiv:2605.30208) automates something close to the same triage across production: over **535,000 diffs** reviewed and **331,000 landed**, with lower revert and incident rates than diffs that skipped it. That's automation running across an entire company's diffs, a different scale than one engineer spending sixty minutes by hand - worth naming so this piece doesn't overclaim what it covers, and doesn't pretend a solo reviewer's arithmetic is a substitute for org-scale tooling.
+
+The catch-probability curve behind every number above is invented. It stands in for "diminishing returns on review attention"; nobody clocked it on a real reviewer. Real alertness also degrades with fatigue and with the order PRs get reviewed in, and this model tracks neither: the twentieth PR of the morning gets the same curve as the first, which is almost certainly false, and a reviewer who does the high-stakes PR first, while still fresh, is probably sharper than one who saves it for last. Floor-and-flood itself is a demonstration reallocation. The actual cost-minimizing allocation is a **constrained optimization problem**, equalizing the marginal cost-reduction of one more minute across every zone, and this piece doesn't solve it. It only shows that spreading the budget evenly, the thing almost every reviewer already does without ever deciding to, is worse than that.
+
+One thing softens all of this: the feature flag. Shipping the high-stakes change behind a flag that defaults off means a review that's imperfect at 68% catch odds isn't the last line of defense. The code can be wrong and merged and still harm nobody, because nothing is calling it yet, until you flip it on for yourself, then a test account, then a slice of traffic. **Floor-and-flood decides how carefully the code gets read before it ships; the flag decides how much damage it can do if the reading was wrong anyway.**
+
+Two smaller distinctions, worth a sentence each so this piece doesn't quietly re-argue ground already covered elsewhere. [A single authorization gate](/blog/single-authorization-gate-for-agents/) fixes a different failure mode entirely: a check that's missing altogether, a separate bug class from a review budget spent evenly. And [baking the acceptance test into the spec](/blog/bake-the-acceptance-test-into-the-spec/) or [making a hook validate the output](/blog/make-a-hook-validate-the-agents-output/) automate away what a machine can verify mechanically; this piece is only about what's left over once automation has done that - the judgment a human still has to spend, and how much of it. **Every one of these is a real gap, left open on purpose and named where you can see it.**
+
+## Back to the table
+
+The boundary between "worth reallocating" and "actively harmful" is checkable, and row 4 shows where it sits: the point where the two zones stop being different enough in what a miss costs. The same two formulas that produced every other row place that point, so deciding costs you one run of the arithmetic on your own numbers, instead of a fresh judgment call on every repo.
+
+Two things this piece deliberately doesn't solve, handed forward. The actual cost-minimizing split between zones is still an open optimization question: floor-and-flood shows that uniform review can be beaten, and leaves open whether anything beats floor-and-flood. A real answer would need real numbers for your own bug rates and your own dollar costs in place of the toy ones here. And floor-and-flood only tells you how to spend review minutes once you already trust your own zone boundary; it says nothing about who enforces that boundary once you've decided it, and what happens when a confident agent tries to route around it anyway. That's solved elsewhere on this site: [Approve the plan, not the diff](/blog/approve-the-plan-not-the-diff/) gates the call itself with permissions, plan mode, and a hard hook. [Full autonomy is a small blast radius](/blog/full-autonomy-is-a-small-blast-radius/) shrinks what an unattended run can reach in the first place. **This piece hands you to both rather than re-deriving either - it only ever decided how much of your own morning a PR was worth.**
+
+---
+
+**About the numbers.** The 10% latent-bug rate, the $50 and $4,000 costs (and their $20,000 and $100 variants), the catch-probability curve, and the 1-minute floor are all toy figures, invented for hand-tracing and declared as such, kept deliberately separate from the one real statistic in this piece: Veracode's 2026 GenAI Code Security Report (56% overall pass rate stalled year over year, roughly 44% of no-guidance generation tasks introducing a risky vulnerability). Every dollar figure and percentage above - the $270.00 and $139.03 toy numbers, the $637.88 and $303.06 real-batch numbers, the 48.5% and 52.5% reductions, and all four rows of the master table - is arithmetic that follows exactly from those toy inputs, checked against a script before publishing. The Stripe idempotency and retry windows (24 hours, 72 hours) are quoted from Stripe's own documentation, checked August 2026. Cortex's risk-based review guide (August 2026) and Meta's RADAR paper (arXiv:2605.30208) are named and dated as cited sources, not measured by this piece.
+
+For the mechanics this piece assumes already exist: [Rules](/foundations/rules/) for writing the zone boundary down once, and [Permissions](/foundations/permissions/) and [Plan mode](/foundations/plan-mode/) for gating the action once a path is marked high-stakes.

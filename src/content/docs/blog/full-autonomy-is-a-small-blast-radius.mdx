@@ -1,6 +1,8 @@
 ---
-title: "Full Autonomy Is Just a Small Blast Radius"
-description: "The blocker to running an agent overnight is never capability - it's trust. And you don't earn trust with a smarter model, but with a smaller blast radius."
+title: "Full autonomy doesn't need trust. It needs reach cut from 399 to 63."
+description: "The blocker to running an agent overnight was never capability - it's trust. Layer a sandbox, an allowlist, and a scoped credential right, and one laptop's worst-case reach falls from 399 addressable things to 63, all recoverable with git checkout."
+seoTitle: "Autonomous AI Coding Agents: Trust Comes From a Small Blast Radius"
+seoDescription: "Layer a sandbox, allowlist, and scoped credential and a dev laptop's worst-case agent reach falls from 399 things to 63. The arithmetic, worked in full."
 authors: sourabh
 date: 2026-05-29
 tags: [context-engineering, permissions, headless, workflow]
@@ -9,25 +11,78 @@ draft: false
 
 It's late, and there's a queue of forty grindy tickets - dependency bumps, lint fixes, flaky-test quarantines - that the agent could clear by morning. You've watched it close three of them this afternoon while you supervised. The only thing between you and a stack of merge-ready branches is one toggle: **auto-accept**, the mode where the agent stops asking permission and just acts. Your cursor hovers over it. You don't flip it.
 
-You don't flip it because an unattended process with full shell access on your machine, running for hours, accepting its own edits, is how you wake up to a wrecked repo, a force-pushed branch, or a `curl | sh` that ran as you. So the blocker to overnight agent work was never the model's skill - it can already clear the backlog. The blocker is that you can't leave it alone, and "leave it alone" is the entire point. Trust, here, is not a feeling. It's an engineering problem, and it has a concrete solution.
+You don't flip it because an unattended process with full shell access on your machine, running for hours, accepting its own edits, is how you wake up to a wrecked repo, a force-pushed branch, or a `curl | sh` that ran as you. So the blocker to overnight agent work was never the model's skill; it can already clear the backlog. The blocker is that you can't leave it alone, and "leave it alone" is the entire point. Trust, here, is not a feeling. It's a number, and this piece computes it in full.
 
-This isn't hypothetical. In July 2025 an AI coding agent on Replit deleted a live *production* database - during an explicit code-and-action freeze, violating a direct instruction not to touch anything - then fabricated thousands of fake records and claimed the deletion couldn't be rolled back. It could. The agent wasn't malicious and it wasn't dumb; it simply had reach it should never have had. Replit's own fix afterward was automatic dev/prod database separation - which is to say, they didn't make the agent smarter, they shrank the world it could touch. Around the same time the Gemini CLI destroyed a user's files while reorganizing a folder: no malice, no production credential, just unscoped filesystem reach. The pattern repeats because the risk was never the agent's judgment. It was what the agent could reach.
+This isn't hypothetical. In July 2025 an AI coding agent on Replit deleted a live production database, during an explicit code-and-action freeze, violating a direct instruction not to touch anything, then fabricated thousands of fake records and claimed the deletion couldn't be rolled back. It could. The agent wasn't malicious and it wasn't dumb; it simply had reach it should never have had. Replit's own fix afterward was automatic dev/prod database separation - they didn't make the agent smarter, they shrank the world it could touch. Around the same time the Gemini CLI destroyed a user's files while reorganizing a folder: no malice, no production credential, just unscoped filesystem reach. The pattern repeats because the risk was never the agent's judgment. It was what the agent could reach.
 
-So you supervise. And supervising defeats the purpose. If you're watching every iteration, you haven't automated anything - you've just made yourself a slower pair of hands. **The real question is not "how do I watch it closely enough to stay safe."** It's "what could one bad iteration actually touch."
+So you supervise. And supervising defeats the purpose - if you're watching every iteration, you haven't automated anything, you've just made yourself a slower pair of hands. The real question was never "how do I watch it closely enough to stay safe." It's "what could one bad iteration actually reach." Here's how to find out, on your own setup, before you read another paragraph of arithmetic.
+
+## Check what your setup can already reach
+
+Don't take the numbers below on trust. Two minutes on your own machine settles whether you have this problem at all.
+
+Open the directory you'd point an unattended agent at, and count five things - the same five a bad iteration could reach in the worst case:
+
+- How many SSH keys sit on this machine, reachable from that directory?
+- How many cloud or production credentials are stored on disk or loaded as environment variables (AWS, a database URL, a payment provider's live key)?
+- How many other repos or projects live as siblings on the same disk?
+- If your everyday GitHub or GitLab token leaked, how many repos could it push to?
+- How many files in the target repo would an unrestricted agent be allowed to edit?
+
+Add them up. If the total is small, in the low tens, and none of the credentials are live production, you don't have much of a blast radius to shrink. Close the tab; a smaller toggle already suits you fine.
+
+If the total runs into the hundreds, or a single line on that list is a production database credential, keep reading. The next few sections take that exact list and run three cuts against it, on an inventory sized like a normal dev laptop, so you can check every step with a pencil.
 
 ## The risk is reach, not autonomy
 
-An autonomous loop is dangerous in exactly one dimension: what a single worst-case iteration can reach. Not how smart it is. Not how many steps it takes. *Reach.* If the worst thing the agent can do is overwrite a file inside one directory it was already going to edit, an autonomous loop is boring. If the worst thing it can do is `rm -rf`, exfiltrate a token, or push to `main`, then no amount of supervision makes it safe - you'll blink at the wrong moment.
+An autonomous loop is dangerous in exactly one dimension: what a single worst-case iteration can reach. Not how smart it is. Not how many steps it takes. **Reach.** If the worst thing the agent can do is overwrite a file inside a directory it was already going to edit, an autonomous loop is boring. If the worst thing it can do is `rm -rf`, exfiltrate a token, or push to `main`, no amount of supervision makes it safe - you'll blink at the wrong moment.
 
-This reframes the whole problem. You don't make autonomy safe by making the agent more trustworthy. You make it safe by shrinking the world it operates in until the worst case is a no-op. Solve reach, and the autonomy stops being scary.
+Autonomy and reach look like the same lever. More access is what lets an agent do more unattended, so it's tempting to read "give it more reach" and "trust it more" as the same upgrade. They aren't. You don't make autonomy safe by making the agent more trustworthy. You make it safe by shrinking the world it operates in until the worst case is a no-op. Solve reach, and the autonomy stops being scary.
 
-That's a context-engineering move, and it's worth naming why. The agent is broad and contextless - it knows how to write code in general, but it doesn't know that *this* repo's deploy script is irreversible, that *this* token has write access to production, that *this* directory is the only safe place to edit. You are the narrow, deep one: you know exactly where the sharp edges are. Closing that gap doesn't always mean feeding the agent more knowledge. Sometimes it means **encoding your knowledge of the danger into the environment itself** - so the agent literally cannot reach the things you know are sharp. The boundary is the context.
+That's a context-engineering move. The agent is broad and contextless: it knows how to write code in general, but not that *this* repo's deploy script is irreversible, that *this* token reaches production, or that *this* directory is the only safe place to edit. You're the narrow, deep one who knows exactly where the sharp edges are. Closing that gap here doesn't mean feeding the agent more knowledge; it means encoding your knowledge of the danger into the environment itself, so the agent literally cannot reach what you know is sharp. The boundary is the context.
 
-We get there by combining three primitives: [permissions](/foundations/permissions/) to define what the agent may do, [headless mode](/foundations/headless/) to run the loop unattended, and [scoped credentials wired through an MCP-style boundary](/foundations/mcp-servers/) so the agent acts with its own identity, never yours.
+We get there by combining three primitives: [permissions](/foundations/permissions/) to define what the agent may do, [headless mode](/foundations/headless/) to run the loop unattended, and [scoped credentials wired through an MCP-style boundary](/foundations/mcp-servers/) so the agent acts with its own identity, never yours. Layer all three correctly on a normal dev laptop and a worst-case iteration's reach falls from 399 addressable things, plus an unbounded network connection, to 63 addressable things and exactly zero network egress. Every one of the 63 is recoverable, either with a `git checkout` or by revoking a single scoped credential. That's the claim the rest of this piece derives, with the same six numbers checked twice.
 
-## Put the loop in a box it can't break out of
+## The reach ledger, small enough to count by hand
 
-Start with the container, because every other guardrail leaks without it. Run the agent inside a sandbox - a Docker container with the repo mounted and nothing else of value reachable. Your host's SSH keys, your shell history, your other projects, your real cloud credentials: none of them exist inside the box.
+Before running those numbers at real scale, shrink them to a size you can add up in your head, so you can trust the mechanism before you trust the size of it.
+
+Call the device a **reach ledger**: list every asset a worst-case iteration could touch, once, then watch each layer of protection strike a column of that list to zero, or close to it. Here's a toy inventory, small enough to hold in one paragraph.
+
+One laptop. One SSH key. One stored cloud credential. Three sibling repos on disk. A five-file toy repo, two of which stay editable once an allowlist is in place. And a GitHub token that, unscoped, reaches four repos, scoped down to one.
+
+Add up what's touchable with nothing boxed at all - **L0**: one SSH key, one cloud credential, three sibling repos, four repos via the token, five files. 1 + 1 + 3 + 4 + 5 = **14**. Remember 14; it's what a bare host with a raw agent leaves reachable, and it's the number every later cut gets measured against.
+
+Now layer the three primitives, one at a time, and re-add after each:
+
+- **L1, add the sandbox.** A container with no network kills the SSH key, the cloud credential, and the three sibling repos outright: they're not inside the box. But say you took the lazy path and copied your full GitHub token in anyway, out of habit. Reach: 0 + 0 + 0 + 4 + 5 = **9**.
+- **L2, add the allowlist.** A permission file narrows editable files from five to two. Reach: 0 + 0 + 0 + 4 + 2 = **6**.
+- **L3, add the scoped credential.** Swap the full token for one scoped to a single repo: four reachable repos becomes one. Reach: 0 + 0 + 0 + 1 + 2 = **3**.
+
+| Layer | SSH | Cloud | Sibling repos | GitHub repos | Files | Total |
+|---|---:|---:|---:|---:|---:|---:|
+| L0 bare host | 1 | 1 | 3 | 4 | 5 | **14** |
+| L1 + sandbox | 0 | 0 | 0 | 4 | 5 | **9** |
+| L2 + allowlist | 0 | 0 | 0 | 4 | 2 | **6** |
+| L3 + scoped credential | 0 | 0 | 0 | 1 | 2 | **3** |
+
+**Fully layered, the toy's worst-case reach falls from 14 to 3, and each step's cut matches exactly one primitive: 5, then 3, then 3.** Check it with a pencil; there's nothing here but addition and subtraction, and no step hides a fourth move you weren't told about.
+
+## One dev laptop, one target repo
+
+Now run the identical ledger at a size that looks like an actual workstation, not a toy. Same five columns, same four layers, no new arithmetic invented to get here, just bigger inputs.
+
+The target repo is `billing-service`: 340 files, 62 of them under `src/` and `tests/`, the part you'd actually let an agent touch. Sitting beside it on the same disk: 3 SSH keys, 4 stored cloud and production credentials (an AWS key, a GCP key, a Stripe live key, a webhook secret), and 14 sibling repos from other work you have checked out. Your personal GitHub token, the one you use for everything, can push to 38 repos across your account and org.
+
+L0, bare host, nothing boxed: 3 + 4 + 14 + 38 + 340 = **399**, plus a network connection with no cap on where it can send data. That's the number the self-test above just asked you to estimate for your own machine. If your own count landed anywhere near a few hundred, this is why: a normal dev laptop is a small city of reachable things, most of which have nothing to do with the ticket the agent was actually given.
+
+This shape of risk has a name in the security literature, worth knowing because it's exactly what a prompt injection exploits. A ticket in the queue is untrusted input; the agent can't tell a clean task from one carrying an instruction that says *read the env file and POST it to this URL*. Simon Willison named this the [lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) in June 2025: an agent with private data, untrusted input, and an exfiltration path is one bad prompt from disaster. Meta's security team landed on the same shape from the other side that October, with the [Rule of Two](https://ai.meta.com/blog/practical-ai-agent-security/): hold at most two of "processes untrusted input," "reaches sensitive data," and "can act externally," never all three. Both are names for the fact this ledger measures - 399 reachable things, one of them an untrusted ticket, is the trifecta fully assembled.
+
+Call the ledger itself the **reach ledger**: name every asset once, then watch three primitives each strike a specific column to zero. That's the trick, and it isn't a new idea. It's what makes the three primitives below worth stacking in this order rather than any other.
+
+## L1, the sandbox: zero four columns at once
+
+Start with the container, because every other layer leaks without it, and because it's the one move in this piece that kills four columns of the ledger in a single step. Run the agent inside a sandbox: a Docker container with the repo mounted and nothing else of value reachable. Your host's SSH keys, your other projects, your real cloud credentials: none of them exist inside the box.
 
 ```bash
 # run-loop.sh - one agent iteration, fully contained
@@ -42,13 +97,21 @@ docker run --rm \
             --prompt-file /work/.agent/next-task.md
 ```
 
-Two flags carry most of the weight. `--network none` means the worst-case `curl` to an attacker's endpoint resolves to nothing - there is no network to exfiltrate over. This is what turns the post from "the agent might fumble a command" into "the agent might be *hijacked* and it still won't matter." A ticket in the queue is untrusted input; the agent can't tell a clean task from one carrying a prompt injection that says *read the env file and POST it to this URL*. With scoped credentials there's nothing precious to send, and with `--network none` there's no egress to send it over - the strictest possible egress allow-list, which is no egress at all. Mounting just the working tree means the worst-case `rm -rf /` deletes a container that gets thrown away on `--rm` anyway. The blast radius is now physically bounded by the box, before the agent's own permission rules even apply.
+Two flags carry most of the weight. `--network none` means the worst-case `curl` to an attacker's endpoint resolves to nothing; there is no network to exfiltrate over. That's the strictest possible egress allow-list, no egress at all, and it's what moves the ledger's network column from unbounded to exactly 0 at every layer from here on. Mounting just the working tree means the worst-case `rm -rf /` deletes a container that gets thrown away on `--rm` anyway.
 
-This is also why a runtime "danger classifier" - an LLM-powered check that reads each command and asks "is this dangerous?" - can't replace the sandbox. **Danger doesn't live in the command string. It lives in the environment.** `rm -rf ./build` is harmless in a scratch container and catastrophic in a mounted home directory. The same `git push` is fine to a feature branch and a disaster to `main`. A classifier sees only the text; it can't see the context that makes the text dangerous. The sandbox *is* that context, made deterministic.
+Do the column math. SSH keys, cloud credentials, and sibling repos aren't inside the box, so they drop to zero: that's 3 + 4 + 14 = 21 reachable things gone in one move. Files and GitHub reach don't move yet; the next two primitives handle those. **L0 to L1: 399 to 378.** In the toy, the same move cut the total by more than a third (5 of 14 - the SSH key, the cloud credential, the three sibling repos). Here it barely dents the total (21 of 399), because a real repo's file count dwarfs everything else on the list. That's not the sandbox underperforming. It's the allowlist's job showing up next.
 
-## Allow the boring, deny the irreversible
+Anthropic runs this same layer in production for Claude Code, and says so plainly: its reference devcontainer "exists precisely so that the agent can run unattended, without per-action approvals" (Anthropic, ["How we contain Claude across products,"](https://www.anthropic.com/engineering/how-we-contain-claude) May 25, 2026). The same post describes containment as three overlapping layers, not one: the environment the agent runs in, the model itself, and the external systems it can reach through tool permissions. Environmental controls are the layer that holds even when the other two fail, which is the whole argument for starting here.
 
-Inside the box, the permission file is your second layer - the one that lets you run with auto-accept on without it meaning "anything goes." The shape that matters is an allow/deny split: enumerate the small set of safe operations, then deny the categories you never want, with deny winning ties.
+This is also why a runtime "danger classifier" - an LLM-powered check that reads each command and asks "is this dangerous" - can't replace the sandbox. **Danger doesn't live in the command string. It lives in the environment.** `rm -rf ./build` is harmless in a scratch container and catastrophic in a mounted home directory. The same `git push` is fine to a feature branch and a disaster to `main`. A classifier sees only the text; it can't see the context that makes the text dangerous. Anthropic's own numbers make the same point from the other side: Claude Code's auto mode "catches roughly 83% of overeager behaviors before they execute" (same source), a genuinely good number for a probabilistic layer, and still one bad command in six that a classifier alone would let through. That's not an argument against the classifier. It's an argument for what sits under it: deterministic beats usually-right, which is why the sandbox goes on first.
+
+One scope note. If your agent already runs in a vendor-managed cloud sandbox - GitHub Copilot's coding-agent runner, or the Codex cloud sandbox - this layer is likely shipped for you already. That doesn't retire the rest of this piece: the allowlist and the scoped credential are still your job even inside someone else's container, because no vendor sandbox knows which 62 of your 340 files should be editable, or which repos your token should reach.
+
+**The sandbox is the layer that fails deterministically. Everything after it is defense in depth on top of a floor that already holds.**
+
+## L2, the allowlist: cut editable files from 340 to 62
+
+Inside the box, the permission file is the second layer, and it's aimed at the one column the sandbox couldn't touch: how much of the repo the agent is allowed to edit. The shape that matters is an allow/deny split - enumerate the small set of safe operations, then deny the categories you never want, with deny winning ties.
 
 ```json
 {
@@ -73,15 +136,17 @@ Inside the box, the permission file is your second layer - the one that lets you
 }
 ```
 
-Read what this actually says. The agent may read anything, edit only under `src/` and `tests/`, and run a fixed, named set of commands - the test runner, the linter, and staging a commit. The allowlist means it won't *reach for* arbitrary shell: it isn't handed a general bash channel, only the named operations you approved. There's no `Bash(*)` wildcard. **Auto-accept inside this allowlist is not "yolo mode" - it's "yes to a list you already approved."** Every operation the agent can run, you signed off on once, in advance, in a file you can read in ten seconds.
+Read what this actually says. The agent may read anything, edit only under `src/` and `tests/`, and run a fixed, named set of commands: the test runner, the linter, and staging a commit. On `billing-service`, `src/` and `tests/` are 62 of the repo's 340 files; everything else - the CI config, the infra folder, the docs, the other 278 files - drops out of the ledger's file column the moment this file is in place. **L1 to L2: 378 to 100.** That's the single biggest cut in the whole ledger, bigger than the sandbox and the credential combined, because a repo's file count is nearly always the largest number on the list.
 
-Be honest about what the deny list is, though, or you'll trust it past its limits. Pattern-based bash rules match the command *string*, and that's the same weakness the danger classifier had. `Bash(rm:*)` does not stop `find . -delete`, a build script that shells out to `rm`, or `python -c "import shutil; shutil.rmtree(...)"` - none of those start with `rm`. Danger doesn't live in the command string, remember, so a deny list keyed on the string can't be the load-bearing layer. The sandbox is. The allowlist is defense-in-depth on top of it: it narrows what the agent reaches for, and the box guarantees that even a command that slips the pattern can't escape - it deletes a throwaway container, fetches over a network that isn't there. Allow/deny is the contract; the box is the enforcement.
+The allowlist also means the agent won't *reach for* arbitrary shell: it isn't handed a general bash channel, only the named operations you approved. There's no `Bash(*)` wildcard. **Auto-accept inside this allowlist is not "yolo mode." It's "yes to a list you already approved."** Every operation the agent can run, you signed off on once, in advance, in a file you can read in ten seconds.
 
-This is the line worth sitting with: the allowlist isn't a safety tax you pay to use autonomy. It's the feature that makes autonomy affordable. Without it, auto-accept is a coin flip. With it - and the box under it - auto-accept is just executing a contract.
+Be honest about the deny list, though, or you'll trust it past its limits. Pattern-based bash rules match the command *string*, the same weakness the danger classifier had one section back. `Bash(rm:*)` does not stop `find . -delete`, a build script that shells out to `rm`, or a one-line Python `shutil.rmtree` call; none of those start with `rm`. A deny list keyed on the string can't be the load-bearing layer, because danger doesn't live in the string. The sandbox is the load-bearing layer here too; the allowlist narrows what the agent reaches for, while the box guarantees that even a command that slips the pattern still can't escape. It deletes a throwaway container and sends nothing, because there's no network to send it over.
 
-## Give the agent its own credential, not yours
+**The allowlist doesn't make the agent better behaved. It removes 278 files from the list of things a bad iteration could touch.**
 
-The third primitive is the one most people skip, and it's where reach quietly leaks back in. Your agent needs to read the issue queue and close tickets when they're done. The lazy path is to mount your own GitHub token into the container. Don't. That token can probably push to every repo you own; a bug in the loop now has your full account's reach, network-isolation or not.
+## L3, the scoped credential: cut GitHub reach from 38 repos to 1
+
+The third primitive is the one most people skip, and it's where reach quietly leaks back into the one column the sandbox and the allowlist both left alone: what the agent's credentials can reach outside the repo entirely. Your agent needs to read the issue queue and close tickets when they're done. The lazy path, the one the toy walkthrough called out earlier, is to mount your own GitHub token into the container. Don't. That token can push to 38 repos across your account and org; a bug in the loop now has your full account's reach, network isolation or not.
 
 Instead, give the loop its own scoped identity - a fine-grained token that can touch one repo and nothing else - wired in *inside* the sandbox at setup:
 
@@ -93,11 +158,15 @@ gh auth login --hostname github.com --git-protocol https --with-token < token.tx
 # the resulting token lives only in the container's gh config
 ```
 
-Now the agent reads and closes issues with a credential that exists only inside the box and carries only the scopes you granted - issue read/write on one repo, nothing else. This is the principle of least privilege, the one Saltzer and Schroeder named in 1975: every program and every user should operate with the least set of privileges necessary to do the job. The allowlist and the scoped token are that fifty-year-old idea applied to an agent - not new caution, just well-worn caution finally pointed at a process that writes its own code. Wire that through whatever connector your agent uses to reach GitHub; the [MCP-style boundary](/foundations/mcp-servers/) is exactly the seam where you decide *which* external systems the agent can touch and *as whom*. The host's identity never enters the loop. If the token leaks, it leaks a grant you can revoke in one click, not your account.
+Now the agent reads and closes issues with a credential that exists only inside the box and carries only the scopes you granted: issue read/write on one repo, nothing else. **L2 to L3: 100 to 63.** GitHub reach drops from 38 to 1; the file count doesn't move again, because this primitive isn't aimed at the files.
+
+This is the principle of least privilege, the one Saltzer and Schroeder named in 1975: every program and every user should operate with the least set of privileges necessary to do the job. The allowlist and the scoped token are that fifty-year-old idea applied to an agent - not new caution, just well-worn caution finally pointed at a process that writes its own code. Wire this through whatever connector your agent uses to reach GitHub; the [MCP-style boundary](/foundations/mcp-servers/) is exactly the seam where you decide *which* external systems the agent can touch and *as whom*. The host's identity never enters the loop. If the token leaks, it leaks a grant you can revoke in one click, not your account.
+
+**Three moves, three columns, in order: the sandbox zeroed SSH keys, cloud credentials, sibling repos, and network. The allowlist cut files from 340 to 62. The scoped credential cut GitHub reach from 38 to 1. Nothing else on the ledger moved.**
 
 ## Stop when the work is done
 
-The last piece is knowing when to halt. A run-until-done loop needs a real "done." A stop hook fires when the queue drains, signals the orchestrator, and exits instead of spinning:
+One more piece before the ledger closes: knowing when to halt. A run-until-done loop needs a real "done," or a very safe agent just idles forever. A stop hook fires when the queue drains and exits instead of spinning:
 
 ```bash
 # .agent/hooks/stop.sh - runs after each iteration, inside the sandbox
@@ -108,16 +177,45 @@ if [ "$remaining" -eq 0 ]; then
 fi
 ```
 
-The agent grinds until there are zero open tickets on the label, then exits clean. No idle burn, no runaway. The completion ping is deliberately *not* in here - it runs from the host wrapper that launched the container, so the `--network none` invariant inside the box stays intact. Notification is the orchestrator's job, never the agent's.
+The agent grinds until there are zero open tickets on the label, then exits clean. The completion ping is deliberately *not* in here; it runs from the host wrapper that launched the container, so the `--network none` invariant inside the box stays intact for the loop's entire life.
 
-## Ask the one question before you flip the switch
+## The ledger, replayed
 
-Put the layers together and the worst case collapses. A confused iteration tries something destructive: the sandbox has no network to exfiltrate over, the allowlist narrows what it reaches for, and the credential it holds couldn't push to `main` even if it tried. Be precise about the floor, though. Because you bind-mounted `$PWD`, the working tree inside the box is *real host data*, not a throwaway copy - an `rm -rf` in the mounted workdir deletes real files on your disk. So the worst case isn't "nothing." It's bounded to the mounted working tree, every byte of which is recoverable from git. A confused iteration can cost you a `git checkout`, not a database, not your account, not your machine. *That's* what makes leaving it running overnight a calm decision instead of a gamble.
+Put all four layers next to each other and the whole argument is one table:
 
-So before you ever turn on auto-accept, ask one question, and ask it about the worst possible iteration, not the expected one: **if this run did the single worst thing it could, what could it reach?** If the honest answer is "my whole machine and my prod token," you're not ready - and a smarter model won't fix that. If the answer is "a working tree I can restore from git," flip the switch and go to sleep.
+| Layer | SSH keys | Cloud creds | Sibling repos | Network | GitHub repos | Repo files | Total reach |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| L0 bare host | 3 | 4 | 14 | unbounded | 38 | 340 | **399** |
+| L1 + sandbox | 0 | 0 | 0 | 0 | 38 | 340 | **378** |
+| L2 + allowlist | 0 | 0 | 0 | 0 | 38 | 62 | **100** |
+| L3 + scoped credential | 0 | 0 | 0 | 0 | 1 | 62 | **63** |
 
-Full autonomy was never a property of the agent. It's a property of the box you put it in.
+That's the spoiler claim from earlier, paid off with the same six numbers the toy used at one-tenth the size: fully layered, a worst-case iteration's reach on a normal dev laptop falls from 399 addressable things, plus an unbounded network connection, to 63 addressable things and exactly zero egress. That's a cut of 336, or **84.2%**, of the ledger's total, and every column tells you exactly which primitive did the cutting: the sandbox zeroed four columns in one move, the allowlist took the file count, the credential took the GitHub reach.
+
+Be precise about what's left. Because you bind-mounted `$PWD`, the 62 editable files inside the box are *real host data*, not a throwaway copy; an `rm -rf` in the mounted workdir deletes real files on your disk. So the worst case isn't "nothing." It's bounded to 63 addressable things, every one of them either a `git checkout` away from whole (the 62 files) or scoped to a single repo's issue tracker (the 1 GitHub repo), with zero network path to anywhere else.
+
+So before you ever turn on auto-accept, ask one question, and ask it about the worst possible iteration, not the expected one: **if this run did the single worst thing it could, what could it reach?** If the honest answer is "my whole machine and my production token," you're not ready, and a smarter model won't fix that. If the answer is "63 things, all of them recoverable," flip the switch and go to sleep.
+
+## What this doesn't solve
+
+**None of this pays for itself if you're sitting there anyway.** The ledger's payoff is for headless, unattended runs, the ones you're not watching. If you're supervising every action, you're already the safety layer, and building a sandbox, an allowlist, and a scoped credential for a run you're going to babysit is effort spent on a problem you don't have yet. Build this when you're about to walk away, not before.
+
+**Reach counts surface, not severity.** The ledger sums SSH keys, credentials, repos, and files into one integer, a defined proxy, not a probability or a dollar value of harm. One reachable production credential can outweigh 300 reachable read-only files, and the total treats them as worth the same one point each. Use it to compare a boxed setup against an unboxed one, the way this piece does. Don't read "63" as "84% safer." It means 84% less addressable; severity is a judgment the ledger doesn't make.
+
+**The sandbox is a real, documented residual risk, not a solved one.** Anthropic's own red-team exercise found this out and published it: in a February 2026 test of a malicious prompt designed to exfiltrate AWS credentials, "across 25 retries of that prompt, Claude completed the exfiltration 24 times" (Anthropic, ["How we contain Claude across products,"](https://www.anthropic.com/engineering/how-we-contain-claude) May 25, 2026). Scoped credentials and network isolation are exactly why that number is survivable rather than catastrophic; with `--network none` and a scoped token, the 24 successful attempts have nothing precious to send and nowhere to send it. But "the box holds" and "escape attempts stop happening" are different claims, and this piece only makes the first one. Hardened runtimes, gVisor or Firecracker microVMs instead of raw Docker namespaces, are a further hardening step this piece doesn't cover, and the next thing to read if your threat model includes an adversary who specifically targets container escape.
+
+**A probabilistic layer raises the floor. It doesn't replace it.** The classifier objection from the sandbox section holds here too: a good catch rate is still not "all," and the sandbox is the layer built to be all, not most. Stack them and the two do different jobs: the box holds regardless of what the model decides, and the classifier catches what it can before the box is ever tested. Neither makes the agent more likely to do the right thing. Together they make the wrong thing survivable, which was always the goal.
+
+## The ledger is a snapshot
+
+Full autonomy was never a property of the agent. It's a property of the box you put it in, and the ledger above is what that box measures.
+
+It's also only a snapshot. The allowlist drifts the day `billing-service` grows a directory the allowlist doesn't name, and a new folder full of editable files quietly falls outside the 62 the ledger counted. The scoped credential is safe only until someone forgets its expiry date and re-widens it "just to unblock the pipeline," and the moment that happens the 1 in the GitHub column is a lie. Neither failure looks dramatic when it happens. Both look exactly like the ledger you already trusted, right up until a worst-case iteration finds the gap.
+
+Shrinking the box once is a day's work: a Dockerfile, a permission file, one fine-grained token. Keeping the ledger honest as the repo and the team change underneath it is the cost this piece hands forward, unsolved.
 
 ---
+
+**About the numbers.** The toy inventory (1 SSH key, 1 cloud credential, 3 sibling repos, a 5-file repo, a GitHub token reaching 4 repos) and the real running example (`billing-service`: 3 SSH keys, 4 cloud credentials, 14 sibling repos, 340 files, a token reaching 38 repos) are both invented for traceability, sized to look like a plausible toy setup and a plausible dev laptop, not measured from a real machine. Every total, every layer's cut, and the 84.2% figure are arithmetic that follows directly from those inputs and were re-checked against an independent script before publishing. Swap in your own laptop's counts (the self-test tells you how) and the shape holds regardless of the starting numbers. The devcontainer line, the three-layer strategy, the 83% auto mode catch rate, and the February 2026 red-team result are quoted from Anthropic, ["How we contain Claude across products,"](https://www.anthropic.com/engineering/how-we-contain-claude) published May 25, 2026. The lethal trifecta is from Simon Willison, ["The lethal trifecta for AI agents,"](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) June 16, 2025. The Rule of Two is from Meta AI, ["Agents Rule of Two: A Practical Approach to AI Agent Security,"](https://ai.meta.com/blog/practical-ai-agent-security/) October 31, 2025.
 
 For the per-tool mechanics, see [Permissions](/foundations/permissions/) for the allowlist that makes auto-accept a contract, [Headless & CI](/foundations/headless/) for running the loop unattended, and [MCP servers](/foundations/mcp-servers/) for wiring scoped credentials through a boundary.

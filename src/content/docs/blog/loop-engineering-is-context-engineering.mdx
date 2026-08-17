@@ -1,88 +1,202 @@
 ---
-title: "Everyone designs loops. No one asks what the agent knows each tick."
-description: "Loop engineering's six building blocks are context primitives wearing new names. The scheduling is cron; what decides the outcome is the context on each tick."
+title: "Five of the six building blocks of an agent loop are the same move. The seventh never made the list."
+description: "The loop engineering parts list from June 2026, classified by one question: five blocks are context moves, one is a schedule, and the genre's signature failure is fixed by a seventh block the list never counted."
+seoTitle: "Agent Loop Engineering Is Context Engineering in Disguise"
+seoDescription: "Five of an agent loop's six building blocks are context moves, one is a schedule, and the Ralph loop's fix is a seventh block never counted."
 authors: sanjay
 date: 2026-06-20
 tags: [context-engineering, skills, subagents, mcp-servers, headless]
 draft: false
 ---
 
-You set the loop running before bed. Triage the open issues, draft fixes, open PRs, stop when CI is green. By morning it has opened nine. Three are good. The other six are confidently wrong in ways you'd have caught in ten seconds from the chair - except the whole point was that you weren't in the chair. The loop didn't fail because the model is weak. It failed because at 2am, on iteration forty, it didn't know something you know.
+You set a loop on your issue backlog before bed. By morning it has opened nine pull requests. Three are good. Six are confidently wrong in ways you would have caught in ten seconds from the chair, and the whole point was that you weren't in the chair. The loop didn't fail because the model got weaker overnight. At 2am it didn't know something you know, and there was nobody awake to hand it over.
 
-That's the part the pitch skips. The advice - stop prompting your agents, build the system that prompts them - is right, and it ships with a tidy parts list: automations, worktrees, skills, connectors, sub-agents, a memory file. Every version of it converges on roughly that list, then closes with the same noble line about staying the engineer. The list is correct. But it's organized around the wrong question. It tells you what to *assemble*. It never asks the one that decides whether the assembled thing works: **on each tick, what does the agent actually know?**
+That is the failure the new advice sells a fix for. Addy Osmani's June 2026 writeup popularized the name, loop engineering, and shipped the parts list everyone now quotes: automations, worktrees, skills, connectors, sub-agents, and a state file for memory. The same week, Anthropic ("Getting Started With Loops") and OpenAI ("Unrolling the Codex Agent Loop") published loop guides. Two labs, one blogger, one week. This is doctrine now, and doctrine comes with a parts list.
 
-Because that's the part the parts list can't see. A loop is two halves bolted together. One half is the timer - the thing that fires every fifteen minutes, on a PR comment, on a CI failure. That half is genuinely cron, and cron has shipped with Unix since the 1970s. The other half is a model that wakes up with no memory of the last 4,000 ticks, looks at the world, and decides what to do next. **The timer is solved. The decision is not.** And the quality of that decision is set entirely by what context arrives in the window before the model is asked to think.
+But the list is organized around the wrong question. It tells you what to assemble, never the question that decides whether the assembled thing works. To ask it you need the loop's unit, the **tick**: one pass of the loop body, one agent run with its own fresh window. The question is, **on each tick, what does the agent actually know?** A loop is two halves bolted together. One half is a timer, and the timer was solved decades ago; cron has shipped with Unix since the 1970s. The other half is a model that wakes with no memory of any earlier tick, reads its window, and decides. The quality of that decision was settled before the model was asked, by what text reached the window.
 
-So loop engineering isn't a new discipline that replaces prompting. It's the most demanding form of [context engineering](/foundations/) there is - the discipline this whole site is about: closing the gap between an agent that's capable but knows nothing about your project, and you, who know everything but can't be in the chair at 3am. When you were in the chair, you closed that gap live. You saw the agent reach for the wrong file and you redirected it. Remove yourself from the loop and every gap you used to patch in real time has to be **pre-loaded into the tick.** That's the whole job. The six building blocks are just the six places context gets loaded.
+This site has pulled that question through the parts list one block at a time, in six deep dives: the state file, the subagent boundary, the stop condition, the overnight build, the blast radius, the walls that earn headless mode. This piece is the checkpoint. Replayed on one map, two things fall out that no single-block view could see. First: ask each block one question, if I deleted this, would the text some window reads change, or only the timing? **Five of the six come back context, one comes back schedule.** Second: the failure mode the whole genre treats as its signature bug, the loop that declares victory on a half-done job, is fixed by none of the six. Its fix is a seventh block that was never on the list.
 
-## The six blocks are six context moves
+## Check whether you already have this
 
-Walk the canonical list again, but ask of each one *what context does this deliver, and to whom* - and the list stops being a parts bin and starts being a map.
+One minute on the loop you already run, or the one on the whiteboard, settles whether the rest of this is for you.
 
-**Skills are persistent context, written once.** A [skill](/foundations/skills/) is the project knowledge the agent would otherwise guess at - the conventions, the build steps, the "we don't do it this way because of that one incident." In an interactive session you'd just *tell* the agent that when it went wrong. In a loop there's no one to tell it, so the telling has to live on disk where every tick re-reads it cold. Same with a [rules file](/foundations/rules/). Without these, the loop re-derives your entire project from zero every single cycle and fills every hole with a confident wrong guess. With them, intent compounds instead of evaporating.
+Take each part of that loop and ask the deletion question: if I removed this tonight, would tomorrow's tick read different text, or just fire at a different time? Then one more: which part decides whether a tick's finished work counts as done?
 
-**The state file is context across runs.** The agent forgets everything between ticks; the repo does not. A markdown file, a Linear board, the git log - anything outside the single conversation that records what got tried, what passed, what's still open. This is the least glamorous block and the most load-bearing, because it's the only thing that turns 200 independent ticks into one coherent project instead of 200 fresh starts. (We've built a whole loop around exactly this - [the git log as the agent's only memory](/blog/the-loop-that-rereads-its-diary/).)
+If you can place every part in under a minute and name the gate without hesitating, you have already done this synthesis; the table at the end will only confirm it. Close the tab. If any part takes a beat to place, or the gate question has no answer, that gap is what the next sections close.
 
-**Sub-agents are context *isolation*.** This is the block people most often mistake for an orchestration trick when it's really a context trick. The reason you split the agent that writes from the agent that checks isn't org-chart theater - it's that **a verifier is only honest if it has a context the maker can't see.** Self-critique fails for a precise, mechanical reason: the same window that holds the flawed reasoning also holds the grade, and the model is far too generous about its own work. Spawn a [sub-agent](/foundations/subagents/) with a clean window and a different instruction and you've created a context boundary the first agent can't reason its way across. That boundary is the verifier's entire value.
+**The parts list tells you what to assemble. The deletion question tells you what each part is actually for.**
 
-**Connectors are external context reach.** A loop that can only see the filesystem is a tiny loop. [MCP servers](/foundations/mcp-servers/) let it read the issue tracker, query the database, hit staging, post to Slack - which is the difference between an agent that says "here's the fix" and a loop that opens the PR, links the ticket, and pings the channel once CI is green. But notice it's still context: the connector's job is to pull the state of your *real* systems into the window so the next decision is made against reality instead of against a stale guess.
+## One loop, fixed for the rest of this piece
 
-**Worktrees keep parallel contexts from colliding.** When two agents edit the same file they corrupt each other the way two engineers committing to the same lines without talking do. A git worktree gives each its own isolated checkout. It's context isolation again, one floor down - at the filesystem instead of the window.
+Fix one concrete loop now, and keep it for everything that follows. A nightly triage loop for a repo with 6 open issues labeled `agent-queue`. (Not the two clocks of [Two loops](/blog/two-loops/), which splits an eval suite; that piece shares a word and nothing else.) The loop has six parts, one per block on the canonical list:
 
-Five of the six "building blocks" are about *what's in the window and what's walled off from it.* The sixth, the automation, is the cron half. That ratio is the tell.
+- A 400-word `triage-skill.md`: how this project triages, which test to run, and the standing line "don't touch the billing module."
+- A `STATE.md` whose last 30 lines get pasted into every tick, because the model forgets everything between ticks and the file doesn't.
+- A verify subagent with a fresh window, which grades each fix before it counts.
+- A GitHub MCP connector, so ticks can read issues and open draft PRs.
+- Two git worktrees, so two issues can be in flight without two agents writing into one checkout.
+- A cron-fired for-loop with a hard cap of `MAX` ticks, one retry per issue in the worst case.
 
-## Every failure mode is a context failure
-
-Watch what the loop discourse warns you about, and it's the same point from the other side.
-
-The **Ralph loop** that exits on a half-done job - that's a loop with no context of what "done" means, so it accepts the agent's own say-so. The fix is a gate: a test, a type check, a build. Not a second agent with an *opinion* - an objective signal that lives outside any agent's context and can fail the work without a human in the room.
-
-**Goal drift at turn 47** - the constraint you set at the start ("don't touch the billing module") vanishes because each summarization step is lossy and nobody re-injected it. That's a context-maintenance failure, fixed by a standing file the loop re-reads every pass rather than trusting the window to retain.
-
-**Comprehension debt** - the gap between what the repo now contains and what any human has actually read - is a context failure on *your* side of the loop. The faster it ships code you didn't write, the wider that gap, and the bill that eventually hurts isn't the token bill, it's the day you have to debug a system no one understands. The mitigation isn't technical. It's reading the diffs. Staying in the context you delegated.
-
-And the **runaway spend** everyone's scared of is what happens when the only context the loop lacks is a stop condition - no iteration cap, no token ceiling, no no-progress detector. A decision-maker with no sense of when to stop deciding. The bills are real. One documented fleet ran sixteen agents in parallel for two weeks to build a single C compiler - just under twenty thousand dollars in tokens. A large engineering org handed its developers Claude Code in December, watched them burn the entire year's AI budget by April, then capped every engineer at fifteen hundred dollars per tool per month. Once the model writes the code for almost nothing, the loop running it becomes the expensive part.
-
-None of these are scheduling bugs. You cannot fix a single one by tuning the cron expression. They're all the same failure in different costumes: the agent, at some tick, didn't know something it needed to know - and in a loop, "didn't know" is the *only* failure mode, because the loop is nothing but a machine for delivering knowledge to a forgetful model on a timer.
-
-## What one tick actually carries
-
-Strip the romance and a working loop is short. Here's the whole thing - a bounded loop that works a plan one item at a time, with every line that matters labeled by the *context* it delivers, not the component it is:
+Here is the whole driver, annotated by block. The `next_issue` and `open_draft_pr` helpers stand in for the connector's MCP calls:
 
 ```bash
 #!/usr/bin/env bash
-MAX=20                                       # STOP: a hard cap, so a stuck tick can't run forever
+MAX=12                                        # AUTOMATION (schedule): the cap. Worst case, 6 issues x 2 ticks.
 for ((i=1; i<=MAX; i++)); do
-  prompt="$(cat <<EOF
-$(cat ./loop-skill.md)                       # SKILL: how we do things here, written once
-## What past ticks did - your only memory, read it
-$(tail -30 ./STATE.md)                        # STATE: context across runs; the agent forgot, the file didn't
+  issue=$(next_issue agent-queue)             # CONNECTOR (deliver): the tracker's live state, via MCP
+  wt="wt-$(( (i % 2) + 1 ))"                  # WORKTREE (isolate): lane 1 or lane 2, never both
+  skill=$(cat ./triage-skill.md)              # SKILL (deliver): 400 words of how we do things here
+  memory=$(tail -30 ./STATE.md)               # STATE (deliver): what happened on ticks you will never see
+  prompt="## How we do things here
+$skill
+## What earlier ticks did - your only memory, read it
+$memory
 ## Your job this tick
-Work the first unchecked item in ./PLAN.md. One thing, then stop.
-EOF
-)"
-  agent -p "$prompt" --allowedTools "Edit,Bash(npm test *)"  # SCOPE: the only tools reachable this tick
-  if ./verify.sh; then                        # VERIFY: an external gate, not the maker's opinion
-    git commit -am "tick $i"
+Fix issue #$issue in ./$wt. One issue, then stop."
+  agent -p "$prompt" --cwd "$wt" \
+    --mcp github --allowedTools "Edit,Bash(npm test:*)"
+                                              # AUTOMATION fires the tick; the allowlist is blast radius
+  agent -p "Grade the diff in $wt for issue #$issue against its
+            acceptance test. Verdict: PASS or FAIL, then one line why."
+                                              # SUBAGENT (isolate): a fresh opinion, advisory only
+  if ./verify.sh "$issue"; then               # GATE: deterministic pass/fail. This one counts.
+    open_draft_pr "fix #$issue"               # CONNECTOR (deliver) again: the loop reaches back out
+    echo "tick $i: #$issue closed" >> ./STATE.md
   else
-    echo "tick $i $(date): failed" >> ./STATE.md
+    echo "tick $i: #$issue failed, re-queued" >> ./STATE.md
   fi
-  grep -q '^- \[ \]' ./PLAN.md || break        # STOP: an objective done-condition, checked each tick
-done                                           # the for-loop itself - this part really is just cron
+  [ -z "$(next_issue agent-queue)" ] && break # AUTOMATION (schedule): the done-sentinel
+done
 ```
 
-Five of the six building blocks are right there in the comments, and not one of them is about scheduling. They're about what reaches the window before the model is asked to think: the skill that says *how*, the state that says *what already happened*, the scope that says *what's reachable*, the gate that says *whether it worked*. The `for` loop - the part skeptics dismiss as "just a cron job" - is the one line that genuinely is. Everything else is context delivery. Sub-agents are the sixth block; you reach for them the moment `verify.sh` needs to be a fresh model grading the work instead of a script, because a checker that shares the maker's window shares its blind spots.
+The six blocks feed ticks one at a time; the cap decides how many there are.
 
-## The leverage moved up a floor. The work didn't change kind.
+Every constant here is a toy value, sized so you can check the later arithmetic with a pencil; nothing was measured. One number is planted and paid off exactly: `MAX=12`, the worst-case tick budget. Where the 12 comes from, and why the 8 most teams would eyeball is wrong, gets its own section.
 
-This is the honest version of the story, and it's less triumphant than the six-word slogan. Loop engineering doesn't retire context engineering - it removes the one actor who was quietly doing context engineering by hand the whole time: you, in the chair, patching gaps live. Take yourself out and the patching doesn't disappear. It moves upstream, into the skill files and state files and verifier boundaries you build *once*, in advance, for ticks you'll never watch.
+**Fix the loop once, and every later question about "loops in general" becomes a checkable question about these six parts.**
 
-That's why two people build the identical loop and get opposite results. One uses it to move faster on work they understand deeply, pre-loading the context they already carry in their head. The other uses it to *avoid* understanding the work - and the loop faithfully amplifies the void, atomically committed, with green checkmarks on tasks that satisfy the letter of an underspecified goal and none of its intent. [Garbage in, garbage in production by morning.](/blog/an-overnight-build-loop/) The loop doesn't know the difference. The context you fed it does.
+## Six blocks in, six capabilities out
 
-So yes - design the loop. Take yourself out of the chair. But don't mistake the timer for the achievement. **A loop is only as good as the context it carries each tick**, and assembling six blocks is the easy part. The hard part is the same hard part it's always been: handing a capable, contextless machine everything it can't infer about your project - except now you have to hand it everything *up front*, because you won't be there at 3am to fill in what you forgot.
+Walk the canonical list one more time, as capabilities you already own from the six deep dives. Each line is what the block lets you do that you could not do before.
 
-Build the loop. But build it like someone who knows the loop is just context engineering that finally has to stand on its own.
+**Skills and rules are persistent context, written once.** In an interactive session you would tell the agent the convention the moment it went wrong. In a loop there is nobody to tell, so the telling lives on disk where every tick re-reads it cold. The capability: you can price any line in a [skills](/foundations/skills/) or [rules](/foundations/rules/) file, because every line loads into every tick whether it earns its keep. (For organizing the rules file itself, see [Deterministic context](/blog/deterministic-context/).)
+
+**The state file is context across ticks.** The model forgets between ticks; the repo does not. It is the only thing that turns a month of independent ticks into one project instead of a month of fresh starts. The deep mechanic, the git log as the loop's only memory and the contract each entry must satisfy, is [The loop that re-reads its diary](/blog/the-loop-that-rereads-its-diary/)'s subject. Here you only need the capability: the constraint you write down at 6pm is still in the window at 3am, because a file re-delivers it every tick. (A tick is a different unit from the relay phase in [The relay, not the window](/blog/the-relay-not-the-window/) and [Treat the plan file as external memory](/blog/treat-the-plan-file-as-external-memory/): those two carry one build's context across turns, and this carries a loop's memory across scheduled ticks.)
+
+**Sub-agents are context isolation.** The reason to split the maker from the checker is mechanical: a verifier is only honest if it holds a context the maker cannot see, because the window that holds the flawed reasoning will also hold the grade. [The agent loop you already have](/blog/the-agent-loop-you-already-have/) makes the full case. The capability it leaves: you can manufacture a second opinion that has not been contaminated by the reasoning it is judging.
+
+**Connectors are external context reach.** The GitHub MCP server pulls the tracker's live state into the window, so the next decision is made against reality instead of a stale guess. What a connector may touch while nobody watches has its own arithmetic, worked in [Full autonomy is a small blast radius](/blog/full-autonomy-is-a-small-blast-radius/); this piece treats connectors purely as delivery and links the reach ledger.
+
+**Worktrees are isolation one floor down from the window:** two ticks, two checkouts, no collisions. This is the one block with no deep-dive sibling yet; the table marks it and the close hands it forward.
+
+**Automation is the timer half.** The cron line, the for-loop, the iteration cap, the done-sentinel. [Teaching the loop to stop](/blog/teaching-the-loop-to-stop/) derives the two brakes an unattended loop needs before you run it overnight, and [An overnight build loop](/blog/an-overnight-build-loop/) shows the failure they guard against: one unbounded task sprawling into a night of scope creep.
+
+Now count the moves. Three blocks put text into a window: the skill, the state tail, the connector's live reads. Two wall text off: the subagent's clean room, the worktree's second checkout. Exactly one block touches no text anywhere: the automation, which only decides when a window opens and how many times. Five context moves, one schedule.
+
+**That 5:1 ratio is the tell, and the next two sections pay it off exactly.**
+
+## The toy: delete each block and watch
+
+Ground truth first, the obvious way. Don't classify by feel. Delete each block from the nightly loop, one at a time, and watch what actually changes the next night.
+
+| Block you delete | What changes | Move |
+|---|---|---|
+| `triage-skill.md` | The tick's prompt loses 400 words of conventions, and the tick guesses them | deliver |
+| `STATE.md` tail | The prompt loses what earlier ticks did; the next tick restarts from zero | deliver |
+| Verify subagent | The maker's prompt is unchanged; the uncontaminated second window never exists | isolate |
+| GitHub connector | The prompt loses the tracker's live state; fixes aim at a stale guess | deliver |
+| Second worktree | No prompt changes; two ticks now write into one checkout and corrupt each other | isolate |
+| For-loop and cap | Every prompt stays identical; nothing fires at 2am at all | schedule |
+
+The three moves, defined by the table rather than by taste. A **deliver** move puts text into a window. An **isolate** move walls text off from a window; deleting it doesn't change the maker's prompt, it merges windows that were separate, and the merging is the damage. A **schedule** move changes only when or whether a window opens.
+
+One objection worth answering in place: isn't calling a worktree a context move a stretch, since a worktree never says anything to the model? The table's fifth row answers. Delete it, and the two lanes write into one checkout, and the corruption ends up in the files the next tick reads. That is text reaching a window, by accident. Isolation keeps accidental text out, which makes it a context move with the sign flipped.
+
+Tally the right-hand column: three delivers, two isolates, five context moves, one schedule. That is the 5:1 planted one section back, unchanged by the deletion test. Run the same table against your own loop on paper; the tally is exact, not estimated.
+
+**Five of the six blocks change what some window reads. The sixth changes only when the reading happens.**
+
+## Twelve ticks, not eight
+
+The script's cap has to be set to something, and this is where teams guess. Six issues are open, so the reasonable-looking answer is eight: the backlog plus slack. The worst case is twelve ticks, and the cap has to cover the worst case. **Remember 12.**
+
+Count it on your fingers. Best case, every fix passes its gate on the first try: six issues, six ticks. Worst case, every issue fails once and takes its one allowed retry: six issues times two ticks each, twelve. The retry budget is per issue, so it multiplies with the backlog. Slack added once to a total covers none of it: a cap of 8 allows two retries across the whole night, and the worst case allows six. The correct `MAX` is 12, and it doubles as the spend brake: whatever one tick costs, maker plus checker, the night costs at most twelve tick-costs, and the automation block holds that number.
+
+Now the worktree arithmetic, the payoff. Two worktrees mean two ticks in flight at once. Twelve ticks across two lanes is six wall-clock tick-slots: the night is half as long. And nothing else moves. Tick count before worktrees: 12. After: 12. Any single tick's prompt before: word-for-word identical to after. The schedule block owns the count, being the cap; the worktree left the count alone, added no text to any window, and only kept two simultaneous windows from writing into one checkout.
+
+That is the arithmetic signature of an isolate move: a deliver block would have shown up as added text somewhere, a schedule block would have changed the count, and the worktree did neither. The deletion table puts it where it does for that reason.
+
+**Twelve ticks of cost, six slots of clock: worktrees buy parallelism, and the bill per tick does not move.**
+
+## Four failure modes, and the hole in the list
+
+Loop writeups keep a short list of famous failure modes. Run each one against the six blocks and ask which block fixes it.
+
+**Goal drift.** The constraint you set at 6pm, don't touch the billing module, is gone by night two, because every compression of the window is lossy and nobody re-injected it. The state file fixes it: `STATE.md` re-delivers the constraint into the window on every tick. Mapped to a listed block; the diary post works the full mechanic.
+
+**Runaway spend.** No cap and no sentinel: a stuck tick re-fixes a bug it already fixed, all night, pass after pass. The automation block fixes it with the two brakes: the cap sized from the backlog, which is the 12-not-8 arithmetic above, and the done-sentinel that breaks the loop when the queue empties. [Teaching the loop to stop](/blog/teaching-the-loop-to-stop/) derives the pair. Note what those brakes do not fix.
+
+**The premature "done."** The genre's signature bug has a name and a date. The **Ralph loop** comes from Geoffrey Huntley's Ralph technique (July 2025): a bash for-loop that re-runs the agent until the agent says it is finished. The failure everyone cites: the exit condition is the agent's own say-so, so the loop halts on a half-done job and reports victory. Which of the six blocks fixes that?
+
+Walk them. The skill informs the tick; it does not test the result. The state file records what happened; it does not grade it. The verify subagent is closest, a fresh window and an uncontaminated opinion, but an opinion is still a model's say-so, and the maker's confidence is what produced the false "done". The connector reaches the tracker; it has no view of correctness. The worktree is filesystems. The automation's two brakes stop a loop that runs too long, and the Ralph loop's failure is the opposite: it stopped too early and lied about why. A cap cannot fail a tick that claims success.
+
+None of the six. Hold that; it is the sharpest fact in this piece.
+
+The fix that works is a deterministic pass/fail gate that fires the moment the agent claims done: run the acceptance test, fail the tick if it fails. Not a second agent with an opinion; a check that lives outside every window and can say no with no model involved. This site has documented it twice, in the [hooks](/foundations/hooks/) chapter and in [Earn the automation](/blog/earn-the-automation/), where the two-tooth completion gate is worked in full. Call it **the seventh block**: the primitive that decides whether a tick's claimed result is allowed to count as done.
+
+Why did the June 2026 list miss it? Because the list runs on one axis, what reaches the window, and the gate lives on a second axis the list has no column for: what is allowed to count. The six blocks sort text into windows. The seventh grades the output. In the bash drivers, this script included, the gate sits inside the loop wearing a bash costume, so it reads as part of "automation" and never gets counted.
+
+**Comprehension debt.** The fourth failure mode also maps to none of the six, for a different reason: it is not a loop-design failure at all. The gap between what the repo now contains and what any human has actually read grows with every merged PR, and no block shrinks it. Assemble all seven primitives correctly and the loop still writes code you do not understand. The mitigation is reading the diffs, and the honesty section comes back to it.
+
+Tally: four famous failure modes. Two are fixed by blocks on the list, state and automation. One by a block never listed, the hook. One by no block, because it belongs to you. Two, one, one.
+
+**Two of the four famous failure modes are fixed by blocks on the list. The most famous one is fixed by a block that isn't.**
+
+## The master table
+
+Everything above, on one grid. Read it as the canonical list re-sorted by the deletion question, plus one row that was never counted.
+
+| Block | Move | In the tick's window, or walled off from it, because of it | Failure mode it fixes | Deep-dive |
+|---|---|---|---|---|
+| Skills / rules | deliver | Project conventions, loaded cold every tick | - | [Skills](/foundations/skills/) |
+| State file | deliver | What already happened on ticks you will never see | Goal drift | [The loop that re-reads its diary](/blog/the-loop-that-rereads-its-diary/) |
+| Sub-agents | isolate | A second opinion the maker's window cannot reach | - | [The agent loop you already have](/blog/the-agent-loop-you-already-have/) |
+| Connectors (MCP) | deliver | The live state of your real systems | - | [Full autonomy is a small blast radius](/blog/full-autonomy-is-a-small-blast-radius/) |
+| Worktrees | isolate | One tick's filesystem, walled off from another's | - | none yet, handed forward |
+| Automation | schedule | Nothing; it only decides when the tick fires | Runaway spend | [Teaching the loop to stop](/blog/teaching-the-loop-to-stop/) |
+| Hooks | gate | Whether this tick's claimed result counts as done | The Ralph loop's premature "done" | [Earn the automation](/blog/earn-the-automation/), [hooks](/foundations/hooks/) |
+
+The footer is the point of the piece: **5 context : 1 schedule : 1 gate.** The gate row sits outside the original six-block count, and that outside seat is the finding: the taxonomy had no column for what is allowed to count, so the block that guards it went uncounted.
+
+**Six blocks classified by one question, one gap found and filled: that is the whole map.**
+
+## What this doesn't solve
+
+**Worktrees get a row, not a deep-dive.** Five of the six blocks have a sibling post tracing their mechanic to the bottom. Worktrees have this piece's tick-slot arithmetic and nothing else. The full mechanic, when a second lane is worth its checkout, what cleanup keeps stale worktrees from rotting, how the state file logs two interleaved lanes, is the next open door.
+
+**Comprehension debt has no block-shaped fix.** Worth saying twice: seven primitives, assembled correctly, still do not make you understand code you did not write. The loop compounds your intent and your ignorance at the same speed, and reading the diffs is the only payment that slows the second one.
+
+**The trigger taxonomy is a different axis, and this piece does not adopt it.** Current writeups also sort loops by how they start: heartbeat, cron, hook-triggered, goal-driven. That is a real axis, when a loop fires. This piece's axis is what a tick knows once it fires. One disambiguation matters: a hook-triggered loop is an external event that starts the loop. The seventh block is a gate on one tick's completion. Same word, two mechanisms; the shared name should not suggest the table forgot a trigger.
+
+**The composed loop creates maintenance it does not pay for.** Who prunes `STATE.md` when the 30-line tail becomes the whole file? Who re-earns `triage-skill.md`'s accuracy six months in, when the conventions it froze have moved? Every block on the map is now a file or a boundary someone owns. That question is handed forward with the worktree piece.
+
+**Getting the seven blocks right is a solved problem. Keeping them right is the open one.**
+
+## The subsystem, closed
+
+Replay the table row by row, with nothing left as a dash. Three blocks deliver text into the tick's window: skills and rules, the state file, the connectors. Two wall text off: the subagent's clean window, the worktree's separate checkout. One decides only when: the automation, the cron half, holding the cap that stops runaway spend. And one row sits outside the count: the gate that decides whether a tick's work counts as done, the hook documented on this site before the list that needed it existed.
+
+That is the 5:1 from the top of the piece, reconciled. Loop engineering turns out to be one discipline, context engineering, the same one this site teaches everywhere else, plus a timer, plus a gate.
+
+Two things get handed forward. The worktree row is the open door: no post on this site has traced the collision mechanic the way the other five are traced. And the maintenance question is the bill this loop quietly creates: state files grow, skill files go stale, nothing in the seven blocks prunes itself.
+
+So when the next framework arrives selling an eighth building block, you have a four-part test. Does it put something in the window? Take something out of it? Decide when the window opens? Decide whether the window's output is allowed to count? If it does none of those four, it isn't a loop primitive. It's marketing.
+
+**The timer is cron. The gate is a hook. Everything else is context.**
 
 ---
 
-For the per-tool mechanics, see [Skills](/foundations/skills/) for the persistent project knowledge a loop re-reads every tick, [Subagents](/foundations/subagents/) for the context isolation that makes a verifier honest, and [MCP servers](/foundations/mcp-servers/) for the external reach that lets a loop act on real systems.
+**About the numbers.** The running example's constants, six issues, one retry per issue in the worst case, two worktrees, the 400-word skill, the 30-line state tail, and the nine-PRs-three-good opening, are toy values, invented for traceability and sized to be plausible, not measured. Every other number in this piece, the 12-tick worst case, the 6-tick best case, the undersized cap of 8, the retry budgets of 2 and 6 on either side of it, the 6 wall-clock slots, and the 5:1:1 tally, is exact arithmetic from those constants, checked against an independent script before publishing. The dated facts are quoted, not derived: Addy Osmani's loop engineering writeup, June 2026; Geoffrey Huntley's Ralph technique, July 2025; Anthropic's "Getting Started With Loops" and OpenAI's "Unrolling the Codex Agent Loop", the same week of June 2026. No measured dollar figure, benchmark, or transcript appears in this piece.
+
+For the per-tool mechanics, see [Skills](/foundations/skills/) for the persistent knowledge a tick re-reads cold, [Subagents](/foundations/subagents/) for the isolated verifying window, [MCP servers](/foundations/mcp-servers/) for the external reach, and [Hooks](/foundations/hooks/) for the seventh block itself.

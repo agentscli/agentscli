@@ -1,26 +1,48 @@
 ---
-title: "You can't prompt away a hallucination. You can validate it away."
-description: "A deterministic check on the agent's output, with one retry, kills a class of wrong answers no prompt rewrite reaches - and gives you a number, not a vibe."
+title: "A deterministic hook drives your agent's shipped-wrong rate to exactly zero. The bill is 1 in 144."
+description: "Against a 1-in-12 hallucination rate on a checkable failure, a deterministic hook with one capped retry drives the shipped-wrong rate to exactly zero and moves the remaining risk onto one computable number: the halt tax."
+seoTitle: "Hooks That Validate AI Agent Output Before It Ships"
+seoDescription: "A deterministic hook with one retry drives a checkable AI hallucination's shipped-wrong rate to exactly zero, for a computable halt tax. Here's the math."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, hooks, rules, headless]
 draft: false
 ---
 
-The agent keeps inventing a column that isn't in the schema. You've rewritten the prompt four times. You've added "ONLY use columns that exist" in bold. You've pasted the schema into the system message twice for good measure. It still, once every dozen runs, reaches for `user.last_active` - a field that does not exist and never has.
+The agent keeps inventing a column that isn't in the schema. You've rewritten the prompt four times. You've added "ONLY use columns that exist" in bold. You've pasted the schema into the system message twice for good measure. It still, once every dozen runs, reaches for `user.last_active` - a field that was renamed to `last_seen_at` in a migration eighteen months ago and hasn't existed since.
 
-So you reach for the obvious lever: a smarter model, more autonomy, a longer prompt. **That lever is the wrong one, and it's the most expensive one.** A model that's right 95% of the time is still wrong on the run that ships to production, and no amount of prompt-tuning moves a stochastic process to deterministic zero. You can't argue a coin into landing heads.
+So you reach for the obvious lever: a smarter model, a longer prompt, one more sentence of "please." **That lever is the wrong one.** A model that's right eleven times out of twelve is still wrong on the twelfth run, the one that ships, and no amount of prompt-tuning turns a process that rolls the dice on every call into a guaranteed outcome. You can't argue a coin into landing heads.
 
-Here's the question worth sitting with: if the failure is *checkable in code* - and a hallucinated column name absolutely is - why are you spending your context budget asking the model to please not do it?
+Here's the claim worth sitting with before you read the reasoning: wire a **deterministic** check onto that tool call - same input, same verdict, no model in the decision - cap the retry at one, and you don't lower the odds of a wrong query reaching production. You drive them to exactly zero - not "close to," zero. The model itself stays exactly as wrong as it was; what changes is what a wrong attempt is allowed to do. What's left is a single computable number: the run stalls instead of shipping, in the worst case, about **1 time in 144**. That number has a name below, and by the end you'll be able to derive it yourself.
 
-## A probabilistic generator needs a deterministic gate
+## Check whether you have this
 
-The agent is broad and fast and contextless. It doesn't know that `last_active` was renamed to `last_seen_at` in a migration eighteen months ago, because that fact lives in your database, not in its weights. You, the SME, know it cold. **Context engineering is the work of moving that knowledge to where the agent acts** - and the cheapest place to put a hard fact is not in a prompt the model is free to ignore, but in a check the model cannot route around.
+Before any of the arithmetic, a ten-second test. Think of one wrong output your agent has produced more than once: a column that doesn't exist, an enum value the schema doesn't allow, an import from a file that got deleted. Now ask one question about it: **could a script answer true or false on it, using something you already have, without asking a model?**
 
-A [hook](/foundations/hooks/) is that check. It fires deterministically on a tool call - after the agent writes a file, before it runs a command - and it can reject the action and hand back *why*. That last part is the whole game. The hook isn't a filter that silently drops bad output. It's a gate that returns the error to the agent as fresh context.
+If yes, you have a **checkable** failure - wrongness a machine can settle as a boolean - and everything below applies directly. Swap in your own field name for `last_seen_at` and the math holds. If every wrong output you can think of is really a judgment call (a clumsy abstraction, a summary that buries the point), skip to "When not to reach for a hook" near the end. This piece has nothing for you until the answer changes.
+
+**A hook is worth building exactly when the wrongness is a boolean a machine can already settle.**
+
+## What the baseline actually costs
+
+Fix one running example and keep it for the whole piece: an agent generating SQL against a `users` table, on a repo where `last_active` was renamed to `last_seen_at` eighteen months ago. Call the rate at which the model reaches for the dead column name **p**, and set it to the number the opening anecdote already gave you: 1 in 12, or `p = 1/12`. That's a toy fraction, invented to match "once every dozen runs" so the arithmetic below stays exact. Keep that provenance in mind; it matters again at the end.
+
+Trace 24 calls, a size small enough to check by hand. With no hook at all, every call that reaches for the dead column ships straight to production. The expected count of wrong queries shipped is just N times p:
+
+```text
+no hook: expected wrong queries shipped = 24 * 1/12 = 2
+```
+
+Two of twenty-four ship broken, silently, and nothing in the system tells you which two until a user complains or a report comes back empty. That's the number the rest of this piece is trying to beat, computed the obvious way, before any fix touches it.
+
+**No hook means two silent failures in every batch of twenty-four, and no way to know which two until they've already shipped.**
+
+## The gate: block, hand back the truth, retry once
+
+A [hook](/foundations/hooks/) fires deterministically on a tool call and can reject it before it runs. Claude Code's event for this is `PreToolUse`: it fires before the SQL executes, gets a chance to say no, and the model learns what happened only when it reads the reason. (Hooks that start a run when a merge lands or a cron ticks are a different mechanism wearing the same word - [triggers are hooks](/blog/triggers-are-hooks/); this piece stays inside one run.)
 
 ```python
-# .agent/hooks/validate_sql.py - runs after the agent proposes a query
+# .agent/hooks/validate_sql.py - PreToolUse, before the query runs
 import sys, json, sqlite3
 
 payload = json.load(sys.stdin)
@@ -40,18 +62,63 @@ if unknown:
     sys.exit(0)
 ```
 
-The model proposes `last_active`. The hook reads the *actual* schema, finds the column doesn't exist, blocks the call, and tells the agent the real column list. The agent reads that, corrects to `last_seen_at`, and re-issues. **One retry, driven by ground truth, not by a stricter adjective in the prompt.**
+The model proposes `last_active`. The hook reads the live schema, finds the column doesn't exist, blocks the call, and hands back the real column list as the reason. The agent reads that as fresh context, corrects to `last_seen_at`, and re-issues the call. One retry, and the thing that corrects the model is the live column list the hook just read - stronger than any adjective in the prompt.
 
-One detail in that snippet is load-bearing: it prints JSON and exits `0`. That's the path where the `reason` gets handed back to the agent as fresh context to correct against. The other way to block - exiting with code 2 - also stops the call, but it's a blunter signal that can leave the agent halting instead of retrying. If you want the gate to *teach*, exit clean and put the truth in the JSON.
+One detail in that snippet earns its keep: it prints JSON and exits `0`, the path where `reason` lands back in the agent's context instead of just stopping the run. The loop has a name in agent research, where it goes by **self-correction** or the **reflection** pattern: catch a wrong output, tell the model what's wrong, let it try again. What separates this instance from that family comes next. The ground truth is deterministic, the retry is capped, and the rate that reaches production is provably zero, which an open-ended reflection loop left to its own judgment never guarantees.
+
+**The hook hands the model the one fact it was missing, the live column list, and lets the model finish the job itself.**
+
+## Three outcomes, not two
+
+Wire the hook in, cap the retry at one attempt, and something less obvious than "fewer mistakes" happens: the space of possible outcomes for a single call collapses to exactly three, and only three.
+
+1. The first attempt already passes the check. Ships correct.
+2. The first attempt fails, the hook hands back the real column list, and the retry passes. Ships correct, one attempt late.
+3. The first attempt fails and the one allowed retry also fails. The run halts on the cap. Nothing ships - not the wrong query, not any query.
+
+There's no fourth outcome where a call that failed the check reaches production. That's what "deterministic gate" actually buys you: the check has zero **false negatives** on this class - it never answers "fine" to an output that's wrong - so nothing that fails it can ship.
+
+To put a number on outcome 3, assume the worst case for the retry: it draws from the same rate `p`, independently, crediting the hook with zero extra intelligence even though it was just handed the real column list. That is the floor. A retry that has actually read the correction should do better, and none of the numbers below count on it. Under that floor:
+
+```text
+P(ships correct, first try)      = 1 - p     = 11/12  = 0.9167
+P(ships correct, after 1 retry)  = p * (1-p) = 11/144 = 0.0764
+P(halts, cap hit, ships nothing) = p * p     = 1/144  = 0.0069
+P(ships WRONG)                   = 0
+```
+
+Plant that third number now, because it's the one the rest of this piece is built around: **1/144, the probability a call neither ships nor gets corrected, and just stalls.**
+
+If you guessed, before reading that block, that wiring a hook would change the wrong-ship rate from `p` to `p^2` - a smarter-sounding version of the same failure, just rarer - you guessed the natural misreading. `p^2` is real. It's 1/144, right there in the block. But look at which row it's attached to. It's the halt rate, not the ship-wrong rate. The ship-wrong rate is the row below it: exactly zero.
+
+**With the gate wired, the shipped-wrong rate is exactly zero, and all the remaining risk sits on one computable number.**
+
+## Fail closed, and the halt tax
+
+Scale those three outcomes to the full 24-call trace and the whole picture lands in one table. This is the table the rest of this piece keeps coming back to:
+
+| Outcome | Probability | Count of 24 |
+|---|---:|---:|
+| No hook: ships wrong | 1/12 | 2.000 |
+| With hook: ships correct, first try | 11/12 | 22.000 |
+| With hook: ships correct, after 1 retry | 11/144 | 1.833 |
+| With hook: halts, cap hit, ships nothing | **1/144** | **0.167** |
+| With hook: ships WRONG | **0** | **0.000** |
+
+Read the last two rows side by side. The hook didn't shave the wrong-ship count from 2 down toward zero. It took it to exactly zero and opened a new row that didn't exist before: 0.167 halts per batch, one stalled run about every six batches of twenty-four, each needing a human or a retry outside the cap.
+
+That move has an existing name, and you already know it from security: **fail closed**. A firewall that drops an unrecognized packet instead of forwarding it fails closed - when it can't confirm an action is safe, it does nothing rather than guess. This hook is the same move applied to agent output. Failing closed is what makes the zero real, and it isn't free, so give its price a name too: the **halt tax**, the rate at which a call produces nothing at all because both the first attempt and its one retry missed. On this toy that's 1/144 per call, 0.167 per batch of twenty-four.
+
+**Zero wrong ships is the headline. The halt tax is the bill, and now it's a number instead of a shrug.**
 
 ## The pattern is bigger than SQL
 
-Nothing about this is specific to databases. A hallucinated column is just the most legible case of a larger family: any output where "wrong" is a property your machine can already decide. Swap the schema check for any oracle you already trust, and the loop is identical.
+Nothing about the mechanism is specific to databases. A hallucinated column is the clearest case of a larger family: any output where "wrong" is a property your machine can already decide. Swap the schema check for any other **oracle** - a checker that answers true or false straight off ground truth, with no judgment anywhere in it - and the loop, and the table above, are identical.
 
-The most relatable oracle is the one already sitting in your repo - the compiler. The agent edits a TypeScript file, imports a helper that was deleted three commits ago, and references a prop that the type no longer has. No prompt catches this; the model genuinely believes the helper exists. The typechecker knows it doesn't.
+The oracle most likely already sitting in your repo is the compiler. The agent edits a TypeScript file, imports a helper that was deleted three commits ago, references a prop the type no longer has. No prompt catches this - the model genuinely believes the helper exists. The typechecker knows it doesn't.
 
 ```python
-# .agent/hooks/typecheck.py - runs after the agent edits a .ts file
+# .agent/hooks/typecheck.py - PostToolUse, after the .ts file is written
 import sys, json, subprocess
 
 payload = json.load(sys.stdin)
@@ -69,41 +136,55 @@ if result.returncode != 0:
 sys.exit(0)
 ```
 
-Same shape, different ground truth. The typechecker *is* the schema here - it holds the real signatures, the real prop shapes, the real import graph. The hook hands the agent the exact compiler error, the agent restores the import or fixes the call site, and re-edits. You didn't write a parser this time; you borrowed one that ships with the language. The cheapest validators are the ones you already own: linters, type checkers, JSON-schema validators, a dry-run flag, `--check` mode. Each is a deterministic oracle waiting to be wired to a gate.
+Same three outcomes, same table, different ground truth: swap `p` for whatever rate your team's type errors actually occur at and the arithmetic doesn't change. The typechecker holds the real signatures, the real prop shapes, the real import graph. It's the schema check wearing a different oracle. One note on the word "deterministic," which does double duty nearby: [deterministic context](/blog/deterministic-context/) front-loads the right files before the agent acts. That piece primes the input; this one checks the output.
 
-## The retry loop is the feature, not the failure
+This isn't a one-off trick, either. Structured-validator libraries like **Guardrails AI** ship the exact same shape as a first-class feature: a validator runs against the model's output, and an `on_fail` policy - reask, fix, filter, exception - decides what happens next. **Reask** is this piece's retry loop with a name from a maintained library, and Pydantic AI's `@output_validator` is the same shape for structured output: raise, and the model is asked again. The cheapest validators, whichever way you wire them, are the ones you already own: linters, type checkers, JSON-schema validators, a dry-run flag, `--check` mode.
 
-The instinct is to treat a blocked call as a stumble - something to engineer away. Invert it. The validate-then-feed-back loop is the most reliable correction mechanism you have, because it replaces *hope* (the model will behave) with *physics* (the call cannot succeed until the output matches reality).
+**Every deterministic oracle you already have - a compiler, a schema, a linter - is a hook waiting to happen, and the table above already tells you what it buys.**
 
-This is why "more autonomy" makes the problem worse, not better. Autonomy widens the space of actions the agent takes without a gate. What you want for a checkable failure is the opposite: a narrow, hard boundary that the agent bounces off and corrects against. Pair the hook with tight [permissions](/foundations/permissions/) so the destructive version of the action - running the query against prod, writing the migration - simply isn't on the table until the validator passes. The gate runs first; the action runs second, or not at all.
+## The blocked call is the correction mechanism
 
-And the loop terminates. Cap it at one retry. If the corrected output still fails the check, that's not a prompt problem - it's a signal that the agent is missing context the validator alone can't supply, and you've now got a precise, reproducible failure to debug instead of a vibe.
+The instinct is to treat a blocked call as a stumble, something to engineer away. Invert it: the validate-then-feed-back loop is the most reliable correction mechanism available, because it replaces hope (the model will behave) with the arithmetic two sections up.
 
-This matters most exactly where you can't watch. The instant you run an agent [headless](/foundations/headless/) - in CI, on a cron, fixing something at 3am with nobody at the keyboard - there's no human to catch the bad output before it ships. The gate is the only reviewer present. An unattended agent that bounces off a deterministic check will grind until it's green or genuinely stuck; an unattended agent without one will commit the ghost column and call it a night.
+This is also why "give it more autonomy" makes a checkable failure worse. Autonomy widens the space of actions the agent takes with no gate in front of them. What a checkable failure wants is the opposite: a narrow boundary the agent bounces off and corrects against. Pair the hook with tight [permissions](/foundations/permissions/) so the destructive version of the action - running the query against prod, applying the migration - stays off the table until the validator passes. (This is gating as a compliance fix, where [a single authorization gate for agents](/blog/single-authorization-gate-for-agents/) is the consistency fix: an agent that keeps forgetting to call a check it already knows about. Different failure mode, same primitive.)
+
+And the loop has to terminate, which is the whole reason the halt-tax row exists. Cap it at one retry. If the corrected output still fails, the agent is missing context the validator alone can't hand it, and you now have a precise, reproducible failure instead of a vibe.
+
+This matters most exactly where you can't watch. Run an agent [headless](/foundations/headless/) - in CI, on a cron, fixing something at 3am - and no human is left to catch a bad output before it ships. The gate is the only reviewer present, firing synchronously inside the tool call, before a diff even exists; a review pass that runs after the PR is up, as in [write your review bot once, run it everywhere](/blog/write-your-review-bot-once-run-it/), watches a later moment in the same pipeline. An unattended agent bouncing off a deterministic check grinds until it's green or lands on the halt-tax row. Without one, it commits the ghost column and calls it a night.
+
+**Autonomy without a gate widens the space of wrong actions. A hook narrows it back down to three outcomes, one of which is always safe.**
 
 ## When the gate itself is wrong
 
-The gate has one failure mode, and it's worth naming because it's nasty: the validator can be wrong, and a wrong validator is worse than none. Your column parser doesn't understand a CTE alias, so it flags a perfectly valid column as unknown. Now the agent proposes correct SQL, gets blocked, "corrects" to something else, gets blocked again, burns its one retry, and halts - on output that was right the first time. You've converted a 5%-of-runs hallucination into a 100%-of-runs false block.
+The table above has one silent assumption worth dragging into the light: the validator has zero false negatives. It never waves through something wrong. Break that assumption and the same arithmetic turns on you.
 
-The defense is to keep the validator dumb and let it read ground truth instead of reimplementing it. The SQL hook is trustworthy because it asks the live database what columns exist; the typecheck hook is trustworthy because it runs the real compiler. The moment you start hand-rolling clever logic *about* the rule - a regex that "parses" SQL, a heuristic that "knows" valid shapes - every line you add is a line that can be wrong, and its wrongness lands as a hard block. A validator earns the right to be a hard gate only in proportion to how little it has to be smart. When in doubt, lean on an oracle that already exists rather than encoding the rule yourself.
+Say the column parser doesn't understand a CTE alias, so it flags a perfectly valid column as unknown. The agent proposes correct SQL, gets blocked, "corrects" to something else, gets blocked again, burns its one retry, and halts - on output that was right the first time. Push that failure mode to its limit: a validator that always says "block," regardless of what it's shown. Plug `p = 1` into the same halt-tax formula, `p * p`, and you get 1. Every single run stalls, and nothing ships at all - the wrong answer and the right answer alike.
+
+That's the same formula from the table above, run to its limit, and it's the honest answer to "isn't a stricter gate always safer?" No. A too-strict validator sits at the far end of the same curve the halt tax lives on, and at that end the zero-wrong-shipped claim stops being a win, because nothing ships to be wrong about.
+
+The defense is to keep the validator dumb and let it read ground truth instead of reimplementing it. The SQL hook is trustworthy because it asks the live database what columns exist; the typecheck hook is trustworthy because it runs the real compiler. Hand-roll clever logic instead - a regex that "parses" SQL, a heuristic that "knows" valid shapes - and every added line can be wrong in a way that lands as a hard block, inflating the halt tax without buying back safety.
+
+**A validator earns the right to be a hard gate only in proportion to how little it has to be clever.**
 
 ## When not to reach for a hook
 
-A hook gates *facts*, not *taste*. It works because "this column doesn't exist" and "this file doesn't typecheck" are booleans a machine can settle without you. The instant the failure stops being checkable, the technique stops applying - and trying to force it makes things worse.
+Everything above assumes a checkable property: a boolean a machine can settle with zero false negatives. Here is where that stops holding.
 
-The agent picked a clumsy abstraction. The summary it wrote is technically accurate but buries the lede. The function works but the naming is confusing. None of these has a `decision: block` you can write, because none of them is false - they're *worse*, and worse is a judgment. Try to encode taste into a hook and you get one of two bad outcomes: a check so loose it waves everything through, or one so strict it blocks good work for failing your pet heuristic. For judgment failures the right lever is the one this whole post argued against for *checkable* failures - better context. That's where [rules](/foundations/rules/), worked examples, and a human or LLM reviewer earn their keep. Spend the deterministic gate only where determinism is real; everywhere else it's a costume.
+A hook gates facts. Taste has no boolean. "This column doesn't exist" and "this file doesn't typecheck" are booleans; "this abstraction is clumsy" and "this summary buries the point" are not. None of those has a `decision: block` you can write, because none of them is false. They're worse, and "worse" is a judgment. Force a hook onto a judgment call and you get one of two bad outcomes: a check so loose it waves everything through, or one so strict it blocks good work for failing your pet heuristic - the same curve as above, reached from the taste side.
 
-## You can finally measure the thing you've been guessing at
+This is also where an **LLM-as-judge** validator earns its own, separate camp. A second model scoring the first model's output for quality or "correctness" is a real and common pattern, and it's a different camp from the one this piece argues for: a judge can be wrong the same way the original model can be wrong, so it can't produce the zero-shipped-wrong claim the table above derives. Everything here holds because the validator reads ground truth off a database or a compiler and so has zero false negatives by construction. An LLM judge has no such guarantee. It belongs in the toolkit; it just isn't this technique.
 
-Here's the payoff the prompt-tuning road never reaches: the hook is a counter. Every block is a logged event. You can answer "how often does the agent hallucinate a column?" with a number, before and after - not "it feels better now."
+For a judgment failure, the right lever is the one this whole piece argued against for checkable ones: better context. That's where [rules](/foundations/rules/), worked examples, and a human or LLM reviewer earn their keep. Spend the deterministic gate only where determinism is real.
 
-```text
-$ grep validate_sql .agent/logs/hooks.jsonl | jq -r .decision | sort | uniq -c
-  41 block        # week one: the model really was reaching for ghost columns
-   3 block        # week three: after the schema fact landed in the rules
-```
+Two neighbors sit right at this boundary and are worth naming rather than re-arguing. [Diagnose which of two causes produced a wrong answer](/blog/retrieval-vs-generation-failures/) before picking any fix - this piece is the specific fix for the subset a machine can already verify, whichever cause produced it. And the case for imposing this kind of friction on an agent at all, when a human would resent the same check, is made separately in [Pre-commit hooks are for robots](/blog/pre-commit-hooks-are-for-robots/) - that's the adoption argument; this piece is the arithmetic of what happens once you've made it.
 
-That drop from 41 to 3 isn't the model getting smarter. It's the corrected pattern propagating. Once you see *which* mistake the hook keeps catching, you write the fact down once - into your [rules](/foundations/rules/) file, the persistent context the agent reads on every run:
+**A hook only ever answers a question with a machine-checkable answer. Everything else is still a context problem.**
+
+## Now you can measure it
+
+Here's the payoff the prompt-tuning road never reaches: the hook is a counter. Every block is a logged event, so "how often does the agent hallucinate a column?" gets a number. An illustrative pair of weeks: 41 blocks in week one, while the schema fact lived nowhere but the hook; 3 in week three, after the fact landed in the rules file. Toy counts, chosen for the shape of the drop.
+
+That drop is what a fact propagating looks like. Once you see which mistake the hook keeps catching, write it down once, into your [rules](/foundations/rules/) file, the persistent context the agent reads every run:
 
 ```md
 # AGENTS.md
@@ -112,16 +193,22 @@ That drop from 41 to 3 isn't the model getting smarter. It's the corrected patte
 - Never query `users` directly for activity; join `sessions`.
 ```
 
-Now the rule prevents most of the mistake, and the hook catches the residue. **When the residue hits zero for a few weeks, the hook has done its job and can retire** - deleted, or downgraded to a sampled audit. A good deterministic validator is disposable by design. It's scaffolding that teaches the system the fact, then comes down.
+Now the rule prevents most of the mistake and the hook catches the residue, so the halt-tax row on the table above shrinks as `p` itself shrinks; both formulas share the same input. When the residue sits at zero for a few weeks, the hook has done its job and can retire: deleted, or downgraded to a sampled audit. A good deterministic validator is disposable by design, scaffolding that teaches the system the fact and then comes down. Which check deserves that treatment is its own argument, made before work starts - [bake the acceptance test into the spec](/blog/bake-the-acceptance-test-into-the-spec/) is the spec-time half; this piece is the runtime half, firing at the moment the agent acts.
 
-## What to do Monday
+**The counter turns "it feels better" into a number you can watch fall, and the number tells you exactly when to remove the scaffolding.**
 
-Pick one wrong output you've been trying to prompt away - a fabricated field, an invalid enum, a malformed JSON shape, a path that doesn't exist. Write the dumbest possible code that returns true or false on it. Wire it as a hook that blocks and returns the reason. Cap the retry at one. Log every block.
+## Back to the table
 
-Three days of that beats three weeks of prompt archaeology, and at the end you have two things prompting never gives you: a class of error at zero, and a number proving it. Then, when the rule has absorbed the lesson, delete the check and move on to the next ghost column.
+Everything in this piece is one table, computed three ways: no gate, a gate with the arithmetic worked out, and a gate that's itself broken. Replay it row by row, because these rows are what you now own: 22 of 24 calls sail through untouched, about 1.8 ship one correction later, 0.167 halt on the cap, and zero ship wrong. The design knob buried in those rows is the validator's strictness. Loosen it and false-negative risk creeps back toward the original `p`; tighten it past what's actually true and the halt tax climbs toward 1, the broken-validator limit above. A hook makes that knob visible and turnable instead of a feeling you argue about in a prompt.
 
-Stop asking the model to be right. Make the wrong answer impossible to ship.
+That's the trade in one sentence: a silent-failure-mode problem becomes a visible, computable-rate problem, and the rate you now own is the halt tax, because the wrong-ship rate is already at the floor.
+
+One loose end, handed forward rather than solved: everything here assumes the checkable fact stays true. A schema migration, a deprecated endpoint, an API bump, and the validator now checks against yesterday's ground truth - the "when the gate is wrong" failure arriving from another direction. [Cache the explore](/blog/cache-the-explore/) ends on the same open question from the other side, and its close asks for exactly this mechanism aimed at its own problem: "a hook that fails the run when the map's capture date is older than the last commit that touched the slice it maps." Keeping the checkable facts current is what to gate next.
+
+Stop asking the model to be right. **Wire the gate, cap the retry, and let the halt tax tell you exactly what safety costs.**
 
 ---
 
-For the per-tool mechanics, see [Hooks](/foundations/hooks/); for the boundary that keeps the destructive action off the table until the gate passes, [Permissions](/foundations/permissions/); for where the corrected fact finally lives, [Rules](/foundations/rules/); and for why the gate earns its keep when no one is watching, [Headless & CI](/foundations/headless/).
+**About the numbers.** `p = 1/12` is a toy fraction chosen to match this piece's own opening anecdote ("once every dozen runs"), not a measurement of any real repo - swap in your own rate and the shape of the table survives unchanged. `N = 24` is a toy trace size, picked to be hand-traceable, not a claim about how many calls a real batch runs. The 41-and-3 block counts in "Now you can measure it" are illustrative toy values shown for the shape of the drop, not a captured log. Every other number in this piece - the outcome table, the halt tax of 1/144, the ships-WRONG = 0 result, the broken-validator halt tax of 1 - is arithmetic that follows exactly from those declared toy values and was re-checked with a script before publishing. The zero-shipped-wrong claim holds only under its stated precondition: a validator with zero false negatives on the property it checks, true by construction for a schema lookup or a real compiler, not true for an LLM-as-judge validator.
+
+Per-tool mechanics: [Hooks](/foundations/hooks/). The boundary that keeps the destructive action off the table: [Permissions](/foundations/permissions/). Where the corrected fact finally lives: [Rules](/foundations/rules/). Why the gate earns its keep unwatched: [Headless & CI](/foundations/headless/).

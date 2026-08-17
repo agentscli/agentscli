@@ -1,6 +1,8 @@
 ---
-title: "Build the Glossary the Agent Wrote"
-description: "Vague prompting isn't a skill gap you fix with longer prompts. It's a missing shared vocabulary - and the fix is a committed glossary, not a personal habit."
+title: "A five-row glossary table nets 4,410 tokens back on the first prompt that uses it"
+description: "Every ambiguous noun in a prompt forces the agent into a blind search over candidate files. A committed glossary turns that search into a lookup - and nets 4,410 tokens back on the very first prompt, no waiting required."
+seoTitle: "Build a Shared Glossary So Your AI Agent Stops Guessing"
+seoDescription: "A committed glossary turns guesswork into lookups, saving 4,410 tokens on the very first prompt that uses it - no break-even required."
 authors: sanjay
 date: 2026-05-29
 tags: [context-engineering, subagents, rules, workflow]
@@ -9,25 +11,74 @@ draft: false
 
 You asked the agent to "tweak the download popup." It went off, edited three files, and came back confident. Two of the three were wrong. You rephrased. You added detail. You pasted the relevant component. On the fourth try it finally landed - on a file called `DownloadModal.tsx`.
 
-You spent five minutes fighting over a word. The agent never had a "popup." It had a *modal*. You were both pointing at the same UI element and naming it differently, and every prompt in between was the two of you talking past each other in slightly mismatched English.
+You spent five minutes fighting over a word. Your codebase calls that overlay a *modal*; you kept calling it a popup. Same UI element, two names, and every prompt in between was the two of you talking past each other.
 
-This is the failure mode everyone misdiagnoses. You assume you prompted badly and resolve to write longer prompts next time. But the agent didn't misunderstand your *intent*. It couldn't resolve your *noun*. That's not a prompting skill gap. It's a missing shared vocabulary - and you don't fix a vocabulary problem by talking more. You fix it by writing the dictionary down once.
+This is the failure mode everyone misdiagnoses. You assume you prompted badly and resolve to write longer prompts next time. But the agent read your intent correctly; what it could not resolve was your *noun*. That's not a prompting skill gap. It's a missing shared vocabulary, and you don't fix a vocabulary problem by talking more. You fix it by writing the dictionary down once.
+
+Here's what that dictionary is worth. Keep one repo as the running example for this post; it holds three of these collisions at once: `popup`, a faster "download link," and `workspace`. Left unnamed, resolving all three in one feature prompt costs 7,280 tokens of guess-and-correct. Named once, in a five-row table the agent reads before it starts, the same prompt costs 2,870 - a saving of 4,410 tokens on the very first use, recovered before this prompt even finishes. The rest of this post derives that number from scratch.
+
+One clarification before the mechanism: this glossary covers your codebase's own nouns, not agent jargon. "Subagent" and "context window" already have their dictionary - the foundations chapters this post links to.
 
 ## The gap is a naming gap
 
-Context engineering starts from a lopsided pair: the agent is broad but contextless, you are narrow but deep. It has read more code than you ever will. What it has never read is *your* codebase, with its particular history of names - the `modal` that the rest of the world calls a popup, the `Workspace` that's really a tenant, the `direct` versus `cdn` download URLs that one engineer split in 2023 and nobody renamed since.
+Context engineering starts from [the lopsided pair this whole site keeps coming back to](/blog/the-gap/): the agent is broad but contextless, you are narrow but deep. It has read more code than you ever will. What it has never read is *your* codebase, with its particular history of names - the `modal` that the rest of the world calls a popup, the `Workspace` that's really a tenant, the `direct` versus `cdn` download URLs that one engineer split in 2023 and nobody renamed since.
 
-Those names are tribal knowledge. They live in three places: the code, the heads of the people who wrote it, and nowhere else. The agent can read the first. It cannot read the second. And when you prompt in your own private dialect, you're not even handing it the first cleanly - you're handing it a translation problem on top of the actual task.
+Those names are tribal knowledge. They live in three places: the code, the heads of the people who wrote it, and nowhere else. The agent can read the first. It cannot read the second. When you prompt in your own private dialect, you're handing it a translation problem on top of the actual task.
 
-None of this is a new problem; what's new is who's at the table. Domain-Driven Design named the cure back in 2003 - the *ubiquitous language*: a single vocabulary, built jointly by the people who know the domain and the people who write the code, used everywhere from standup to class name so that intent and implementation stop diverging in translation. The agent is just the newest party to that contract - and the one that, unlike a human hire, can't absorb the dialect by osmosis over months of code review. It needs the dictionary handed to it, written down, on day one.
+None of this is a new problem; what's new is who's at the table. Domain-Driven Design named the cure back in 2003 - the **ubiquitous language**: a single vocabulary, built jointly by the people who know the domain and the people who write the code, used from standup to class name so intent and implementation stop drifting apart. The agent is the newest party to that contract, and the one that cannot absorb the dialect by osmosis over months of code review. It needs the dictionary handed to it on day one.
 
-So close the gap where it actually is. Make the agent surface the project's real vocabulary, commit that vocabulary to a file, point your rules at it, and then prompt using the agent's own words. Three primitives, one loop.
+So close the gap where it actually is. Make the agent surface the project's real vocabulary, commit that vocabulary to a file, point your rules at it, and then prompt using the agent's own words back. Three primitives, one loop.
+
+**A missing vocabulary is the same gap as missing context, measured in words instead of files.**
+
+## Check whether your prompts have this problem
+
+Before any arithmetic, thirty seconds on your own repo.
+
+Pull up the last session that took more than one try to land - the one where you rephrased or pasted a file before the agent landed it. Underline every noun in your messages that names a UI element, a data field, or anything workspace, tenant, or environment shaped. For each one, ask one question: could this word plausibly point at more than one thing in this codebase?
+
+If every noun you underlined maps cleanly to exactly one file or concept, you don't have a naming gap. Something else made that session slow, and this post won't fix it. Close the tab.
+
+If two or three of them could plausibly mean more than one thing - and most repos past their first few months have at least that many - keep reading: the next section prices exactly what overlapping nouns cost, on the running example's three collisions.
+
+**A noun that could mean two things in your codebase is a search waiting to happen, whether you've noticed it yet or not.**
+
+## What one ambiguous noun actually costs
+
+Take the opening anecdote and turn it into a formula. "Popup" wasn't just one wrong guess. In a typical UI layer it could plausibly name any of four components: `DownloadModal.tsx`, `ConfirmDialog.tsx`, `ToastNotification.tsx`, `TooltipPopover.tsx`. Worst case, ruling each one out costs a try: open the candidate and skim it (about 600 tokens), attempt the edit against it (about 250), and take the one-line "no, not that one" back (about 60). One try is 910 tokens, and you pay it once for every candidate you work through, the right one last. Popup has four candidates, so the worst case is four tries: 4 x 910 = 3,640 tokens spent before the agent so much as has the right noun - which is exactly the fourth-try landing this post opened with.
+
+The same prompt that asks for the popup fix also touches the running example's other two collisions. "The faster link" could mean the `direct URL` or the `CDN URL`, two candidates, worst case 2 x 910 = 1,820. "Workspace" could mean the tenant model or the Workspace UI panel that also exists in this codebase, two candidates, another 1,820. One feature prompt, three ambiguous nouns, worst-case total: 3,640 + 1,820 + 1,820 = 7,280 tokens of guess-and-correct, before a single line of the actual feature gets written. These are toy numbers, sized to be checkable by hand; the note at the end says so. The shape is real: every ambiguous noun a prompt uses costs a search, sized by how many things it could plausibly mean.
+
+Now commit the glossary. Once `modal`, `CDN URL`, and `tenant` are named entries, each term resolves in exactly one try: the agent reads the row that says popup means `DownloadModal.tsx` and goes straight there. One lookup per term, 910 tokens each, three terms: 3 x 910 = 2,730. Add the one cost the glossary introduces on its own: reading the whole five-row table once, about 140 tokens, charged a single time no matter how many of its terms that prompt touches. 2,730 + 140 = 2,870.
+
+| Term you'd say | Candidates it could mean | Tries without glossary | Tries with glossary | Tokens saved |
+|---|---:|---:|---:|---:|
+| popup | 4 | 4 | 1 | +2,730 |
+| the faster link | 2 | 2 | 1 | +910 |
+| workspace | 2 | 2 | 1 | +910 |
+| **TOTAL (1 prompt)** | | | | **+4,410** net of the read |
+
+7,280 without the glossary, 2,870 with it, net of the 140-token table read: **4,410 tokens saved, on the first prompt that uses it.** Eight separate candidate guesses across three nouns, in one prompt, collapsed into three named lookups.
+
+Call what the agent was doing without the glossary **the candidate search**: an unstated multiple-choice question hiding in every ambiguous noun, one your prompt asked without meaning to, that the agent has to work through by elimination. The fix has a name too: **the canonical noun** - one committed term per concept, so a branching search becomes a single deterministic hit.
+
+This is a different bill from the one [a disposable map](/blog/cache-the-explore/) pays down. That fix amortizes *where* a change goes across many runs of the same slice, and its first run is a loss before it breaks even. This one prices *what a word means* inside a single prompt, and it's already ahead by the time that prompt finishes. There's no run to wait for.
+
+**Every ambiguous noun you type is a search the agent runs silently. Name the noun once and the search collapses into a lookup.**
+
+## Not big money, and that's exactly why nobody writes it down
+
+Convert it to money first, because you'll do that anyway. On the August 2026 list prices that put [a disposable map's](/blog/cache-the-explore/) 22,800 tokens at seven to eleven cents, 4,410 tokens is a cent or two, gone before it shows up on a bill. This was never about the invoice.
+
+The cost that matters is the one the token count can't show: two of three edited files wrong and reverted, a "no, not that one" message typed out after each one, a session that took four tries instead of one. And the tax follows into every future session: you double-check the agent's first answer, because it once guessed wrong on a word you use every day.
+
+**The tokens are nothing. The real cost is why you stopped trusting the first answer.**
 
 ## Step 1: send subagents to read the dictionary you never wrote
 
-You could grep for terms yourself. Don't. You already know your own dialect - that's the problem. You want the terms *as the codebase actually names them*, surfaced by something that reads the code without your assumptions baked in. That's a job for [subagents](/foundations/subagents/): dispatch parallel explorers, each mining one slice of the repo, each reporting back a clean list instead of dumping a thousand lines of source into your main context.
+You could grep for terms yourself. Don't. You already know your own dialect - that's the problem. You want the terms *as the codebase actually names them*, surfaced by something that reads the code without your assumptions baked in. That's a job for [subagents](/foundations/subagents/): parallel explorers, each mining one slice of the repo, each reporting a clean list instead of a thousand lines of source in your main context.
 
-Context isolation is the whole point: you don't want the raw files in your working window, you want the *distilled terms*. Each subagent reads broadly and reports back narrowly.
+Context isolation is the whole point: you don't want the raw files in your working window, you want the *distilled terms*. Each subagent reads broadly and reports back narrowly. Unlike [letting your failure transcripts pick which rules to write](/blog/let-the-failure-distribution-write-your-agentsmd/), which ranks by how often a correction repeats, this sweep is exhaustive: it returns every domain term it finds, including ones that have never burned you yet.
 
 ```text
 Spawn 3 explore subagents in parallel. Each reads its assigned area
@@ -47,11 +98,13 @@ Skip framework/library terms. I want the words a new teammate would
 have to learn on day one. Merge nothing - return three raw lists.
 ```
 
-You merge the three lists yourself, because *you* are the SME who knows which collisions matter. The agent gives you `modal` from the UI explorer and you, reading it, finally see: that's the popup I keep mistyping.
+You merge the three lists yourself, because *you* are the SME, the subject-matter expert who knows which collisions matter. The agent gives you `modal` from the UI explorer and you, reading it, finally see: that's the popup you keep mistyping.
+
+**The subagents find the words. Only the SME at the table knows which of them are worth fighting over.**
 
 ## Step 2: commit the glossary to the repo root
 
-A glossary that lives in your chat history dies with the session. The fix has to be durable and shared, which means it goes in the repo - at the root, where it's findable, version-controlled, and reviewable in a PR like any other artifact. Naming the things is now a code change, not a personal note.
+A glossary that lives in your chat history dies with the session. The fix has to be durable and shared, so it goes in the repo root, where it's findable, version-controlled, and reviewable in a PR.
 
 ```markdown
 <!-- GLOSSARY.md -->
@@ -70,11 +123,13 @@ different name than what's here, fix the name or fix this file.
 | seed            | A pre-publish blog draft, never a DB seed       | `src/content/_drafts/`            |
 ```
 
-This table is the artifact that closes the gap. The left column is the agent's language. The middle column is yours. The file is the place the two are reconciled, once, for everyone - including the next agent session, the next teammate, and the version of you who forgets in three weeks.
+This table is the artifact that closes the gap. The left column is the agent's language. The middle column is yours. The file is where the two get reconciled, once, for everyone - the next agent session, the next teammate, the version of you who forgets in three weeks. Every collision priced above sits in those five lines: the modal, direct, CDN, and Workspace rows retire the popup, faster-link, and tenant searches.
 
-## Step 3: make it load as context, not as a file you hope gets read
+**The file is five rows long, and each row retires a search your next prompt would otherwise run.**
 
-A committed file the agent has to be told to read is barely better than a Slack message. The glossary has to enter the agent's context automatically, every session, with no prompting. That's exactly what [rules](/foundations/rules/) are for - the persistent context layer the agent reads before it does anything. The pattern is the same wherever your agent looks for that layer: an `AGENTS.md` or `CLAUDE.md` at the repo root, a Copilot instructions file, a Cursor rules file. Point whichever one your team uses at the glossary.
+## Step 3: make the rules file carry it into every session
+
+A committed file the agent has to be told to read is barely better than a Slack message. The glossary has to enter the agent's context automatically, every session, with no prompting. That's exactly what [rules](/foundations/rules/) are for - [the primitive this site has already argued for](/blog/write-it-down-once/) on its own; a glossary is one narrow, high-value thing to put inside it. The pattern holds wherever your agent looks for that layer: an `AGENTS.md` or `CLAUDE.md` at the repo root, a Copilot instructions file, a Cursor rules file.
 
 You don't paste the whole glossary into the rules file; you reference it, and you give the agent an instruction about *how to use it*.
 
@@ -91,11 +146,13 @@ which word I should have used. If you hit a domain noun that isn't in the
 glossary at all, propose an entry for it.
 ```
 
-Now the dictionary is shared context in the truest sense: the deep-but-narrow knowledge that lived only in your team's heads is written down where the broad-but-contextless agent reads it on every turn. The translation step that used to cost you four prompts now happens silently, up front.
+Now the dictionary is shared context: the deep-but-narrow knowledge that lived only in your team's heads is written down where the broad-but-contextless agent reads it on every turn. The translation step that used to cost four tries now happens silently, up front, for the price of the 140-token table read.
+
+**The rule does the remembering, so the glossary reaches the agent every session with nobody attaching it by hand.**
 
 ## Step 4: keep it from rotting
 
-Vocabulary drifts. New features add new nouns. You don't want to retype the three-subagent dispatch every quarter, so freeze it as a [slash command](/foundations/slash-commands/) - a reusable prompt you and your teammates invoke by name.
+Vocabulary drifts. New features add new nouns. You don't want to retype the three-subagent dispatch every quarter, so freeze it as a [slash command](/foundations/slash-commands/) - a reusable prompt invoked by name. It's the same move as [packaging a repeated correction as a slash command](/blog/stop-re-typing-the-same-correction/): that piece packages a repeated *procedure*, this one packages repeated *nouns* - domain words, with nothing in common with [the nouns and verbs of MCP server design](/blog/nouns-verbs-and-slash-commands/) beyond the shared word.
 
 ```markdown
 <!-- .claude/commands/glossary.md -->
@@ -110,17 +167,21 @@ Re-run the domain-glossary sweep.
 4. On my approval, update GLOSSARY.md. Don't touch anything else.
 ```
 
-Run `/glossary` after any sizable feature merge. The sweep becomes maintenance instead of archaeology, and the file stays trustworthy enough that people actually rely on it.
+Run `/glossary` after any sizable feature merge, and the sweep becomes maintenance instead of archaeology.
+
+**A glossary you never refresh describes last quarter's codebase.**
 
 ## The proof is in the follow-ups
 
-Once the glossary is loaded, change how you prompt - use the agent's words back to it. "Switch the download button to use the CDN URL instead of the direct URL" finds and edits `src/lib/downloads.ts` on the first pass, because every noun in that sentence is a key the agent already has. Compare it to "make the download link use the faster one." Same intent. One is a lookup; the other is a guessing game.
+Once the glossary is loaded, change how you prompt - use the agent's words back to it. "Switch the download button to use the CDN URL instead of the direct URL" edits `src/lib/downloads.ts` on the first pass, because every noun in that sentence is a key the agent already has: one lookup, 910 tokens, done. Compare it to "make the download link use the faster one." Same intent, worst case two tries, 1,820 tokens - the exact difference already priced above.
 
-Watch the agent's own output, too. When it replies "I updated the `direct` URL builder," that's the canonical term being handed back to you. Reuse it verbatim in your next message. You're not adapting to the machine - you're both finally drawing from the same committed source.
+Watch the agent's own output, too. When it replies "I updated the `direct` URL builder," that's the canonical term handed back to you. Reuse it verbatim: you are both drawing from the same committed source now.
+
+**A prompt that only uses the glossary's own words never triggers a search in the first place.**
 
 ## When a session gets hard, grow the glossary
 
-Here's the loop that makes this compound instead of rot. The next time a session takes too much pushing - when you're three reprompts deep and still not landing - stop and suspect your *nouns* before you blame the model. Then ask directly:
+Here's the loop that makes this compound instead of rot. The next time a session takes too much pushing - three reprompts deep, still not landing - suspect your *nouns* before you blame the model, then ask directly:
 
 ```text
 That took several tries. Which of my words didn't match the codebase's
@@ -128,22 +189,55 @@ actual terms? Give me the corrections, and append any missing ones to
 GLOSSARY.md as a diff for me to review.
 ```
 
-Now friction has a payoff. Every painful session ends by depositing its lesson into the file the whole team draws from, instead of evaporating into a vague memory of a wall you'll just hit again next week. The glossary doesn't get written once and decay. It grows precisely where the language actually broke.
+Now friction has a payoff. Every painful session deposits its lesson into the file the whole team draws from, instead of evaporating into a memory of a wall you'll hit again next week.
+
+**Let every hard session end by feeding the file, and the glossary grows exactly where the language broke.**
+
+## What a glossary doesn't fix
+
+Three honest limits, in order of how much they should change your plan.
+
+This exact pattern already ships as a packaged, automated skill: mattpocock/skills' `ubiquitous-language`, mirrored across several public skill marketplaces as of 2026, scans your chat history and proposes canonical terms into `UBIQUITOUS_LANGUAGE.md`. It's the same commission-once-commit-the-output move [this site has already applied to skills themselves](/blog/commission-the-skill-dont-write-it/), aimed here at a fact table instead of a procedure. The honest difference: that skill mines the *chat*, catching whatever ambiguity surfaced in conversation. Step 1's sweep mines the *code*, the ground truth of what's actually named in the repo, whether or not it's ever come up in a prompt. Run either one and you catch a different half of the vocabulary.
+
+A glossary is rules-file content, so it inherits the same write-once, slow-rot risk [any rules file carries](/blog/your-agentsmd-is-write-once-agent-memory/). It rots slower, because names change less often than the code around them, but the same curation-gate problem shows up once the file grows past the size a person will actually re-read.
+
+And the glossary can suffer from the disease it's curing. Two entries whose plain-English meanings overlap - "download flow" and "download process," say - reintroduce a candidate search one level up: now you're guessing which glossary row is right instead of which file is. The fix is the discipline Step 2 already implied: if an entry's meaning is just the term restated, cut it.
+
+**A dictionary with its own ambiguous entries is just the same bug, one layer up.**
 
 ## When the glossary isn't worth it
 
-A caveat, because the discipline has a cost. A glossary earns its keep when the distance between your team's private dialect and plain English is wide - legacy renames nobody cleaned up, domain nouns a newcomer would stumble over, collisions where one word means two things. On a greenfield solo project you named yesterday, where the code already says what it means, a `GLOSSARY.md` is ceremony: you'll spend more time grooming it than you'd ever lose to a misnamed prompt.
+A glossary earns its keep when the distance between your team's private dialect and plain English is wide - legacy renames nobody cleaned up, domain nouns a newcomer would stumble over, collisions where one word means two things. On a greenfield solo project you named yesterday, where the code already says what it means, a `GLOSSARY.md` is ceremony: you'll spend more time grooming it than you'd ever lose to a misnamed prompt.
 
-The sharper failure mode is over-stuffing. Once the file exists, the instinct is to document every noun - and a glossary that lists `Button`, `User`, and `fetch` next to the genuinely tribal terms buries the five entries that matter under fifty that don't. The agent reads it on every turn, so a bloated glossary is also wasted context budget. Keep it to the words a new teammate would actually have to be taught. If an entry's plain-English meaning is the term itself, cut it. The glossary exists for the *gaps* between your language and the world's, not as an inventory of your codebase.
+The sharper failure mode is over-stuffing. Once the file exists, the instinct is to document every noun - and a glossary that lists `Button`, `User`, and `fetch` next to the genuinely tribal terms buries the five entries that matter under fifty that don't. The agent reads it on every turn, so a bloated glossary is wasted context budget too. Keep it to the words a new teammate would actually have to be taught.
+
+This piece covers one axis of "the codebase itself is context": the words. [Structure](/blog/design-the-codebase-your-agent-can-read/) is the other axis - naming doesn't substitute for a readable module graph. Nor does this overlap with [routing to the right files](/blog/deterministic-context/), a location problem, or with [splitting rules by directory](/blog/hierarchical-context/): a glossary this size stays one flat table, because nouns don't vary by directory the way conventions do.
+
+**Ceremony you don't need costs more than the problem it was supposed to solve.**
 
 ## Naming is context engineering
 
-The instinct when an agent misreads you is to treat it as your personal failing - *I should prompt better* - and to fix it privately, in your head, one careful sentence at a time. That instinct is wrong twice. It's wrong because the problem isn't your phrasing, it's a vocabulary your team never wrote down. And it's wrong because the fix isn't a habit one person carries; it's a committed file the whole team and every agent session reads from.
+The instinct when an agent misreads you is to treat it as your personal failing and fix it privately, sentence by sentence. Wrong twice: the problem is a vocabulary your team never wrote down, and the fix is a committed file the whole team and every agent session reads from.
 
-Subagents to surface the terms. A glossary file to hold them. A rules file to load them. That's the recipe, and what it produces is unglamorous and exactly what you want: the agent and the human who actually knows the domain finally calling the same things by the same names, so the edit lands on the first try instead of the fourth.
+Subagents to surface the terms. A glossary file to hold them. A rules file to load them. That's the recipe, and the table it produces is the one this post has been replaying the whole way through:
 
-You were never bad at prompting. You just hadn't built the dictionary yet - and the best person to write the first draft of it is the agent that's been reading your code all along.
+| Term you'd say | Candidates it could mean | Tries without glossary | Tries with glossary | Tokens saved |
+|---|---:|---:|---:|---:|
+| popup | 4 | 4 | 1 | +2,730 |
+| the faster link | 2 | 2 | 1 | +910 |
+| workspace | 2 | 2 | 1 | +910 |
+| **TOTAL (1 prompt)** | | | | **+4,410** net of the read |
+
+Eight candidate guesses a session could have faced, three named lookups instead, 4,410 tokens back before the first prompt is even done. The rows sum to 4,550; the 140-token read turns that into 4,410.
+
+What you lacked was a dictionary, and the best author of its first draft is the agent that has been reading your code all along.
+
+Which leaves the cost this post handed itself. `GLOSSARY.md` is a rules-file artifact like any other, and nothing here forces anyone to re-read a row before trusting it. Its date can go stale exactly the way [a disposable map's capture date does](/blog/cache-the-explore/), and the fix belongs to the same family: a deterministic check the agent can't route around, the kind [a hook enforces](/blog/make-a-hook-validate-the-agents-output/) instead of a human remembering to. That check isn't built yet.
+
+**The next open question isn't whether the glossary pays for itself. It's whether it's still telling the truth.**
 
 ---
+
+**About the numbers.** The three per-try token costs (600 to read a candidate, 250 for a wrong-guess edit, 60 for the correction) are toy values, invented to be checkable by hand, not pulled from a real transcript. The candidate counts (4 for popup, 2 each for the other two terms) come from the post's own worked example, not a survey of real repos. Every other number - the 910 per try, the 7,280 without a glossary, the 2,870 with one, the 4,410 net saving - is arithmetic that follows from those inputs and was checked against a script before publishing. The cent figure follows the disposable-map post's August 2026 list prices and will drift. "Worst case" is a toy bound, not a measurement: the agent might spot the right candidate on sight and stop early, so a real session's cost sits at or below these numbers, not above them. Swap in your own candidate counts and the shape holds: more plausible meanings for a term, more it costs to leave it unnamed.
 
 For the per-tool mechanics, see [Subagents](/foundations/subagents/) for mining terms in isolated windows, [Rules](/foundations/rules/) for loading the glossary every session, and [Slash commands](/foundations/slash-commands/) for freezing the refresh sweep as one verb.

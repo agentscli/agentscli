@@ -1,35 +1,66 @@
 ---
-title: "Your 600-line rules file is teaching the agent to ignore you."
-description: "A single giant root rules file dilutes the agent's attention. Split context into a broad root plus directory-scoped files it loads by what it's touching."
+title: "A 640-line rules file loads 400 lines that do not apply to the file you are editing - 62.5% of it, every time."
+description: "A single root rules file guarantees every convention is always present for every edit - which is exactly what floods a backend edit with frontend rules it will never use. The fix is directory-scoped files, and the tax has a number: 62.5%."
+seoTitle: "AGENTS.md Too Long? Split Into Directory-Scoped Rules Files"
+seoDescription: "A 640-line rules file spends 62.5% of every edit loading conventions for other parts of the repo. Split it by directory and the tax drops to zero."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, rules, slash-commands]
 draft: false
 ---
 
-The file started at forty lines. Then someone added the database migration convention. Then the "always use the shared logger, never `console.log`" rule. Then the API error-envelope shape, the test-naming pattern, the three paragraphs about how to write a commit message. Eighteen months later your root rules file is 600 lines, and the agent still drops `console.log` into a React component.
+You already did the [write-it-down-once](/blog/write-it-down-once/) thing. One `AGENTS.md`, checked into the repo, read by every tool the team uses, so nobody re-explains "we use Conventional Commits" in every session. Good call. **Say it once, and the agent reads it every time: that is the whole pitch of a [rules](/foundations/rules/) file.**
 
-That is not a discipline problem. It is an **attention** problem, and you built it on purpose.
+Then the file grew. The database migration convention went in. Then "always use the shared logger, never `console.log`." Then the API error-envelope shape, the test-naming pattern, three paragraphs on how to write a commit message. Eighteen months later it is past six hundred lines, and the agent still drops `console.log` into a React component while the migration conventions sit three screens up, unread.
 
-## One file means the agent reads frontend rules to edit a SQL migration
+That is the gap write-it-down-once never closes. It tells you to keep every convention in one file so nothing gets lost. It says nothing about the day that one file has grown past the size any single edit needs. **The same guarantee that keeps a rule from going missing is the guarantee that puts every rule in front of every edit, including the edits it has nothing to say about.**
 
-Here is the mainstream view, and it is reasonable: persistent context should live in one place so nothing gets lost, the agent always sees everything, and there is a single file to maintain. That is the whole appeal of [rules](/foundations/rules/) - write it down once, the agent reads it every session, you stop repeating yourself.
+Here is the whole argument as one number, on a repo shaped the way yours probably is. Cut the grown-up file into its natural buckets: a 40-line root holding what is genuinely universal - Conventional Commits, no hardcoded secrets, the map of the stack - plus three 200-line sections, one per area: `backend/` (Go), `web/` (React and TypeScript), `infra/` (Terraform). That is a 640-line file. Edit one file in `backend/`, say `backend/handlers/orders.go`, and the model reads all 640 lines to use 240 of them. **The other 400 lines, 62.5% of everything it just read, are about `web/` and `infra/`, and this edit will never touch either.** The rest of this post derives that number twice, shows it climbing without a ceiling as the tree grows, and shows the one structural change that takes it to zero.
 
-The flaw is that "always sees everything" is the cost, not the feature. When your agent opens a database migration, it loads your migration conventions - and also your React hook rules, your CSS-modules policy, your GraphQL resolver patterns, and the commit-message essay. None of that applies to the file in front of it. **Every irrelevant rule is a small tax on the relevant ones.** The model has finite attention to spend on the tokens it's given; you just spent a third of it on frontend conventions during a backend task.
+## Check whether your file has this
 
-So why does throwing a bigger context window at this not fix it?
+Thirty seconds, on your own repo, before you trust any of the arithmetic below.
 
-## Bigger models give you more room to drown the signal
+Open your root rules file. Pick one file you edited this week, any file at all. Read down the rules file line by line and sort every line into two piles: the lines that actually govern the file you picked, and the lines that are about some other part of the repo.
 
-The seductive answer is capacity. A model with a million-token window can hold your 600-line file ten times over - surely bloat stops mattering. It doesn't, and the reason is mechanical. A larger window changes how much the model *can* read, not how well it *weights* what it reads. Pack a prompt with rules that don't apply to the current file and you've lowered the signal-to-noise ratio of the whole context, regardless of how much headroom is left. **More capacity means more room to bury your one load-bearing rule under fifty that don't fire today.** Anthropic's own guidance for Claude Code puts the practical ceiling around 200 lines per rules file and warns in plain terms that longer ones "reduce adherence" - not because the model runs out of room, but because every extra line is a thumb on the scale against the ones that matter. Curation beats capacity, every time.
+**If most of what you read governs the file you picked, close the tab.** A small repo, a single area, a file that is already short: you do not have this problem, and splitting anything would only add bookkeeping. This post is for the other outcome.
 
-The fix is not a smaller file. It's the *right* file at the right moment.
+If you marked half the file "somewhere else," you have the problem, and the half you just marked has a cost you can compute with a finger. **The rest of this post turns that marked-off half into a number you can check.**
 
-## Scope rules to directories so the agent loads only what it's touching
+## One file means every edit pays for every convention
 
-Most agents resolve rules hierarchically: a broad file at the repo root, plus narrower files deeper in the tree that load only when the agent works inside that subtree. In tools like Claude Code the leaf files aren't even pulled into context at session start - a subdirectory's rules enter the window the moment the agent first reads a file in that directory, and not before. The root holds what's true everywhere. The leaves hold what's true *there*.
+The mainstream case for a single file is solid on its face. Nothing gets lost, because everything is always present. There is exactly one place to maintain. A new hire reads one file and knows all of it. **All true.**
 
-Strip the root down to the genuinely universal:
+Here is what it costs. Open `backend/handlers/orders.go` and a flat rules file hands the model your migration conventions, and also your React hook rules, your CSS-Modules policy, your GraphQL resolver patterns, and the commit-message essay. Four of those five have nothing to do with a Go handler, and all five load anyway, because the file cannot tell where in the tree you are working. The model has a finite amount of attention for the tokens in front of it, and on this edit most of that attention went to conventions for a different language, in a different directory, that this diff will never touch.
+
+(This is a different bill from the rediscovery one - the agent burning tokens re-finding codebase facts on every run - which [cache-the-explore](/blog/cache-the-explore/) closes with a throwaway map. That cost builds up while the agent works things out. This one is paid before the first tool call, on every edit, because the rules file loads first.)
+
+Why not just wait for bigger context windows? Pack a million-token window with rules that do not apply to the file being edited, and the only thing that changes is the size of the room the noise sits in. The ratio of useful to useless tokens is exactly what it was, and that ratio is the thing that was costing you. Anthropic's own best-practices guidance for Claude Code points the same way: keep the rules file short, on the order of 200 lines, because adherence falls as the file grows.
+
+**The fix isn't a smaller file. It's the right file at the right moment.**
+
+## The toy: count a 32-line file by hand
+
+Shrink the shape until you can count it with a finger on the screen. Same proportions as the real thing, twenty times smaller: a 2-line root, three areas of 10 lines each - backend, web, infra. Thirty-two lines total, and every number in this section comes out of counting them.
+
+You are editing something in `backend/`. Which of the 32 lines govern that edit?
+
+| Section | Lines | Governs this edit? |
+|---|---:|---|
+| root | 2 | yes |
+| backend | 10 | yes |
+| web | 10 | no |
+| infra | 10 | no |
+
+Twelve. Two lines of root plus the ten lines of backend. The other twenty, all of `web` and all of `infra`, load anyway, because a flat file has one setting: hand over everything it has.
+
+Twenty of thirty-two is 0.625, and no formula produced it: addition did. **Remember 62.5%: it came out of a file you can count on one screen, and the next section finds exactly that fraction in a file twenty times bigger.**
+
+## Twenty times bigger, the same fraction
+
+Scale back up to the repo you actually work in, and only the size of the numbers changes.
+
+The root, 40 lines of what is genuinely universal:
 
 ```markdown
 # AGENTS.md (repo root)
@@ -40,7 +71,7 @@ Strip the root down to the genuinely universal:
 - This is a monorepo: backend/ is Go, web/ is React+TS, infra/ is Terraform.
 ```
 
-Then push the specifics down to where they apply:
+Then 200 lines each for what is only true in one place:
 
 ```markdown
 # backend/AGENTS.md
@@ -58,15 +89,54 @@ Then push the specifics down to where they apply:
 - Data fetching goes through `useQuery`; never `fetch` in a component.
 ```
 
-Now when the agent edits `backend/handlers/orders.go`, the React rules are not in the context at all. The error-envelope rule isn't competing with a CSS policy for the model's attention - it's one of three relevant lines. **The agent's working set matches its working directory.** Signal stays high because noise never loads.
+Concatenated into one flat file, that is 640 lines. Edit `backend/handlers/orders.go` and the lines that govern it are the root plus the backend section: 240. The other 400 arrive too - all of `web/AGENTS.md`, all of `infra/AGENTS.md` - and 400 divided by 640 is 0.625.
 
-This also fixes the maintenance story you didn't know you had. A monolithic rules file is a merge-conflict magnet and an authorship blur - nobody owns line 412. Directory-scoped files let the team that owns `backend/` own `backend/AGENTS.md`, the way they already own the code under it. None of this is theoretical at scale: when guidance conflicts, the convention is that the file closest to the edited code wins, and OpenAI's own monorepo already ships 88 separate `AGENTS.md` files - one near each package the agent might touch.
+62.5% again, on the nose, twenty times apart in absolute size and identical in fraction. The only things that carried over from the toy are the shape of the file - how big the root is, how big each area is, how many areas there are - and the fraction is a property of that shape. The day someone decided "one root, three sections, this size each," the tax was already set.
 
-## Directory isn't the only axis - some rules follow a file *type*
+That fraction needs a name, because it is about to grow. Call it the **flat-file tax**: the share of a flat rules file's load that says nothing about the file being edited. It comes from counting, and anyone on the team can run it in a minute, on the toy or on the real file, with a pencil.
 
-Scoping by folder handles "everything under `backend/` obeys these rules." But some conventions cut across the tree. Every test file, anywhere, should follow the same arrange-act-assert shape. Every `.tsx` component gets the same accessibility checks. Force those into a directory file and you copy them into `web/`, `admin/`, and `packages/ui/` - three copies that drift apart the moment one gets edited.
+**The toy and the real file agree exactly - 62.5% - because the tax was fixed by the file's shape long before anyone read it.**
 
-For that, the finer tool scopes by file *pattern* instead of folder. Claude Code's `.claude/rules/` directory lets a file declare the globs it applies to in frontmatter, and the rule loads only when the agent touches a matching file - wherever in the tree that file lives:
+## The flat-file tax has no ceiling
+
+Now grow the repo. A fourth area, a fifth, a tenth, with the root held at 40 and each area at 200 lines. Two lines of arithmetic generate every row before you count any of them: the noise on any edit is every other area's section, 200 times D minus 1; the whole file is 40 plus 200 times D; the tax is the first divided by the second.
+
+| Areas (D) | Flat total | Relevant per edit | Flat noise | Flat-file tax | Scoped tax |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 240 | 240 | 0 | 0.0% | 0.0% |
+| 2 | 440 | 240 | 200 | 45.5% | 0.0% |
+| 3 | 640 | 240 | 400 | 62.5% | 0.0% |
+| 4 | 840 | 240 | 600 | 71.4% | 0.0% |
+| 5 | 1,040 | 240 | 800 | 76.9% | 0.0% |
+| 6 | 1,240 | 240 | 1,000 | 80.6% | 0.0% |
+| 10 | 2,040 | 240 | 1,800 | 88.2% | 0.0% |
+| 20 | 4,040 | 240 | 3,800 | 94.1% | 0.0% |
+
+This table is the one picture to keep; the close comes back and replays it.
+
+**The relevant column never moves.** Root plus one area is 240 lines whether the repo has one area or twenty, because an edit in `backend/` was never going to need `web/`'s CSS policy. The flat total keeps climbing, every added line is noise on this particular edit, so the tax climbs with it: 0% at one area, 62.5% at three, 88.2% at ten, 94.1% at twenty, closing in on 100% for as long as the tree keeps growing areas and never quite arriving.
+
+The scoped column is the whole argument in one glance. It reads 0.0% at every row, and it would read 0.0% at a thousand areas too, because a scoped setup never receives the other areas' files in the first place. A zero that clean should raise an eyebrow; it has a real price, and the catch section below prices it.
+
+**Every area the tree adds raises the flat file's tax and leaves the scoped setup exactly where it was: zero.**
+
+## Scope by directory
+
+Most agent tools now resolve rules by place in the tree: one broad file at the root, narrower files deeper down that apply only inside their own subtree. The AGENTS.md spec's own page tells you to do exactly this - nest a file per subproject - and notes that the main OpenAI repo carries 88 of them at time of writing. This is a hierarchy inside one agent's context, files stacked by directory. If you were picturing the other kind - agents reporting to a lead agent - that is [hierarchy-beats-the-group-chat](/blog/hierarchy-beats-the-group-chat/), and the two share a word and nothing else.
+
+In Claude Code specifically the loading is **lazy**: the root file is in context from the first token of the session, and a subdirectory's file enters the window only when the agent first reads a file beneath it. The mechanics differ by tool, and the catch section says exactly how. The structure is the same everywhere. **The root holds what is true everywhere. Each leaf holds what is true there.**
+
+So take the 640-line file and cut it back into the four files it was pretending to be: the 40-line root, then `backend/AGENTS.md`, `web/AGENTS.md`, `infra/AGENTS.md`, 200 lines each. Edit `backend/handlers/orders.go` now and the agent loads the root plus `backend/AGENTS.md`, 240 lines, and `web/` and `infra/` never enter the window. The error-envelope rule is one of 240 lines that matter instead of one of 640, and the CSS policy is not competing with it for attention, because the CSS policy was never loaded.
+
+Maintenance gets quieter too. In a 640-line file, nobody owns line 412, and every team's edit lands in the same merge conflict. Split by directory, the team that owns `backend/` owns `backend/AGENTS.md`, the same way it already owns the code under it.
+
+**The agent's working set now matches its working directory: the other areas' conventions were structurally excluded, and nobody had to be careful.**
+
+## Cross-cutting rules need a second axis: the file pattern
+
+Directory scoping answers "everything under `backend/` follows these rules." Some conventions refuse to live in any one folder. Every test file anywhere should follow the same arrange-act-assert shape, and forcing that into directory files means copying it into `web/`, `admin/`, and `packages/ui/` - three copies that drift apart the first time one of them gets edited.
+
+For those, scope by file pattern instead of folder. Claude Code's `.claude/rules/` directory lets a rule declare the globs it applies to, and the rule loads only when the agent touches a matching file, wherever in the tree that file lives:
 
 ```markdown
 # .claude/rules/tests.md
@@ -79,17 +149,15 @@ paths:
 - No network or filesystem in unit tests; mock at the boundary.
 ```
 
-Now your test conventions ride the file pattern, not the folder. The agent loads them when it opens `web/cart.test.ts` and when it opens `packages/ui/Button.test.ts`, and never when it's editing production code. Directory files answer *where am I working*; path-scoped rules answer *what kind of file is this*. Most real repos want both axes, and the two compose: a `web/AGENTS.md` for the React app, a `**/*.test.ts` rule for how everyone tests.
+The test conventions now ride the pattern. They load for `web/cart.test.ts` and for `packages/ui/Button.test.ts`, and they leave production code alone. Copilot ships the same move as `.github/instructions/**.instructions.md` files scoped by glob, so the pattern axis is a cross-tool feature, and directory files and pattern files compose without conflict.
 
-### The catch: a leaf rule only fires after the agent reads a file there
+**Directory files answer "where am I working"; pattern files answer "what kind of file is this." Most real repos want both.**
 
-Lazy loading is what keeps the noise out, but it has a sharp edge worth knowing before you trust it. A directory-scoped file is invisible until the agent reads its first file in that subtree. So if you ask it to "add an endpoint" and it starts reasoning about `backend/` from memory before opening anything there, the conventions you so carefully scoped aren't in context yet - they load a beat too late. The same files also don't survive a context compaction: when a long session compacts, the root file gets re-read from disk, but nested files stay gone until the agent next opens a file beneath them. Neither failure is dramatic, and the fix usually isn't either - point the agent at a representative file first, or keep the genuinely load-bearing invariants at the root where they're always present. The deeper lesson: scoping trades guaranteed presence for higher signal. For most conventions that's a great trade. For the handful a single miss breaks, it isn't - and those belong somewhere they can't lazily fail to load.
+## Procedures want a command
 
-## Push task-specific instructions into commands, not rules
+Even a perfectly scoped root goes stale if it becomes a junk drawer for procedures. "How to cut a release," "how to backfill a table": a release procedure runs during a release, and a backfill runs during a backfill. A convention - the kind that belongs in rules - holds on every edit, including the edits with no release anywhere in sight.
 
-Even a well-scoped root still rots if you treat it as a junk drawer for procedures. "How to cut a release," "how to add a feature flag," "how to backfill a table" - these are *tasks*, not standing conventions, and they have no business loading on every edit.
-
-That's what [slash commands](/foundations/slash-commands/) are for. A command is context you invoke deliberately, only when you're doing that thing:
+That distinction is what a command is for: context that loads when invoked, deliberately, by name.
 
 ```markdown
 # .agent/commands/release.md
@@ -101,42 +169,54 @@ Cut a release:
 4. Tag `vX.Y.Z`, push the tag, open the release PR.
 ```
 
-The release procedure is forty lines the agent reads zero times a day until you type `/release`. Leaving it in the root file means paying for it on every unrelated edit. **Rules are for what's always true; commands are for what you're doing right now.** Keep them separate and each stays sharp.
+Forty lines the agent reads zero times a day until someone types `/release`, against forty lines every unrelated edit was paying for. Plan and spec files belong to the same family: state for one task, with a shelf life, handed forward run to run. [the-relay-not-the-window](/blog/the-relay-not-the-window/) covers those, and [deterministic-context](/blog/deterministic-context/) covers the fuller case for loading exactly what the task needs, on demand, by parameter. **A rule earns its place by being true on every edit; a command earns its place by being the right forty lines at exactly one moment.**
 
-Commands also catch the failure that scoping alone can't: drift. Scoped or not, prose doesn't change when code does - a rule describing an auth flow you ripped out in February reads as true on every session until someone notices, and a *wrong* rule is worse than a missing one. A missing rule makes the agent ask or explore; a wrong one makes it confidently build on a false premise you don't catch until it's three files deep. So make checking a first-class action - a command that audits your rules against the code on demand:
+## The catch: what scoping trades away
+
+Everything above about *when* a file loads describes Claude Code's documented behavior, and this post says so up front.
+
+Two catches inside Claude Code itself. First, lazy loading has an edge: a subdirectory file is invisible until the agent reads its first file in that subtree, so if it starts reasoning about `backend/` from memory before opening anything there, your scoped conventions arrive a beat late. Second, a nested file does not survive a context compaction the way the root does: when a long session compacts, the root file is read again from disk, and the nested ones stay gone until the agent next opens a file beneath them. **Both failures are quiet, and both fixes are cheap.** Point the agent at a representative file early, or keep the genuinely load-bearing invariants - the ones a single miss breaks - at the root, where they are always present. Scoping trades guaranteed presence for higher signal, and for the handful of rules where presence is the whole point, take that trade knowingly or keep the rule at the root.
+
+Then the part that varies by tool. Cursor and GitHub Copilot both read root-plus-nested `AGENTS.md` natively as of 2026, with **nearest-file-wins** precedence - when a root file and a nested file disagree, the one closest to the edited code is the one that wins. OpenCode reads `AGENTS.md` with glob-scoped nesting and falls back to `CLAUDE.md`. Claude Code is the holdout: it wants a `CLAUDE.md` bridge, an `@AGENTS.md` import line or a symlink, before it reads `AGENTS.md` at all. The flat-file tax is universal arithmetic. The loading model that removes it belongs to whichever tool is doing the loading, and that model is worth a minute in your tool's own docs before you build on it.
+
+**Scoping buys signal by giving up a guarantee, and which guarantee you give up depends on which tool loads the file.**
+
+## When scoping doesn't help
+
+Three cases where the arithmetic above buys you nothing.
+
+A single-area repo. Row one of the table reads 0.0% before you have done anything, because with one area there is nothing to be noisy about. Splitting a 40-line file into five eight-line files trades a tax that was already zero for the standing cost of remembering where everything lives. Scoping is a response to scale, and a repo with one area has nothing to respond to.
+
+An unbalanced split. Run the same count on the file this post's opening anecdote describes: root 40, `backend/` and `web/` at 200 each, `infra/` at 160, 600 lines total. Editing `backend/` or `web/` costs a 60.0% tax. Editing `infra/`, the smallest area, costs 66.7%. **The smallest area pays the worst tax, because it has the least of its own content to outweigh everyone else's.** Balance the area files; an uneven cut helps the big areas and shortchanges the small ones.
+
+A wrong rule. Scoping decides which lines load. It is silent on whether those lines are still true. A perfectly scoped `backend/AGENTS.md` describing an error envelope the team ripped out in February loads with zero noise and is still wrong. Rot lives on the time axis; this whole post lives on the space axis, and the two need different cures. [your-agentsmd-is-write-once-agent-memory](/blog/your-agentsmd-is-write-once-agent-memory/) covers the time axis in full, and a command that audits claims against the code catches it on demand:
 
 ```markdown
 # .agent/commands/audit-rules.md
 
 For every AGENTS.md in the repo:
-1. Extract each concrete claim (file paths, function
-   names, env vars, flows).
+1. Extract each concrete claim (file paths, function names, flows).
 2. Grep the codebase to confirm each is still true.
 3. Report a table: claim | HOLDS / DRIFTED / GONE | evidence.
-Do not edit anything. Only report - I decide what to fix.
+Do not edit anything. Only report - a person decides what to fix.
 ```
 
-Run it after a big merge or before you trust the rules on a hairy task. It deliberately reports and stops: drift *detection* and drift *correction* are different decisions, and letting the agent auto-rewrite context from its own reading of the code is just a fresh way to manufacture confident-but-wrong rules. You find the lie on a Tuesday by running a command, instead of inside a broken feature three weeks later.
+One more limit, different in kind: some conventions are guarantees you need obeyed, and a rules file is advice the model reads and usually honors. "Every schema change ships a migration" belongs in a [hook](/foundations/hooks/), a deterministic check that gates the commit, whatever the rules file says.
 
-## When not to bother
+**Scoping cures noise. Rot and hard guarantees are different diseases, and each has a different cure.**
 
-Scoping is a response to scale, not a virtue in itself. A 40-line rules file in a single-package repo doesn't need splitting; shattering it into five eight-line files trades one cheap tax for the standing overhead of remembering where everything lives. The technique earns its keep when the file has grown long enough that most of it is irrelevant to any given edit, and when the tree is deep enough that "where am I working" is a real question with different answers. Below that threshold, one short, curated root file is the correct answer - and reaching for hierarchy anyway is just the planning version of the bloat you're trying to escape. The enemy was never the single file. It was the *unscoped* one that grew past the point where any single edit needs most of it.
+## Back to the table
 
-## What to do Monday
+Place the result back on the table it came from. The flat file's tax starts at 0% with one area, passes 62.5% at three, 94.1% at twenty, and climbs toward 100% for as long as the tree keeps growing areas, without ever arriving. The scoped file's tax sits at zero in every row, at any size, up to and past a thousand areas - and it sits there not because the team got more disciplined, but because the noise was never loaded to begin with.
 
-Open your root rules file and read every line as the agent does - as a tax on the next edit, wherever it happens. Four buckets:
+One acknowledgment before you go build this: `AGENTS.md` moved to Linux Foundation stewardship in 2026, which puts its care outside any single company and makes it a maintained cross-vendor spec. Worth knowing if you are deciding what to standardize on. The per-tool loading mechanics of that spec live in [Rules](/foundations/rules/).
 
-- **Universal and declarative** ("Conventional Commits," "never hardcode secrets") → stays at the root.
-- **True only in one part of the tree** ("no `console.log`," "errors use the envelope") → moves to a directory-scoped file.
-- **A procedure you run on demand** ("cut a release," "add a migration") → becomes a command.
-- **Non-negotiable** ("schema changes ship a migration," "no secrets in commits") → stops being a rule and becomes a [hook](/foundations/hooks/).
+And the question this post raised without answering: does scoping fix rot too? It does not, and now you can say exactly why. A scoped file with a stale claim in it loads at 0% noise and is still wrong - wrong with excellent signal-to-noise. That is the temporal axis, and it is the whole subject of [your-agentsmd-is-write-once-agent-memory](/blog/your-agentsmd-is-write-once-agent-memory/). If you are still deciding what belongs in a rules file at all, one question before the where this post answered, [let-the-failure-distribution-write-your-agentsmd](/blog/let-the-failure-distribution-write-your-agentsmd/) covers the what.
 
-That last bucket is the line scoping can't cross. A rule is a *nudge* - the agent usually honors it, sometimes doesn't, and for most conventions that trade is fine. But where a single miss is a broken build or a leaked secret, no amount of perfect placement helps, because the mechanism itself is probabilistic. A hook is deterministic code that runs on an event and *gates* instead of asking nicely: a pre-commit hook that rejects any change to `db/schema.ts` without a matching migration catches the agent the hundredth time it forgets. Scoped rules carry the conventions that benefit from a nudge; hooks carry the ones that demand a guarantee.
-
-A root file that survives this is short, and short is the point. The agent doesn't ignore you because it's careless. It ignores you because you handed it your frontend rules while it was editing a database migration, and asked it to know better.
-
-Curate the context to the cursor. The signal was never the problem - the noise you bundled with it was.
+**Curate the context to the cursor: the signal was fine all along, and the size of the noise you had bundled with it is sitting in the table above.**
 
 ---
+
+**About the numbers.** The toy (root 2, three areas of 10 lines), the running example (root 40, three areas of 200), and the forty-line release procedure are invented for traceability, the first two at the same root-to-area ratio so the tax lands on the same 62.5% in both. Every figure in the toy, the running example, the master table, and the asymmetric 600-line check is computed by a script from those raw inputs and was re-run before publishing. Nothing here is a measurement of your repo: swap in your own line counts and the fractions move accordingly. The roughly 200-line ceiling is Anthropic's best-practices guidance for Claude Code as commonly cited, current as of this post's research; the 88 `AGENTS.md` files in the main OpenAI repo are quoted from the AGENTS.md spec's own page, "at time of writing"; the Cursor, Copilot, and OpenCode loading behaviors, the Claude Code `CLAUDE.md` bridge and lazy-load and compaction behavior, and the Linux Foundation stewardship are each 2026 claims about a fast-moving area. Check a tool's current docs before treating any of them as permanent.
 
 For the per-tool mechanics of scoped persistent context, see [Rules](/foundations/rules/); for invokable, on-demand procedures, see [Slash commands](/foundations/slash-commands/); and for turning a non-negotiable convention into a deterministic gate, see [Hooks](/foundations/hooks/).

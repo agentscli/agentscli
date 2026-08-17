@@ -1,24 +1,58 @@
 ---
-title: "An Agent Gets Worse Long Before Its Context Window Fills Up"
-description: "Stop fighting the context limit with a bigger window. Write an exhaustive plan to a file, then relay fresh sessions that each tick off items until it ships."
+title: "A ticked box is a bet: at 340 items, 34 are wrong, and the audit still leaves 3.4"
+description: "A relay of fresh sessions inherits every earlier decision through the plan file's checkboxes. But the model that ticks a box has every incentive to believe its own diff. An unaudited checklist is a bet, and this is the arithmetic that prices it."
+seoTitle: "AI Agent Plan File Checklists: The Counter-Signature"
+seoDescription: "Self-grading agents tick items that are not done. On a 340-item plan file expect 34 silent failures; a counter-signature still leaves 3.4."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, plan-mode, model-selection, headless]
 draft: false
 ---
 
-The 200k-token job is sitting in front of you: migrate 340 files off a deprecated ORM, touch the test suite, update the docs. So you point the agent at the repo, give it the goal, and let it run. Three hundred tool calls later it's editing files it already edited, contradicting decisions it made an hour ago, and quietly skipping modules it forgot existed. It hasn't crashed. It hasn't hit a limit. It's just gotten dumb.
+The relay is the settled half. When a job is too big for one session - the 340-file migration this piece keeps returning to - you write the whole job into a plan file as a checklist and run fresh sessions over it: each one reads the file, does the first unchecked item, ticks the box, and exits. [The relay, not the window](/blog/the-relay-not-the-window/) covers why that works. This piece starts where that one stops.
 
-The reflex is to reach for a model with a bigger window. **More room, fewer problems** - that's the steel-man, and it's wrong. An agent's reasoning degrades long before the window is full, and that's not a hunch - 2025 context-rot work found degradation sets in well before a window fills, and the long-standing "lost in the middle" result clocked accuracy dropping more than 30% when the relevant fact sat mid-context instead of at the ends. Recall sags, early decisions get buried under tool output, and the thing starts treating its own scrollback as noise. The window isn't a memory bank you fill to the brim. It's a working surface that smears the more you write on it.
+Because the relay leaves one question unasked: is a ticked box true?
 
-So if the context can't hold the whole job, where does the job live?
+Every session inherits what the earlier ones decided through that one file. The unchecked boxes say what is left; the ticked boxes say what is done, on the word of the session that did the work and nobody else's. The model that finishes an item reads its own diff, judges its own work, and files its own grade. It has every incentive to believe what it wrote and none to reopen it.
 
-## The plan file is memory; the context is just a workbench
+So an unaudited checklist is a bet, not a record.
 
-Write the entire job to a file first. Not a vibe, not a goal - an exhaustive, line-item checklist, produced in one dedicated session whose only output is the plan. Use [plan mode](/foundations/plan-mode/) to *generate* it: you spend a whole context window doing nothing but enumerating the work in a read-only planning pass. But plan mode's output is a proposed plan in the terminal, not a durable artifact - so the second half of the move is to *persist* that checklist to a file the agent re-reads at the start of every step. The plan survives only because you wrote it down; the planning phase doesn't hand you a file by itself.
+Here is the price of that bet, on the running example this piece keeps. At a silent-failure rate of 10% (a toy number, chosen well below the measured rate you will meet shortly, swappable for your own), a 340-item checklist run with no auditor returns about **34 items ticked and wrong**. Add the fix this piece builds - a second model that reads each diff against the plan file's own invariants before a box counts - and about **3.4 are still wrong, still checked, still sitting in the file** for the next session to inherit. The rest of the piece derives both numbers from two stated rates and hands you the table for your own size. The 3.4 is the point: the fix moves the odds on the bet, and you can compute by how much.
+
+## First, check whether you already have this
+
+Thirty seconds on a job you already ran settles it.
+
+Open the plan file - `MIGRATION.md`, `PLAN.md`, whatever you named it - from the last long agent job you ran to the end. Find the last three ticked boxes. For each, open the diff that landed it and read it against your own file's rules: the invariants section, the decisions log, the never-do-this lines.
+
+All three clean means your doers graded honestly on the slice you checked; nothing below changes what you should do tomorrow, so close the tab. But if even one diff quietly breaks a decision your own file recorded - the offset pagination the log ruled out, the raw SQL that never left line 88 - you have this problem, and the number 34 is closer to your situation than you would like.
+
+**Three clean diffs and you can stop reading here. One dirty diff, and every ticked box in that file is a bet you have been quietly losing.**
+
+## How often a ticked box lies
+
+The rate is measured, published, and recent.
+
+In "From Confident Closing to Silent Failure: Characterizing False Success in LLM Agents" ([Laksh Advani, arXiv:2606.09863, June 2026](https://arxiv.org/abs/2606.09863)), the author measures what happens when coding agents report their own status. On AppWorld, a benchmark of tool-use tasks, among agent runs that make an explicit claim about completion, **75.8% of those claims are false**. The agent says done. The work is not done. Three out of four confident closings, wrong.
+
+Call that a **false completion**: an item marked done that is not done. It is the object this whole piece prices.
+
+Then the second half of the same paper, which is the half that decides what to do about it. The obvious fix is to ask another model to judge, so the author built judges: five of them, five prompt strategies, full task specifications handed over. On the coding-agent benchmark's own traces those judges reach **0.54 AUROC**, where 0.50 is a coin flip, and across every configuration tried nothing exceeded 0.65 on a second benchmark. Ask a model "is this really done?" with nothing to check against and you get a guess with good manners.
+
+A sibling post puts it in one sentence - a checker that shares the maker's window shares its blind spots ([the loop that re-reads its diary](/blog/the-loop-that-rereads-its-diary/)); this piece turns that sentence into arithmetic, applied to one claim, the ticked box.
+
+The two measured numbers together set the design constraints on any fix. A doer grading itself fails at a measured, high rate. A judge with nothing to anchor on performs near chance. Whatever fixes this lives in the space between those facts.
+
+The arithmetic needs one more number that no citation can supply: a working false-completion rate for a mechanical file migration. The paper's 75.8% was measured on open-ended tool-use tasks; a 340-item migration - one transform repeated per file, invariants written in advance - is an easier job. So this piece uses **10%**: invented, deliberately conservative against the measured rate, and yours to swap. Every table below is multiplication, and multiplication does not care what rate you feed it.
+
+**Self-grading fails at a measured rate, and grading in the abstract barely works at all. Whatever checks a box has to be separate from the doer and anchored to something neither of them wrote just now.**
+
+## One migration, carried from here to the end
+
+Fix the running example now and never change it again: the legacy-orm to query-builder migration, 340 files, worked by a relay of fresh [headless](/foundations/headless/) sessions. The plan file they all live off opens like this:
 
 ```markdown
-# MIGRATION: legacy-orm → query-builder
+# MIGRATION: legacy-orm -> query-builder
 
 ## Invariants (do not violate)
 - No raw SQL in app code; all queries go through QueryBuilder
@@ -27,84 +61,159 @@ Write the entire job to a file first. Not a vibe, not a goal - an exhaustive, li
 
 ## Checklist
 - [ ] src/users/repository.ts  - 4 queries, has txn block
-- [ ] src/users/service.ts      - depends on repository.ts
 - [ ] src/billing/invoices.ts   - RAW SQL on line 88, flag for review
-- [ ] src/billing/ledger.ts     - joins across 3 tables
-- [ ] ... (336 more)
+- [ ] src/reporting/exports.ts  - paginated output, see decisions log
+- [ ] ... (337 more)
 
 ## Decisions log (append-only)
 - 2026-05-31: pagination uses cursor, not offset - billing relies on stable order
 ```
 
-The context window is now a workbench, not a filing cabinet. The agent doesn't need to remember the whole migration. It needs to remember the next unchecked item - and that's cheap. This is cognitive offloading, the same trick the "Google effect" names in people: you stop holding the information and start holding a pointer to *where it lives*. The agent remembers where the migration is written down, not the migration.
+Three things in that file do load-bearing work below. The **invariant** "no raw SQL in app code": a rule every item must satisfy, written before any item ran. The decisions-log ruling "pagination uses cursor, not offset," dated 2026-05-31. And the checklist's own note on `invoices.ts` - raw SQL on line 88, flagged for review before a single line moved. The plan already knew that file was a **landmine**; it comes back twice.
 
-## Each session reloads only the unfinished items
+The relay mechanics are the sibling post's subject. The pattern has a published origin: Anthropic's [blueprint for work that spans many context windows](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), which hands every long job a progress-notes file (a literal `claude-progress.txt`) that each later session reads before completing exactly one feature. Take all of that as given. This piece asks the one question the blueprint and the checklist both skip.
 
-Here's the move that breaks the job loose from the window. **You don't run one long session; you run a relay of short ones.** Each fresh session opens with an empty context, reads the plan file, finds the first unchecked box, does exactly that item, ticks it off, appends any decision to the log, and exits.
+Notice which items a script could check and which it could not. Some of the 340 are test-guarded: a test runs in CI, it passes or fails, and a green run is a fact about the world. That is the shape [an overnight build loop](/blog/an-overnight-build-loop/) gates on, and there the story honestly ends. But "no raw SQL in app code" has no test. "Cursor, not offset" has no test. Those are judgments about the shape of a diff, and the only reader anyone planned for is the model that wrote it.
 
-This isn't a hack you have to invent. Anthropic has published almost exactly this blueprint for tasks that span many context windows: an initializer pass lays down a progress-notes file (a literal `claude-progress.txt`), a feature list with each item marked done or not, and an initial commit - then every later session begins by reading the progress notes and the git log to reconstruct state, completes one feature, verifies it, and exits. They call the general technique *structured note-taking*: the agent writes notes outside the context window that get pulled back in later. The relay below is that pattern with the bookkeeping pushed into a Markdown checklist.
+(When the whole run should stop is a different question; [teaching the loop to stop](/blog/teaching-the-loop-to-stop/) answers it. This one is narrower: can any single ticked box, mid-run, be trusted before the next leg inherits it?)
 
-```bash
-# one leg of the relay - fresh context every loop
-codex exec --skip-git-repo-check \
-  "Read MIGRATION.md. Do the FIRST unchecked item only. \
-   Honor every invariant. Update the checkbox and the decisions log. \
-   Then stop - do not start the next item."
-```
+**The relay hands every decision forward through one file, and the file's ticked boxes arrive certified by the only party with a stake in their being ticked.**
 
-The agent that handles `src/billing/ledger.ts` never saw the 200 files migrated before it. It doesn't need to. It inherits the *decisions* - cursor pagination, one module per commit - through the file, not through scrollback it would have half-forgotten anyway. Every session runs at peak sharpness because every session is short. The handoff isn't the cost of this approach. **The handoff is the feature.** Each leg starts clean.
+## Name the trick: the counter-signature
 
-This is also where the relay stops being a clever trick and becomes plumbing. A single shell loop driving an agent in [headless mode](/foundations/headless/) turns "340-file migration" into "run until no boxes are unchecked":
+The constraints are on the table, and together they force the fix's shape.
 
-```bash
-while grep -q '\[ \]' MIGRATION.md; do
-  codex exec --skip-git-repo-check \
-    "Read MIGRATION.md, do the first unchecked item, tick it, commit, stop."
-done
-```
+The doer cannot check itself: it produces false completions at a measured rate, on work it just spent its whole window believing in. A bare second model cannot check it either: handed "is this done?" and nothing else, it performs near a coin flip. So whatever signs off on a box needs two properties at once: separate from the doer, so it shares none of the doer's stake, and handed something objective to check against, so it never grades in the abstract.
 
-The durable state lives on disk. The loop is dumb on purpose. Nothing important is trusted to the part of the system that decays.
+The plan file already contains the objective thing. That is the whole insight. The invariants and decisions log are sitting there, written before the item ran, with no opinion about whether the doer worked hard.
 
-## Pin the invariants where no session can forget them
+Call the fix **the counter-signature**: a checkbox that is not valid until a second model, prompted differently from the doer, reads that item's diff against the plan file's own invariants and signs off. The name is borrowed from banking on purpose. A large check does not clear on one signature, because the signer has an interest in the money moving. The second signer verifies the check against the ledger.
 
-A relay has a failure mode: drift. Session 50 invents offset pagination because it never saw the decision session 3 made. This isn't a quirk of one model - goal-drift work has measured every model drifting to *some* degree as context grows, and the same study found that strong goal elicitation in the system prompt significantly reduces it. The decisions log catches some of this, but the load-bearing rules shouldn't depend on an agent choosing to re-read a log. Put them in [rules](/foundations/rules/) - your `AGENTS.md` - so they reload into *every* session automatically, no checklist discipline required. That's the goal elicitation made permanent: the invariants ride into every session's prompt, where they measurably curb drift.
-
-```markdown
-# AGENTS.md
-- All DB access goes through QueryBuilder. Never write raw SQL.
-- Pagination is cursor-based. Offset pagination is a bug.
-- One module per commit. Run that module's tests before committing.
-```
-
-The plan file carries what's *left to do*; the rules file carries what must *never change*. Splitting those two is the whole discipline. Mutable progress in one place, immutable constraints in another, and the volatile context window holding neither.
-
-## Let a second model audit what the first one ticked
-
-The relay's other weakness: an agent that marks an item done has every incentive to believe its own work. Self-grading is generous grading. So separate the doing from the checking - and separate the *model*, too.
-
-This is a deliberate use of [model selection](/foundations/model-selection/). Run the migration legs on a fast, cheap model; run the audit pass with a different prompt: *read the diff for each ticked item, confirm the invariants hold, and uncheck anything that lied.* The part that's actually supported is the prompt - a skeptical, invariant-checking instruction is doing the real work, the same way strong goal elicitation curbs drift. Whether a *different, stronger model* catches more than the same model re-prompted is a reasonable bet I'd make, but treat it as opinion, not settled fact; the cheap, robust win is the adversarial prompt.
+The audit leg, in full:
 
 ```bash
-# auditor - different model, adversarial prompt, no stake in the answer
-claude -p "For each [x] item in MIGRATION.md, read its commit diff. \
-  If it violates an invariant or the item isn't truly done, \
-  flip it back to [ ] and note why in the decisions log."
+# the counter-signature - runs after the doer, before the box counts
+claude -p "For each ticked item in MIGRATION.md, read its commit diff.
+  Check the diff against every invariant and every decisions-log entry.
+  If the diff violates one, or the work is not actually complete,
+  flip the box back to [ ] and append your reason to the decisions log.
+  You did not write this code. Assume the tick is wrong until the diff says otherwise."
 ```
 
-The doer optimizes for closing boxes. The auditor optimizes for reopening them. Two models with opposing incentives, mediated by one file, produce a result neither would reach alone - and the file is the only thing they share.
+One design note. Where you can afford it, run the auditor on a different model than the doer ([model selection](/foundations/model-selection/) for the split); that choice is plausible but unproven. The load-bearing part is the prompt: the auditor is handed the invariants and pointed at one diff, the exact anchor the near-chance judges never got.
 
-## The relay only works if the job actually slices
+**A box the doer ticked is a claim. A box the counter-signature also signed is the same claim, checked against rules written down before the work started.**
 
-This whole move assumes one thing: the work decomposes into items a fresh session can finish without the context the earlier sessions had. That holds for a mechanical migration - 340 files, the same transform, mostly independent. It breaks the moment item N's correct implementation depends on something item N-1 *discovered* and never wrote down. If migrating `ledger.ts` is what taught you to use cursor pagination, that lesson has to land in the decisions log, or the next session re-derives it wrong. The log isn't bookkeeping; it's the only channel through which one leg's learning reaches the next. A checklist with no decisions log is a relay with no baton.
+## Twenty items, ground truth first
 
-That same dependency sets the cost ceiling. For a job that fits in one window with room to spare - a twelve-file refactor, a single feature - the relay is pure overhead: you're paying a planning session and per-leg startup to solve a problem you don't have. Reach for it when the work is genuinely larger than the window, repetitive enough to checklist, and sliceable into items that don't need to see each other. A tightly coupled rewrite, where every file's shape depends on every other file's, is the opposite case. There the coupling *is* the hard part of the job, and splitting it into checkboxes doesn't externalize the difficulty - it just hides it.
+Shrink the migration to a slice you can trace by hand: the first 20 items of the checklist. Declare the slice faithful - same invariants, same decisions log, same landmine, same 10% rate, which at 20 items says to expect 2.0 false completions. Before any auditing exists, do the dumb thing first: read all 20 diffs yourself, against the file's own rules. That read is the ground truth, and everything the counter-signature does later gets judged against it.
 
-Granularity is where this is won or lost. Items too coarse - "migrate the billing module" - drop a whole subsystem back into one fragile session, and you've reinvented the failure you were escaping. Too fine - "change line 88" - and the per-leg tax of spinning up a clean context, re-reading the plan, and re-orienting swamps the actual work. The target is an item a fresh session can complete at peak sharpness and verify before it exits. Pick that size deliberately in the planning pass; it's the single decision the whole relay rides on.
+The read finds two.
 
-A migration far larger than any context window ships coherently not because some model finally got a window big enough to hold it, but because nothing ever tried to hold it. The work lived in a file. The agents were interchangeable. The window was scratch paper.
+**item-07, `src/billing/invoices.ts`.** The invariant says no raw SQL; all queries go through QueryBuilder. The diff still has the raw SQL from line 88. The doer moved the surrounding code, left the SQL, and ticked the box - on the one file the plan itself flagged as a landmine.
 
-This is context engineering at its most literal: the agent is contextless by design, and you close the gap not by stuffing the window but by putting the codebase's decisions, constraints, and progress where any fresh session can pick them up. Stop sizing the window to the job. Externalize the state and run the relay - the agent you can swap out mid-task is the one you can trust to finish.
+**item-14, `src/reporting/exports.ts`.** The decisions log ruled on 2026-05-31 that pagination uses cursor, not offset. The diff paginates with OFFSET/LIMIT. That is the exact style the log ruled out, and the box is ticked anyway.
+
+Two of twenty items are checked and wrong. Remember that number. It is the ground truth the counter-signature has to reproduce.
+
+Now run the counter-signature over the same 20, at a 90% catch rate - also invented, and the honesty section holds it up against the measured near-chance judges. item-07: the auditor reads the diff, reads the invariant, flips the box, cites "no raw SQL in app code." item-14: same move, cites the pagination ruling. The eighteen clean items: signed, untouched.
+
+| The 20-item toy | Count |
+|---|---:|
+| Items on the checklist | 20 |
+| Ground-truth false completions (read by hand, first) | 2 |
+| Caught by the counter-signature | 2 |
+| Residual: wrong, still checked, after the audit | 0 |
+
+Exact match, in this run. Ground truth said 2; the counter-signature found 2; nothing slipped. Every line of that table is checkable by hand in under a minute, which is why you do this at 20 before believing it at 340.
+
+**At hand-traceable size the counter-signature reproduced a hand count exactly: 2 planted, 2 caught, 0 left over.**
+
+## The zero that is not what it looks like
+
+That clean 0 is the most misleading number in this piece, and it needs undoing immediately.
+
+The 90% catch rate is a probability, and the toy realized it in one lucky-looking draw: two false completions, both caught. Run the same 20 as an expectation instead - 2.0 entering, 90% caught - and you get 1.8 caught and a **residual** (what is still wrong after the audit) of 0.2. Not zero. At 20 items that means: run this exact slice five times and one quietly wrong item survives the counter-signature, on average. A single run showing zero is fully compatible with that; it is even the most common outcome. Small samples make audits look perfect.
+
+Hold onto the two toy rates - 10% entering, 90% caught - because the next section pays them out at real scale.
+
+**A clean run at 20 items is a small-sample illusion: the expected residual there is 0.2, one miss every five runs, hiding inside a number that reads as zero.**
+
+## Priced at 340
+
+Back to the full migration: same file, same invariants, same two rates. The arithmetic is three multiplications.
+
+```text
+340 items x 10% false completions          = 34.0 ticked and wrong, no audit
+34.0      x 90% caught by the signature    = 30.6 caught and redone
+34.0      x 10% missed by the signature    = 3.4  still wrong, still checked
+```
+
+Thirty-four files quietly wrong if you trust the boxes. Add the counter-signature and 30.6 get caught, flipped, and redone. And 3.4 files remain wrong and checked: sitting in the file as done, ready for the next session to build on, in a migration whose whole reason for a plan file was that no session would have to guess.
+
+3.4 files. Not zero. The mechanism that looked perfect at 20 items leaves a specific, countable number of landmines in a real-sized job: one in a hundred of everything you checked, which at 340 items is a handful of billing files.
+
+There are the spoiler's two numbers, reconciled exactly: 34 with no audit, 3.4 with it. Neither is a measurement of this migration; both follow from the stated rates and move if you swap in your own. What does not move is the relationship: the counter-signature cuts the damage by exactly the catch rate, never to zero, and the leftover scales with the checklist.
+
+**The counter-signature is a 90% filter on a 10% problem: it turns 34 silent failures into 3.4, and the 3.4 are the going price of running a relay nobody re-reads.**
+
+## The table, run out
+
+Everything above compresses into one table. N is your checklist's size; the middle columns are the same two rates applied; the last column is what you are actually buying.
+
+| Checklist items (N) | No audit: ticked and wrong | Counter-signed: caught | Residual: still wrong, still checked |
+|---:|---:|---:|---:|
+| 20 | 2.0 | 1.8 | 0.2 |
+| 50 | 5.0 | 4.5 | 0.5 |
+| 100 | 10.0 | 9.0 | 1.0 |
+| 200 | 20.0 | 18.0 | 2.0 |
+| **340** | **34.0** | **30.6** | **3.4** |
+| 1000 | 100.0 | 90.0 | 10.0 |
+
+Row 20 is the toy; row 340 is the migration. The row to sit on is 100, where the residual crosses one: below it the counter-signature chases fractions of a file, above it, whole ones. The table replays once more at the end, where the close points at one row and hands you a decision about it.
+
+**Read your own row off this table: multiply your checklist by 0.10 and that is how many ticked boxes are quietly wrong with no audit; multiply by 0.01 and that is what survives even the counter-signature.**
+
+## What this doesn't solve
+
+Four things, said before you build anything.
+
+**The residual never reaches zero at real scale.** 3.4 of 340, at a catch rate this piece invented generously. Anyone who takes "add an auditor" to mean "problem solved" should read every row of the table past 100 again. The counter-signature is damage control on a bet you have already placed, and the honest pitch stops there.
+
+**It does not work as a bare judge, and the 90% is not a measurement.** Hold them side by side; they are different kinds of numbers. The 0.54 AUROC (and the 0.65 ceiling) is measured, dated June 2026: what a judge scores with no objective anchor. The 90% is invented, an aspirational upper bound a well-built audit has to earn. The gap between them is carried entirely by the design: anchoring the auditor to "no raw SQL in app code" instead of asking for a vibe. If your invariants are vague, your audit performs nearer the measured floor, and this table stops describing you.
+
+**Below roughly 100 items, do not build it.** Row 20: 0.2 expected misses, one every five runs of the slice. Counter-signature machinery to catch a once-in-five-runs miss is very likely a worse trade than a human spot-check - you, reading three diffs, would have found both planted items in the toy. It earns its keep once N and the per-item stakes push the expected residual past about one. Below that threshold the honest answer is a person.
+
+**The audit is not free.** The counter-signature adds a second full diff-read per item: another model call over every ticked box before the relay may continue. At 340 items that is 340 extra reads, and a second place the relay can stall: an auditor that wrongly unchecks a clean item sends finished work backward, and one that errors sends the unattended loop to sleep. Priced honestly, it roughly doubles the read cost of the migration, and the close hands that bill forward.
+
+**The counter-signature improves the odds tenfold and sends you a bill; the bet itself stays open.**
+
+## The cheap versions, and why they are different
+
+Three things a reader reaches for first, and each is a different tool at a different moment.
+
+**"Sample the same model three times and take the majority."** Self-consistency voting is real and useful against noise. False completions are closer to the opposite of noise: correlated error. The same model, reading its own diff with the same training behind its eyes, tends toward the same call every time, so three votes from one lineage land nearer one vote counted three times than three independent checks. [A second opinion it didn't write](/blog/a-second-opinion-it-didnt-write/) makes the independence argument in full at the plan boundary; the same logic holds for diffs. Independence is what you are buying, and a majority vote of one model does not sell it.
+
+**"Isn't this just an automated PR-review bot?"** Same instinct, different moment in the pipeline. A review bot fires after merge, faces a human, and comments at its own pace; nothing waits on its verdict. The counter-signature fires per item, inside a still-running unattended relay, and gates the next leg: until the box counts, the migration does not move, so its misses become the next session's inherited truth.
+
+**"Doesn't my agent already hand off between sessions?"** Amp shipped a `handoff` command for exactly that, then walked it back in 2026 and restored automatic compaction ([the handoff file](/blog/the-handoff-file/) carries the whole history). All of it - handoff commands, HANDOFF.md habits, compaction summaries - is external memory for one continuous session running out of window. A relay's checklist is external memory from the first minute, spanning many independent sessions that never shared a window. Its hard question is whether what got carried forward is true, and compaction has nothing to say about that.
+
+**Majority voting re-rolls one grader. The counter-signature hires a second one and hands it the rulebook.**
+
+## Back to the table
+
+Row 340, one last time. 34.0 expected ticked-and-wrong with no audit. 30.6 caught by the counter-signature. 3.4 still wrong, still checked, inherited by every session that reads the file after the relay finishes. That last column is this piece's whole output: the claim was never "the counter-signature works." It was "here is exactly how much it doesn't, at your checklist's size."
+
+The fix creates the next decision, which this piece deliberately does not make. The counter-signature doubles the audit cost of every item it touches. So which items earn the second pass: every one, at 340 extra reads, or only the ones the plan already flagged - the `invoices.ts` entries, pre-marked as landmines, exactly the item the toy's item-07 turned out to be? That is a risk-tiering rule, and the reader's open problem now. [Loop engineering is context engineering](/blog/loop-engineering-is-context-engineering/) names the state file as a loop building block and states the self-checking failure in one sentence; this piece is the arithmetic underneath it.
+
+One neighbor note, briefly. The write-it-down-once family - [cache the explore](/blog/cache-the-explore/), [deterministic context](/blog/deterministic-context/), [hierarchical context](/blog/hierarchical-context/) - externalizes a map, a known file set, a directory-scoped rule, and none of it asks whether a claim inside the record is true. This piece is the audit lane of that road.
+
+A ticked box is a bet placed by the one party with money on it. The counter-signature changes the odds, the table prices them, and row 340 is the number to say out loud before anyone asks why the billing module still has raw SQL on line 88.
+
+**Price the bet before you cash it: one item in ten is ticked and wrong until someone re-reads it, and one in a hundred still is after the counter-signature signs.**
 
 ---
 
-For the mechanics: see [Plan mode](/foundations/plan-mode/) for producing the checklist, [Headless](/foundations/headless/) for driving the relay loop, [Rules](/foundations/rules/) for pinning invariants across sessions, and [Model selection](/foundations/model-selection/) for splitting the doer from the auditor.
+**About the numbers.** Two figures here are quoted and dated: the 75.8% false-success rate among AppWorld self-assessing coding-agent trajectories with explicit status claims, and the judges' 0.54 AUROC on AppWorld traces with a 0.65 ceiling on tau2-bench (0.50 is chance), across five judges and five prompt strategies. Both come from Laksh Advani, "From Confident Closing to Silent Failure: Characterizing False Success in LLM Agents," [arXiv:2606.09863](https://arxiv.org/abs/2606.09863), June 2026, checked against the paper's abstract. Everything else is toy or derived. The 10% false-completion rate and the 90% catch rate are invented for traceability: the first deliberately conservative against the measured 75.8%, since a mechanical migration with written invariants is an easier job than an open-ended tool-use benchmark; the second an aspirational upper bound for an audit anchored to written invariants, deliberately far above the measured near-chance judges and not a finding about any real auditor. The 20-item walkthrough and its two planted false completions, the 1.8 and 0.2 at N=20, the 34.0/30.6/3.4 at N=340, and every row of the master table are exact arithmetic on those two invented rates, re-checked with an independent script before publishing. Feed in your own rates and the table recomputes; the shape - no audit multiplies, the signature divides, the residual never reaches zero - holds at any rate you believe.
+
+For the per-tool mechanics: [plan mode](/foundations/plan-mode/) for producing the checklist and its invariants in the first place, [headless & CI](/foundations/headless/) for running the relay legs, [model selection](/foundations/model-selection/) for splitting the doer from the auditor, and [trust and evaluation](/foundations/trust-and-evaluation/) for the wider question of which layer in a workflow can still say no.

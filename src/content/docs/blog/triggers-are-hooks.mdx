@@ -1,78 +1,73 @@
 ---
-title: "The best prompt you'll ever write is the one you delete."
-description: "An agent that waits for you to remember to ask it is a toy. Wire a deterministic event to a headless run that reads your rules, and routine work fires itself."
+title: "One wire turns 3 real cross-checks out of 12 monthly dependency bumps into 12 of 12, and 54 reviewer-minutes into 24."
+description: "An event can fire a headless agent run as reliably as a hook fires inside a session. But wiring the event only removes the human who had to remember to ask. The one who caught bad output has to be rebuilt as code too: rules for what a careful review would do, guards for what it would never let happen unattended."
+seoTitle: "AI Agent Triggers: Automate Headless Runs with Hooks"
+seoDescription: "Wire a Dependabot PR to a headless agent run: 4x the cross-checks, 24 reviewer-minutes a month instead of 54. Rules make it competent, guards make it safe."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, hooks, headless, rules]
 draft: false
 ---
 
-You open the agent, paste the diff, and type: "Draft a changelog entry for this release, group by feature, skip the dependency bumps, match the tone of the last one." It does a decent job. You copy the output, tweak two lines, ship it. Smooth.
+You open the agent, paste in the diff, and type: "Draft a changelog entry for this release, group by feature, skip the dependency bumps, match the tone of the last one." It does a decent job. You tweak two lines and ship it. Three weeks later the release goes out with a changelog that says "various fixes," because the step that produced the good one lived entirely in your head and your fingers.
 
-Then three weeks pass and you forget. The release goes out with a changelog that just says "various fixes," because the step that produced the good one lived entirely in your head and your fingers. The agent was never the bottleneck. **You were the trigger** - and you misfired.
+The agent was never the bottleneck. You were the trigger, and you misfired.
 
-This is the part nobody benchmarks. Everyone evaluates agents on prompt quality: how well does it answer when you ask it well? But the most expensive failure isn't a bad answer. It's the answer that never got requested because the human who had to remember was busy, on leave, or three context-switches deep. The real unlock isn't a better prompt. It's removing the prompt.
+Inside a session you already trust deterministic wiring. A [hook](/foundations/hooks/) fires on a fixed event - a tool call, a file write, a commit attempt - and runs code you control, with no model judgment in the loop. `PreToolUse` blocks a bad command before the model can argue; `PostToolUse` runs the formatter. This piece points the same wire outward. A **trigger** is an event in your repo wired to start an agent run: a merged PR, a cron tick, a Dependabot bump, a bug label. Each one is a fact about the repo that should cause work, and right now that work waits on a person remembering it.
 
-## A trigger is a hook with a wider blast radius
+But wiring the event removes only one of the two humans in the loop. It removes the one who had to remember to ask. It does nothing about the one who used to catch the agent's mistakes - who read the draft, fixed the tone, noticed when a run went sideways. At 2 a.m. nobody is watching, so that second human has to be rebuilt as code too, twice over: **rules** for what a careful review would do, and **guards** for what a careful reviewer would never let happen unattended.
 
-Inside a session, you already trust deterministic wiring. A [hook](/foundations/hooks/) fires on a fixed event - a file write, a tool call, a commit attempt - and runs code you control, no model judgment in the loop. `PreToolUse` blocks a command; `PostToolUse` runs the formatter. The agent doesn't *decide* to lint; the event *causes* the lint.
+Here is where that lands, with numbers you can re-derive by the end. A repo gets 12 dependency bumps a month. Unaided, its reviewers do the real cross-check on 3 of them. Wire one trigger, and all 12 get the cross-check - four times the catches - while the reviewers' own time on those bumps drops from 54 minutes a month to 24.
 
-A trigger is the same primitive aimed outward. Instead of "after the agent edits a file, run this," it's "after this event happens in the world, run the agent." The event is the prompt. A merged PR, a cron tick, a new issue label, a failing nightly build - each is a fact about your repo that *should* cause context work, and right now that work waits on your memory.
+## Check whether you actually have this
 
-The mechanism that makes this possible is the same one that powers the in-session hook: the agent can run [headless](/foundations/headless/) - no chat window, no human turn-taking, just a one-shot invocation with a prompt baked in and an exit code at the end.
+Thirty seconds on your own repo settles it, before any arithmetic.
 
-```bash
-# .github/workflows/changelog.yml - the event is the prompt
-on:
-  release:
-    types: [published]
+Open the merged pull requests from the last month and filter to the bots: `author:dependabot[bot]`, or the Renovate app, or whatever opens your bumps. For each one, ask a single question. Before it merged, did anybody read the release notes and check the call sites against the new version, or did the green CI check carry it?
 
-jobs:
-  draft-notes:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - run: |
-          claude -p "Draft CHANGELOG.md for the diff since the last tag.
-            Follow the conventions in CLAUDE.md exactly." \
-            --allowedTools "Bash(git log:*),Edit" \
-            > notes.md
-      - uses: peter-evans/create-pull-request@v8
-        with: { commit-message: "docs: changelog draft", branch: changelog-bot }
+If you can name one bump where you did that read, and roughly what you found, you don't have this problem. Close the tab; the rest of this is a curiosity. If the list blurs together and you can't name a single one, you have it. The careful path exists, everyone knows it is the right one, and under review pressure it loses to the fast one often enough to matter.
+
+**If you can't name one bump you actually read, the rest of this piece is about your repo.**
+
+## What the forgotten check costs
+
+Put numbers on the problem before pricing any fix. Four inputs here, all stated as assumptions, sized to a plausible mid-size repo; a fifth arrives when the trigger does. Swap in your own and every number below moves; the mechanism doesn't.
+
+A bump lands. The reviewer has two paths:
+
+| Path on one bump | Minutes | Real cross-checks |
+|---|---:|---:|
+| The **real cross-check**: read the version diff, grep every import of the changed package, check the breaking changes against your own call sites | 15 | 1 |
+| The skim: see the green CI check, click merge | 1 | 0 |
+
+And the uncomfortable input: left alone, reviewers do the real cross-check on 1 bump in 4. The other 3 get the skim. That fraction is a toy assumption for this piece. It stands in for a pattern anyone who has merged a green Dependabot PR on a Friday afternoon will recognize. Name your own fraction; the arithmetic below takes any value.
+
+The repo sees 12 bumps a month. Compute the ground truth the obvious way, per bump, with no trigger in the picture:
+
+```text
+expected minutes per bump     = 0.25 x 15 + 0.75 x 1 = 4.5
+expected real checks per bump = 0.25
 ```
 
-No human typed that prompt at release time. The release *was* the prompt.
+Twelve bumps, run forward:
 
-## Without rules, an unattended run is a loaded gun
-
-Here's the question that should bother you: if no human is in the loop to tweak two lines and fix the tone, what stops the unattended run from producing confident garbage? In an interactive session, *you* are the error-correction layer. Remove yourself and the agent's contextlessness is no longer caught - it's committed, signed, and shipped.
-
-This is the gap in its purest form. The agent is broad and fast but doesn't know your changelog groups by feature, that you skip dependency bumps, that "fix" entries get a ticket reference. A human reviewer carries that knowledge in their head and applies it live, every time. Take the human out of the loop and that knowledge leaves with them - unless you wrote it down first.
-
-So you write it down. [Rules](/foundations/rules/) - the `CLAUDE.md` / `AGENTS.md` your agent reads on every run - are what turn a trigger from reckless into reliable. The trigger supplies the *when*; the rules supply the *how, with your conventions*.
-
-```markdown
-# CLAUDE.md - changelog conventions
-
-When drafting CHANGELOG.md:
-- Group entries under ## Features, ## Fixes, ## Internal.
-- Skip commits matching `^(chore|deps|bump)`.
-- Each Fix links its ticket: `- Foo no longer crashes (#1423)`.
-- Match the voice of the existing top entry. Never invent a version number;
-  read it from package.json.
+```text
+4.5 min x 12 = 54 reviewer-minutes a month
+0.25 x 12    = 3 bumps actually cross-checked
 ```
 
-That file is the whole difference. Hand the same trigger to an agent with an empty `CLAUDE.md` and you get a generic bullet list. Hand it to one that reads those eight lines and you get *your* changelog - at 2 a.m., with nobody watching, in a PR you can review on your own clock instead of producing on the release's clock.
+**54 minutes a month, and 9 of the 12 bumps merge on a green check with nobody looking.** That is the size of "you were the trigger": an answer nobody asked for, and nine merges nobody checked.
 
-## The same wire, a sharper job
+**The careful path exists and everyone knows it is right. Under pressure, it simply stops happening.**
 
-A changelog draft is forgiving - worst case it's bland and you rewrite it. The payoff climbs when the forgotten work is also the work humans are *worst* at: tedious, judgment-heavy, easy to skim past at 5 p.m. on a Friday. Dependency review is the canonical case. A bot opens a PR bumping a package two minor versions. You glance at it, see the tests pass, and click merge - because reading a changelog and cross-checking it against your own call sites is exactly the kind of careful, boring work a tired human waves through.
+## The same wire, aimed outward
 
-Same primitive, harder problem. The event is "a dependency PR opened." The standing instruction is the thing you'd do if you weren't tired.
+Now the fix. It needs one thing a hook doesn't: the agent must run [headless](/foundations/headless/) - no chat window, no turn-taking, one prompt baked in, an exit code at the end. Every serious CLI agent ships this (Claude Code's `-p`, Codex's `exec`, opencode's `run`).
+
+Fix the running example here and keep it for the rest of the piece. Dependabot opens a PR bumping a package. The event is "a dependency PR opened," gated to the bot so a human's edit to `package.json` doesn't fire it:
 
 ```yaml
-# .github/workflows/dep-triage.yml
+# .github/workflows/dep-triage.yml - the event is the prompt
 on:
   pull_request:
     paths: ["**/package.json", "**/*.lock"]
@@ -97,38 +92,125 @@ jobs:
             the changed surface, say so in one line and stop.
 ```
 
-Dependabot already tells you a version moved. What it can't tell you is whether *your* code cares - and that's the entire gap this site exists to close. The agent is broad: it can read a foreign package's changelog faster than you can. It's contextless: it has no idea you only ever call two functions from that library. The `grep` over your own imports is where the broad-but-shallow agent borrows the narrow-but-deep knowledge that normally lives in a senior engineer's head. The PR supplies the *when*; the diff and the rules supply the *how, against our actual usage*. You stop merging dependency bumps on faith and start merging them on a read you didn't have to remember to do.
+No human typed that prompt at review time. The PR opened, and the PR was the prompt.
 
-Notice what changed between the two examples and what didn't. The trigger moved from `release` to `pull_request`. The tools moved from `Edit` to read-only `Grep`. The output moved from a file to a comment. The *shape* - deterministic event, headless run, rules-supplied conventions, a human-reviewable artifact at the end - is identical. That stability is the point: once you've wired one trigger, every other one is the same four moves with different nouns.
+Read the allowlist, because it is doing quiet work. `Bash(git diff:*),Read,Grep`: the agent can look at everything and touch nothing. What it does with that reach is the running example's whole job - read the diff, grep the call sites, post one risk-level comment. `--max-turns 15` caps the run; remember that number, it comes back in the guard section. (What an agent can reach once it is running - sandbox, allowlist, scoped credential - is a separate question with [its own arithmetic](/blog/full-autonomy-is-a-small-blast-radius/); this piece is about when the run starts and whether its output can be trusted unattended.)
 
-## An unwatched run fails differently
+What Dependabot tells you is that a version moved. What it cannot tell you is whether your code cares, and that is the gap this whole site exists to close. The agent is broad: it can read a foreign package's changelog faster than you can. It is contextless: it has no idea you only ever call two functions from that library. The grep over your own imports is where the broad agent borrows the narrow knowledge that lives in a senior engineer's head.
 
-The objection writes itself: this is just brittle automation that'll page me at 2 a.m. when it misfires. It would be - if the trigger *shipped*. It doesn't. Look again at both examples: one ends at a pull request, the other at a comment. Neither merges, deploys, or replies to a customer. The trigger drafts; a human still commits. You haven't removed the review gate, you've moved it off the critical path - the work is waiting for you instead of you being the bottleneck the work waits on.
+If you have read [loop engineering is context engineering](/blog/loop-engineering-is-context-engineering/), the scheduling half of this will sound familiar: that piece notes that the schedule is cron and what decides the outcome is the context on each tick. The split of labor is clean. That piece is about the six building blocks of any autonomous loop; this one is about the single wire that starts a one-shot run, and the guard layer that makes firing it unattended safe. The in-session cousin, a hook that gates what the agent just did, is [its own piece](/blog/pre-commit-hooks-are-for-robots/).
 
-But "it only drafts" doesn't make an unattended run safe by itself. Take the human out of the loop and you also remove the human's failure-handling, and that loss shows up in three specific places.
+**A trigger is a hook aimed outward: the same fixed event and the same deterministic wiring, but the event starts the run instead of gating a tool call inside one.**
 
-**Duplication.** A network blip makes CI retry the job. Now you have two identical changelog PRs, or the same triage comment posted twice. The agent didn't malfunction - retries are normal - but nothing checked whether the work already existed. The fix isn't a cleverer prompt; it's a deterministic guard, the same spirit as a `PreToolUse` hook: before opening a PR, check for an existing bot branch keyed to this commit SHA; before commenting, check for a prior comment from this run. Idempotency is config, not model judgment, and it has to be *your* job to add - the model will cheerfully do the work a second time.
+## What the trigger does to those numbers
 
-**Runaway spend.** Interactively, you notice a loop going sideways and hit escape. Unattended, the meter just runs, and the cloud API has no soft limit to save you. So you bound it from the outside: cap `--max-turns` so a stuck run *fails* instead of spending, wrap the job in a wall-clock timeout, route routine work to a cheaper model, and limit concurrency so a flood of triggers can't fan out into a flood of billed runs. None of these make the agent smarter; they make its worst case cheap.
+With the trigger wired, the two paths collapse into one. The agent does the real cross-check on every bump - that is literally the prompt above - and the reviewer's whole job becomes reading one short comment and deciding. Give that two minutes rather than zero, and mean it: a verdict with linked call sites is short, and reading it is the kind of small task that still happens on a Friday. If your team would scroll past even that, no automation fixes it, and the boundary section below is for you.
 
-**Noise.** An agent that comments on every PR - even when there's nothing to say - trains your team to scroll past it inside a week, and a gate everyone ignores is worse than no gate. Give it a false-positive budget: the dependency prompt above ends with "if nothing touches the changed surface, say so in one line and stop." Better still, let it exit silently when the risk is negligible. The discipline that makes a trigger trustworthy is the same as the rules that make it competent - write down not just what to do, but when to stay quiet.
+New per-bump numbers: **2.0 reviewer-minutes** (down from 4.5) and **1.0 real cross-checks** (up from 0.25).
 
-## The work that earns this is the work you keep forgetting
+Now the two ratios this piece runs on, stated where they first mean something. Every bump gets the real check instead of 1 in 4: **4x the real cross-checks** (1.0 / 0.25). Every bump costs 2.0 minutes instead of 4.5: **2.25x fewer reviewer-minutes** (4.5 / 2.0). Both are per-bump facts. Hold onto them, because they predict the monthly rollup with no new arithmetic:
 
-Not everything wants a trigger. One-off questions belong in a chat. The candidates for triggers share a shape: **deterministic event, repeating need, context-heavy output, low tolerance for being forgotten.**
+```text
+catches: 3 x 4     = 12
+minutes: 54 / 2.25 = 24
+```
 
-- A **dependency PR opens** → triage it: read the changelog, flag breaking changes against how your code actually imports the package, comment risk level. The event is the PR; the context is your usage.
-- The **docs and the code drift** → on merge to `main`, diff the public API surface against the docs site and open an issue listing what's stale.
-- A **support issue lands with a `bug` label** → draft a reproduction and a first-pass root-cause from the stack trace, before a human ever reads it.
+Check that against the direct route: 1.0 checks x 12 bumps = 12; 2.0 min x 12 bumps = 24. Same answers, two independent derivations, nothing rounded. Twelve of twelve bumps cross-checked. Every one.
 
-Each of these is context work you'd happily do if you remembered, structured by rules you'd happily write once. The trigger is the part that survives your memory.
+There is the claim from the top of the piece, reconciled exactly: **54 minutes to 24, and 3 real catches to 12**, off one workflow file and the rules it reads. The 30 minutes and the 9 extra catches in between are the monthly margin.
 
-The boundary matters as much as the pattern, because a trigger pointed at the wrong work quietly costs more than it saves. Skip it when the *when* isn't deterministic - "when the design feels off" has no event to bind to, so it stays a conversation. Skip it when the output's natural endpoint is an irreversible action: auto-merging, deploying, or replying to a customer puts the agent's contextlessness past the last point a human can catch it, which is the exact failure the draft-then-review shape exists to prevent. And skip it for genuine one-offs. The wiring - the workflow file, the rules, the guard against duplicate runs - is a fixed cost you pay once and amortize over every future firing. A question you'll ask exactly once never repays it; that belongs in a chat window, where the prompt is cheap and disposable. The rule of thumb: if you can't name the event and you won't see the work again, you don't have a trigger, you have a task.
+Three of those catches were happening anyway. **The trigger's entire margin lives in the nine bumps you were never going to check.**
 
-Start with one. Take the prompt you retype most often - the changelog, the triage, the doc sync - and ask what event in your repo *always precedes* you typing it. Wire that event to a headless run. Move the standing instructions out of your fingers and into a rules file. Then delete the prompt from your habits, because the habit is now the machine's.
+## Rules are the competence half
 
-An agent you have to remember to ask is a smarter rubber duck. An agent that fires on the event that should cause the work, carrying your conventions into a run nobody is watching, is a coworker. The difference is one wire and one file.
+Take the human out of the loop and their conventions leave with them, unless they were written down first. The prompt says `Follow CLAUDE.md`, and that line is doing real work. The trigger supplies the when; the [rules](/foundations/rules/) supply the how, with your standards:
+
+```markdown
+# CLAUDE.md - dependency triage
+
+When triaging a dependency bump:
+- Read the version diff first, then grep every import of the changed package.
+- "Breaking" means one of our call sites uses a changed API, not that the
+  changelog says the word "breaking".
+- Risk levels: high = a call site breaks; medium = a new optional API we
+  don't use yet; low = patch bump only.
+- One comment. Link the exact call sites by file and line.
+- If nothing in our code touches the changed surface, say so in one line
+  and stop.
+```
+
+Hand this trigger an agent with an empty rules file and you get a generic summary of the changelog: fluent, confident, useless. Hand it this file and you get your triage, at 2 a.m., in a comment you read on your own clock instead of producing on the merge button's clock.
+
+That is the first half of the replaced human, written down once. **The rules file is the difference between an unattended run that knows your repo and one that guesses about it in fluent prose.**
+
+## Three ways an unwatched run goes wrong
+
+Rules make the run competent. Nothing so far makes it safe. Take the human out and you take out their error-correction too, and the loss shows up in three specific places, each visible in the running example. (The broader claim - that a headless run loses whatever approval you were quietly providing, however it starts - is what [earn the automation](/blog/earn-the-automation/) argues. This piece narrows to runs an event fires, and adds what that one doesn't: this arithmetic, and the three guard rails specific to firing on a recurring schedule.)
+
+**Duplication.** A network blip makes CI retry the job. The agent runs twice and posts two identical triage comments on the same PR. Nothing malfunctioned - retries are normal - but nothing checked whether the work already existed. The guard: make the run **idempotent**, safe to fire twice, by keying the work to the commit SHA. Before posting, check for a prior comment from this workflow on this SHA and skip if it exists. The model will cheerfully do the work a second time; only config stops it.
+
+**Runaway spend.** Interactively, you notice a run going sideways and hit escape. Unattended, the meter just runs. Part of the guard is already in the YAML: `--max-turns 15` means a stuck run fails instead of spending. Add a wall-clock timeout on the job, a cheaper model for routine triage, and a concurrency cap so a flood of bumps can't fan out into a flood of billed runs. All four caps target the same thing: the price of a bad run. (One distinction worth a sentence: a trigger fires once per event. A loop that runs until it believes it is finished has a different brake problem - that is [teaching the loop to stop](/blog/teaching-the-loop-to-stop/).)
+
+**Noise.** An agent that comments on every bump, even when there is nothing to say, trains the team to scroll past it inside a week, and a gate everyone ignores is worse than no gate. The guard is the last line of the prompt: if nothing touches the changed surface, say so in one line and stop - or exit silently when the risk is negligible. Give the trigger a false-positive budget and write down when to stay quiet, the same way you wrote down what to do.
+
+Now look at what the three guards share. Each is deterministic code with no model judgment in the loop. Each gates whether an action is allowed to count: this comment may post, this run may keep spending, this verdict may speak at all. That is the exact job of a `PreToolUse` hook - the primitive from the top of this piece, the one that blocks a bad tool call before the model can argue. Same wire, wrapped around the trigger's own firing instead of a tool call inside one run.
+
+Call it **the outer hook**: the session hook, pointed at the event that starts the run. The guards were never a new idea. Once you accept that a trigger fires on a fixed event with nobody watching, the outer hook is what the constraint forces.
+
+**Wire a trigger without an outer hook and you have replaced a human who forgot with a machine that misfires.**
+
+## The table, run out
+
+Everything so far was one repo at 12 bumps a month. The two ratios are per-bump facts, so they hold at any volume; only the size of the number they multiply changes. The master table, holding the running example's inputs fixed and scaling the bump count:
+
+| Bumps/month | Real checks, no trigger | Real checks, with trigger | Extra catches | Minutes, no trigger | Minutes, with trigger | Minutes saved |
+|---:|---:|---:|---:|---:|---:|---:|
+| 4 | 1.0 | 4.0 | +3.0 | 18.0 | 8.0 | 10.0 |
+| 8 | 2.0 | 8.0 | +6.0 | 36.0 | 16.0 | 20.0 |
+| **12** | **3.0** | **12.0** | **+9.0** | **54.0** | **24.0** | **30.0** |
+| 24 | 6.0 | 24.0 | +18.0 | 108.0 | 48.0 | 60.0 |
+| 48 | 12.0 | 48.0 | +36.0 | 216.0 | 96.0 | 120.0 |
+
+Row 12 is the running example, and it is the opening claim exactly. Run your eye down any pair of columns and the ratio never moves: 4x the catches, 2.25x the minutes, every row, because doubling the bumps doubles both sides equally. Row 48 is the same trade at four times the volume - 216 minutes down to 96, and 36 more bumps actually read.
+
+**The ratios are the mechanism. The table only tells you how big your repo is on it.**
+
+## What this doesn't solve
+
+**Guards make a trigger fail safely, not correctly.** The guard layer and the rules layer solve different problems. A well-guarded trigger with a wrong or missing rule still produces a confidently wrong verdict on every firing - it just doesn't duplicate it, overspend on it, or spam the channel about it. Safety and competence are separate purchases. Neither one substitutes for the other, and a trigger needs both.
+
+**You can buy this pattern instead of building it.** GitHub Copilot's cloud coding agent takes an assigned issue and opens an autonomous PR with no interactive turn. Cursor's Automations, launched March 2026, fire agents from GitHub, Slack, Linear, PagerDuty, webhooks, or a schedule. Devin runs as a background and scheduled agent. If one of those fits your stack, use it - and hold it to the same three questions this piece built by hand: when the event fires twice, does it dedup? When a run gets stuck, what caps the spend? When there is nothing to say, does it know to stay silent? A product page that can't answer those is asking for trust where this piece asked for code. Teaching the primitive rather than the product is deliberate: the primitive survives whichever tool fires it.
+
+**Most of the outer hook is old ops knowledge.** Idempotency keys, timeouts, and spend caps are unattended-job hygiene that predates agents entirely; anyone who has run a cron job or caught a webhook retry storm has met duplication and runaway work before. What agents add is a new reason to need the hygiene: an unattended job that writes prose into your PRs. The in-session version of the guard idea - a hook that validates what the agent just produced - is [its own piece](/blog/make-a-hook-validate-the-agents-output/).
+
+**The outer hook keeps a wrong run from misbehaving. Only the rules keep it from being wrong.**
+
+## When not to wire one
+
+Candidates share a shape: a deterministic event, a repeating need, a context-heavy output, a low tolerance for being forgotten.
+
+- Release published: draft the changelog from the diff since the last tag - the example that opened this piece.
+- Merge to main: diff the public API surface against the docs and open an issue listing the drift.
+- Issue labeled `bug`: draft a reproduction and a first-pass root cause from the stack trace, before a human reads it.
+
+Three things don't want a trigger at all. Skip it when the when isn't deterministic: "when the design feels off" has no event to bind, so it stays a conversation. Skip it when the natural endpoint is irreversible: auto-merge, deploy, and reply-to-customer all put the agent's mistakes past the last point a human can catch them, which is the exact failure the draft-then-review shape exists to prevent. And skip one-offs: the wiring - workflow file, rules, outer hook - is a fixed cost you spread over every future firing, and a question you will ask exactly once has nothing to spread it over.
+
+Two nearby shapes get mistaken for this one. A human kicking off a whole batch of headless runs in one push is [an overnight build loop](/blog/an-overnight-build-loop/), a different wire. And once your trigger fires in CI, whether the same check should also run locally, as one policy instead of two, is [the next question](/blog/write-your-review-bot-once-run-it/).
+
+**If you can't name the event, or you won't see the work again, take it to a chat window: that is a task.**
+
+## Back to the table
+
+Row 12, one more time: **12 bumps, 12 real cross-checks, 24 reviewer-minutes**, against 3 and 54 without the wire. The ratios held at every other row too, because they were never about volume. 4x and 2.25x are properties of a single bump.
+
+The row the table can't print is N=1, so here it is with the same arithmetic. One firing still saves 2.5 reviewer-minutes and three-quarters of a cross-check, and the wiring costs more than that. That is the boundary rule's math, and it is why one-offs stayed in the chat window.
+
+Which leaves the cost this piece's own fix created. The outer hook is code - the dedup check, the turn cap, the silence rule - and nothing here tests it. The first time the dedup check itself has a bug, two identical comments land anyway, and the guard you built to catch misfires becomes a misfire nobody is watching. Who verifies the guard, and what happens the first time it fails, is different work from anything above: validating a hook's own correctness rather than the agent's output. That question is now yours, along with the trigger.
+
+An agent you have to remember to ask is a smarter rubber duck. An agent that fires on the event that should cause the work, carrying your rules, wrapped in your guards, is a coworker. **The difference is one wire, one file, and the outer hook wrapped around both.**
 
 ---
 
-For the per-tool mechanics, see [Hooks](/foundations/hooks/) for the in-session event model, [Headless & CI](/foundations/headless/) for unattended one-shot runs, and [Rules](/foundations/rules/) for the conventions that make an unwatched run trustworthy.
+**About the numbers.** The five inputs (12 bumps a month, 15 minutes for a hand cross-check, 1 minute for a skim, 1 in 4 bumps actually cross-checked unaided, 2 minutes to read the trigger's verdict) are toy values, invented for traceability and sized to a plausible mid-size repo. The one-in-four fraction is the softest of the five: it stands in for the real pattern of skim-and-merge under review pressure, and it is not a measured rate. Put your own fraction in and every number moves, while the mechanism stays. Everything else - the 4.5 and 2.0 minutes per bump, the 4x and 2.25x ratios, the 54/24/3/12 rollup, the master table, the N=1 case - is exact arithmetic from those five inputs, checked against an independent script before publishing. The one dated product fact quoted: Cursor's Automations launched March 2026.
+
+For the per-tool mechanics, see [Hooks](/foundations/hooks/) for the in-session event model, [Headless & CI](/foundations/headless/) for one-shot unattended runs, and [Rules](/foundations/rules/) for the conventions an unwatched run carries.

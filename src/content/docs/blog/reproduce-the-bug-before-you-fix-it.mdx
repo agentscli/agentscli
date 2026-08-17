@@ -1,127 +1,200 @@
 ---
-title: "If you can't reproduce the agent's failure, your fix is a guess."
-description: "Turn each reported agent failure into a committed synthetic scenario, then replay it headlessly on every change. The bug becomes a guardrail, not a patch."
+title: "Confirm an agent fix with one rerun on a bug that still fires one run in five, and you call it fixed 80% of the time."
+description: "A one-line bug report about an agent carries exactly one testable fact: how often the failure fires. Turn the report into a committed synthetic scenario, then let that fact size how many reruns a fixed verdict is worth."
+seoTitle: "Reproduce AI Agent Bugs as Synthetic Test Scenarios"
+seoDescription: "One rerun on an agent bug that fires 1 run in 5 has an 80% chance of a false all-clear. Size your rerun count off the bug's own flake rate."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, headless, slash-commands]
 draft: false
 ---
 
-A user reports it in one line: "the agent can't reason about last week's events." You open the codebase, read the retrieval path, spot something that looks wrong, change it, and it feels better when you try it once. Ship. Three weeks later the same complaint comes back, slightly reworded, and you have no idea whether you broke the old fix or never fixed it at all.
+Sprint 214. The on-call bot's ticket-cleanup skill has been running nightly for a month, and a report lands from a support engineer: "It deleted resolved tickets instead of archiving them. I watched it happen on two of the last ten cleanup runs."
 
-The problem isn't the bug. It's that **you never recreated the conditions that produced it.** You patched a symptom you couldn't see twice, which means your fix was a guess wearing the costume of a fix.
+That is the whole report. One sentence of complaint, one sentence of data. There is no stack trace, because nothing crashed. The runs completed, the summaries read fine, and two tickets that should exist in the archive, T-481 and T-490, do not exist anywhere.
 
-## A fix you can't reproduce is a fix you can't trust
+You do the normal thing. You read the skill, find a plausible cause, tighten the wording so it says archive and never delete, run one cleanup by hand on a test board, and watch it archive. Green. You type "fixed" into the thread. Three weeks later the same report comes back, slightly reworded, and you are holding a question you cannot answer: **did the fix break, or did it never work?**
 
-Steel-man the obvious move: replay real production sessions. It's the right instinct - real traffic is the highest-fidelity test data that exists, and the teams who can wire production transcripts into a replay harness build a genuine flywheel. But for most agent failures that path is closed. The transcript that triggered "it can't reason about last week's events" contains a real user's calendar, their colleagues' names, the contents of their inbox. Privacy, compliance, or just plain decency forbid you from reading it, let alone committing it to a test fixture.
+Two things make that loop hard to escape by trying harder. The one artifact that would reproduce the failure exactly, the transcript of the run that deleted T-490, is the one artifact you are not allowed to keep: it is full of real ticket subjects, real customer names, real people having bad days. And the thing you *are* allowed to keep, a safe fake stand-in you build yourself, runs on a non-deterministic agent, so it will pass on some runs and fail on others.
 
-So the failure stays anecdotal. And an anecdotal failure has a fatal property: **you can't tell when it's gone.** You can only tell when someone complains again.
+Here is the number this piece derives and then pays off exactly. **Confirm the fix with a single rerun, on a bug that still fires one run in five, and there is an 80% chance you call it fixed when it is not.** That 80% falls out of the reporter's own sentence: "two of the last ten runs" is a flake rate, and a flake rate is the one input the arithmetic needs. By the end you will compute the same number for your own bug, from your own report, and know how many reruns a "fixed" verdict is worth.
 
-The fix is to stop chasing the real session and manufacture a fake one that fails the same way.
+## First, check whether you already have this
 
-## Reproduce the failure as a synthetic scenario
+Thirty seconds, two questions, on the last bug someone reported against one of your agents.
 
-The report is vague. Your job is to make it precise by writing the smallest world in which the agent provably fails. "Reason about last week's events" becomes a concrete fixture: a handful of timestamped records, a query anchored to a relative date, and an expected answer.
+One. Can you run it right now? Is there a command on your machine that shows that failure today, without asking anyone to remember anything? Not "we saw it in March." **A command, with an exit code.**
 
-```json
-// scenarios/temporal-recall.json
+Two. When you declared that bug fixed, how many times did you rerun the check, and did a number choose that count, or did you stop when it looked right?
+
+If a committed fixture exists that fails on the old code and passes on the new, and you reran it a count you picked in advance, you already practice what this piece builds. Close the tab.
+
+If the failure lives in a chat thread and the all-clear lives in someone's memory, keep reading. **A fix with no check behind it has one test left, and the second bug report is it.**
+
+## The transcript that would prove it is the transcript you cannot touch
+
+Steel-man the obvious move first: replay the real session. Real traffic is the highest-fidelity test data that exists, and any team that can wire production transcripts into a replay harness should. For most agent failures the path is closed, and for the best reason. The transcript of the cleanup run that went wrong contains ticket subjects, customer names, and internal notes. Privacy rules, compliance, or plain decency say you cannot read it, and you certainly cannot commit it as a test fixture. The evidence and the policy point at the same file.
+
+This is the mirror image of [your failed agent runs are labeled data](/blog/your-failed-agent-runs-are-labeled-data/), which harvests every failed session automatically, at volume, to find patterns across many failures. Harvesting works there because those transcripts were safe to keep. The ticket bug is the other case: one reported failure whose transcript is the thing you must not log. Volume tooling cannot help you. The failure has to be rebuilt by hand.
+
+Left alone, the failure stays anecdotal, and an anecdotal failure has one fatal property: **you cannot tell when it is gone.** The next complaint is the only news you will ever get. Meanwhile the report itself sits there holding the only testable fact in the whole incident, "two of the last ten runs", and the standard move is to thank the reporter, fix something, and throw that fact away.
+
+**You cannot replay the session, so the failure must be manufactured from the report, and the report already carries the one number that manufacturing will need.**
+
+## Manufacture a failure you are allowed to keep
+
+The deliverable is a **synthetic scenario**: the smallest invented world in which the agent provably fails, written as a file with no real user data in it. For the ticket bug it looks like this:
+
+```jsonc
+// scenarios/archive-not-delete.json
 {
-  "name": "reason about last week's events",
-  "now": "2026-05-31T09:00:00Z",
-  "context": [
-    { "ts": "2026-05-22T14:00:00Z", "text": "Deploy v2.3 to staging" },
-    { "ts": "2026-05-23T10:30:00Z", "text": "Rolled back v2.3, OOM in worker" },
-    { "ts": "2026-05-28T16:00:00Z", "text": "Shipped v2.4 hotfix" }
-  ],
-  "query": "What happened with the deploy last week?",
-  "expect_contains": ["v2.3", "rolled back", "OOM"]
+  "name": "cleanup archives resolved tickets and deletes nothing",
+  "context": {
+    "tickets": [
+      { "id": "T-481", "status": "resolved" },
+      { "id": "T-490", "status": "resolved" },
+      { "id": "T-502", "status": "open" }
+    ]
+  },
+  "query": "Clean up the resolved tickets from sprint 214.",
+  "expect_tool": "archive_ticket",
+  "forbid_tool": "delete_ticket",
+  "expect_contains": ["T-481", "T-490"]
 }
 ```
 
-That file is the bug, frozen. It carries no real user data, it's diffable, and anyone on the team can read it and understand exactly what "reason about last week" was supposed to mean. The hard part - turning a one-line complaint into a structured world with an expected output - is itself a context-engineering task, and it's the kind of repetitive reasoning a [slash command](/foundations/slash-commands/) is built to absorb.
+T-481 and T-490 are the IDs the reporter already put in the tracker, the only thing borrowed from the incident: subjects, names, and notes stay in the transcript you cannot keep. T-502 is open, on purpose: a cleanup skill must leave open tickets alone, so the fixture checks that the agent told the difference, not just that it did something. The assertions sit at the layer where the damage lives.
+
+That layer distinction matters, because agent bugs come in two kinds. Some are in the answer: "it cannot reason about last week's events" is a complaint about what the agent said, and a substring assertion on the reply, `expect_contains`, catches it. The reply here reads perfectly: "Archived 2 resolved tickets from sprint 214." Every word of it true, and two tickets gone anyway. The damage is in the **trajectory**, the sequence of tool calls the agent made on the way to that sentence. In two of the reporter's ten runs, the agent reached for `delete_ticket` instead of `archive_ticket`. No grep of the prose will ever see that, which is why the assertion moves up a layer: `expect_tool` and `forbid_tool`, read out of the structured output that [headless](/foundations/headless/) mode hands back.
+
+**The file is the bug, frozen.** It carries no real data, so it can be committed. It is diffable, so it can be reviewed, and anyone on the team can see exactly what "clean up" was supposed to mean. And it fails, today, on the code that is broken, which is the property that makes everything downstream honest.
+
+One report producing one fixture is a fine habit while reports arrive slowly. It becomes a system when authoring stops being your job: a [slash command](/foundations/slash-commands/), or a dedicated [subagent](/foundations/subagents/) with a clean window, that reads a report and emits a failing fixture for every reported failure:
 
 ```md
 <!-- .claude/commands/repro.md -->
-Given a failure report, produce a synthetic scenario file under scenarios/.
+Read the failure report pasted below. Produce ONE scenario file
+under scenarios/ that reproduces it.
 
-1. Extract the capability the report claims is broken.
-2. Invent minimal fake context that exercises it - no real data, ever.
-3. Anchor any temporal language to an explicit `now` field.
-4. Write `expect_contains` assertions that would FAIL today.
-5. Run the scenario once. Confirm it fails. Only then hand it back.
+1. Name the capability the report claims is broken.
+2. Invent the smallest fake context that exercises it. Nothing copied
+   from any transcript. IDs already in the tracker are fine; subjects,
+   names, and notes are not.
+3. Assert at the layer where the damage lives: expect_tool /
+   forbid_tool for tool bugs, expect_contains for answer bugs.
+4. Run the scenario once, headlessly. If it does not FAIL on the
+   current code, fix the scenario, not the code.
 
-The deliverable is a committed file that reproduces the bug, not a fix.
+Deliverable: a committed file that fails. You do not fix the bug.
 ```
 
-Notice the last instruction. The command is forbidden from fixing anything. **Its entire job is to fail on purpose** - to convert a feeling into a red test. This is the order most agent fixes skip, and it's the whole game.
+The instruction doing the most work is the last one. The command is forbidden from fixing anything, and the agent whose whole job is proving the bug exists is exactly the agent you do not want getting clever and routing around it. The isolation of a separate window keeps the proof uncontaminated.
 
-## Not every failure is in the answer
+If the failure were a feature you had not built yet, you would write the acceptance test forward, before any code, the way [bake the acceptance test into the spec](/blog/bake-the-acceptance-test-into-the-spec/) does: seed the order, refund it, assert the state. A bug report is the harder prior case: no spec to bake anything into, just a complaint, and the acceptance test has to be reverse-engineered out of it.
 
-Temporal recall is a *content* bug: the agent says the wrong thing. But a large class of agent failures never shows up in the text at all - they're in the **trajectory**, the sequence of tools the agent chose on its way to the answer. "It deleted the tickets instead of archiving them" produces a perfectly fluent response. Grepping the output for a word will never catch it.
+**The synthetic scenario turns an anecdote into a red test you are allowed to commit, and the command that writes it must be seen failing before anyone is allowed to fix anything.**
 
-So the assertion moves up a layer. Instead of checking what the agent *said*, you check what it *did*:
+## Replay it on every change, unattended
 
-```json
-// scenarios/archive-not-delete.json
-{
-  "name": "clean up resolved tickets without destroying them",
-  "query": "Clean up the resolved tickets from last sprint.",
-  "context": [
-    { "id": "T-481", "status": "resolved" },
-    { "id": "T-490", "status": "resolved" }
-  ],
-  "expect_tool": "archive_ticket",
-  "forbid_tool": "delete_ticket"
-}
-```
-
-The fixture is the same shape - minimal fake world, explicit expectation - but the gate now reads the tool calls out of the run, not the prose. That's why headless mode's structured output earns its keep: `--output-format json` hands you the full transcript, including every tool invocation, so an assertion can say "called `archive_ticket`, never touched `delete_ticket`." A destructive regression that a content check would wave through becomes a hard red.
-
-## Replay it headlessly so the bug can never come back quietly
-
-A scenario that lives on your laptop reproduces the bug once. A scenario that runs on every change reproduces it forever - which is the point. Drive the agent in [headless](/foundations/headless/) mode, feed it each scenario, and assert on the output:
+A scenario on one laptop reproduces the bug once, for one person, until the laptop is wiped. The same scenario wired into CI reproduces it forever, at the exact moment someone reintroduces it. Headless mode makes that cheap: one process, structured output, no human.
 
 ```bash
 #!/usr/bin/env bash
-# scripts/replay.sh - run every synthetic scenario, fail loud
+# scripts/confirm.sh <scenario.json> <runs> - the shape, not the shipping version
 set -euo pipefail
-fail=0
-for f in scenarios/*.json; do
-  query=$(jq -r .query "$f")
-  out=$(claude -p "$query" \
-    --append-system-prompt "Context: $(jq -c .context "$f"). Now is $(jq -r .now "$f")." \
-    --output-format text)
-  for needle in $(jq -r '.expect_contains[]' "$f"); do
-    grep -qi -- "$needle" <<<"$out" || { echo "FAIL $f: missing '$needle'"; fail=1; }
-  done
+f="$1"; runs="${2:-14}"
+for i in $(seq 1 "$runs"); do
+  out=$(agent -p "$(jq -r .query "$f")" \
+          --context "$(jq -c .context "$f")" \
+          --output-format json --max-turns 20)
+  jq -e '.tools | index("archive_ticket")'      <<<"$out" >/dev/null || { echo "run $i: archive_ticket never called"; exit 1; }
+  jq -e '.tools | index("delete_ticket") | not' <<<"$out" >/dev/null || { echo "run $i: delete_ticket fired"; exit 1; }
 done
-exit $fail
+echo "confirmed: $runs/$runs green"
 ```
 
-Wire that into CI and the economics invert. The first time you see "it can't reason about last week," you pay once to write the scenario - and from then on, every commit pays the cost of checking that the regression hasn't crept back. **A class of bug that used to recur silently now recurs loudly, at the exact moment someone reintroduces it,** with a named file pointing at the cause. Cap each run with `--max-turns` and `--max-budget-usd` so a misbehaving agent can't turn your regression gate into a runaway bill - a replay suite that bankrupts a CI minute budget gets disabled, and a disabled guardrail guards nothing.
+Cap every run: `--max-turns`, a spend cap, a timeout. A regression gate that can burn a CI budget gets disabled, and **a disabled guardrail guards nothing.**
 
-## The assertion that passes four out of five times
+This is the merge-gate sibling of the runtime guard in [make a hook validate the agent's output](/blog/make-a-hook-validate-the-agents-output/). The hook catches a bad output on live traffic, the moment it happens, and retries once. The fixture catches a past failure on every change, before it ships again. **Different moment, different question: catch it now, or prove it never comes back.**
 
-Here's the trap that makes this harder than ordinary regression testing: **a synthetic scenario can go green by luck.** Agent output is non-deterministic. Even pinned to temperature zero, the same prompt yields different tokens run to run - batching, floating-point order, and hardware variation see to that, before you even touch sampling. A scenario that greps for `v2.3` might pass on the run that happens to mention the version and fail on the next, with nothing changed in between. Build your gate on a single sample and the gate itself is flaky - it'll redden on green commits and lull you on red ones.
+That handles the first half of the tension. The failure is a file, it runs on every commit, and when it goes red, someone gets a name and a diff instead of a mood. **Replayed in CI, the fixture catches the bug coming back; nothing in it yet certifies the bug gone.**
 
-The fix is to stop treating each scenario as one boolean and start treating it as a small experiment. Run it *N* times and gate on a **pass rate**, not a pass: "5 of 5" is a guardrail; "passed once" is a coincidence. This is also why the assertions are substring checks (`expect_contains`) and not exact-match - you're asserting the answer carries the right *facts*, not that it's phrased identically, because the phrasing will be different every single run. When you compare a fix against the old behavior, the same discipline applies: only call a regression fixed when the pass-rate delta clears the run-to-run noise, not when one lucky green run flips the suite.
+## One green run proves less than it feels like it proves
 
-When the scenarios multiply - temporal recall, tool-selection, refusal handling, each its own little failing world - generating and triaging them stops being a side task. That's the moment to hand scenario authoring to a dedicated [subagent](/foundations/subagents/) with one job and a clean context window: read a report, emit a failing fixture, verify it fails, return. The isolation matters. You don't want the agent that's supposed to be *proving the bug exists* to get clever and quietly route around it.
+You fixed it. The skill says archive, never delete; better, you took `delete_ticket` out of its toolset entirely. You run the scenario once. Green: archived, nothing deleted, T-502 untouched. You are about to type "fixed" into the thread.
 
-## When a synthetic scenario is the wrong tool
+This is where the second half of the tension bites. Agent output is non-deterministic. Even pinned at temperature zero, the same prompt yields different tokens run to run: floating-point addition is not associative, so the matrix math can land on slightly different numbers depending on order, and when two candidate tokens are nearly tied, the order flips. On top of that, whatever requests happen to be batched with yours shifts the numbers. The cleanup skill already proved the point in production: same code, same board, ten runs, two different behaviors. **The bug does not fire every run. It fires one run in five, and the reporter counted.** Call each run a pass when every assertion holds, and call it a **false clear** when a still-broken agent hands you green runs and you read "fixed" off them.
 
-This machinery isn't free, so don't reach for it when something cheaper reproduces the bug. If the failure is deterministic and pins to a line - a crash, a stack trace, a JSON parse error, an off-by-one in your own retrieval code - you don't need a fake session and a headless replay loop. A plain unit test against the offending function reproduces it in milliseconds, every time, with no pass-rate accounting. Reaching for a synthetic scenario there is overhead pretending to be rigor.
+Now the smallest version of the question, small enough to check with a pencil. Suppose the fix did nothing at all. You reverted the wrong commit, say, and the skill still misfires on one run in five, p = 0.2, exactly as before. You rerun the scenario twice. What is the chance both runs come back green?
 
-The synthetic-scenario pattern earns its cost only when the failure lives in the model's *judgment*, not your code: the agent that reasons wrong about time, picks the destructive tool, or refuses a request it should honor. Those are the bugs that resist a normal assertion because the code, narrowly, "works" - it ran, it returned, it didn't throw. The rule of thumb: if you can write a unit test against a function, write the unit test. Spend the scenario budget on the failures that have nowhere else to live.
+Do it the obvious way first: list everything that can happen. Each run independently passes with probability 0.8 or fails with 0.2:
 
-## Write the bug down before you write the fix
+| Run 1 | Run 2 | Chance |
+|---|---|---|
+| pass | pass | 0.8 x 0.8 = 0.64 |
+| pass | fail | 0.8 x 0.2 = 0.16 |
+| fail | pass | 0.2 x 0.8 = 0.16 |
+| fail | fail | 0.2 x 0.2 = 0.04 |
+| | **sum** | **1.00** |
 
-Back to the question from the top: how do you know the same complaint is actually gone? You don't - not until the failure stops being an anecdote and becomes an artifact. The synthetic scenario is that artifact: a fake session precise enough to fail, cheap enough to commit, clean enough to share, and permanent enough to outlive the engineer who wrote it.
+Four rows, and the probabilities sum to 1.00, which is your proof that the enumeration is complete. The outcome you would have read as "confirmed fixed" is the first row: **0.64.** Two reruns of a still-broken one-in-five bug come back green 64% of the time.
 
-This is the gap the whole site keeps circling. The agent is broad and fast but contextless; it has no memory of the failure it caused last month and no notion of what "last week" should have surfaced. You have that context - for about as long as the complaint is fresh in your head. Synthetic-session reproduction is how you write it down before it evaporates, in a form the agent can be measured against on every run.
+Generalize the obvious way. One run passes with probability (1 - p). N independent runs all pass with (1 - p)^N. At p = 0.2 and N = 2 that is 0.8 x 0.8 = 0.64, matching the enumeration exactly, no approximation. The formula earns its keep the moment N outgrows the pencil: at N = 10 there are 1,024 outcome sequences to list, and (1 - p)^N says 0.107 immediately. And because a formula agreeing with its own derivation is not a check, the dice version: 200,000 simulated batches of 10 runs at p = 0.2, counting the all-green batches. The simulation lands on 0.1074 against the formula's 0.1074. **Enumeration, algebra, and simulation agree.**
 
-Reproduce the failure first. The fix is the easy part - and it's only real once something red turns green.
+Now the number from the top of the piece, at N = 1: (1 - 0.2) = 0.80. A single confirming rerun on a still-broken one-in-five bug comes back green 80% of the time. **That is the spoiler re-derived.** When you typed "fixed" into the thread after one green run, the arithmetic says that green run was 80% likely with the fix doing nothing. The bug was in there, waiting for sprint 216. **One green run is a sample of one from a distribution you already know is one-in-five hostile, and 80% is what that sample is worth.**
+
+## The confirmation floor
+
+The question has flipped. "Did the fix work" has become "how many green runs before a fixed verdict means anything." That deserves a name, because you will want it in every retro.
+
+The **confirmation floor**: the smallest number of reruns N for which (1 - p)^N drops under the risk you accept, where p is a fact quoted from the bug report's own count. It is the floor under the word "fixed."
+
+You choose the tolerance. Five percent is a defensible one for a destructive bug: you certify fixed while knowingly holding a one-in-twenty chance of being wrong. Move it and only N moves.
+
+Here is the whole relationship for this bug, p = 0.2, in one table. This is the picture to keep; the close replays it.
+
+| Reruns (N) | False clear | Reads as |
+|---:|---:|---|
+| 1 | 80.0% | the intro's number, now with a mechanism |
+| 2 | 64.0% | the pencil check, the enumeration's pass/pass row |
+| 3 | 51.2% | a sibling piece's floor, still a toss-up here |
+| 5 | 32.8% | one bad call left in three |
+| 10 | 10.7% | about one bad call in nine, still over the line |
+| 14 | 4.4% | the first integer under a 5% tolerance |
+| 20 | 1.2% | diminishing returns past the floor |
+
+Row 3 deserves a pause, because a neighbor already gave you a number there. [Prompt regression tests](/blog/prompt-regression-tests/) scores a whole golden dataset per merge and settles on three runs per case as a sane floor between cost and signal. That floor was sized to keep a fixed-cost suite affordable. Certifying one flaky repro is a different job, and at this bug's flake rate three green runs still leave a 51.2% chance the bug is in there. **Better than even, for the bug.** Borrow the neighbor's N without re-deriving it and you clear this class of failure about half the time, without knowing which half.
+
+The strict floor: 0.8^13 is 5.50%, still over. **0.8^14 is 4.40%, the first integer under.** Fourteen reruns for this bug at a 5% tolerance: the same 14 sitting as the default in `confirm.sh`, now earned. Fourteen headless runs of a two-second scenario is about half a minute of CI, less than the standup you would spend arguing about whether it is really fixed.
+
+For your own bug, the recipe takes three inputs: p from the report's own count, a tolerance you can defend, and the smallest N that clears it. **N is not a feeling; it is the smallest run count whose all-green is harder to explain by luck than by the fix, and the bug report hands you p for free.**
+
+## What this does not solve
+
+Four limits, stated while the win is still warm.
+
+First, every run in this piece scores as one boolean: `expect_contains` and `expect_tool` and not `forbid_tool`, bundled into a single pass or fail. That is honest arithmetic but coarse evaluation. Trajectory evaluation as it ships in 2026, in LangChain's AgentEvals with its trajectory-match and LLM-judge evaluators, LangSmith's trajectory evals, Confident AI, and strands-agents/evals, scores a run along separate dimensions: did it pick the right tool, did it extract the right arguments, did the final answer carry the right facts, did it recover from its own error. The separation matters because **an aggregate pass can hide a real regression in one layer behind a pass in another.** A fix that always calls `archive_ticket` but starts passing the wrong ticket ID reads green under this piece's four-line assertion and red under a framework that scores argument extraction on its own. Those tools are the productized version of the hand-rolled check above; the hand-roll exists here because the mechanism is the point. Per-dimension scoring is the next problem, named and handed forward.
+
+Second, one scenario is one query and one response. Agents that hold state across turns fail in ways a single-shot fixture cannot reach: the bug that only appears on turn three, after the user's phrasing shifted. The frontier practice there is simulation, a synthetic user persona driving the agent across many turns and scoring the whole conversation. It is heavier and different, and it is out of scope here: this piece is about one reported failure, and one reported failure fits in one fixture.
+
+Third, the anti-hype note. The confirmation floor prices the reruns. It says nothing about whether the scenario deserves them. A fixture that does not actually exercise the bug, because its fake context is too easy or its assertion checks the wrong layer, will pass N times at any N and mean nothing at any N. **What the arithmetic certifies is the reruns. Whether the scenario deserves them is a judgment no table can make.** That is why the authoring command's "run it once and confirm it fails today" step is load-bearing: the only evidence a scenario offers that it exercises the bug is that it was seen failing on the broken code. No table sizes that risk.
+
+Fourth, when not to reach for any of it. A bug that fires almost every run does not need this math; one or two reruns settle it, and the formula just hands you a small N. A bug that pins to a line of your own code, a crash, a parse error, an off-by-one, is a unit test's job and always was. The floor earns its cost in the **flaky middle**, where the bug hides one run in three or five or ten and a single green run feels like proof. That is where this bug lived, and where "I ran it and it worked" does the most damage.
+
+**The floor is a tool for the flaky middle; near-certain bugs and deterministic bugs have cheaper answers, and no amount of reruns certifies a scenario that was never exercising the bug.**
+
+## Back to the table
+
+Replay it with the incident attached. The reporter's sentence, "two of the last ten runs", gave you p = 0.2. Nothing else in the whole incident gave you anything testable: no transcript, no log, no repro steps. That one fact, run through (1 - p)^N, becomes a decision that used to be a feeling.
+
+Row 1 is the intro's 80%, paid off exactly where it was promised. Row 3 is the borrowed floor that does not hold here. Row 14 is 4.40%, the strict floor for this bug at a 5% tolerance, half a minute of CI. Your own bug changes only the inputs. Quote p from your reporter's own count; if nobody counted, run the scenario on the old code ten times and count yourself. Pick the tolerance you can defend in a retro. Take the smallest N that clears it. If N comes out absurd, that is a bug too flaky to confirm cheaply, and the honest moves are to fix the flakiness itself or to accept a smaller N with your eyes open. **Once the table has priced the choice, you sign the verdict knowing what it costs.**
+
+One cost is still unpaid, and this piece's own arithmetic created it. Each run here scores as one boolean, content and trajectory bundled together. That holds while you have one fixture per bug. Against every merge, with dozens of fixtures, the bundling starts to hide things: the tool call correct, the argument wrong, the answer right for the wrong reason, all reading green. Scoring each dimension on its own is the gap named above, the 2026 tooling already does it, and it is the open question this hands you: how many dimensions does a verdict need before you would stake a customer's tickets on it?
+
+**Reproduce the bug before you fix it. Then rerun it as many times as the bug's own count says a green run is worth.**
 
 ---
 
-For the per-tool mechanics, see [Slash commands](/foundations/slash-commands/) for absorbing the repro workflow into a repeatable command, [Headless & CI](/foundations/headless/) for replaying scenarios on every change, and [Subagents](/foundations/subagents/) for isolating scenario authoring from the fix.
+**About the numbers.** The incident is invented: sprint 214, the cleanup skill, tickets T-481, T-490 and T-502 are a worked example, sized so every number in the piece can be checked with a pencil. Within the example, the flake rate p = 0.2 is quoted from the reporter's own count ("two of the last ten runs"), so it is a fact of the scenario rather than a tuning knob. Every later figure, the 0.64 enumeration, the 80%, every table row, and the N = 14 floor, is arithmetic on that p, re-checked with a script and cross-verified two ways: hand enumeration at N = 2, and a 200,000-trial simulation at N = 10 (0.1074 against 0.1074). The 5% tolerance is a choice you are free to move; N = 14 is its consequence at p = 0.2. The half-a-minute CI figure assumes a two-second scenario run; swap in your own runtime and the arithmetic stays the same shape. The temperature-zero non-determinism claims are known properties of inference stacks, not measurements made for this piece. The tooling names are those of products that exist as of 2026; none was tested here.
+
+For the per-tool mechanics, see [Headless & CI](/foundations/headless/) for replaying scenarios unattended, [Slash commands](/foundations/slash-commands/) for absorbing the repro workflow into a repeatable command, and [Subagents](/foundations/subagents/) for isolating scenario authoring from the fix.

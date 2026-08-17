@@ -1,58 +1,151 @@
 ---
-title: "Your agent says the delete worked. The proof is a sentence it wrote."
-description: "Give every consequential tool a declared output schema and validate at the boundary, so the UI gates on a real success boolean instead of the agent's prose."
+title: "Trusting the agent's narration confirmed 3 refunds that never happened. Validating the declared shape confirmed zero."
+description: "A model has one procedure for turning tool bytes into a sentence, so a clean success and a swallowed failure read the same. On 12 refund calls, narration confirms 3 that never happened; a validated output schema confirms zero."
+seoTitle: "MCP Tool Output Schema: Stop Trusting Agent Prose"
+seoDescription: "On one batch of 12 refund calls, the agent's narration confirms 3 refunds that never happened. A declared, validated outputSchema confirms zero."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, mcp-servers, permissions]
 draft: false
 ---
 
-The agent calls `delete_customer`, the function returns, and the model writes: "Done - I've removed the customer record." Your UI renders a green checkmark. The record is still there. The API timed out, returned a 502, and the agent - reading its own tool's stringified response - pattern-matched "looks fine" and narrated a success that never happened.
+Saturday morning, 9:40. Nobody is at the dashboard. A headless agent works the support queue against your desk's [MCP server](/foundations/mcp-servers/), and one tool is `process_refund(order_id, amount_cents)`. The batch runs twelve calls. At noon the run summary reads like a clean shift: nine refunds confirmed, three declined with reasons quoted. It goes into the weekly report.
 
-The mistake everyone makes is treating the tool's *return value* as the source of truth. It isn't. By the time the model has summarized it into prose, success and failure have blurred into the same shape: confident English. **The agent doesn't know the action worked. It knows the response didn't obviously look broken.** Those are not the same fact, and the gap between them is where false confirmations live.
+Three of the nine are false. Calls 10, 11, and 12 came back as a timeout the SDK swallowed into `{}`, an empty `200 OK` body, and a 502 that died mid-write. No money moved on any of the three, and the agent narrated all of them as processed anyway. It had no better move available.
 
-So here's the question: if the agent's words can't be trusted, what *can* the UI branch on?
+Here is the claim, derived row by row from twelve responses you can check with a pencil. Gate the batch on the agent's narration and you confirm **3 refunds that never happened**. Gate the same twelve responses on a declared, validated output schema and you confirm **zero** false ones. Same calls, same bytes. The whole difference is one declared shape and one check at the boundary.
 
-## Free text is where success and failure look identical
+This blog has already gated the front of a tool call: [what destructive calls may run](/blog/elicitation-plus-tool-annotations/), [what credentials they run with](/blog/the-server-is-the-trust-boundary/), [what the agent proposes to do](/blog/make-a-hook-validate-the-agents-output/). None of that touches the moment after an allowed call returns, when something must decide whether the effect it reports is real. Today that decision belongs to a language model writing the most plausible next sentence. This piece moves the decision into a shape.
 
-Picture the workflow everyone starts with. A tool runs, returns a blob - maybe JSON, maybe a stack trace, maybe an empty `200 OK` body - and the model folds it into the conversation as narration. The interface downstream has two options, both bad: parse the model's prose for the word "success," or trust the model to have parsed the blob correctly. Both put a language model in charge of a boolean that has real consequences.
+## Check whether you already have this
 
-This is the part the mainstream framing gets wrong. **Structured output is sold as ergonomics** - "nice, now I get typed JSON instead of regex-ing a string." That's true and it undersells the point. The real payoff isn't convenience. It's that a declared schema turns the agent's freest, least-trustworthy medium - generated text - into a typed fact you can gate behavior on. Ergonomics is the side effect. Trust at the boundary is the product.
+Thirty seconds on your own server settles it.
 
-It helps to be precise about *why* the text can't be trusted. A model doesn't have two different procedures for "narrate a success" and "narrate a failure." It has one: predict the most plausible next token given everything in context. When the tool response is a clean `{deleted: true}`, the plausible continuation is "Done." When the response is a truncated 502 body, a timeout the SDK swallowed, or an empty `200 OK`, the plausible continuation is *also* "Done" - because nothing in the bytes screams failure, and the surrounding conversation primed a successful outcome. The narration is optimized for coherence with the prompt, not for correspondence with reality. Success and failure don't just *look* alike in free text; they're produced by the identical mechanism, so the medium itself can't carry the distinction.
+Open the definition of the most consequential tool you expose, the one that refunds, deletes, charges, or deploys, and search it for `outputSchema`. Then open whatever renders its result and find what the success state branches on: `structuredContent`, or a read of `content` with a string match on "done" or "success".
 
-The obvious objection: modern models are good, and they rarely fabricate a flat-out success. Mostly true, and beside the point. You're not defending against the common case; you're defending against the expensive tail. The failure that costs you is the one-in-a-thousand call where an upstream service half-died, returned an ambiguous payload, and the model - behaving exactly as designed - smoothed it into confident prose. Reliability engineering has always been about the tail, and "the model is usually right" is precisely the reasoning that lets a false confirmation through on the day it matters.
+A declared schema on the consequential tools plus a UI branching on `structuredContent`: you already made this move, close the tab. Either half missing means the gap below is live in your system today.
 
-And the boundary is exactly where it matters, because the boundary is where consequences happen. A read that returns garbage is annoying. A `delete` or `transfer_funds` that *reports* success while silently failing is a lie your user acts on.
+**Either a shape gets validated at the boundary, or a sentence gets believed in the UI. One of those two is already deciding your successes.**
 
-## Declare the shape the tool must return, then enforce it
+## One procedure, two indistinguishable outcomes
 
-Give every consequential tool a declared output schema, the same way you'd type a function's return. Since the spec's June 2025 revision, an [MCP server](/foundations/mcp-servers/) tool can ship an `outputSchema` alongside its input schema. Declare one and the result stops being a hopeful string: the server *must* return `structuredContent` that conforms to the shape, and the host can validate it against that contract before anything renders.
+Be precise about why the narration cannot be trusted, because the reason decides the fix.
+
+A model does not have two procedures, one for narrating successes and one for narrating failures. It has exactly **one procedure for turning tool bytes into a sentence**: predict the most plausible next token given everything in the conversation so far. When the tool returns a clean result with `refunded: true` and an amount, the plausible continuation is "Done - refunded $42.00." When the tool returns a truncated 502 body, or `{}` from a swallowed timeout, or an empty `200 OK`, the plausible continuation is also "Done", because nothing in those bytes screams failure and the whole conversation was pointed at a refund. **The narration is optimized for coherence with the conversation, and the conversation expected success.**
+
+The usual objection: modern models are good, and a flatly invented success is rare. Mostly true, and it aims at the wrong case. You are defending **the expensive tail**, the rare call where an upstream service half-died and handed back bytes that carry no signal either way. On exactly those calls the model has nothing to be right with, because no amount of model quality recovers information that never arrived. Prompting the model to be careful fails for the same reason: a prompt can buy you a hedge ("I believe this succeeded"), and a hedge on a false success is still a false success.
+
+This stops being a curiosity at the boundary. A read that returns garbage costs a wasted turn. A refund that reports success while silently failing is a lie your customer acts on. The batch above is twelve calls so you can hold it in your head; a real Saturday batch is hundreds, and the malformed tail lands precisely on the runs with no human in the loop.
+
+**The narration cannot carry the success distinction, because a clean success and a swallowed failure come out of the identical procedure: predict the plausible next sentence.**
+
+## The Saturday morning batch
+
+Fix the example now and keep it. One tool: `process_refund(order_id, amount_cents)` on a support desk's MCP server. One batch: twelve calls, headless, unattended. The payment backend is the ground truth, computed the obvious way from what really happened: six refunds moved, six did not.
+
+Here are all twelve raw responses, with the narration each produced:
+
+| # | What the server returned | `isError` | The agent narrated | Money moved |
+|---:|---|---|---|---|
+| 1 | Valid result: refunded, `rf_101`, $42.00 | no | "Done - refunded $42.00." | yes |
+| 2 | Valid result: refunded, `rf_102`, $15.00 | no | "Done - refunded $15.00." | yes |
+| 3 | Valid result: refunded, `rf_103`, $80.00 | no | "Done - refunded $80.00." | yes |
+| 4 | Valid result: refunded, `rf_104`, $29.99 | no | "Done - refunded $29.99." | yes |
+| 5 | Valid result: refunded, `rf_105`, $6.50 | no | "Done - refunded $6.50." | yes |
+| 6 | Valid result: refunded, `rf_106`, $120.00 | no | "Done - refunded $120.00." | yes |
+| 7 | Error text: "insufficient balance on the source account" | yes | "Failed - insufficient balance on the source account." | no |
+| 8 | Error text: "duplicate refund request for this order" | yes | "Failed - duplicate refund request for this order." | no |
+| 9 | Error text: "order was never charged, nothing to refund" | yes | "Failed - order was never charged, nothing to refund." | no |
+| 10 | Swallowed timeout: `{}` | no | "Refund processed." | no |
+| 11 | Empty `200 OK` body | no | "Looks like that went through." | no |
+| 12 | Truncated 502 body: `refund_id` only | no | "Refund complete." | no |
+
+The twelve fall into three classes. Six **clean successes**: valid payloads, money moved. Three **explicit failures**: the server flagged `isError` and quoted a reason, and the narration passed it through faithfully. Three **malformed responses**: no error flag, a broken payload, no money moved. Rows 10 through 12 are the expensive tail, made countable.
+
+One ground rule, declared openly: this server is not lying. Every response above is exactly what the payment backend really did, and the only corruption is the ordinary kind, a timeout, an empty body, a truncated write. A server that fabricates a schema-valid lie is a different failure, and the honesty section takes it up separately. This toy isolates one gap: what the model does with ambiguous bytes.
+
+**Six refunds moved. The narration reports nine. Those two numbers are the whole subject of this piece.**
+
+## The narration gate, run first
+
+Compute the answer the obvious way first. The obvious way is the one almost every setup uses today: whatever the agent says about the call, that is the record. Call it the **narration gate**, gating success on the agent's prose.
+
+In mechanism terms the narration gate reduces to one rule, visible on every row: confirm unless the server set `isError`. Rows 1 through 6 confirm, correctly. Rows 7 through 9 fail, correctly: the server said so and the narration read the flag. Rows 10 through 12 confirm, wrongly: the server set no flag, nothing in the bytes argued either way, and the plausible continuation won.
+
+Count it. **Nine confirmations, six real refunds, and the gap is exactly 3: the narration gate produces 3 false positives on this batch, call ids 10, 11, and 12. Hold onto 3.** It produces no false negatives anywhere; it never reports failure on a refund that happened. The errors run in one direction, toward success, the worst direction, because false confirmations flow outward into reports, receipts, and replies to customers.
+
+**The narration gate fails in a fixed direction, on a fixed class of responses, every time that class appears.**
+
+## Declare the shape, then check it
+
+Now the fix, and by this point it should feel forced. The model cannot extract a success signal from bytes that do not contain one, so put the signal where a machine can check it: in the shape of the response.
+
+Since the 2025-06-18 revision, an MCP tool can declare an `outputSchema` beside its input schema. The contract for `process_refund`:
 
 ```python
-DELETE_CUSTOMER = {
-    "name": "delete_customer",
-    "description": "Permanently delete a customer record.",
-    "inputSchema": {
-        "type": "object",
-        "properties": {"customer_id": {"type": "string"}},
-        "required": ["customer_id"],
-    },
+PROCESS_REFUND = {
+    "name": "process_refund",
+    "description": "Refund a charged order to its original payment method.",
+    "inputSchema": {...},   # order_id, amount_cents: inputs are not this piece's subject
     "outputSchema": {
         "type": "object",
         "properties": {
-            "deleted": {"type": "boolean"},
-            "customer_id": {"type": "string"},
-            "deleted_at": {"type": "string", "format": "date-time"},
+            "refunded": {"type": "boolean"},
+            "refund_id": {"type": "string"},
+            "amount_cents": {"type": "integer"},
         },
-        "required": ["deleted", "customer_id", "deleted_at"],
+        "required": ["refunded", "refund_id", "amount_cents"],
     },
 }
 ```
 
-Now the contract is explicit: a successful delete *must* return `deleted: true` with a timestamp. There is no English to interpret. The tool either produces a value matching that shape, or it doesn't - and "doesn't" is no longer ambiguous.
+Three fields, all required, and the first one is the whole point: `refunded` is **the literal definition of "this worked"**, written as a boolean. The spec puts two duties behind the declaration. The server "MUST provide structured results that conform to this schema", returned in the `structuredContent` field. And "Clients SHOULD validate structured results against this schema." Note the SHOULD: the wire does not enforce the check, you write it.
 
-The enforcement is the half people skip. Returning structured content isn't enough; you have to **reject anything that fails the schema before it reaches the model or the UI.**
+So write it. The **schema gate** is one rule: confirm only if `structuredContent` is present, has all three required fields, and `refunded` is literally `true`. Run it over the same twelve responses:
+
+| # | Category | Money moved | Narration confirms | Right? | Schema confirms | Right? |
+|---:|---|---|---|---|---|---|
+| 1 | Clean success | True | True | yes | True | yes |
+| 2 | Clean success | True | True | yes | True | yes |
+| 3 | Clean success | True | True | yes | True | yes |
+| 4 | Clean success | True | True | yes | True | yes |
+| 5 | Clean success | True | True | yes | True | yes |
+| 6 | Clean success | True | True | yes | True | yes |
+| 7 | Explicit failure | False | False | yes | False | yes |
+| 8 | Explicit failure | False | False | yes | False | yes |
+| 9 | Explicit failure | False | False | yes | False | yes |
+| 10 | Malformed | False | True | **no** | False | yes |
+| 11 | Malformed | False | True | **no** | False | yes |
+| 12 | Malformed | False | True | **no** | False | yes |
+
+Row by row on the rejects. Row 10's `{}` is missing all three required fields. Row 11 has no `structuredContent` at all. Row 12 salvaged one field of three. All three fail for the boring reason that they do not have the shape, and the shape is all the gate looks at.
+
+Pay off the plant. Narration gate: 3 false positives, ids 10, 11, 12. Schema gate: zero, twelve matches out of twelve, and no false negatives either. Both gates read the identical bytes; this ledger was computed by a script from the twelve raw responses and re-run before publishing, and every cell follows from the last section's table by inspection.
+
+Roll the twelve rows up by category:
+
+| Category | Calls | Refunds that happened | Narration confirms | Schema confirms |
+|---|---:|---:|---:|---:|
+| Clean success | 6 | 6 | 6 | 6 |
+| Explicit failure (`isError`) | 3 | 0 | 0 | 0 |
+| Malformed / ambiguous | 3 | 0 | 3 | 0 |
+| **Total** | **12** | **6** | **9** | **6** |
+
+**Both gates read the same twelve responses. One confirms nine, one confirms six, and six is the number the bank knows.**
+
+## The boundary boolean
+
+Look once more at where the narration gate's three false positives came from. The explicit failures were never the problem: the server flagged those, and the narration passed the flag through. All three false positives came from responses where nothing in the bytes screamed failure, so the narration defaulted to the plausible continuation of a refund batch, which is "processed".
+
+The schema gate never read those three responses for meaning. It rejected them because they lack the declared shape. That is the trick, and it deserves a name: **the boundary boolean**, the single validated field, `structuredContent.refunded === true`, that your UI gates on instead of a sentence.
+
+The swap is smaller than it looks and more radical. A sentence is a vote about what plausibly happened; a validated boolean is a fact about what shape arrived. The vote can be wrong on ambiguous bytes by design, because plausibility is all it ever measured. The boolean cannot be wrong about which shape arrived, because the shape is the only thing it checks. The fix replaces the judge with a reader of shapes, on the one question where judging was the wrong instrument.
+
+**A vote replaced by a boolean: that is the whole mechanism, and everything left is wiring.**
+
+## The wiring: declare, reject, gate
+
+Three pieces, and the first is written: the `outputSchema` above. The second is enforcement at the boundary, the half teams skip: anything that fails the schema gets rejected before it reaches the model or the UI:
 
 ```python
 from jsonschema import validate, ValidationError
@@ -61,73 +154,60 @@ def finish_tool(name, raw_result, schema):
     try:
         validate(instance=raw_result, schema=schema["outputSchema"])
     except ValidationError as e:
-        # Do NOT hand a half-shaped result up as "probably fine."
-        return {"isError": True, "content": f"Output failed schema at {list(e.absolute_path)}: {e.message}"}
+        # Never hand a half-shaped result up as "probably fine".
+        return {"isError": True,
+                "content": f"Output failed schema at {list(e.absolute_path)}: {e.message}"}
     return {"isError": False, "structuredContent": raw_result}
 ```
 
-A 502 that yields `{}` doesn't match `required: ["deleted", ...]`, so it fails *here*, loud, at the boundary - instead of becoming a green checkmark three layers up. The malformed result hits an error path by construction, not by the model's good judgment.
+A swallowed timeout that yields `{}` fails `required` right here, loud, at the boundary, instead of becoming a green checkmark three layers up. One spec note for honesty: under the current revision (2026-07-28), tool execution errors are supposed to surface as `isError: true`. Rows 10 through 12 model a server that skips that, which is precisely the realistic case the gate exists for. The spec says servers should flag failures; the gate catches the ones that arrive unflagged.
 
-## The UI gates on the boolean, never on the narration
-
-Once the result is typed, the interface stops guessing. The verified-success state renders only when the schema confirms it:
+The third piece is the UI, one line of intent:
 
 ```tsx
-{result.structuredContent?.deleted === true
-  ? <Confirmed at={result.structuredContent.deleted_at} />
-  : <ActionFailed detail={result.content} />}
+{result.structuredContent?.refunded === true
+  ? <Refunded id={result.structuredContent.refund_id}
+             cents={result.structuredContent.amount_cents} />
+  : <NotRefunded detail={result.content} />}
 ```
 
-Notice what changed. The checkmark is no longer downstream of "the model said done." It's downstream of `deleted === true`, a value that could only exist if the real result matched the real contract. **A shape mismatch can't render as success - it has nowhere to go but the error boundary.** The human never sees a false confirmation, because the only path to the success UI runs through a validated fact.
+**The success state now has exactly one path in, through the validated boolean. A shape mismatch cannot render as success, because no other render branch exists.**
 
-This is the same instinct that drives [permissions](/foundations/permissions/): you don't trust the agent's intent on a consequential action, you put a deterministic gate in front of it. A schema check is that gate on the *way back* - input permissions ask "should this run?", output validation asks "did it actually do what it claims?" Both replace a judgment call with a rule. Both are context engineering: the agent is broad and fast but contextless about whether *this* call truly succeeded, so you encode the success criterion once, in a shape, and let the boundary hold the line the model can't.
+The objection that would end this piece if it went unanswered: doesn't structured output defeat the purpose of MCP? GitHub Discussion #1121, "Structured Output defeats the purpose of MCP - Turn off by default", opened 2025-07-26 and still open, argues that structured output "hurts LLM response quality while making the tools/server ecosystem less interoperable" and "creates tight coupling between clients and servers, defeating MCP's main advantage of self-orchestration". The objection is right about over-typing and wrong about the consequential tools. Typing all of a server's read tools couples your contract to every client, for safety nobody needs. Typing `process_refund` couples a client to exactly the three fields that define "this worked", and that coupling is the product. On a refund tool, rigidity is the point.
 
-## Failure isn't binary - give the failures a shape too
+**The model still narrates, and that is fine. Let it talk. The narration has just stopped being the thing anyone believes.**
 
-A delete is the easy case because it's nearly binary. Most consequential actions aren't. A deploy can succeed, partially succeed, get queued, or roll itself back; a payment can settle, get held for review, or hard-decline. If your schema only encodes the happy path, you've solved half the problem - the "did it work" half - while leaving "what exactly happened when it didn't" back in the prose where you started.
+## What the boolean doesn't check
 
-So make the failure modes first-class typed values, not an afterthought. The schema is the right place to enumerate them:
+A schema checks shape, not truth. The toy declared an honest server, and that rule was load-bearing. A buggy or compromised server can return a perfectly valid `{refunded: true, refund_id: "rf_118", amount_cents: 4200}` while the row sits untouched. The gate passes, the UI renders green, and you are holding a typed lie. Validation closes the gap where the model invents success from ambiguous bytes. A server that is itself wrong is a different job, and it lives on the server: derive `refunded` from the real effect (`rows_affected == 1`), and read the postcondition back before reporting it. The spec's own wording is honest about the split: the server "MUST provide structured results that conform to this schema", and nothing on the wire enforces that MUST. The spec requires conformance. It cannot make the server honest.
 
-```python
-"outputSchema": {
-    "type": "object",
-    "properties": {
-        "status": {
-            "type": "string",
-            "enum": ["live", "rolled_back", "queued", "failed"],
-        },
-        "deploy_id": {"type": "string"},
-        "commit_sha": {"type": "string"},
-        "rolled_back_from": {"type": "string"},
-    },
-    "required": ["status", "deploy_id", "commit_sha"],
-}
-```
+The result carries the payload twice, and clients disagree about which half to forward. For backwards compatibility, a tool returning structured content SHOULD also return the serialized JSON in a `TextContent` block, wording unchanged from the 2025-06-18 revision through 2026-07-28. The payload exists twice: typed in `structuredContent`, stringified in `content`. SEP-1624, "Clarify structuredContent vs content Usage Guidance" (filed 2025-10-08, still an open proposal), exists because real hosts have handled the two fields inconsistently, and proposes the split explicitly: `content` is "model-oriented output optimized for readability and token efficiency", while `structuredContent` is "machine-oriented output for programmatic tool use". Two consequences. If your UI falls back to reading `content` whenever `structuredContent` is missing, you have reintroduced prose-parsing on exactly the malformed responses you built the gate for; treat a missing `structuredContent` as a failure to surface, never as a cue to read the string. And the deeper consequence is the one the close comes back to: the field you gate the screen on is, by this proposal's own framing, not reliably the field the agent reads back for its own next decision.
 
-Now `rolled_back` is exactly as legible to the UI as `live`. The interface can render a distinct state for each - a green banner for `live`, an amber "rolled back to previous build" for `rolled_back`, a spinner for `queued` - and none of those states depends on the model having correctly characterized a deploy log it skimmed. The general move: an output schema isn't just an assertion that the action *worked*. It's the declared, exhaustive vocabulary of *every outcome the caller is allowed to act on*. Anything outside that vocabulary is, by construction, an error - and that's the behavior you want.
+When not to use this. Reads do not need it, and typing every tool on the server is the over-reach Discussion #1121 is right to push back on. A schema tuned too tight converts valid-but-changed payloads into false failures: mark every field `required`, and one added field turns a real refund into an "action failed" your operators learn to click past. **A dismissed error boundary is no boundary.** Keep `required` scoped to the literal definition of "this worked", and type the consequential tools first: refund, delete, charge, deploy, notify.
 
-## The serialized copy is a quiet trap
+Two dated facts, so the samples cannot read as unaware of the current spec. The 2025-06-18 revision that introduced these fields restricted `structuredContent` to a JSON object; the current 2026-07-28 revision says it "can be any JSON value (object, array, string, number, boolean, or null)". The object-shaped samples here remain valid, and an object is the shape a gating boolean actually uses. And the same two fields now have a second, currently larger use: the MCP Apps extension (`io.modelcontextprotocol/ui`) renders UI widgets from structured tool results. That is a different job sharing the same plumbing. This piece covers the success/failure boundary; widget rendering is a separate subject.
 
-Here's the edge case that bites teams who think the schema alone saved them. The 2025-06-18 spec says that for backwards compatibility a tool returning structured content **should also return the serialized JSON in a `TextContent` block**. That's sensible - older clients that predate `structuredContent` can still read *something*. But it means the same payload now exists twice in the result: once as the typed `structuredContent` you validate, and once as a plain string sitting in `content`, which is exactly the kind of text a model will happily read and narrate from.
+**Validation buys a trustworthy channel from the server to the screen. It cannot buy an honest server, and it does not yet buy a grounded agent.**
 
-That redundancy is where the gap sneaks back in, because not every client handles the two fields the same way. Some host frameworks have shipped bugs that drop `structuredContent` entirely and forward only the text block to the model and the UI. Others swung the other way and started prioritizing `structuredContent` while dropping the `TextContent` the model used to see. The lesson isn't "the spec is broken" - it's that *which field your render path actually reads* is a decision you have to make on purpose. If your UI falls back to `content` when `structuredContent` is missing, you've quietly reintroduced prose-parsing on exactly the malformed responses you built this to catch. Gate the success UI specifically on validated `structuredContent`, and treat its **absence** as a failure to surface - never as a cue to go read the string instead. The fallback path is the unsafe path; don't let it render a checkmark.
+## Back to the table
 
-## A schema checks shape, not truth
+| Category | Calls | Refunds that happened | Narration confirms | Schema confirms |
+|---|---:|---:|---:|---:|
+| Clean success | 6 | 6 | 6 | 6 |
+| Explicit failure (`isError`) | 3 | 0 | 0 | 0 |
+| Malformed / ambiguous | 3 | 0 | 3 | 0 |
+| **Total** | **12** | **6** | **9** | **6** |
 
-Be honest about the boundary of the technique, because it has one. Validating against an `outputSchema` guarantees the result *conforms* to the contract. It does not guarantee the result is *true*. A buggy or compromised server can return a perfectly schema-valid `{deleted: true, deleted_at: "..."}` while the row sits untouched in the database. The schema check will pass, the UI will render green, and you'll have a typed lie instead of a prose one.
+Row by row, one last time. The clean-success row teaches only that neither gate breaks honest traffic. The explicit-failure row corrects the easy charge that the model narrates blindly: given a flagged error, it passed the reason through on all three. The malformed row is the entire piece. Three responses with no flag and no payload: three confirmations that never happened under the narration gate, zero under the schema gate. Twelve calls, nine or six confirmed, and the difference is one declared shape and one validation step.
 
-What output validation actually closes is the gap where the *model* invents success from ambiguous bytes. Closing the gap where the *server itself* is wrong is a different job, and it lives on the server: derive `deleted` from the real effect (`rows_affected == 1`), not from the absence of a thrown exception; make the operation idempotent; read the post-condition back before reporting. The schema gives you a trustworthy channel from server to UI - it can't make the server honest about what it put in that channel. This is why output validation pairs with, rather than replaces, the deterministic [permissions](/foundations/permissions/) and [subagent](/foundations/subagents/) isolation you already use: each closes a different gap between a capable-but-contextless agent and the ground truth it can't see.
+One loose end, and this fix created it. The boundary boolean protects the human's screen: no malformed response can render as a green refund. The agent's own next move is a different matter. The conversation the model continues from still contains `content`, the string field, because that is the field the model reads. SEP-1624's own framing is that `content` is model-oriented and `structuredContent` is machine-oriented, which means the bytes your gate rejected and the bytes your agent reasons from can be two different copies. On call 10, the screen now says "not confirmed" while the model still holds "Refund processed." in its window as it drafts the customer's reply. The gap this piece just closed for the human's view may still be open one hop later, in the agent's own reasoning, and nobody has shipped that fix yet.
 
-There's also a way to overdo it. A schema tuned too tight - marking every optional field `required`, pinning enums you're still evolving - converts valid-but-changed payloads into false *failures*, which is just the original error wearing the opposite mask. A user staring at "action failed" on an action that worked learns to ignore your error states, and a dismissed error boundary is no boundary at all. Keep `required` scoped to the literal definition of "this worked," version the schema when the contract genuinely changes, and let everything non-load-bearing stay optional. The goal is a gate that fails loud when reality diverges from the contract - not one that fails loud whenever the contract drifts an inch.
-
-## Type the consequential tools first
-
-You don't need a schema on every read. Type the tools where a false success is expensive: anything that writes, deletes, charges, deploys, or notifies. For each, write the `outputSchema` as the literal definition of "this worked" - the fields that *must* be present and true for the action to be real - and validate against it before the result is allowed to mean anything.
-
-The agent will still be confident. It will still narrate. That's fine - let it talk. Just stop letting it vote.
-
-Make the contract the authority, and the sentence becomes decoration over a fact you already trust.
+**Twelve calls, 3 false confirmations or 0. One declared shape and one check decide which column you live in, and for now they decide it only for your screen.**
 
 ---
 
-For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for declaring an `outputSchema` on each consequential tool, [Permissions, sandboxing & approval modes](/foundations/permissions/) for the deterministic gate that output validation extends to the return path, and [Subagents](/foundations/subagents/) for the isolation that closes the gap a schema can't.
+**About the numbers.** The Saturday batch is a toy: the amounts, the failure texts, the narration lines, and the ground truth (six refunds moved, six did not) are invented for traceability, so every verdict in the ledger can be checked by inspection. Both gates and every table cell were computed by a script from the twelve raw responses and re-run before publishing: the narration gate matches ground truth on 9 of 12, with exactly 3 false positives (call ids 10, 11, 12) and no false negatives, and the schema gate matches on 12 of 12. Every dated claim is quoted from a named primary source, fetched 2026-08-16: the MCP specification's 2025-06-18 and 2026-07-28 revisions for the outputSchema duties, the backwards-compatibility wording, and the `isError` rule; GitHub Discussion #1121 (opened 2025-07-26) and SEP-1624 (filed 2025-10-08) for the community positions. The last two were open and unresolved at that fetch; treat them as live debate, and re-check their status before you cite them.
+
+Where the neighbors sit: [Elicitation plus tool annotations](/blog/elicitation-plus-tool-annotations/) gates the call before it runs, where this piece gates what the call claims after it returns. [The server is the trust boundary](/blog/the-server-is-the-trust-boundary/) holds the credentials a call may use, an input-side authority question, where this asks whether a returned effect is real, an output-side truth question. [The confused deputy server](/blog/the-confused-deputy-server/) is a server-architecture problem, one server holding two trust levels, where this is a per-tool contract problem. [Make a hook validate the agent's output](/blog/make-a-hook-validate-the-agents-output/) checks the agent's proposed action with a host-side hook before it runs; this checks the tool's returned result with the spec's own outputSchema after. [Make the tool ask instead of fail](/blog/make-the-tool-ask-instead-of-fail/) elicits a missing input the agent could not have had, where this refuses to believe an untrusted output the agent already received. Three tag-family neighbors with no argument overlap: [One server, not ten integrations](/blog/one-server-not-ten-integrations/), [Retrieval vs generation failures](/blog/retrieval-vs-generation-failures/), and [Instructions are not data](/blog/instructions-are-not-data/).
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for declaring an `outputSchema` on each consequential tool, [Permissions](/foundations/permissions/) for the gate on the way in that this piece extends to the way back, and [Headless & CI](/foundations/headless/) for the unattended batch where the gap bites hardest.

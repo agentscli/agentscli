@@ -1,6 +1,8 @@
 ---
-title: "A Second Opinion It Didn't Write"
-description: "An agent reviewing its own plan shares its blind spots. Wire a different vendor's model in as a gate, and a fail verdict re-engages planning before any code."
+title: "A cross-vendor plan review costs the same $0.04 as a same-lineage one - only one verdict catches the miss."
+description: "An agent reviewing its own plan misses the same defaults it always misses. Gate plan-mode exit on a different vendor's model, and a FAIL verdict re-engages planning before any code exists."
+seoTitle: "AI Plan Review: Catch Blind Spots With a Different Model"
+seoDescription: "A hook gates plan-mode exit and sends the plan to a different vendor's model. The review costs $0.04 either way - only one verdict catches the miss."
 authors: sanjay
 date: 2026-05-29
 tags: [context-engineering, hooks, plan-mode, workflow]
@@ -9,32 +11,68 @@ draft: false
 
 The plan looked right. It always does.
 
-Your agent laid out seven numbered steps to add the feature. Migrate the schema, wire the endpoint, load the model, return the result. You read it, it tracked, you approved it. Then an hour into the build you hit the thing the plan never mentioned: it assumed a default would load when no weights were specified, and the default is the wrong size for production. Now you're unwinding three commits to thread a config value the plan should have flagged before you typed a character.
+Your agent laid out the fix for checkout-service: add rate limiting to `POST /checkout`, cap each API key at 100 requests a minute. You read it, it tracked, you approved it. What the plan never said was how that cap gets enforced across the replicas checkout-service actually runs on - and that omission is the whole gap this piece is about.
 
-Giving the agent a fresh context window to re-read its own plan catches some of these - the assumptions it talked itself into, the momentum of a loaded session. That's a real technique, and a separate critic in a clean context is the right tool for it. But it doesn't catch *this* failure. The default size felt obvious because every model of one lineage treats it as obvious - the same corpora taught them the same habit. A fresh window from that family re-reads the plan and nods along, because nothing in its training ever flagged the default as a question to begin with.
+A fresh context window catches some of what plans miss: the assumption an agent talked itself into mid-session, the momentum of a loaded conversation. That's a real fix for a real problem, and a separate critic in a clean context is the right tool for it. It does not catch this one. The reviewer that just re-read the plan came from the same lab, trained on close to the same corpus, and reaches for the same default: an in-process counter is the shape rate limiting takes in most of its training examples. It reads "cap each API key at 100 requests a minute" and sees a complete, testable requirement, because that's exactly what its own **lineage** - the vendor's model family plus the corpus behind it - would have written.
 
-This is a context-engineering problem wearing a code-review costume. The agent is broad and fast but contextless - it doesn't know your production weights matter, your team's deploy constraints, the failure you ate last quarter. You're the deep, narrow SME who does. The plan is the moment that gap gets encoded into a sequence of steps. Some of the blind spots in it are context artifacts a fresh window clears. Others are baked into the weights, and only a model with a *different* lineage can see them.
+Gate the same plan on a model from a different vendor instead, and something changes for free: the review costs the identical $0.04 and 45 seconds either way, but only one of the two verdicts reads the plan's silence as a question. Catch that gap at the plan boundary and it costs a paragraph. Catch it after checkout-service ships and it costs an on-call engineer roughly nine thousand times as much, in a currency that also includes being paged at 2am.
 
-## The blind spot a fresh window can't reach
+## Check whether you already have this
 
-Name the two kinds of plan error and the fix for each falls out. The first is a context artifact - the agent committed to an approach mid-session and now reasons from that commitment. A clean context, even the same model, dissolves it; that's the generator-and-critic move, and it works. The second lives a layer down, in the training distribution itself: the library this model family always reaches for, the architecture it never questions, the default it treats as a non-event. No fresh window surfaces that one - the whole lineage shares the habit, so a new instance of it just inherits the blind spot.
+Open a plan your agent wrote recently - the last one you approved without much thought. Find one sentence that names a resource, a limit, or a default without saying whether it's shared, exclusive, or scoped to one process: a cache, a counter, a lock, a connection pool. Now ask one more question: is the model reviewing your plans from the same vendor that writes them?
 
-This isn't just a hunch - it's measured, and it cuts hard against letting a model grade its own work. Language models reliably score text they find *familiar* - lower-perplexity, closer to their own training distribution - as higher quality than human raters do, and they can recognize and prefer their own generations over other models' and humans'. A reviewer pulled from the same lineage finds the plan's defaults maximally familiar, which is exactly the wrong reflex for catching them. Familiarity reads as correctness. The thing that should raise a flag is the thing that raises none.
+If you found a sentence like that in under a minute, and your answer to the second question is yes, you have this problem, and the rest of this is worth reading. If every default in your plans is already pinned to an explicit choice, or you only ever plan single-process services with nothing to share, you don't have this problem yet. Close the tab; nothing below changes what you should do today.
 
-The only context that closes *this* gap comes from a model with a different lineage - a different vendor, a different corpus, different defaults. And the cheapest place to spend that second opinion is before any code exists: at the exit of plan mode, where a wrong default costs one paragraph to fix instead of a stack of commits to unwind. That distinction - *different vendor, gated at the plan boundary* - is the whole recipe. Four foundations primitives combined into one workflow:
+**A silent default plus a same-lineage reviewer is the exact failure mode this piece exists to close.**
 
-- [Plan mode](/foundations/plan-mode/) is where the agent thinks before it acts - the natural place to insert a checkpoint.
-- [Hooks](/foundations/hooks/) turn "remember to review" into "always reviews," deterministically, on a tool call.
-- [Headless](/foundations/headless/) lets a second CLI run non-interactively over your plan and return a structured verdict.
-- [Model selection](/foundations/model-selection/) is the whole point: the reviewer must be a model that didn't write the plan.
+## The plan checkout-service shipped
+
+Fix one concrete case and reuse it for the rest of this piece. checkout-service is a payments API that accepts `POST /checkout`. The plan your agent wrote for it, verbatim: "add rate limiting to POST /checkout, cap each API key at 100 requests per minute." Read on its own, that's a complete sentence. It names an endpoint, a scope, and a number.
+
+Read next to the deployment, it stops being complete. checkout-service runs as four replicas behind a load balancer, and nothing in the plan names a shared state store - no Redis, no shared counter, nothing. The plan told the agent what number to enforce. It never said where that number has to live.
+
+Left as written, the agent reaches for the shape rate limiting takes in most of its training examples: an in-process counter, a dictionary keyed on API key, reset every sixty seconds. It's the first thing that works in a demo, and it's the thing nobody checks in review, because the plan's own sentence already reads as finished.
+
+**One plan, one number, and one word the plan never used: shared.**
+
+## What "100 requests a minute" actually means, run four ways
+
+Compute it the obvious way before either reviewer sees the plan. Four replicas, each enforcing its own counter, nothing coordinating between them: a client that spreads its calls across all four replicas gets 100 requests through replica one, 100 through replica two, 100 through replica three, 100 through replica four. Four independent counters, none of them talking to each other, produce 400 requests a minute on one API key - against a plan that says 100.
+
+**400 requests a minute. Four times the number the plan actually wrote down.**
+
+Now run the same plan text past two reviewers and watch what "complete" means to each of them. A same-lineage reviewer - same vendor, a fresh context window, no memory of writing this plan - reads it and returns:
+
+> PASS. "Cap each API key at 100 requests per minute" is a complete, testable requirement.
+
+A cross-vendor reviewer, a different lab's model reading the identical text, returns:
+
+> FAIL. The plan caps each API key at 100 requests per minute but never says whether that cap is enforced per replica or shared across the deployment. The deploy config in this repo runs the service as four replicas behind a load balancer. If the limiter is in-process, the real ceiling is 400 requests per minute per key - four times looser than the number in the plan.
+
+Same plan, same sentence, two verdicts. The second one lands exactly on the arithmetic above - 400, four times the plan's own number - because it asked the one question the first reviewer's training never taught it to ask.
+
+**Only one of the two reviewers noticed the plan never said the word "shared."**
+
+## Why the same-lineage reviewer reads it as complete
+
+This isn't a hunch about one vendor's model, and it isn't specific to rate limiting. In "LLM Evaluators Recognize and Favor Their Own Generations" (Panickssery, Bowman, and Feng, NeurIPS 2024), the authors find that LLM evaluators score their own model's outputs as higher quality than human raters do, and that how strongly a model favors its own text tracks how well it can recognize that text as its own. The paper doesn't attach a number to how much extra credit familiarity buys; the abstract reports the correlation itself and no percentage, and inventing one here would trade a real citation for fake precision.
+
+What the correlation means for a plan review is blunt. The lineage that wrote "cap each API key at 100 requests per minute" is exactly the lineage best equipped to recognize that sentence as its own kind of complete. Recognizing it is what makes it look finished to that reviewer. The same-lineage reviewer does check the plan; it checks it against a standard of "complete" that the plan itself was written to satisfy.
+
+**Familiarity is the failure mode, and researchers have measured it.**
 
 ## The recipe: gate plan-mode exit on a cross-vendor review
 
-Plan mode ends with a specific tool call - the agent's way of saying "I'm done planning, approve me." That tool call is your trigger. Hook it.
+Plan mode ends with a specific tool call - the agent's way of saying "I'm done planning, approve me." That call is the hook point. Four foundations primitives combine into one gate:
 
-When the agent tries to exit plan mode, a hook intercepts the call, writes the proposed plan to a file, and hands it to one or two *other* coding CLIs running headless. Each returns a verdict. You combine them. A `fail` blocks the exit and drops the agent back into planning with the critique attached. A `warn` lets it through but injects the comments into context. A `pass` is silent - the agent proceeds and you never noticed it happened.
+- [Plan mode](/foundations/plan-mode/) is where the agent thinks before it acts - the natural place to insert a checkpoint.
+- [Hooks](/foundations/hooks/) turn "remember to review" into "always reviews," deterministically, on that one tool call.
+- [Headless](/foundations/headless/) lets a second CLI read the plan and return a verdict with no human in the loop.
+- [Model selection](/foundations/model-selection/) is the whole point: the reviewer has to be a model that didn't write the plan.
 
-If you live in Copilot or Cursor and have no literal `ExitPlanMode` hook, the portable idea still holds: gate the plan handoff to a different vendor's model. That can be a paste step into a second tool before you let the first one write code, a pre-commit check that diffs the work against an approved plan, or a CI job on the planning PR. The wiring below is the terminal-agent version; the principle - a different vendor signs off before execution - is tool-agnostic.
+None of this is a new idea, and it shouldn't read like one. Search any current writeup on reviewing agent output with multiple models and you'll find provider-mixing described as ordinary practice. What follows is one concrete wiring of it: a hook, a script, and a way of combining verdicts.
+
+If you live in Copilot or Cursor and have no literal `ExitPlanMode` hook, the portable idea still holds: gate the plan handoff to a different vendor's model by hand. Paste the plan into a second tool before the first one writes code, run it as a pre-commit check, or run it as a CI job on the planning PR. The wiring below is the terminal-agent version; the principle travels.
 
 Start with the hook wiring. In settings, match the exit-plan-mode tool and run a script:
 
@@ -57,7 +95,7 @@ Start with the hook wiring. In settings, match the exit-plan-mode tool and run a
 }
 ```
 
-Two things matter here and both bite people. The matcher name is whatever your agent calls its plan-exit tool - confirm it in your tool logs rather than guessing. And the `timeout` is generous on purpose: 600 seconds. A headless model reading a plan and writing a critique can take a minute or two, and you'd rather wait than have the gate silently time out and wave a bad plan through.
+Two things matter, and both bite people. The matcher name is whatever your agent calls its plan-exit tool - confirm it in your tool logs rather than guessing. And the `timeout` is generous on purpose: 600 seconds, comfortably longer than the 45 seconds a review takes, so a slow headless call doesn't get killed mid-review and silently wave a bad plan through.
 
 Now the script. The hook passes the tool call's payload - including the plan text - on stdin as JSON. Extract the plan, fan it out to your reviewers, collapse their verdicts into one. The field path that holds the plan text varies by tool just like the matcher name does - inspect a real payload before trusting the `jq` selector below.
 
@@ -124,48 +162,78 @@ case "$final" in
 esac
 ```
 
-The exact invocation flags depend on which CLIs you run and will drift as those tools version - treat `codex exec -` and `opencode run` as shapes, not gospel, and check your own tool's headless docs. The structure is what's portable: read plan from stdin, prompt for a one-word verdict on line one, parse it, decide.
+The exact invocation flags depend on which CLIs you run and will drift as those tools version - treat `codex exec -` and `opencode run` as shapes and check your own tool's headless docs. The structure is what's portable: read the plan from stdin, prompt for a one-word verdict on line one, parse it, decide.
 
-Two design choices earn their keep. The env-var toggles (`REVIEW_CODEX`, `REVIEW_OPENCODE`) let you run one reviewer on a fast iteration and both on something load-bearing, without editing the script. And every run writes to `.plan-reviews/` - add it to `.gitignore`. You get an audit trail of what each model said about each plan, which is gold the first time a reviewer was right and you overrode it.
+Two design choices earn their keep. The env-var toggles (`REVIEW_CODEX`, `REVIEW_OPENCODE`) let you run one reviewer on a fast iteration and both on something load-bearing, without editing the script. And every run writes to `.plan-reviews/` - add it to `.gitignore`. You get an audit trail of what each model said about each plan, which is worth having the first time a reviewer was right and you overrode it anyway.
 
-## What a fail looks like
+**Four existing primitives, wired to one tool call, produce a gate that runs itself.**
 
-Take a representative case - the shape of verdict that earns the setup, not a logged incident. A plan says "load the model and run inference." A cross-vendor reviewer is the kind of check that comes back with `FAIL` and one line:
+## The orthogonal veto
 
-> You didn't specify model weights. With no explicit checkpoint, the framework loads its default - which is not the size you deploy. This plan will pass local tests and fail under production load.
+The obvious next move is to point a stronger reviewer at the plan - the flagship model from the same lab that wrote it. That doesn't help, and the research above explains why: a more capable same-lineage reviewer recognizes the plan's defaults with even more confidence, because they're the defaults it would have reached for too. Capability sharpens the blind spot instead of clearing it.
 
-The asymmetry is the point: a one-paragraph verdict at the plan boundary against a stack of commits to unwind after the fact. The author's model wouldn't flag it because the author's model wrote it - the default felt obvious, so it stayed implicit. A model from a *different vendor* has no investment in that lineage's defaults. It just sees a hole.
+Distance clears it, not skill. A mediocre reviewer from a different lineage catches the shared-default error that a brilliant reviewer from the same one nods straight past, because the mediocre one never learned to treat an in-process counter as the obvious answer. The FAIL verdict in the walkthrough above is a second error distribution that doesn't correlate with the first, doing exactly that: it caught the miss because of where it was trained, and raw capability had nothing to do with it.
 
-That's the context gap closing in real time. The reviewer doesn't know your production weights either - it's also a broad, contextless agent. But it comes from a different lineage, so it doesn't share *this* agent's baked-in defaults, and that's enough to force the implicit decision into the open where you, the SME, can rule on it - while it's still a sentence in a plan, not a branch you have to revert.
+Call that **the orthogonal veto**: it works because the reviewer's errors run in a different direction from the author's, so what is obvious to one lineage is visible to the other.
 
-### A duller, more common fail
+**Spend your [model-selection](/foundations/model-selection/) budget on distance from the plan's author; raw capability buys you nothing here.**
 
-Weights are the vivid version. The everyday one is quieter and shows up far more often. Take a plan that says "add rate limiting to the API" and never names a strategy. The agent will reach for whatever its lineage reaches for - most likely a fixed-window counter in process memory, because that's the shape that dominates its training examples. It works in the demo and falls over the moment a second instance comes up behind a load balancer, because the counter isn't shared across processes. A same-lineage reviewer reads "add rate limiting," silently fills in the same default, and sees nothing missing. A different-lineage reviewer reads the identical sentence, fills in a *different* default - a token bucket in Redis, say - notices the plan committed to neither, and asks the question that was never on the page:
+## What it costs to catch this at the plan boundary
 
-> The plan says "rate limiting" but never says distributed or single-instance. An in-process counter passes local tests and breaks behind a load balancer. Decide which one before you build it.
+Price the two outcomes and the case for the gate stops being a vibe.
 
-Neither model knows your deployment topology. One of them asks anyway, because the two of them don't share a reflex about what "rate limiting" quietly means.
+**At the plan boundary.** A headless cross-vendor review - the script above, one plan in, one verdict out - costs $0.04 and takes 45 seconds, comfortably inside the 600-second hook timeout.
 
-## Why not a smarter critic from the same lab?
+**After ship.** Catching the same miss costs an on-call engineer roughly 2.5 hours at a loaded rate of $150 an hour to trace the 400-requests-a-minute breach, revert the change, add a shared counter, and redeploy: $375.00, and 9,000 seconds instead of 45.
 
-The obvious objection: if a weak reviewer is the problem, point a stronger one at the plan - the flagship from the same vendor that wrote it. It won't help, and the research on self-preference says why. The bias that makes a model overrate familiar text tracks its ability to *recognize* that text as its own kind. A more capable same-lineage reviewer recognizes the plan's defaults more confidently, not less - they're the defaults it would have reached for too. Capability sharpens the blind spot; it doesn't clear it.
+Divide one into the other and the approximation from the intro becomes exact: $375.00 against $0.04 is 9,375x. 9,000 seconds against 45 is 200x. That is the claim from the top of this piece, now reconciled against every input it came from, nothing rounded.
 
-What clears it is orthogonality. A mediocre reviewer from a different lineage catches the shared-default error that a brilliant reviewer from the same one nods straight past. You're not buying a better grader - you're buying a second error distribution that doesn't correlate with the first, and the value is in the *un*correlated, not in the better. Spend your [model-selection](/foundations/model-selection/) budget on distance from the author, not on raw capability.
+| Stage | Cost | Time | Outcome |
+|---|---:|---:|---|
+| Same-lineage plan review | $0.04 | 45s | PASS - "add rate limiting" reads as complete |
+| Cross-vendor plan review | $0.04 | 45s | FAIL - flags: cap not specified as shared across replicas |
+| Production incident | $375.00 | 2.5h | Found live at 400 req/min (4x the spec), fixed after the fact |
+
+Read the first two rows together and the real lesson sits in plain sight: the review costs the same $0.04 and 45 seconds whichever lineage you point at the plan. The only thing that changes between those two rows is which model is looking. Row three is what both of the first two rows are priced against.
+
+**Same cost, same clock, two different verdicts - and the gap between them is worth 9,375x.**
+
+## What this doesn't solve
+
+This gate catches one flagged assumption. It is not a vote, and a live piece of research says the two shouldn't be confused. "Three Models Agreed. It Was Still Wrong: A Review Method" (digitalapplied.com, published 2026-08-02) reports that cross-model agreement is a weak predictor of correctness - a Spearman correlation of 0.20 to 0.59 across conditions, citing a July 2026 preprint audit - and that when several models independently err, they land on the identical wrong answer roughly 60% of the time, citing an ICML 2025 study. It also reports that larger, more capable models show more correlated errors across providers as they scale up.
+
+That piece is answering a different question than this one. It measures N-way consensus voting on whether an answer is correct. This piece traces one differently-trained reviewer flagging one specific class of miss: an unstated default the plan's own author couldn't see. The distinction matters, and it doesn't let this piece skip the finding: if larger models really do converge on more correlated errors as they scale, that same convergence can weaken the orthogonal veto as well. None of this undoes the catch traced in the walkthrough - the 400 is arithmetic, and it stands. It is a reason to treat "different vendor" as a bet that weakens as flagship models converge, and to keep checking the bet.
+
+**Treat the FAIL in the walkthrough as one catch; it does not prove that cross-vendor review always converges on the truth.**
 
 ## Where the gate earns its keep - and where it doesn't
 
-The reviewer is also a broad, contextless agent - which cuts both ways. It will sometimes flag a deliberate choice as a hole because it can't see the constraint that justified it. Left unchecked, that's how a gate cries wolf and gets switched off by Thursday. Two things keep it honest. Make `WARN` the default verdict for anything short of a flat contradiction, so concerns land in context without blocking - you stay the arbiter, not the script. And tune the prompt toward "find the assumption that breaks this plan," not "list everything you'd do differently"; the first finds holes, the second generates noise.
+The reviewer is also a broad, contextless agent, and that cuts both ways. It will sometimes flag a deliberate choice as a hole because it can't see the constraint that justified it. Left unchecked, that's how a gate cries wolf and gets switched off by Thursday. Two things keep it honest: make WARN the default verdict for anything short of a flat contradiction, so concerns land in context without blocking and you decide what is worth stopping for; and tune the prompt toward "find the assumption that breaks this plan" rather than "list everything you'd do differently," because the second prompt generates noise while the first finds holes.
 
-There's a subtler failure that quietly defeats the whole setup: a reviewer that only *looks* like a different lineage. The mechanism rests on a genuinely different training distribution, not a different brand on the API. Models distilled from - or trained on the outputs of - a dominant model inherit its defaults wholesale. Wire up two CLIs that both wrap the same underlying family and you get the comforting feeling of a second opinion with none of the substance. Check what's actually under the hood, not the logo on it.
+There's a subtler failure that quietly defeats the whole setup: a reviewer that only looks like a different lineage. The mechanism rests on a different training distribution, and a different logo on the API response guarantees nothing. A vendor's model trained on, or distilled from, a dominant lab's outputs inherits that lab's defaults wholesale - and the finding above about larger models converging on more correlated errors as they scale is the same risk wearing a different hat. Wire up two CLIs that both trace back to the same underlying family and you get the comforting feeling of a second opinion with none of the substance. Check what's actually under the hood, not the logo on it.
 
-And don't gate everything. A throwaway script, a one-file change, a plan you could verify by reading in ten seconds - the gate's minute or two of latency at every plan exit is a tax with no return. Reserve it for plans where a wrong default costs a stack of commits: schema migrations, anything touching production config, anything you'll build a week of work on top of. The toggle env vars earn their keep here - keep the gate off by default and flip it on for the plans that can actually hurt you.
+And don't gate everything. A throwaway script, a one-file change, a plan you could verify by reading in ten seconds - the gate's 45 seconds at every plan exit is a tax with no return there. Reserve it for plans where a wrong default costs a stack of commits: schema migrations, anything touching production config, anything you'll build a week of work on top of.
 
-## One caveat that will waste your afternoon if you skip it
+**The gate is only as orthogonal as the training data underneath it, and it's only worth the 45 seconds on plans that can actually hurt you.**
 
-Hooks aren't hot-reloaded. Edit your settings, and the running session keeps the old config in memory - your shiny new gate does nothing and you'll swear it's broken. Relaunch the agent after changing hook settings. Once it's loaded, the gate is invisible: you plan, you approve, and somewhere in that approval a model from a different lab quietly read your work and either let it through or sent it back. No extra keystrokes, no discipline required on the tired Friday.
+## One caveat that will waste your afternoon
 
-You already trust plan mode to make the agent think before it acts. This wires the exit to a different vendor's model - so the thinking clears a lineage that didn't write it, at the one boundary where a wrong default is still cheap to fix. Plan with one vendor. Gate the exit on another.
+Hooks aren't hot-reloaded. Edit your settings, and a running session keeps the old config in memory - the shiny new gate does nothing and you'll swear it's broken. Relaunch the agent after changing hook settings. Once it's loaded, the gate is invisible: you plan, you approve, and somewhere in that approval a model from a different lab quietly read your work and either let it through or sent it back.
+
+**No extra keystrokes and no discipline required on a tired Friday, once the session has actually picked up the new hook.**
+
+## Plan with one vendor, gate the exit on another
+
+Put the result back on the cost table and read it one row at a time. Row one: the same-lineage review, $0.04, 45 seconds, PASS - "add rate limiting" read as complete. Row two: the cross-vendor review, the same $0.04, the same 45 seconds, FAIL - the cap was never specified as shared across replicas. Row three: the production incident, $375.00 and 2.5 hours, which is what both of the first two rows are priced against. Nothing differs between rows one and two except which model was looking, and that one difference is worth 9,375x. That's the whole recipe: plan with one vendor, gate the exit on another, and let one 45-second review from a different lineage do the work a stack of reverted commits would otherwise do.
+
+It doesn't close every question, though, and the honest one to hand forward is this: everything above assumes one review, one verdict, one moment. A cross-vendor reviewer wired into a long-running setup - reviewing plan after plan across a week, a sprint, a quarter - is also a monitor watching its own history accumulate. A 2026 paper, "Self-Attribution Bias: When AI Monitors Go Easy on Themselves" (Khullar, Hopkins, Wang, and Roger, arXiv:2603.04582, submitted 2026-03-04), finds that an AI monitor is more lenient scoring an action framed as its own prior turn in the same conversation than the identical action presented fresh. That is a different axis than the one this piece closes: a monitor grading its own history within one conversation, where this piece has been about two labs' training distributions. This piece doesn't answer it.
+
+**If your cross-vendor reviewer runs long enough to start grading verdicts it already issued, watching its leniency toward its own history is the next gate this one doesn't build.**
 
 ---
 
-For the per-tool mechanics, see [Plan mode](/foundations/plan-mode/) for the exit boundary you're gating, [Hooks](/foundations/hooks/) for intercepting it deterministically, and [Model selection](/foundations/model-selection/) for choosing a reviewer from a different lineage.
+**About the numbers.** The review cost ($0.04, 45 seconds) and the incident cost (2.5 hours at $150 an hour, $375.00) are toy figures, invented for traceability and sized to be faithful to the real shape of the problem - a plan review is one short model call, an incident is an on-call engineer's hours - without claiming to be measured. The PASS and FAIL reviewer outputs in the walkthrough are illustrative, written for this piece to show the two verdicts; the arithmetic inside the FAIL comment is the traced 400 above. The 400-requests-a-minute figure, the 4x breach of the plan's own number, and the 9,375x/200x ratios are exact arithmetic from those inputs, checked against an independent script before publishing. The three citations are quoted and dated: Panickssery, Bowman, and Feng, "LLM Evaluators Recognize and Favor Their Own Generations," NeurIPS 2024; "Three Models Agreed. It Was Still Wrong: A Review Method," digitalapplied.com, published 2026-08-02; and Khullar, Hopkins, Wang, and Roger, "Self-Attribution Bias: When AI Monitors Go Easy on Themselves," arXiv:2603.04582, submitted 2026-03-04. Each is described only in the terms its own abstract or reporting uses, with no percentage invented where the source gave none.
+
+For the per-tool mechanics behind this gate, see [Plan mode](/foundations/plan-mode/) for the exit boundary being gated, [Hooks](/foundations/hooks/) for intercepting it deterministically, [Headless](/foundations/headless/) for running the reviewer non-interactively, and [Model selection](/foundations/model-selection/) for choosing a reviewer from a different lineage.
+
+This gate sits next to a few others without repeating them. [Approve the plan, not the diff](/blog/approve-the-plan-not-the-diff/) gates irreversible tool calls behind a human after a plan already exists; this one gates the plan text itself, against a second model, before any tool call is made. [Write your review bot once, run it](/blog/write-your-review-bot-once-run-it/) unifies local and CI review from one vendor's policy so the two surfaces never drift; this one deliberately uses two different vendors, because divergence is the point. [Make a hook validate the agent's output](/blog/make-a-hook-validate-the-agents-output/) is a deterministic check with no model judgment involved; this gate's verdict is a probabilistic call from a differently trained reviewer. [The relay, not the window](/blog/the-relay-not-the-window/) and [treat the plan file as external memory](/blog/treat-the-plan-file-as-external-memory/) both fix quality decay from a long context window by relaying to a fresh session; the blind spot here is baked into training weights, which is why a fresh window from the same lineage doesn't touch it. [Quiz me on the diff](/blog/quiz-me-on-the-diff/) fixes an agent's sycophancy toward the human's account of finished work; this one fixes a reviewer's sycophancy toward its own lineage's defaults, before any code exists to summarize.

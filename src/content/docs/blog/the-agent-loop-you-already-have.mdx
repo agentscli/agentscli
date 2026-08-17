@@ -1,43 +1,75 @@
 ---
-title: "Your smartest worker forgets every job the moment it ships."
-description: "Pairing an isolated subagent with the right tools and a slice of your conventions rebuilds the proven agent loop without dragging tool logs into your thread."
+title: "One triage sweep, dispatched instead of run inline, leaves your main thread carrying 350x fewer tokens forward."
+description: "A 20-issue Sentry triage sweep run inline leaves 21,000 tokens of tool exhaust in the main thread. Dispatched to a subagent under a three-line return contract, it leaves 60. The ratio holds at every cadence."
+seoTitle: "Subagent Dispatch: Task, Tools, and Rules for a Clean Context"
+seoDescription: "A 20-issue triage sweep leaves 21,000 tokens in your main thread inline, 60 dispatched to a subagent: 350x fewer, at any cadence. Here is the math."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, subagents, mcp-servers, rules]
 draft: false
 ---
 
-The agent was sharp at message three. By message forty it's mush - hedging, re-reading files it already read, re-proposing a fix it floated twenty messages ago. You didn't break it. You fed it. Every tool call, every file dump, every "let me check that" left residue in the window, and now it's reasoning over its own exhaust.
+The agent was sharp at message three. By message forty it's mush: hedging, re-reading files it already read, re-proposing a fix it floated twenty messages ago. You didn't break it. You fed it. Every tool call, every file dump, every "let me check that" left residue in the window, and now it is reasoning over its own exhaust.
 
-So you reach for the obvious lever: give it a better memory. Wrong direction. The fix is a worker with *no* memory at all.
+So you reach for the obvious lever: a longer memory. Persistent context across runs feels like the thing that makes an agent smarter. The more it remembers about the codebase, the prior decisions, the half-finished thread from two hours ago, the better it should get run over run. That instinct is the tension this whole piece turns on, because retention is exactly what rotted the session above. Every payload the agent keeps becomes noise that every later decision has to reason around.
 
-It sounds backwards, so steel-man the instinct first. Persistent context feels like the lever that matters - the more your agent remembers about the codebase, the prior decisions, the half-finished thread from two hours ago, the smarter it should get. Retention as intelligence. It's the same reflex that makes you reluctant to close a tab.
+The fix runs the other way: a worker with no memory at all. Take one concrete job, the kind most teams run inline today. Page through a 20-issue Sentry backlog, rank the issues by users affected and error rate, file the three worst as GitHub tickets. Dispatch that sweep to a subagent instead of running it in the main thread, and the main thread carries **350x fewer tokens forward** from the run. The ratio does not move from one run a day to twelve runs a day: the same 350.0x at every cadence. This piece derives that number twice, once per run and once scaled to a five-day week, and gets exactly 350.0x both times. You can check every step with a pencil.
 
-But retention is exactly what rotted the session above. The agent that remembered everything is the one that turned to sludge - not despite its memory, because of it. **The power move isn't a better memory. It's a worker whose context is deliberately thrown away.**
+## Check whether you already have this
 
-## The loop is older than the tools
+Before any arithmetic, sixty seconds on your own session history settles whether this piece is for you.
 
-Strip away the branding and every coding agent runs the same four-beat loop: **read the relevant context, pick a tool, act, write the result back.** That's it. The pattern was formalized in 2022 - reason, act, observe, repeat - and it worked because each observation fed *clean* into the next round of reasoning. Tool-using agents predate Claude Code, Codex, and opencode by years; those CLIs are just polished implementations of a loop that was already proven.
+Open your last long agent session. Find the multi-step job in it that ended with "and report back": the dependency audit, the flaky-test chase, the "page through the error tracker and file the worst ones." Ask one question about it. Did that job run inline, in the main thread you were about to keep reasoning in, or was it handed to a subagent that passed back a short answer?
 
-The loop only stays sharp when the context it reads is *scoped to the task*. Hand it your entire chat history plus forty unrelated tool logs and step one - "read the relevant context" - silently fails. And this isn't a hunch. When researchers stress-tested eighteen frontier models - including the ones behind today's coding agents - every single one got worse as input grew, and they got worse *before* the context window was anywhere close to full. More tokens, weaker answers, even with plenty of room left. Two mechanisms drive it. Models attend well to the start and end of a long context and poorly to the middle, so a fact buried in the twentieth message can drop retrieval accuracy by thirty points or more. And irrelevant-but-similar content doesn't get politely ignored - it actively misleads, tugging the model toward the wrong neighbor. Forty stale tool logs aren't dead weight in the window. They're a thumb on the scale.
+Do that for your last ten sessions. If every one of those jobs was already dispatched, you already have the discipline this piece teaches. Skip ahead to "When the burn bag backfires," because the failure modes there are the part you still don't have. If even a few ran inline, and in most teams it's all of them, keep reading. That setup is the one priced out below.
 
-So the decision quality you lose isn't dramatic; it's a slow drift toward plausible-but-wrong, the kind you don't catch until review.
+**The discipline has one test: does the noisy multi-step job run in your window, or in one you are willing to throw away?**
 
-So here's the open question, and hold onto it: if isolation is what protects the loop, what's the cheapest way to get a clean context window *on demand* - without spinning up a second project?
+## The loop that made it sharp, and what retention does to it
 
-## Spin up a worker, hand it three things, throw it away
+Strip the branding off any coding agent, Claude Code, Codex, opencode, any of them, and the same loop sits underneath: read the relevant context, pick a tool, act, observe what came back, reason again. The pattern was written down as **ReAct**, reason, act, observe, repeat, in "ReAct: Synergizing Reasoning and Acting in Language Models" (Yao et al., Princeton University and Google Research, arXiv:2210.03629, October 2022, published at ICLR 2023), years before any of today's coding CLIs shipped. Those CLIs are polished implementations of a loop that was already proven.
 
-You already have the primitive. A [subagent](/foundations/subagents/) is a fresh, isolated context window you can dispatch a task into. It doesn't see your main thread. It reads only what you hand it, runs its own loop, and returns one distilled answer.
+The loop has one condition on its sharpness, and everything below hangs on it: each observation has to feed clean into the next round of reasoning. Step one, "read the relevant context," quietly fails when the context is forty tool logs deep.
+
+That is measured, not folklore. "Context Rot: How Increasing Input Tokens Impacts LLM Performance" (Hong, Troynikov, and Huber, Chroma Research, July 2025) ran eighteen frontier models through growing inputs and found that accuracy drops as input grows, non-uniformly and in some tests by thirty to fifty percent, well before any model reached its documented context limit. Two mechanisms do the damage. Models attend well to the start and end of a long context and poorly to the middle, so a fact buried at message twenty gets missed. And irrelevant-but-similar content is worse than missed; it pulls the model toward the wrong neighbor. Stale tool output sitting in the window isn't dead weight. It's a thumb on the scale.
+
+Why not just wait for bigger windows to fix it? The finding above already answers that: the rot arrives before the window is full. A bigger window gives twenty stale Sentry payloads somewhere roomier to sit, and the model drags them into its next decision all the same.
+
+So the instinct from the intro runs exactly backward. The agent that remembered everything is the one that turned to sludge, because a memory of everything is a window where every later decision has to reason around everything. And the loss arrives as a slow drift toward plausible-but-wrong: answers that read fine, pass review, and quietly cost you an afternoon three days later.
+
+**Retention is what rots the loop: it stays sharp only while each round of reasoning reads a window scoped to its own task.**
+
+## What one inline sweep leaves in your window
+
+Fix one running example and keep it for the rest of the piece. One team, error tracking in Sentry, tickets in GitHub. The job: page through the 20 open issues, rank by users affected times error rate, file the three worst as tickets. The cadence: three sweeps a day, a stated assumption for this piece rather than a measurement of any real team.
+
+Today the job runs inline. The main session calls the Sentry tool, pages through all twenty issues, reasons, calls GitHub, retries a malformed call, files three tickets. Count what the main thread is left carrying. These four numbers are the only inputs this piece has, and they are toy numbers, sized to be faithful and stamped in the note at the end:
+
+| What happens, per issue | Count | Tokens each | Subtotal |
+|---|---:|---:|---:|
+| Sentry issue payload (message, stack trace, 5 sample events) | 20 | 900 | 18,000 |
+| Tool-call scaffolding (the call, a retry, the "let me check that") | 20 | 150 | 3,000 |
+| **One triage sweep, inline** | | | **21,000** |
+
+Add the two subtotals. That's the whole computation, done the obvious way, before anything clever happens.
+
+21,000 tokens. Kept.
+
+The deliverable was three tickets, information that fits in three lines. Everything else in the 21,000 is exhaust, and the window has no garbage collection: it all stays in scope for the design discussion that follows, the code review after that, every decision this session makes for the rest of the day. The token bill for 21,000 input tokens is cents. The bill that matters comes due in decision quality, and every one of those later decisions pays it.
+
+**The three tickets were the point; the 21,000 tokens of payload are what the inline run charges the next hundred decisions.**
+
+## The same run, dispatched
+
+You already have the primitive. A [subagent](/foundations/subagents/) is a fresh, isolated context window you can dispatch a job into. It never sees your main thread. It reads only what you hand it, runs its own loop, and returns one distilled answer.
 
 The trick is what you hand it. Exactly three things:
 
 1. **A narrow task** - one job, stated as an outcome.
 2. **The tools it needs** - usually a couple of [MCP servers](/foundations/mcp-servers/), nothing more.
-3. **A thin slice of your conventions** - the [rules](/foundations/rules/) that govern *this* kind of work, not your whole `AGENTS.md`.
+3. **A thin rules slice** - the conventions that govern this kind of work, not your whole `AGENTS.md`. Scoping a [rules](/foundations/rules/) file down to one kind of work is the same move [hierarchical context](/blog/hierarchical-context/) makes when it loads rules by directory; here the slice is handed to a worker instead of loaded by a path.
 
-Picture the workflow everyone starts with instead: you ask the main session to "audit our open Sentry issues and file the three worst as GitHub tickets." It calls the Sentry MCP, pages through twenty issues, dumps each payload into the thread, reasons, calls the GitHub MCP, retries a malformed call, and finally produces three tickets. Your context window now holds twenty Sentry payloads you will never look at again. They cost you nothing today and corrupt every decision tomorrow.
-
-Now route the same job to a worker. The dispatch looks like this:
+The dispatch envelope for the triage job:
 
 ```md
 # subagent: triage-worker
@@ -57,72 +89,106 @@ You audit error tracking and file the worst issues as tickets.
 A 3-line summary: each ticket's title + URL. Nothing else.
 ```
 
-The worker pages through all twenty Sentry issues inside *its own* window. It makes the malformed GitHub call and retries - inside its own window. It writes three tickets. Then it hands back exactly this:
+The worker pages through all twenty issues inside its own window. It makes the malformed GitHub call and retries, inside its own window. It writes three tickets. Then it hands back exactly this, under a fixed **return contract**, the declared shape of what is allowed to cross back into the main thread:
 
 ```text
 Filed 3:
 - [checkout] 502 on payment confirm - 1,204 users  → gh #4471
 - [auth] token refresh loops - 880 users           → gh #4472
-- [search] timeout over 5k results - 310 users      → gh #4473
+- [search] timeout over 5k results - 310 users     → gh #4473
 ```
 
-Your main thread never saw a single Sentry payload. It saw three lines. **The forgetting isn't a side effect - it's the product.**
+The obvious objection forms right here, so answer it right here: isn't re-briefing a fresh worker every run wasteful? The brief is four lines. Against 21,000 tokens of payload, the brief is noise. Re-briefing only gets expensive when the job depends on the thread's own history, and that case is real. It's the third failure mode below.
 
-## Isolation, not retention, is what protects the decision
+Count what the main thread is left carrying now:
 
-This is the inversion. We default to thinking memory makes a worker smart. But a task worker that *retains* context across jobs accumulates exactly the noise that degrades the loop. Yesterday's triage run has nothing to teach today's, and everything to confuse it.
+| What the main thread receives | Count | Tokens each | Subtotal |
+|---|---:|---:|---:|
+| Return line (title, ticket link, user count) | 3 | 20 | 60 |
+| **One triage sweep, dispatched** | | | **60** |
 
-What the worker needs to be good is the opposite of memory: a clean window every time, the right tools, and the conventions for *this* task encoded as rules so the standard survives the amnesia. The rules slice is doing the heavy lifting here - it's how a worker that remembers nothing still files tickets in your format, with your ranking, on your labels. **Persistence belongs in the rules file, not in the worker's head.**
+60 tokens. That's all that crosses back.
 
-Notice what that buys you. The same dispatch pattern works for a dependency-bump worker, a flaky-test investigator, a changelog drafter - each one a narrow task, a couple of tools, a thin rules slice, and a one-line return contract. None of them pollutes your main session. None of them needs to remember the last run. You're not building agents; you're building a loop you can fire and forget.
+Now divide, the obvious way, ledger against ledger: 21,000 / 60 = 350. There's the number from the top of the piece, landed exactly. **350.0x**, from the same four toy numbers as the two tables above, nothing rounded, nothing estimated. The main thread carries 350 times fewer tokens forward from this sweep than it would have running the sweep itself.
 
-## The same shape, a sharper job
+The same three-thing envelope works for a flaky-test investigator, a dependency-bump worker, a changelog drafter. None of them get their own arithmetic here, because one worked ledger, reused, teaches the shape faster than four half-worked ones.
 
-Triage is the easy case - the worker produces artifacts and reports pointers to them. The pattern earns its keep on jobs where the worker has to *investigate* and hand back a judgment. Take a flaky test. Normally you'd ask the main session to "figure out why `checkout.spec` fails one run in five," then watch it pull the test file, the source under test, the last fifty CI runs, three suspect timing logs - all of it now permanent residue in your window, most of it a dead end.
+**Dispatch hands the main thread the answer and nothing else: 60 tokens where the inline run left 21,000, a 350x reduction from the same four numbers.**
 
-Route it instead:
+## Name the trick: the burn bag
 
-```md
-# subagent: flake-hunter
-You find the root cause of one intermittent test failure.
+A **burn bag**, in the paper-world idiom, is a sealed bag of sensitive material marked for destruction the moment its one use is over. Borrow the name, because it captures the half of this move that everyone skips.
 
-## Tools
-- mcp: ci         (read run history, read logs)
-- fs: read-only   (test + source under test)
+Isolation alone buys nothing. A subagent that keeps its history across jobs is a second window rotting exactly the way the first one rotted: on run two, a persistent triage-worker reasons over its own accumulated Sentry payloads from run one, and the rot has simply moved house. The isolation only pays off if the window gets destroyed on the way out. The worker has to start run two as blank as it started run one, and the only things that survive are the ones you wrote down on purpose: the rules slice and the return contract.
 
-## Rules for this task
-- Reproduce locally before theorizing. Note the seed or timing that triggers it.
-- Distinguish a flaky *test* from a flaky *system under test*. Say which.
-- Don't propose a fix that only adds a retry or a sleep.
+Whatever needs to persist goes in the rules slice, which loads fresh on every dispatch. That is how a worker that remembers nothing still files tickets in your format, with your ranking, on your labels. The standard survives the amnesia because it was never in the worker's head to begin with.
 
-## Return
-One paragraph: root cause, the evidence, and the smallest correct fix. No log dumps.
-```
+One neighboring trick needs separating, because it sits structurally close. [Two loops](/blog/two-loops/) names its move **the ratchet**: a discovery gets promoted forward into a permanent check, so the fast loop only ever grows. The burn bag is the opposite payoff on the same second-clock shape: it makes sure nothing gets promoted forward at all. The ratchet keeps what it finds; the burn bag is defined by keeping nothing. The two pieces also differ in timing. Two-loops splits a scheduled CI job onto a nightly clock. This dispatch is live and on demand, inside one working session.
 
-The worker reads fifty CI runs so you don't have to. What comes back is one paragraph - *"race on the cart-total recompute; the assertion fires before the debounce settles; fix is to await the settle event, not bump the timeout"* - and a clean window on your end. You spent zero attention on the forty-nine green runs. The job that would have buried your main thread in timing logs leaves behind a single sentence you can act on.
+**The burn bag has two halves and the second one is the product: isolate the run, then destroy the window on the way out.**
 
-And the cost of *not* doing this compounds quietly. The contextless agent's whole weakness is that it doesn't know your codebase, your conventions, your domain - so the moment you let it drag irrelevant context into the window, you've made its one real problem worse. A worker that forgets on purpose closes the gap from the other side: it reads only what closes the gap *for this task*, acts, and clears the table.
+## The table, run out
 
-## When forgetting backfires
+The running example's cadence is three sweeps a day. Scale the same arithmetic across cadence, holding the sweep itself fixed:
 
-Amnesia is a feature until it isn't. The same wall that keeps noise *out* of the worker also keeps context *out* - and sometimes the worker needed it. Three ways this bites:
+| Runs/day | Inline tokens/day | Dispatched tokens/day | Kept out/day | Ratio |
+|---:|---:|---:|---:|---:|
+| 1 | 21,000 | 60 | 20,940 | 350.0x |
+| 2 | 42,000 | 120 | 41,880 | 350.0x |
+| **3** | **63,000** | **180** | **62,820** | **350.0x** |
+| 6 | 126,000 | 360 | 125,640 | 350.0x |
+| 12 | 252,000 | 720 | 251,280 | 350.0x |
 
-**The rules slice is too thin.** A worker that remembers nothing relies entirely on what you hand it. Leave out the convention that matters and it won't fail loudly - it'll confidently do the wrong thing in your exact format, which is harder to catch than an obvious error. Treat the rules slice as the actual deliverable: it is the only thing standing between a clean window and a *contextless* one.
+Row 3, in bold, is the running example. "Kept out" is the inline column minus the dispatched column: tokens that never entered a main thread at all.
 
-**The return contract is too loose.** Ask for "a summary of what you found" and the worker hands back the twenty Sentry payloads you were trying to avoid, now narrated. You've paid the round-trip *and* polluted the window. The contract is load-bearing - "three lines, title plus URL, nothing else" is doing real work.
+Read the ratio column top to bottom. It never moves. Multiplying both ledgers by the same run count cannot move a ratio, so 350.0x at one sweep a day is still 350.0x at twelve. What moves is the size of the number the ratio multiplies. Row 12 keeps 251,280 tokens a day out of the window, which is a quarter million tokens of exhaust a day that the inline design would have poured into the sessions doing the actual engineering.
 
-**The job genuinely needs the main thread.** Some tasks are inseparable from the live context: a debugging session where the decisive clue is something you noticed eight messages ago, a refactor whose constraints only make sense against the conversation so far. Hand that to a blank worker and you'll spend more tokens re-briefing it than you'd ever save.
+The absolute numbers are toy and the constant ratio is arithmetic, and the two claims deserve separating. Shrink the payload constant to 400 tokens an issue and the ratio moves with it, down to 183.3x on the same script. The shape of the table is what holds at any constant size: both columns scale linearly with cadence, so the ratio column is a flat line.
 
-That last point is the real boundary, and it answers the obvious objection - *isn't re-briefing a fresh worker every time just wasteful?* For a **separable** task, no: the brief is four lines and the worker reads only what the task needs. For an inseparable one, yes - so don't isolate it. Isolation pays when the task has a clean input and a clean output and no dependence on the thread's history. The skill isn't dispatching workers; it's telling the two kinds of job apart.
+**The ratio is a constant of the design and cadence is only the multiplier: sweep more often and the kept-out column grows while the ratio column sits still.**
 
-## What you do now
+## What the neighbors already cover
 
-Find the next multi-step job you'd normally hand the main session - anything that ends with "and report back." Don't run it inline. Write the four-line dispatch: task, tools, rules-for-this-task, return contract. Send it to a worker. Read the three lines that come back.
+The triage envelope is one entry on a crowded street, and each neighbor takes a different job.
 
-You'll notice your main thread stayed clean enough to do real work. That's not luck. That's the loop, protected.
+[Loop engineering](/blog/loop-engineering-is-context-engineering/) walks the same agentic-loop framing at survey altitude, six building blocks with subagents among them. This piece drops one level deeper into that one block and puts a worked token ledger under it, which the survey never derives for any of its six.
 
-Stop trying to give your worker a longer memory. Give it a sharper window and let it forget on purpose - the job ships, the noise dies with it.
+[The relay, not the window](/blog/the-relay-not-the-window/) starts from the same symptom, an agent degrading long before its window is technically full, but it swaps out the main session itself, relaying one long job through a plan file and fresh sessions. This piece never touches the main session. It routes one bounded side job to a disposable worker while the main thread keeps running.
+
+[Deterministic context](/blog/deterministic-context/) fixes a different failure, the agent burning turns rediscovering which files matter, with a parameterized priming command that loads exactly the right files. Precision-loading and disposable isolation are complementary: this piece's worker still discovers its own tool results freely, just somewhere the main thread never sees.
+
+[Cache the explore](/blog/cache-the-explore/) is the closest in genre, an amortization ledger with the same count-times-tokens table shape, and the opposite move in spirit. It caches a distilled map across runs of the same agent in the same session. This piece burns the raw payload every run and keeps nothing. File them as two different jobs, one for the slice you'll return to and one for the sweep you won't, rather than as contradictory advice.
+
+**Each neighbor takes a different job; this piece is only the arithmetic of routing one bounded side job into a window that dies.**
+
+## When the burn bag backfires
+
+Amnesia is a feature until it isn't. The same wall that keeps noise out of the worker keeps context out, and three ways this bites are real enough to name. All three pin back to the triage-worker.
+
+**The rules slice is too thin.** A worker that remembers nothing inherits exactly what you hand it. Leave out the "one GitHub issue per root cause" rule and the worker files three tickets for one crash, confidently, in your exact title format, which is harder to catch in review than an obvious error. Treat the rules slice as the deliverable. It is the only thing standing between a clean window and a contextless one.
+
+**The return contract is too loose.** Ask for "a summary of what you found" and the worker hands back the twenty Sentry payloads, narrated. The whole 350x, defeated by one vague line. "Three lines, title plus link, nothing else" is load-bearing arithmetic, and the contract is where it lives.
+
+**The job genuinely needs the main thread.** A debugging session where the decisive clue is something you noticed eight messages back has a dependence the worker cannot be handed in four lines. Re-briefing a burned-bag worker on the whole thread costs more than the isolation saves. The dispatch pays when the task has a clean input, a clean output, and no dependence on the thread's history; the skill is telling the two kinds of job apart before you write the envelope.
+
+Two boundaries are scope rather than failure modes, and both get named so the arithmetic isn't quietly overclaimed. First, this piece is strictly sequential: one disposable worker at a time. Current subagent guidance from Anthropic (2026) recommends batching fan-out into groups of 5 to 10 concurrent workers rather than spawning many at once, and that coordination problem, shared rate limits, merged return contracts, partial failures, has none of this piece's arithmetic in it. It gets handed forward below. Second, cross-session orchestration is out of scope: "agent teams" and long-running background agents are 2026 Claude Code primitives distinct from an in-session subagent, a different primitive rather than a bigger version of this one.
+
+One piece of anti-hype while the 350x is still warm. The return-contract discipline predates this piece: it is the documented default in current subagent guidance, that a subagent must return synthesis, not transcript, or the isolation is defeated. What this piece adds is the number, what that discipline is worth on stated constants.
+
+**The burn bag fails at its edges: a thin rules slice, a loose contract, or a job that secretly depends on a thread the worker can't see.**
+
+## Back to the table
+
+Row 3 of the table, the running example: three sweeps a day. Roll a five-day week underneath it. Fifteen sweeps: 15 x 21,000 = 315,000 tokens into main threads on the inline design, 15 x 60 = 900 on the dispatched design, 314,100 tokens kept out of the window for the week. Divide: 315,000 / 900 = 350.0x. That's the second derivation promised at the top of the piece, and the ratio survived the scale-up exactly, because both sides grew by the same fifteen. Per run, per week, and at all five rows in between: 350.0x, and the number never moved once.
+
+Now the move this piece exists to make you make. Find your own team's triage-shaped job, the recurring one that ends "and report back," and write the four-line envelope: task, tools, rules for this task, return contract. Send it to a worker. Read the three lines that come back. Your main thread stays clean enough to do the real work, and the rot that opened this piece never gets fed.
+
+The burn bag's own cost is the open question left on the table. Every envelope is a new file someone has to write and keep current, and a team running six or eight worker types accumulates a pile of them, each one going stale the way any maintained file does. And what changes when a team dispatches five different disposable workers concurrently instead of one triage-worker three times a day, who owns keeping those rules slices true, and whether the 350x arithmetic even holds once workers run in parallel, is the next question. Named here. Answered by whoever builds it.
+
+**Row 3 is the whole argument in one line: 314,100 tokens a week kept out of the window, at a ratio that never moved across five scales, and the price is a pile of envelopes somebody has to keep true.**
 
 ---
 
-For the mechanics: see [Subagents](/foundations/subagents/) for the isolated context window, [MCP servers](/foundations/mcp-servers/) for handing a worker exactly the tools it needs, and [Rules](/foundations/rules/) for encoding the conventions that survive the forgetting.
+**About the numbers.** The four toy constants are invented for traceability, not measured: 20 issues per run, 900 tokens per issue payload (message, stack trace, and five sample events), 150 tokens of tool-call scaffolding per issue, and 20 tokens per return line. A real Sentry issue with a stack trace and a handful of sample events plausibly runs several hundred to a couple of thousand tokens, so 900 is a stated midpoint, and the same honesty covers 150 and 20. The cadence, 3 sweeps a day over 5 workdays, is a stated assumption, not an observation of any team. Every other number in this piece, the 21,000 and 60 token ledgers, the 350.0x ratio per run and per week, every row of the master table, the 314,100 weekly kept-out figure, and the 183.3x sensitivity figure at a 400-token payload, is exact arithmetic derived from those constants and re-checked against an independent script before publishing. Two facts are quoted and dated: ReAct (Yao et al., Princeton University and Google Research, arXiv:2210.03629, October 2022, ICLR 2023) for the loop's origin, and Context Rot (Hong, Troynikov, and Huber, Chroma Research, July 2025) for the degrades-before-the-limit finding, described only in that paper's own general terms, with no specific score invented here.
+
+For the per-tool mechanics, see [Subagents](/foundations/subagents/) for the disposable window, [MCP servers](/foundations/mcp-servers/) for handing a worker exactly two tools, and [Rules](/foundations/rules/) for the slice that survives the amnesia.

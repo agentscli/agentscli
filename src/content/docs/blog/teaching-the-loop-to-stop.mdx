@@ -1,31 +1,43 @@
 ---
-title: "An agent runs forever or quits one bug short. You need two brakes."
-description: "An unattended agent loop has no instinct for 'done.' Give it an iteration ceiling it can't argue past and a completion sentinel it can raise."
+title: "The honest loop and the lying loop bill the same $1.75. Only the exit state tells them apart."
+description: "The agent is an agreeable judge of done and the harness is a blind one. Two brakes, a third exit state, and the one night a $1.75 bill hides a lie."
+seoTitle: "Headless AI Agent Loops: Iteration Cap and Completion Sentinel"
+seoDescription: "An agent loop needs an iteration cap, a verified completion sentinel, and a blocked exit state. On the bad night, honest and lying loops bill the same."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, headless, configuration]
 draft: false
 ---
 
-You wire an agent into a `while` loop, point it at a backlog, and go to bed. One of two mornings is waiting for you. In the bad one, the loop spent the night calling the API a few thousand times - re-fixing a bug it already fixed, polishing a file nobody asked about, retrying a flaky test it decided was a personal challenge - and you wake to a several-hundred-dollar bill for work nobody wanted. In the other bad one, it quit on iteration three with two tasks still open, because the model decided it was "in a good place to pause."
+You already built the overnight loop. The work is cut into single-task passes so each one starts clean, which is [its own argument](/blog/an-overnight-build-loop/). The permissions are tightened, because going [headless](/foundations/headless/) removed the human who used to approve each action, and [something has to replace that role](/blog/earn-the-automation/). The cron entry fires at 1 a.m.
 
-Both failures have the same root. **An agent in a loop has no native sense of "done."** It has a sense of "what would a helpful response look like right now," which is a different thing, and the gap between them is exactly the gap this whole publication is about: the model is fast and broad, but it doesn't know your backlog is empty, doesn't know your budget, doesn't know that "good enough" was three iterations ago.
+One job from the old workflow still has no owner. Somebody used to watch the clock, weigh the work against the night, and say **that's enough**. That somebody was you, and you are asleep.
 
-The instinct is to fix this by writing a better prompt. Tell the agent, clearly, when to stop. That instinct is half right - and the half that's wrong is the half that costs you money.
+When the loop runs, someone has to decide the work is finished, and there are exactly two candidates. The agent is a poor judge because it is agreeable: pointed at more work it will find more work forever, pointed at caution it will quit one bug short. The harness is a poor judge because it is blind: it can count passes, and it cannot tell a finished backlog from a stuck one. The whole design question is how to wire brakes to those two broken judges so each one covers the other, and what to do on the night neither can call.
 
-## The agent is the worst possible judge of when to stop
+Here is the whole piece in one bill. You add two brakes and a third exit state. The third state costs nothing on a clean night and nothing on a typical one. On the one night it matters, a task the agent cannot finish, it saves you nothing at all over a design that lies to you: both stop 5 passes into a 12-pass budget, both cost $1.75 and 7.5 minutes. One calls the task done. One calls it blocked. Cost alone cannot tell you which loop just lied to you; only the exit state can, and that is the argument.
 
-Steel-man the prompt-only approach: a well-instructed model genuinely can recognize an empty backlog. "Work through `TODO.md`; when every item is checked, you're finished" is a legible instruction, and most of the time the agent follows it.
+## Check whether you already have this
 
-Most of the time. The failure mode isn't that the agent is dumb - it's that it's *agreeable*. Ask a model to keep going until the work is done and it will find work. There is always a test to add, a docstring to improve, an edge case to consider. A loop driven purely by the agent's own judgment trends toward the same place every long-running agent does: it confuses "I could still act" with "I should still act." That's not a stopping condition. That's a perpetual-motion machine that bills you per token. This isn't a hypothetical - developers running coding agents overnight have woken to four-figure bills from a loop that spent the small hours re-doing work it had already finished, retrying a flaky test, or polishing files nobody asked about. The agent wasn't broken. It was being helpful, forever.
+Before any arithmetic, thirty seconds on your own runner settles whether the rest is for you. Open the script or CI job that drives your unattended run and find the line that stops it.
 
-And the opposite failure is just as real. The same agreeableness that makes a model over-work makes it *quit early* when the prompt nudges it toward caution - "if you're unsure, stop and ask." Now it stops one bug short, every time, and your unattended run wasn't unattended at all.
+There are three possible answers. A counter, or a framework turn limit: you have the first brake already. An exact token the agent emits and the harness greps for: you have the second. "The agent decides when it's done": that is the third answer, and it means you have neither.
 
-You cannot trust the agent with the brake. But you also can't take the brake away - only the agent knows when the backlog is actually empty. So you give it two brakes, wired to two different systems.
+If your loop already exits on a cap, on a verified sentinel, and on a blocked state, with three different exit codes, close the tab. If the only thing that ends your run is the agent's own prose, keep reading. **If the only thing that stops your loop is the agent deciding to stop, the loop does not have a stopping condition.**
+
+## What the night costs when nobody says stop
+
+Fix one concrete case and keep it for the rest of the piece. A headless loop working a TODO.md with five tasks on it, T1 through T5. One iteration means one full pass at one task: read the code, make the edit, run the tests. Call each pass $0.35 and 90 seconds. Both are toy numbers, invented so you can check every figure below with a pencil; declared here and again at the end.
+
+Now price the two bad mornings. In the first, the loop never stops. Five tasks finish in five passes. Then the model, asked to keep going until the work is done, finds more work. Pass six improves a docstring. Pass seven re-runs a green suite to be sure. Pass eight refactors a helper nobody complained about. Every one of those passes is a helpful response to "keep going." But nothing inside the loop bounds the count, so at $0.35 a pass **the bill is whatever the night is long enough for**.
+
+In the second, the loop quits at pass three. The prompt said "if you're unsure, stop and ask," so the agent, agreeable to a fault, stopped to ask. T4 and T5 are open. Your unattended run was never unattended; it just had a very literal stand-in who left early.
+
+**An agent in a loop has no native sense of done.** It has a sense of what a helpful response looks like right now, and that sense bends in whichever direction the prompt leans, past the truth in both directions. The tragedy is that the agent is still the only party present who knows whether the backlog is empty. **The judgment is broken in both directions, and it lives in the only judge that can see the work. That is the tension, and no prompt fixes it.**
 
 ## Brake one: a ceiling the agent cannot argue past
 
-The first brake lives in the harness, not the prompt. It's a counter. The agent never sees it, can't reason about it, can't talk you out of it.
+The first brake lives in the harness, not the prompt. It is an **iteration ceiling**, a hard cap on how many passes the loop may buy. The agent never sees it, cannot reason about it, cannot talk you out of it.
 
 ```bash
 #!/usr/bin/env bash
@@ -35,32 +47,26 @@ i=0
 while (( i < MAX_ITERS )); do
   output=$(agent --headless --prompt "$(cat run-prompt.md)")
   echo "$output"
-
-  if grep -q "<<NO_MORE_TASKS>>" <<< "$output"; then
-    echo "Agent signaled completion on iteration $i. Exiting clean."
-    exit 0
-  fi
-
   (( i++ ))
 done
 
-echo "Hit iteration ceiling ($MAX_ITERS) without completion signal." >&2
+echo "Hit iteration ceiling ($MAX_ITERS) without stopping." >&2
 exit 1
 ```
 
-That ceiling is dumb on purpose. It doesn't know whether the work is done. It knows only that twelve iterations is your worst-case spend, and past that, *something is wrong* - a task is unsatisfiable, the agent is looping, the backlog regenerates itself. A run that hits the ceiling should page you and exit non-zero, not pretend it succeeded. **The ceiling's job is not to finish the work. It's to bound the spend when the work can't be finished.**
+`MAX_ITERS` is 12, and that one number is the loop's declared worst night: 12 passes is $4.20 and eighteen minutes. **Remember 12.** It gets paid off exactly on the blocked night below, where the design that does everything right needs 5 of them.
 
-This is a [headless](/foundations/headless/) concern by nature. The moment no human is in the loop to hit Ctrl-C, the harness has to carry the guarantees a human used to. A hard cap is the cheapest such guarantee you can buy, and it's the one you'll be glad you wrote at 2 a.m., when the only thing between a stuck agent and your credit card is a number it can't talk its way past.
+The ceiling is dumb on purpose. It does not know whether the work is done. It knows only that past twelve passes, something is wrong: a task is unsatisfiable, the model is circling, the backlog regenerates itself. A run that hits the ceiling should exit non-zero and page you, never pretend it succeeded.
 
-One refinement worth making early: count the thing that actually costs you money. Iterations are a convenient proxy, but twelve cheap laps and twelve context-stuffed laps are not the same bill - agent cost scales with the conversation history resent on every step, so a loop that accumulates context gets more expensive per iteration as it runs. If your harness can read token usage, a token or dollar budget is a tighter ceiling than a raw iteration count: stop at, say, two million tokens or five dollars, whichever your worst acceptable night looks like. Either way the principle holds - the ceiling is a number the agent cannot see and cannot move.
+One refinement worth making early: count the thing that actually costs you money. Passes are a proxy. An agent re-sends its conversation on every step, so pass eleven costs more than pass two, and twelve cheap laps and twelve context-stuffed laps are not the same bill. If your harness can read token usage, a token or dollar budget is a tighter ceiling than a raw lap count. Either way the principle holds: the ceiling is a number the agent cannot see and cannot move.
 
-And be honest about what the ceiling does *not* protect. A cap bounds how *many* times the agent acts; it says nothing about how *bad* a single action can be. An agent that drops a production table on iteration two never reaches iteration twelve - the counter fires too late to matter. The iteration ceiling is a budget brake, not a safety brake. The blast radius of any one action is a [permissions and sandboxing](/foundations/permissions/) problem, and it needs its own controls. Don't let a tidy iteration cap lull you into thinking the run is *safe*; it's only *bounded*.
+And be honest about what the ceiling does not protect. A cap bounds how *many* times the agent acts. It says nothing about how *bad* one action can be, and an agent that drops a production table on pass two never reaches pass twelve. That half of the problem belongs to [full-autonomy-is-a-small-blast-radius](/blog/full-autonomy-is-a-small-blast-radius/), which computes how far a single bad iteration can reach through sandbox, allowlist and scoped credential. This piece only counts laps. **The ceiling bounds the worst night the loop is allowed to have. It was never asked whether the work got done.**
 
 ## Brake two: a sentinel the agent can raise
 
-The ceiling bounds the worst case. It says nothing about the *good* case - the run that finishes early because the backlog really is empty. For that, the agent needs a way to say so, cleanly, in a form the harness can detect without parsing prose.
+The ceiling bounds the bad case and ignores the good one: the run that finishes early because the backlog really is empty. For that, the agent needs a voice, and the voice has to be shaped so the harness can hear it without parsing prose.
 
-That's the magic string. In the prompt, you define an exact sentinel and make emitting it the *only* legitimate way to claim completion:
+That shape is a **completion sentinel**: one exact token, defined in the prompt, whose emission is the only legitimate way to claim completion.
 
 ```markdown
 ## Completion protocol
@@ -77,17 +83,44 @@ Emit it only after you have verified the backlog is empty.
 Never paraphrase it. The string must match exactly.
 ```
 
-The exactness is the whole point, and it's worth being precise about what it buys you. The *detection* is deterministic: `grep -q "<<NO_MORE_TASKS>>"` either matches or it doesn't. The alternative - parsing free prose for "I'm done" or "task complete" - is the classic anti-pattern, because natural language is ambiguous. An agent that says "I've finished analyzing the first file" is not telling you the run is over, but a naive substring match might think so. Forcing a single, unparaphraseable token removes that ambiguity. You've turned a fuzzy narration ("I think we're in good shape") into a discrete, checkable event.
+The detection is deterministic: `grep -q "<<NO_MORE_TASKS>>"` either matches or it doesn't. The alternative, parsing free prose for "I'm done" or "task complete," is the classic anti-pattern, because natural language is ambiguous. "I've finished analyzing the first file" is not a stop signal, but a substring match on "finished" thinks it is. One exact token that cannot be paraphrased deletes that whole class of accident. The harness part of brake two is three lines:
 
-What the sentinel does *not* buy you is trust in the agent's decision to emit it. The gate is deterministic; the judgment behind it is not. A model can raise `<<NO_MORE_TASKS>>` while two tasks are still open - the well-documented "premature-completion loop," where a run declares victory on a half-done job and exits quietly. The sentinel makes completion *legible*; it does not make the agent's sense of completion *correct*. That's not a flaw in the design - it's the reason brake two is brake two and not the only brake. The string is the agent's voice, and the agent's voice is exactly the thing you decided you couldn't fully trust.
+```bash
+  if grep -q "<<NO_MORE_TASKS>>" <<< "$output"; then
+    echo "Agent signaled completion on iteration $i. Exiting clean."
+    exit 0
+  fi
+```
 
-This belongs in your [rules](/foundations/rules/) - the persistent, declarative context the agent reads on every run - not buried in a one-off prompt. The completion protocol is a convention, and conventions that govern how the agent behaves across many runs are exactly what rules files are for. Write it once; every loop inherits it.
+What the sentinel does not buy is trust in the decision to emit it. A model can raise the token with two tasks still open. This failure has a name: **premature completion**, a run declaring victory on a half-done job and exiting quietly. The sentinel makes the claim **legible**, readable by the harness without interpretation. Readable and true are different properties, and only the first is guaranteed. That gap is what the next section closes.
+
+The protocol belongs in your [rules](/foundations/rules/), the persistent context the agent reads on every run. A convention that governs many runs is exactly what a rules file is for: write it once, and every loop inherits it. **The gate is deterministic; the judgment underneath is not.**
+
+## The sentinel proposes, the test disposes
+
+Here is the uncomfortable part. `<<NO_MORE_TASKS>>` means "I believe I'm done," and belief is the input you already decided not to trust. The grep launders a fuzzy judgment into a crisp token, and the judgment stays fuzzy underneath.
+
+So do not accept the sentinel on its own. Accept it only when an objective check agrees:
+
+```bash
+  if grep -q "<<NO_MORE_TASKS>>" <<< "$output"; then
+    if npm test --silent && [ -z "$(grep -L '\[x\]' TODO.md)" ]; then
+      echo "Completion claimed and verified. Exiting clean."
+      exit 0
+    fi
+    echo "Agent claimed done, but tests fail or TODO has open items. Continuing." >&2
+  fi
+```
+
+The sentinel proposes; the test suite disposes. "Are the tests green?" is a question the agent cannot be agreeable about. **A red suite is a red suite.** You have stopped asking the agent whether it is finished and started asking it to produce a state of the world that *is* finished, then letting the world answer. The strongest form of the second brake is a fact the harness checks, and the feeling never enters the wire.
+
+**Brake two, in full, is "let the agent signal a candidate completion, then verify it." The claim lives where the agent's knowledge lives, and the check lives where objective truth lives.**
 
 ## The third state: stuck is not done
 
-Two outcomes is one too few. A loop that can only "keep going" or "declare done" has no vocabulary for the most common real outcome of an overnight run: *stuck*. The agent hits a task it cannot satisfy - a missing credential, a test that needs a service that isn't running, an ambiguous requirement - and it has exactly two legal moves, both wrong. It can grind against the wall until the ceiling fires, burning your whole budget on one impossible task. Or it can shrug, emit `<<NO_MORE_TASKS>>`, and call a blocked backlog "finished."
+Two exits is one too few. A loop that can only keep going or declare done has no vocabulary for the most common real outcome of an unattended run: **stuck**. The agent hits a task it cannot satisfy this pass. A missing credential. A test that needs a service nobody started. A requirement only you can settle.
 
-Give it a third sentinel:
+Its two legal moves are both wrong. Grind against the wall until the ceiling fires, and one impossible task eats the whole budget. Or emit `<<NO_MORE_TASKS>>` anyway, and a blocked backlog gets called finished. Give it a third sentinel:
 
 ```markdown
 If a task cannot be completed without information or access you
@@ -105,46 +138,76 @@ Emit this token on its own line and stop:
   fi
 ```
 
-Now the run has three honest exits: *done* (clean, exit 0), *blocked* (needs a human, exit 2), and *capped* (something is wrong, exit 1). The distinction matters most the next morning, because each exit routes differently - a clean finish needs nothing, a block needs you to supply the missing piece and re-run, a cap needs you to investigate. Collapse blocked into either of the other two and you lose the one signal that tells you *where* to look. Established autonomous-loop setups encode exactly this: a completion marker, a blocked marker, and a hard iteration cap, all three.
+Now the run has three honest exits: *done*, exit 0. *Blocked*, exit 2. *Capped*, exit 1. The distinction pays for itself the next morning, because each exit routes differently. A clean finish needs nothing from you. A block needs the missing piece and a re-run from where the loop stopped. A cap needs an investigation into which of the three things that can go past twelve actually did. Collapse blocked into either of the other two and you lose the one signal that says which morning you're having. **Done, blocked and capped are three different mornings, and two exit codes can only give you two of them.**
 
-## The strongest sentinel isn't a feeling - it's a passing test
+## One blocked night, traced by hand
 
-Here's the uncomfortable part. Even a perfectly exact sentinel still gates on the agent's *self-assessment*. `<<NO_MORE_TASKS>>` means "I believe I'm done," and we already established that belief is the unreliable input. The deterministic `grep` launders a fuzzy judgment into a crisp token, but the judgment underneath is still fuzzy.
+Fix the night. T1 through T4 are completable. T5 needs a credential the agent does not have, and no amount of retrying produces it. Five tasks, one impossible: hand-traceable.
 
-The fix is to make completion depend on something the agent cannot simply feel its way to. Don't accept the sentinel on its own - accept it *only when an objective check agrees*:
+Compute the ground truth the obvious way, before any design has its say. Four passes finish T1 through T4. The fifth pass is the first attempt at T5, and it fails. So the block point is pass 5, arrived at as 4 finished plus 1 failed attempt, and no harness design changes that number. What differs between designs is what happens on it.
 
-```bash
-  if grep -q "<<NO_MORE_TASKS>>" <<< "$output"; then
-    if npm test --silent && [ -z "$(grep -L '\[x\]' TODO.md)" ]; then
-      echo "Completion claimed and verified. Exiting clean."
-      exit 0
-    fi
-    echo "Agent claimed done, but tests fail or TODO has open items. Continuing." >&2
-  fi
-```
+**Ceiling only** has no early exit at all, so pass 5 teaches it nothing. It burns all 12 passes, $4.20, eighteen minutes, and exits 1 without saying why. There is the plant from the brake-one section, paid off: the loop's worst allowed night is 12 passes, and this design needs every one of them.
 
-The sentinel proposes; the test suite disposes. This is why mature loops lean on programmatic verification - tests pass, build succeeds, backlog empty - rather than the model's word: giving an agent an objective way to check its own work measurably sharpens what it produces, because "are the tests green?" is a question it can't be agreeable about. A red suite is a red suite. You're not asking the agent whether it's done; you're asking it to produce a state of the world that *is* done, and letting the world answer.
+**Sentinel only** stops at pass 5, and this is the modeled failure. After one failed attempt at T5, the agent decides four out of five is close enough and raises `<<NO_MORE_TASKS>>`. The harness greps it, verifies nothing (this design has no verifier), exits 0. The morning report says the run finished. T5 is silently unresolved.
 
-This reframes the two brakes into something sturdier. Brake two isn't really "trust the agent's claim" - it's "let the agent *signal a candidate* completion, then verify it." The agent's strength is knowing the backlog might be empty; it's a poor judge of whether the work it did actually holds. Put the claim where the agent's knowledge lives and the verification where objective truth lives, and you've closed the last gap the bare sentinel left open.
+**Three brakes** also stops at pass 5. The agent recognizes on that same first attempt that the credential is missing, and it now has a legal move that is neither grinding nor lying: it raises `<<BLOCKED: T5 needs the deploy credential>>`. The harness exits 2. The morning report says exactly one task is unfinished, and why.
 
-## Why neither brake works alone
+| Design | Passes spent | Cost | Wall clock | What the exit says |
+|---|---:|---:|---:|---|
+| Ceiling only | 12 | $4.20 | 18.0 min | "Something is wrong." It cannot say what. |
+| Sentinel only | 5 | $1.75 | 7.5 min | "Done." T5 is still open. |
+| Three brakes | 5 | $1.75 | 7.5 min | "Blocked: deploy credential." True. |
 
-Here's the open question from the top, paid off: why two? Because each brake covers the other's blind spot, and the blind spots are not symmetric.
+Check the payoff. The designs that can stop early finish in 5 of the 12 planted passes: 7 fewer than the ceiling, 58.3% off the worst case, exactly fifty-eight and a third with nothing rounded until the display. Every figure in the table comes from the same four inputs: 12 passes, a 5-task backlog, $0.35, 90 seconds. You can check the whole column with a pencil. **Both early-stopping designs land on 5 passes, $1.75 and 7.5 minutes, and nothing in this table can tell you which one lied.**
 
-The ceiling alone is *correct but wasteful*. A loop with only a max-iteration cap and no sentinel runs the full twelve every time, even when the work was done on iteration two - you pay for ten empty laps and call it robustness. The sentinel alone is *cheap but unbounded*. A loop that exits only on `<<NO_MORE_TASKS>>` and trusts the agent to raise it will, on the day the agent never raises it, run until your bill does.
+## The honest tie
 
-```text
-ceiling only   →  always bounded, never cheap   (pays for empty laps)
-sentinel only  →  often cheap,    never bounded  (no upper limit)
-both           →  cheap when it can be, bounded when it can't
-```
+Look at the two bottom rows until the discomfort lands. Sentinel only and three brakes spent the same 5 passes, the same $1.75, the same 7.5 minutes. They tie on every number this piece has trained you to check. And they disagree about the only fact that matters, which is whether T5 got done. One row says done and is wrong. One row says blocked and is right.
 
-The pairing is the design. **The sentinel makes the common case cheap; the ceiling makes the worst case survivable.** One is the agent's voice, one is the harness's veto, and an unattended run needs both because you've removed the human who used to be both.
+Same bill.
 
-Treat the two numbers - the cap value and the sentinel string - as [configuration](/foundations/configuration/), not magic constants buried in a script. The cap is a budget dial you'll tune per workload; the sentinel is a contract shared between prompt and harness that must stay in exact sync. When they drift, the loop silently loses a brake.
+Call that **the honest tie**: the night two designs cost exactly the same and only one of them tells the truth.
 
-The deepest version of this isn't about loops at all. It's that **autonomy is not the absence of constraints - it's the right constraints in the right layer.** Put the judgment where the judgment lives (the agent knows the backlog) and the limit where the limit lives (the harness knows the budget). Let the agent decide *whether* it's done. Never let it decide *how long* it gets to find out.
+The tie reorganizes everything above it. If the third brake had saved money over the lying sentinel, you could pick harness designs by reading invoices. It saves nothing on the night that matters, and the next section shows it costs nothing on the nights that go fine. So the third brake is not a cost brake, it is a truth brake, and the exit state is the only wire that carries the signal.
+
+This also settles why neither brake works alone, now with numbers instead of adjectives. The ceiling alone is correct but wasteful: it runs the full 12 every night, including the clean ones. The sentinel alone is cheap but unbounded the night the agent never raises it, and unverified the night it raises it early. Pair the two and the common night is cheap while the worst night is bounded. Add the third state and the bad night is cheap, bounded and true. **Saving money is what the brakes do on the way past. Telling the truth is the job.**
+
+## The other two nights, and the full table
+
+The blocked night is the dramatic one. These two are the ones you get most weeks.
+
+**Clean night**: all five tasks complete, no retries. The work needs 5 passes, $1.75, 7.5 minutes. **Typical night**: T3's test fails once for a flaky reason, the agent re-runs it, the count is 6 passes, $2.10, 9.0 minutes.
+
+| Design | Clean | Typical | Blocked |
+|---|---:|---:|---:|
+| Ceiling only | 12 ($4.20, 18.0 min) | 12 ($4.20, 18.0 min) | 12 ($4.20, 18.0 min) |
+| Sentinel only | 5 ($1.75, 7.5 min) | 6 ($2.10, 9.0 min) | **5 ($1.75, 7.5 min)** |
+| Three brakes | 5 ($1.75, 7.5 min) | 6 ($2.10, 9.0 min) | **5 ($1.75, 7.5 min)** |
+
+Two things to see. First, the third brake is free. Sentinel only and three brakes are identical in the clean and typical columns: the blocked sentinel sits unused on the good nights, and a brake that costs nothing until the night it is needed is the cheapest kind of brake there is. Second, the ceiling-only row is flat 12 everywhere, including the clean night where nothing went wrong: it pays $2.45 and ten and a half minutes for 7 passes nobody needed. Bounded was never the same as smart.
+
+This is the picture to keep; the close replays it. **The third brake costs nothing on the good nights and buys the truth on the bad one. The ceiling-only row buys neither.**
+
+## What this does not solve
+
+**The ceiling is not news, and you may already have it as a flag.** Most harnesses ship a built-in turn cap: Claude Code has `--max-turns` in headless mode; LangChain's classic `AgentExecutor` has `max_iterations`, 15 by default; LangGraph has `recursion_limit`, 25 by default; the OpenAI Agents SDK's `Runner` takes `max_turns` (all four checked against each project's docs, August 2026). The bash counter above illustrates a mechanism; before you hand-roll one, check whether your harness already hands you the first brake. The parts that are this piece's to add are the sentinel-and-verifier pairing and the third exit state.
+
+**A hard cap is a backstop.** It fires after the budget is already spent on a stuck loop, and it cannot tell you the loop was stuck on pass 2 of 12; it can only stop counting at 12. Catching a stuck loop early, by noticing it re-runs the same failing command or emits the same tool call with nothing changing, is a real and different technique. This piece does not build it.
+
+**The tie cuts both ways.** The honest-tie table says the third brake saves no money on the night that matters. That is deliberate, and it is the point. Read it plainly: if your only problem is spend, a cap alone closes it, and the rest is ceremony. The third brake is for readers whose problem is a morning report that lies.
+
+The failure this piece circles also has a named academic framing: "When Agents Do Not Stop: Uncovering Infinite Agentic Loops in LLM Agents" (arXiv 2607.01641, July 2026) names the failure class and builds IAL-Scan, a static scanner that reported 68 confirmed non-stopping loops across 47 projects out of 6,549 repositories it was run on. Title, date and those abstract figures verified against the paper's abstract page; nothing beyond it is cited. **A ceiling is a budget brake. Noticing the loop is stuck before the budget pays for it is a different brake, and it is not built here.**
+
+## Back to the table
+
+Replay the table once more and look only at the blocked column, bottom two cells. 5 passes. $1.75. 7.5 minutes. Identical. The cell that says done and the cell that says blocked tie on every number in this piece, and cost cannot break the tie. The exit state breaks it, and the exit state is a decision you make the afternoon before, in the harness, where the agent cannot reach it.
+
+Every number here has been a dollar figure or a clock, and neither was ever the point. The ceiling and the sentinel decide which layer gets to be wrong. Let the harness be wrong about timing: it does not know whether 12 was too many passes or too few, and it never will. Never let the agent be wrong about truth: a done that isn't done is worse than a run that costs more, because the expensive run is at least honest about what happened to your night.
+
+What this piece leaves open is the clock nobody is watching. The three-brakes loop exits blocked on pass 5 of the blocked night, but a loop can also spend five passes making no progress at all, re-running the same failing command, and nothing here notices until the cap catches it. That is a different brake, on a different clock, and someone has to build it. Two neighbors hold the other axes this piece set aside: [the-loop-that-rereads-its-diary](/blog/the-loop-that-rereads-its-diary/) solves what a loop remembers between passes, where this piece argues only about when it stops, and [loop-engineering-is-context-engineering](/blog/loop-engineering-is-context-engineering/) is the wider frame: stopping conditions are context primitives like any other part of the loop. **Let the harness be wrong about how long. Never let the agent be wrong about whether.**
 
 ---
 
-For the mechanics of running agents without a human in the loop, see [Headless & CI](/foundations/headless/); for writing the completion protocol as durable context, see [Rules](/foundations/rules/); for treating the cap and sentinel as tunable knobs, see [Configuration](/foundations/configuration/).
+**About the numbers.** The running example is a toy, invented for traceability: a 5-task backlog, a 12-pass ceiling, $0.35 and 90 seconds per pass. Those four inputs are assumptions, not measurements, and every dollar figure, minute count and percentage in this piece is exact arithmetic on them, re-checked with an independent script before publishing. Two constructions are deliberate and should not be read as observations of real agents: the sentinel-only loop's false done after exactly one failed attempt is an invented dramatization of premature completion, chosen to make the tie land on identical numbers, and real premature completion is not that deterministic. The framework-flag facts (Claude Code `--max-turns`, LangChain `max_iterations` at 15 by default, LangGraph `recursion_limit` at 25 by default, OpenAI Agents SDK `max_turns`) were verified against each project's documentation in August 2026 and will drift. The arXiv paper is cited for its title, its date and the figures its own abstract reports; nothing beyond the abstract is used.
+
+For the per-tool mechanics, see [Headless & CI](/foundations/headless/) for running the loop unattended, [Rules](/foundations/rules/) for writing the completion protocol as persistent context, and [Configuration](/foundations/configuration/) for treating the cap and the sentinel as tunable settings rather than buried constants. If your blocked nights pile up, [your failed agent runs are labeled data](/blog/your-failed-agent-runs-are-labeled-data/) covers mining them afterwards; and the unit of dispatch inside a session, a different loop entirely, is [the-agent-loop-you-already-have](/blog/the-agent-loop-you-already-have/).

@@ -1,0 +1,222 @@
+---
+title: "Of the nine decisions your agent makes bootstrapping a service, three are worth your own trip to the docs."
+description: "A vibe-coded Stripe integration buries nine decisions in one handler. A teaching clause plus a plan-mode gate surfaces all nine - only three are worth your own trip to the docs."
+seoTitle: "Use an MCP Server So Your AI Agent Reads Current Docs"
+seoDescription: "A Stripe webhook agent makes nine silent decisions. MCP grounding, a teaching clause, and plan mode surface all nine - only three need your own docs check."
+authors: sanjay
+date: 2026-05-31
+tags: [context-engineering, mcp-servers, rules, plan-mode]
+draft: false
+---
+
+The agent wires up Stripe in four minutes: webhook endpoint, signature verification, a `payment_intent.succeeded` handler, all of it. It runs. You merge it. Three weeks later a customer's card is declined mid-flow, the webhook fires twice, and you're staring at a function you've never read, integrating a service whose retry semantics you couldn't explain to a colleague.
+
+The industry has a name for this pattern now: **vibe coding**, ship what the agent produced and trust the vibe that it's right. The pattern already has a body count attached. Georgia Tech's Vibe Security Radar tracked 74 AI-linked CVEs by March 2026, growing roughly sixfold month over month across the first quarter, and found that about one in five AI-suggested dependencies names a package that doesn't exist. Veracode's 2026 research found up to 45 percent of AI-generated code carries at least one vulnerability. None of those numbers are about Stripe. They're about what happens generally once "the agent handled it" replaces "I read it."
+
+This piece is about one narrower case: bootstrapping a third-party service you've never touched. The zero-to-one is genuinely fast, and that speed is exactly what mortgages your ability to own the thing later.
+
+## Check whether you already have this problem
+
+Before any numbers: open the last third-party integration your agent shipped with light supervision from you. A payment processor, an auth provider, a notification service, anything you didn't write yourself. Pick one function inside it and try to explain, from memory, why it does what it does rather than what it does.
+
+If you can name three of its decisions and say what each alternative would have broken, you already have this handled, whether you called it that or not. Close the tab; the rest of this piece just formalizes what you're already doing.
+
+If you can't, the gap isn't your memory. Nobody, including the agent, ever said those decisions out loud in the first place.
+
+**A test you can run in under a minute beats every number in the rest of this piece, because it's about your repo, not Stripe's.**
+
+## The mainstream move works right up until the first failure
+
+The standard advice is reasonable on its face: the agent has read more Stripe integrations than you ever will, so let it drive. For the happy path, that's true. It'll scaffold a working integration faster than you could read the quickstart.
+
+But integrations are nothing but failure modes. Idempotency keys, signature rotation, partial refunds, what happens when the webhook arrives before your database write commits. The agent picks a default for every one of these and doesn't tell you it made a choice. The cost isn't the code it writes, it's the decisions it buries.
+
+Here's the number the rest of this piece derives and checks twice: of the **nine** buried decisions a handler like this actually makes, exactly **three** sit on the **critical path** - money, auth, data integrity - and only those three are worth your own trip to the docs. The other six you read once, in a plan, and move on. Everything from here rebuilds that ratio from scratch.
+
+**If you don't understand the service, you can't review what the agent is confidently doing to it - which is exactly the gap the rest of this piece closes.**
+
+## Hand the agent the docs, not your trust
+
+The first half of the fix closes the agent's gap with primary sources, not yours. A model's training data on a fast-moving API is stale and half-remembered, three SDK versions blended into one. Give it the current docs directly through an [MCP server](/foundations/mcp-servers/), so it reasons over today's surface instead of a fuzzy memory of last year's.
+
+Stripe ships exactly this. Its remote MCP server, at `https://mcp.stripe.com`, carries a `search_stripe_documentation` tool alongside roughly two dozen action tools spanning customers, payment intents, charges, refunds, and subscriptions. It's the full toolkit, and it can create charges and issue refunds, which is why the scoping below matters.
+
+```jsonc
+// .mcp.json - connect the agent to Stripe's own MCP server
+{
+  "mcpServers": {
+    "stripe": {
+      "url": "https://mcp.stripe.com"
+    }
+  }
+}
+```
+
+Scope the connecting key to search and read, not write. For a service that ships an `llms.txt` instead of an MCP server, point the agent at that; same goal, lighter setup. If you haven't wired an MCP server up before, [the primer on connecting an agent to an external system](/blog/your-agent-cant-read-your-jira/) covers the what and why, and this piece assumes it. Grounding one connection is also different arithmetic from [collapsing ten hand-written adapters into one server](/blog/one-server-not-ten-integrations/): that piece is about integration-count economics, this one is about a single integration's decision-review economics.
+
+Grounded, the agent stops guessing at Stripe's current behavior. Two facts worth fixing in your head now, because the running example leans on both: Stripe's webhook deliveries are **thin events** - the payload carries only an `id` and a `type`, and you fetch the full object back through the API before trusting anything else on it. And live-mode retries back off on a fixed schedule - 5 minutes, 30 minutes, 2 hours, 5 hours, 10 hours, then hourly - for up to three days, after which Stripe auto-disables the endpoint and tells you about it.
+
+**Grounding fixes what the agent knows about Stripe. It does nothing for what you know, which is the half everyone skips.**
+
+## Make the rules file demand an explanation, every time
+
+The second half turns the agent from a substitute into a tutor. A [rules file](/foundations/rules/) is persistent context the agent reads on every turn. Most people use it to encode conventions. Use it here to encode a **teaching clause**: a standing obligation to state, not just make, every decision on the critical path.
+
+```markdown
+# AGENTS.md - third-party integration protocol
+
+When integrating any service I haven't worked with before:
+
+- Pull the current behavior from the service's MCP docs. Do not rely on training memory.
+- Before writing code, list the decisions you're about to make and the
+  alternative for each (e.g. "verifying signatures with the raw body, not
+  parsed JSON - the alternative loses the bytes needed to verify").
+- For anything on the critical path - money, auth, data integrity -
+  explain the failure mode the chosen approach guards against.
+- Flag every place a default could bite us later. Name it, don't bury it.
+```
+
+That last clause is the whole game. Every one of these decisions was already inside the agent's training; it never needed a reason to state them until the rule gave it one.
+
+Now count what the clause has to surface. Do it the obvious way first, with no agent involved: read Stripe's webhook docs the way a careful engineer would and list every choice that has a silent default and a ruled-out alternative. For the one handler this piece runs on - receive `payment_intent.succeeded`, verify it, credit the customer exactly once - there are **nine**:
+
+| # | Decision | Category |
+|---|---|---|
+| 1 | Verify the signature against the raw request body, not the parsed JSON | AUTH |
+| 2 | Dedupe fulfillment on `event.id` with a unique constraint, so retries and duplicate deliveries both fail closed | MONEY |
+| 3 | Fetch the full event object via the API before trusting any field - the delivered payload is a thin pointer, `id` and `type` only | DATA_INTEGRITY |
+| 4 | Return 2xx quickly and defer fulfillment to a background queue | OPERATIONAL |
+| 5 | Store the full event payload for replay and debugging, versus storing just the `id` | OPERATIONAL |
+| 6 | Keep live-mode and test-mode signing secrets in separate config entries | OPERATIONAL |
+| 7 | Pin the endpoint to a specific API version rather than trust the account default to hold still | OPERATIONAL |
+| 8 | Treat the three-day auto-disable of a failing endpoint as a page-worthy alert, not a silent drop | OPERATIONAL |
+| 9 | Route `payment_intent.succeeded` and `charge.succeeded` to one fulfillment path without crediting one payment twice | OPERATIONAL |
+
+Tag each one against the rule's own three named categories and count. One auth decision. One money decision. One data-integrity decision. Three of nine, one in each named category, and 3/9 is exactly one third. **Three of the nine you'll have to verify yourself; six you won't.** Hold that ratio - it gets paid off twice more before this piece closes.
+
+Read the list once and your instinct probably splits into one of two habits. Trust the plan and verify nothing, because the agent sounded confident. Or re-derive all nine against Stripe's docs yourself, because you don't trust any of it. Both are wrong for the same reason: neither uses the fact that you already know which three matter more than the rest. The move that sits between them is **decision triage** - force every decision into the open with the teaching clause, then spend your own docs trip only on the ones in a critical category, and read the rest once, in the plan.
+
+The same allocation logic is what [scoping review by blast radius](/blog/build-risky-agent-code-behind-a-flag/) does across a whole codebase: scrutiny goes where a mistake is expensive. This is that principle one level down, inside a single integration's decision list instead of a repo's files. And the rules file itself is the general primitive: [the case for writing context down once](/blog/write-it-down-once/) is why the file works at all. This piece uses one narrow clause inside it.
+
+**The rule surfaces all nine decisions. Triage tells you which three are worth checking yourself.**
+
+## Gate it behind plan mode so you read before you run
+
+Tie it to [plan mode](/foundations/plan-mode/): the agent researches and proposes, and writes nothing until you approve. The plan is where triage actually happens - before a line lands, not after:
+
+```text
+PLAN - Stripe webhook integration
+
+1. Verify signatures against the raw request body, not parsed JSON. [AUTH]
+   Why: Stripe signs the exact bytes; a JSON parser that runs before
+   verification re-serializes them and the check fails silently.
+
+2. Make the handler idempotent on event.id. [MONEY]
+   Why: Stripe guarantees at-least-once delivery and retries any non-2xx
+   response for up to three days. Without a dedupe key you double-fulfill.
+
+3. Fetch the full object via the API before trusting a field. [DATA_INTEGRITY]
+   Why: the delivered payload is a thin event - id and type only. Anything
+   else on it is unverified until you fetch it back.
+
+4. Return 2xx quickly; defer fulfillment to a queue. [OPERATIONAL]
+   Why: a slow handler risks getting marked failed and triggering the
+   retry schedule from line 2. Stripe doesn't publish a fixed response
+   window in its own docs, so "quickly" means don't do the real work
+   inline - not a specific second count to hit.
+
+Decision flagged: storing the full event payload vs. just the id.
+Recommend full payload for replay/debugging. Your call.
+```
+
+Read that against the table from the last section. Lines one through three carry the tags AUTH, MONEY, DATA_INTEGRITY - the same three the hand count landed on with no agent involved. The remaining six, collapsed here into one flagged decision for space, all carry OPERATIONAL. Three flagged, six not. An exact match, and the first payoff of the ratio you're holding: the agent's own plan agrees with the hand count that one third of the surface is load-bearing.
+
+You don't have to be a Stripe expert to run that triage. You have to read three tagged claims and ask one good question about each. [The planning step's real value is the interrogation](/blog/interview-me-before-you-build/), but that piece runs the interrogation the other direction: it extracts what *you* know and haven't written down. This gate extracts what the *agent* knows and would otherwise ship silently. It's a different checkpoint from [gating irreversible actions](/blog/approve-the-plan-not-the-diff/): that piece asks whether an action can be undone, this one asks whether you understand what it does, reversible or not. And from [a mid-call confirmation wired into the tool itself](/blog/elicitation-plus-tool-annotations/): that stops one call in flight; the plan gate stops everything before any call happens.
+
+**The plan converts "I'm trusting a black box" into "I'm checking three tagged claims against a source I can actually open."**
+
+## The same protocol, a different black box
+
+Stripe makes the pattern vivid because money makes failures expensive, but the technique isn't about payments. Swap in any service whose internals you don't carry in your head and the three primitives do the same work.
+
+Take verifying a third party's signed tokens: an identity provider handing you JWTs. Left alone, an agent will decode the token, read the claims, and trust them. That code runs. It also accepts forged tokens, because decoding reads the claims and only checking the signature proves who wrote them. The buried decisions here are a minefield: validate the signature against the provider's published **JWKS** (the endpoint that serves its signing keys), reject the `none` algorithm outright, check that `aud` and `iss` match your service, honor `exp`. Every one is a default the agent picks silently, and every one is a hole if it picks wrong.
+
+The teaching clause drags those choices into the plan before any code lands:
+
+```text
+PLAN - verify inbound identity tokens
+
+1. Fetch the provider's signing keys from its JWKS endpoint and cache
+   them; verify each token's signature against the matching key id.
+   Why: a JWT is base64, not encryption. Anyone can read and rewrite
+   the claims. Only the signature proves the issuer wrote it.
+
+2. Pin the accepted algorithm to the asymmetric one the provider uses.
+   Reject "alg": "none" and any symmetric algorithm.
+   Why: the classic JWT bypass is swapping the header to none (no
+   signature checked) or to HS256 keyed off the public key.
+
+Decision flagged: validating "aud" strictly vs. accepting any audience.
+Recommend strict - a token minted for another app shouldn't open yours.
+Your call.
+```
+
+You don't need the JWT spec memorized to weigh that. You need to read two tagged claims and notice that line two guards against an attack you can now name. The agent knew the `alg: none` trap the whole time; the rule is what made it say so instead of shipping a decoder and calling it auth.
+
+**The service changes. The protocol - ground, disclose, gate before code - doesn't.**
+
+## Where the move breaks, and where to skip it
+
+A technique you can't see the edges of is just another black box. Three caveats and a scoping note.
+
+First, the failure mode that survives everything above: **a confident explanation is not a correct one.** The teaching clause guarantees the agent states a rationale; it doesn't guarantee the rationale is true. That is why grounding is load-bearing rather than optional - you want the agent reasoning over the live reference, not narrating a confident memory - and why you still spot-check the critical three against the actual docs. The protocol shrinks the surface you verify from all the code to three tagged claims. It doesn't shrink it to zero.
+
+Second, a newer sibling that does part of this job for you: Stripe now ships packaged **Agent Skills**, procedural files built on the open standard Anthropic published in December 2025, covering many of the same integrations its MCP server exposes. If Stripe already wrote the procedure, why write your own teaching clause? Because a vendor skill teaches the choices Stripe decided are worth stating, and it only exists for services that bothered to publish one. The teaching clause is yours; it travels to every service you integrate, including the ones that ship no skill at all. Use the skill where it exists and the rule everywhere else; each covers ground the other can't.
+
+Third, the caveat that "scope the key to read-only" under-weights: Stripe's MCP server is a genuine **trust boundary**. It can create charges and issue refunds, and a docs-search tool that returns text an attacker can influence is a live **prompt-injection** vector, a class of attack OWASP's MCP Top 10 tracked through 2026. Scoping the key is the floor. The depth treatment lives in two sibling posts - [holding every secret server-side and exposing a narrow verb set](/blog/the-server-is-the-trust-boundary/) and [splitting read access to untrusted data from write access to a second system](/blog/the-confused-deputy-server/). Read them before you turn the write-capable tools on.
+
+Fourth, when to skip the ceremony entirely: **the overhead only earns its keep on a path you'll have to own.** A throwaway prototype you'll delete next week, a non-critical call to a service that can fail without paging anyone, a one-off script - let the agent bootstrap the black box and move on. Demanding a decision-by-decision tutorial for a feature flag you'll rip out tomorrow is friction cosplaying as rigor.
+
+**The protocol costs a rule and a plan you have to read; spend it where the answer actually matters.**
+
+## Back to the table
+
+Every number this piece promised now sits in one place. Here is the decision table from the teaching-clause section again, with the one column that triage adds: whether you verify it against the docs yourself.
+
+| # | Decision | Category | You verify? |
+|---|---|---|---|
+| 1 | Verify the signature against the raw request body, not the parsed JSON | AUTH | yes |
+| 2 | Dedupe fulfillment on `event.id` with a unique constraint | MONEY | yes |
+| 3 | Fetch the full event object via the API before trusting any field | DATA_INTEGRITY | yes |
+| 4 | Return 2xx quickly and defer fulfillment to a background queue | OPERATIONAL | no |
+| 5 | Store the full event payload for replay, versus just the `id` | OPERATIONAL | no |
+| 6 | Keep live-mode and test-mode signing secrets separate | OPERATIONAL | no |
+| 7 | Pin the endpoint to a specific API version | OPERATIONAL | no |
+| 8 | Treat the three-day auto-disable as a page-worthy alert | OPERATIONAL | no |
+| 9 | Route two `succeeded` event types to one path without double-crediting | OPERATIONAL | no |
+| | **TOTAL** | **3 critical / 6 operational** | **3 of 9** |
+
+Rows one through three are the critical path: one auth, one money, one data-integrity. Rows four through nine are the operational six. They still decide whether the handler survives a bad night; they just don't decide whether you lose money or open a hole. **Three of nine, exactly one third.** That is the claim from the opening, rebuilt from a hand count and confirmed by the agent's own plan.
+
+The second table is the one that earns the close, because a ratio is only usable if the decisions reach you in a form you can act on. Replay what each primitive changes:
+
+| Layer | Decisions stated | Stated before code lands? | Checkable against live docs? |
+|---|---|---|---|
+| Nothing - the agent just ships it | 0 | No | No |
+| + MCP grounding only | 0 | No | Yes |
+| + Teaching clause (rules file) | 9 | No | Yes |
+| + Plan mode gate | 9 | Yes | Yes |
+
+Row by row. **Nothing:** nine decisions, zero stated; you inherit them all blind. **Grounding:** the handler comes out correct, because the agent reasoned over live docs, and it tells you nothing about how - a right answer, still a black box. **Teaching clause:** all nine exist in words, but nothing stops them sitting in a PR description you skim after the merge. That is the failure mode of [grading a finished diff against reality](/blog/quiz-me-on-the-diff/): a good check, and a post-hoc one. This gate is pre-hoc; the decisions are visible while the code is still a proposal. **The gate:** stated, before code, checkable. Only the bottom row gives you all three properties at once, and only there does the 3-of-9 ratio become something you act on rather than a fact you read in a stale PR description.
+
+Step back and the whole pattern is **context engineering**. The agent is broad and doesn't carry your stakes; it doesn't know that a data-integrity bug in this handler pages someone at 2am. You're narrow and don't carry Stripe's; you know your codebase but not its retry semantics. MCP closes the agent's gap with live docs. The teaching clause closes yours by forcing the agent to say what it already knew. Plan mode is where the two of you meet, before either mistake ships.
+
+Which leaves the crack this protocol doesn't close. Decision triage assumes the tagging is honest - that the plan correctly calls a money decision "money," and that nothing critical gets quietly filed under operational because the agent judged its own choice safe. Nothing in this piece checks the triage itself; it checks only what the triage decided to show you. [A second model, from a different vendor, grading the plan before you do](/blog/a-second-opinion-it-didnt-write/) is a strict superset of that check: catch a mistagged decision and you've caught everything this piece catches, plus the one thing it can't.
+
+**An agent that integrates a service for you is a contractor. One that discloses every decision and tags the categories right is a tutor you can actually verify.**
+
+---
+
+**About the numbers.** The decision count (9) and its category split (3 critical - one auth, one money, one data-integrity - and 6 operational) are a hand-made toy classification for one representative Stripe webhook handler, not a measured audit of a production codebase; a different engineer reading the same docs could draw the auth/money line one decision differently. Every figure derived from that count (3 of 9, one third, the layer table's stated counts) follows from it by arithmetic and was re-checked with a script before publishing. Stripe's retry schedule (5m/30m/2h/5h/10h then hourly for up to 3 days, then auto-disable), its thin-event payload shape, and its MCP server's tool count (a docs-search tool plus roughly two dozen action tools) are quoted from Stripe's own documentation and public MCP catalogs, checked August 2026. The exact response window before Stripe marks a delivery failed is not a fixed number in Stripe's own docs and secondary sources disagree, so this piece states the verified claim ("respond fast, defer to a queue") and drops the disputed second-count. The AI-generated-risk figures in the opening (74 CVEs, roughly sixfold growth, 45 percent of AI code carrying a vulnerability, one in five suggested dependencies hallucinated) are quoted from Georgia Tech's Vibe Security Radar and Veracode's 2026 research, and describe AI-generated code in general, not this Stripe example specifically.
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for wiring live docs into the agent, [Rules](/foundations/rules/) for the persistent teaching protocol, and [Plan mode](/foundations/plan-mode/) for the review gate that turns a proposal into a lesson.

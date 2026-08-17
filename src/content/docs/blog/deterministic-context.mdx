@@ -1,74 +1,87 @@
 ---
-title: "When you know where the context lives, stop letting the agent guess."
-description: "Agent-driven file discovery burns turns and fills the window with wrong guesses. A parameterized priming command loads exactly the right files in one shot."
+title: "A parameterized priming command cuts a session's grounding cost by 48%, from the first run."
+description: "Agent-driven file discovery burns 12,000 tokens rediscovering three files you already knew. A parameterized priming command drops that to 6,200, and the saving holds from session one."
+seoTitle: "Stop Agent File Discovery: Use a Parameterized Priming Command"
+seoDescription: "Agent-driven file discovery burns 12,000 tokens re-finding files you already know. A priming command drops that to 6,200 - a flat 48% cut, every session."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, slash-commands, rules, configuration]
 draft: false
 ---
 
-You open a fresh session, paste the ticket, and the agent starts grepping. It reads the wrong service first. Then a test file. Then a config it didn't need. Three tool calls in, it finally lands on the module you knew it needed before you hit enter - and now the window is half-full of dead ends it has to reason around for the rest of the task.
+You open a fresh session, paste the ticket, and the agent starts grepping. It reads the wrong layer first. Then a test file it didn't need. Then it lands on the module you knew it needed before you hit enter - and every wrong turn it took on the way is now sitting in the window, where the agent has to reason past it for the rest of the task.
 
-This is the default mode of every coding agent: **probabilistic discovery.** Hand it a goal, and it figures out which files matter by guessing, reading, correcting. For an unfamiliar codebase, that's the right behavior - it's literally the thing agents are good at. But you weren't unfamiliar. You knew exactly which four files this task touches. You just had no way to say so without typing them out by hand.
+This is the default mode of every coding agent: **probabilistic discovery**. Hand it a goal, and it works out which files matter by searching, reading, and correcting. For a codebase it has never seen, that's the right behavior - it's the thing agents are actually good at. But you weren't unfamiliar. You knew exactly which three files this task touches. You just had no way to say so without typing them out by hand, every single time.
 
-So here's the question worth holding onto: **if you already know where the context lives, why are you paying the agent to rediscover it every single time?**
+Here's the tension underneath that. Exploring a codebase is what makes an agent's output fit *your* repo instead of some generic one - the reads are how it learns your conventions, your helpers, your layout. But the moment you already hold the map, that same exploring is pure waste, and the agent has no way to tell you apart from someone who has never opened the repo. It re-earns your knowledge at full price, every time.
 
-## Discovery is a search cost, and you keep re-paying it
+A parameterized priming command fixes the mismatch: it loads exactly the files a recurring task needs, in one shot, before the agent guesses at anything. On the toy example this piece works through end to end, that drops a session's grounding cost from **12,000 tokens to 6,200** - a **48% cut**. And unlike a cached exploration map, that 48% holds from session one, because there's no explore-once cost to amortize when you never paid to discover the files in the first place.
 
-Steel-man the default first. "Let the agent figure it out" is genuinely powerful - it's why you can drop into a repo you've never seen and get a useful answer. Autonomy over file selection is a feature, not a bug.
+## Check whether you already know the files
 
-But autonomy has a price, and the price is **turns plus pollution.** Every exploratory read is a round-trip that spends latency and tokens. Worse, the wrong reads don't vanish - they sit in the [context window](/foundations/context-management/) as noise the model has to actively discount on every subsequent step. An agent that read three irrelevant files isn't neutral; it's an agent reasoning *against* its own clutter.
+Before any of the arithmetic below, run this on your own repo. Thirty seconds settles it.
 
-That second cost is the one people underweight. Tokens you can see on a usage meter; attention dilution you can't. When the window fills with the wrong service and a config the task never needed, the relevant lines don't get *deleted* - they get *diluted*. The model's attention is finite and spread across everything in the window, so every irrelevant file it pulled in is competing for focus with the four that actually matter. The well-documented failure mode where models lose track of facts buried in the middle of a long context isn't a quirk you avoid by being careful; it's the tax you pay for a window full of dead ends. Discovery doesn't just cost the turns it took - it degrades every turn that follows.
+Think of a task you do often - a recurring bug, a feature you keep extending, a job you keep debugging. Write down the two or three files it touches, from memory, before you open the agent. Then start a fresh session, paste the task, and watch what it opens first.
 
-And you re-pay this on every new session. The knowledge of "this feature lives in these files" is stable. The agent's memory of it is not. You're funding the same search over and over for context you could have pinned once.
+If the agent's first reads match the list you just wrote, you don't have this problem. Your repo is small enough, or well-indexed enough, that discovery is already cheap. Close the tab.
 
-## A priming command makes the right context deterministic
+If it opens a route handler you didn't need, a test fixture, a config file, and only lands on your list on the third or fourth read, you're paying full search cost for context you could have handed over directly. The rest of this piece is one worked example of what that costs and how to stop paying it.
 
-The fix is to encode the file set you already know into a [slash command](/foundations/slash-commands/) that loads it in one shot. No guessing, no exploratory reads - the command *is* the answer to "which files."
+**The self-test is the whole argument in miniature: if you already know the files, everything past this point is recoverable cost.**
 
-Make it parameterized so one command serves a whole class of tasks. A command file is just a prompt template with argument interpolation:
+## What discovery costs on a recurring bug
 
-```markdown
----
-description: Prime context for work on a feature module
-argument-hint: <module-name>
-arguments: [module]
----
+Fix one concrete case and keep it for the rest of the piece: a background job that fails on a predictable schedule, the kind you've debugged before. You know the shape cold. The job runs from `src/jobs/nightly-export.ts`. The queue it runs on is configured in `src/queue/config.ts`. And the retry policy - usually the actual culprit - lives in `src/queue/retry.ts`. Three files. You could name them in your sleep.
 
-Read these files before doing anything else, in order:
+A fresh session doesn't have that list. It has "the nightly export job is failing," and it starts from zero.
 
-- src/features/$module/index.ts
-- src/features/$module/$module.service.ts
-- src/features/$module/$module.test.ts
-- docs/architecture/$module.md
+Watch what a normal pass at that looks like, priced with the same instrument set [Cache the Explore](/blog/cache-the-explore/) runs on: a search costs 300 tokens, a file read costs 2,000, and a reasoning step between tool calls costs 200. If you read that piece, the three prices will look familiar. They are the same three, reused so both posts share one price list.
 
-Summarize the module's responsibilities and public surface in
-three bullets. Do not modify anything yet. Wait for the task.
-```
+| What the agent does | Count | Tokens each | Subtotal |
+|---|---|---|---|
+| Searches (`grep export`) | 2 | 300 | 600 |
+| Dead-end reads (`export.controller.ts`, `nightly-export.test.ts`) | 2 | 2,000 | 4,000 |
+| Correct reads (the three files above) | 3 | 2,000 | 6,000 |
+| Reasoning steps (one per event, 7 events) | 7 | 200 | 1,400 |
+| **Probabilistic discovery, one session** | | | **12,000** |
 
-Now `/prime-feature billing` loads the billing module's exact context set - implementation, service, tests, and design doc - as one deterministic operation. The agent starts the *actual* task already grounded, with a clean window and zero wasted round-trips. Swap `billing` for `auth` and you've reused the same primer for a different module.
+Seven discrete events happen before the agent has said anything useful about the bug: two searches, two files that turn out to be the wrong layer, three files that actually matter, and a reasoning step reacting to each one.
 
-The shape generalizes. A `/prime-bug` command might pull the error-handling layer plus the relevant log config. A `/prime-migration` might load the schema, the latest migration, and the ORM models. Each one is a piece of codebase knowledge you held in your head, now executable.
+**12,000 tokens, and the diagnosis hasn't started.**
 
-## Watch the cost flip
+## The addressed load
 
-The difference is easiest to feel on a recurring task. Say you fix a class of bug every week - a failing background job. You know the shape cold: the job runs in `src/jobs/`, the queue config lives in `src/queue/config.ts`, and the retry logic that's usually the culprit sits in `src/queue/retry.ts`.
+Now run the other path. A parameterized priming command already knows the three files - no searching, no dead ends, just the reads plus one reasoning step to synthesize what they say.
 
-**Without a primer**, a fresh session looks like this. You paste "the nightly export job is failing." The agent greps for `export`, gets a dozen hits, reads the route handler that *triggers* the job (wrong layer), reads a test fixture, reads a utility file, and somewhere on the fourth or fifth read finally opens `retry.ts`. By the time it's looking at the right code, the window already carries three files of scaffolding it now has to reason past. The diagnosis it gives you is competing with its own warm-up noise.
+| What the agent does | Count | Tokens each | Subtotal |
+|---|---|---|---|
+| Correct reads (the same three files) | 3 | 2,000 | 6,000 |
+| Reasoning step (one synthesis pass) | 1 | 200 | 200 |
+| **The primer, one session** | | | **6,200** |
 
-**With a primer:**
+Put the two totals next to each other and look at where the difference comes from. Discovery: 12,000. Primer: 6,200. But the correct-file subtotal, the actual reading the task needed, is 6,000 in both columns. Identical. All of the gap, then, is the cost of getting there: the two searches, the two dead-end reads, and the difference in reasoning between the two paths. Nothing else changed.
+
+That's the trick, and it's worth naming precisely because it's easy to undersell. Call the wasteful path **the scanned load**: the agent finds the right files by scanning, and pays for every wrong guess along the way. Call the fix **the addressed load**: the agent is handed the address directly and reads only what's at it. The names matter because the addressed load is the one technique in this series that compresses nothing. A cached map shrinks 22,800 tokens of reading into a 950-token summary. The addressed load reads the same 6,000 tokens of the same three files that the scanned load ended up reading. Nothing got smaller. The detour got deleted.
+
+Price the detour on its own: two searches (600) plus two dead-end reads (4,000) plus the reasoning difference, the seven steps discovery pays where the primer pays one (1,400 minus 200, which is 1,200). That comes to **5,800**. Hold that number, because it makes a checkable claim: the entire gap between the two columns is the detour, and nothing else.
+
+Now subtract the totals. 12,000 minus 6,200 is **5,800**. Exact match, on the pencil. The primer saves exactly the detour, all of the detour, and not one token of the reading.
+
+**The addressed load doesn't shrink what the agent reads. It deletes the search for where to read.**
+
+## The priming command
+
+Encoding that address is a [slash command](/foundations/slash-commands/): a prompt template with argument interpolation, parameterized so one command serves a whole class of recurring tasks instead of one:
 
 ```markdown
 ---
 description: Prime context for debugging a background job
 argument-hint: <job-name>
-arguments: [job]
 ---
 
 Read these before anything else:
 
-- src/jobs/$job.ts
+- src/jobs/$ARGUMENTS.ts
 - src/queue/config.ts
 - src/queue/retry.ts
 
@@ -76,17 +89,33 @@ State the job's trigger, its retry policy, and the three most
 likely failure points. Then wait for the symptom.
 ```
 
-`/prime-bug nightly-export` and the agent opens the *same three files you'd have opened*, in one deterministic step, with a clean window. It's already standing where the answer lives before you've even described the symptom. Same task, but the search cost flipped from "spent on every session" to "spent once, when you wrote the command."
+`/prime-bug nightly-export` drops the argument into the template, and the agent opens the same three files you'd have opened, deterministically, with a clean window. It's already standing where the answer lives before you've described the symptom. Swap `nightly-export` for any other job on the same queue and the command still points at the right files - you wrote it once, for the whole class of bug, not for this one instance.
 
-## "Isn't this just @-mentioning the files?"
+The shape generalizes past bugs. A `/prime-feature` command might load a module's implementation, its service layer, its tests, and its design doc, so a teammate who has never touched billing gets your exact grounding for free. A `/prime-migration` might load the schema, the latest migration file, and the ORM models that read them. Each one is a different piece of codebase knowledge you already carry, turned into something you type instead of something you re-derive.
 
-A fair objection: most agents let you drop files into context by hand - an `@`-mention, a drag, a paste. If you know the four files, why not just name them?
+This convention already has a name in the wild. `/prime`, an un-parameterized version of the same idea, is common enough in the Claude Code community that people write whole posts about not re-typing it by hand every session. What's here is the same instinct, parameterized so it serves a family of tasks instead of a single memorized list.
 
-Because a manual mention is a keystroke you re-spend every session, and it doesn't compose. The primer is *parameterized* - one `/prime-feature` serves every module, where a manual mention serves one. It's *documented* - `argument-hint` tells you and your teammates what it expects. It's *versioned* - it lives in the repo and travels with the code. And it's *shared* - a colleague who's never touched the billing module gets your exact grounding for free. Hand-mentioning files is the right move exactly once; the moment the same file set comes up a second time, you're re-typing knowledge you could have committed.
+**A command is just a memorized answer to "which files," made reusable and shared.**
 
-## Rules carry the context that's true for every task
+## "Isn't this already solved?"
 
-Some context isn't task-specific - it's true no matter what the agent is doing. The build command. The fact that all dates are stored UTC. That `legacy/` is frozen and must never be edited. Pinning *that* into a priming command would be redundant; it belongs one level up, in your [rules](/foundations/rules/) file, where the agent reads it on every session automatically.
+A few objections form immediately, so answer them here rather than parking them for later.
+
+**Isn't this just @-mentioning the files?** Most agents let you drop files into context by hand - an `@`-mention, a drag, a paste. If you already know the three files, why not just name them in the chat? Because a mention is a keystroke you re-spend every session, and it doesn't compose. The command is parameterized, so one `/prime-bug` serves every job on the queue, where a mention serves one conversation. It's versioned, living in the repo next to the code it describes. And it's shared: a teammate who has never touched the export job gets your exact grounding for free, the first time they type the command. Mentioning files by hand is the right move exactly once; the moment the same set comes up a second time, you're re-typing knowledge you could have committed.
+
+**Isn't this what a repo index already does?** A growing number of tools index the repo semantically and rank files by similarity to the task - a form of search, just a better-informed one. That's a real improvement over grep, and it's still search: it returns files it thinks are relevant, ranked by a score, and the agent still has to read a few candidates and decide. A priming command is addressed rather than ranked: an index guesses which three files matter; you already checked, so you tell the agent which three files matter. **Ranked search is for when you don't know the answer yet. Addressed loading is for when you do.**
+
+**Isn't this the same as caching the repo map from an exploration pass?** That's a genuinely different technique for a genuinely different case. [Cache the Explore](/blog/cache-the-explore/) is for when you *don't* already know the layout - you pay for one exploration pass, write down what it found, and every later run reads the summary instead of re-exploring. A priming command is for when you already carry the file list in your head before the agent starts. Neither replaces the other; they answer different versions of "do I already know this."
+
+**What about MCP's own primitive for this?** If you're building for multiple agent tools rather than one, the same idea exists at the protocol level: MCP defines "prompts" as its user-invoked, parameterized workflow primitive, sitting next to resources and tools. A priming command is one worked instance of that primitive. [Nouns, Verbs, and Slash Commands](/blog/nouns-verbs-and-slash-commands/) covers the full three-way split; this piece is the single-technique version of one of them.
+
+**Isn't this the same as pushing search into a cheap subagent?** [Stop Reading Your Codebase in the Window](/blog/stop-reading-your-codebase-in-the-window/) relocates the scanned load into an isolated, cheap-model subagent so it doesn't pollute your main window and costs less per token. That's a real fix when search is still necessary. A priming command removes the search itself - there's no subagent to isolate it into, because there's nothing left to search for.
+
+**Everything that competes with the primer either keeps a search going or spends a keystroke every session. The command is the one move that commits the address.**
+
+## Rules carry the standing context, the primer carries the situational
+
+Some context is true no matter which task you're running: the build command, the fact that all timestamps are UTC, that `legacy/` is frozen. Pinning that into a priming command would be redundant - it belongs one level up, in your [rules](/foundations/rules/) file, read on every session automatically, the standing-context primitive [Write It Down Once](/blog/write-it-down-once/) argues for:
 
 ```markdown
 # AGENTS.md
@@ -94,34 +123,58 @@ Some context isn't task-specific - it's true no matter what the agent is doing. 
 ## Always-true context
 - Run tests with `pnpm test`, never `npm test`.
 - All timestamps are UTC. Never localize in the data layer.
-- `legacy/` is frozen. Read for reference, never modify.
 
 ## Where things live
-- Feature modules: `src/features/<name>/`
-- Use `/prime-feature <name>` before working in one.
+- Background jobs: `src/jobs/`, queue config in `src/queue/`.
+- Use `/prime-bug <job-name>` before debugging one.
 ```
 
-That last line is the hinge. Rules describe the **standing context** and point to the priming commands that load the **situational context.** Together they replace probabilistic discovery with a two-tier deterministic system: always-on facts in rules, on-demand file sets in commands. Both live in your repo as plain files, version-controlled alongside the code they describe - and because `AGENTS.md` has hardened from a single tool's convention into a cross-vendor standard, that grounding travels. OpenAI introduced the format in 2025; by the end of that year it had been donated to the Linux Foundation's Agentic AI Foundation, sitting alongside the Model Context Protocol, and it's now read natively by Claude Code, Codex, Cursor, Copilot, Gemini CLI, Aider, Windsurf, Zed, and a couple dozen others. A teammate's agent inherits the same grounding the moment they pull, whichever tool they run. (For where these files resolve per tool, see [Configuration](/foundations/configuration/).)
+That last line is the hinge: the rules file describes standing context and points at the commands that load situational context on demand. Both live in your repo as plain files, version-controlled next to the code they describe - and because `AGENTS.md` has hardened from a single tool's convention into a cross-vendor standard, that grounding travels with them. A teammate's agent inherits the same rules and the same primer the moment they pull, whichever tool they run.
 
-## The failure mode: a primer that rots
+This is a different axis from [hierarchical rules](/blog/hierarchical-context/), which auto-load directory-scoped convention files based on whatever the agent is already touching - passive, triggered by the path it's on. A priming command is active: you fire it before the agent has touched anything, for one named recurring task, not for whichever directory it happens to wander into.
 
-Here's the catch, and it's the honest cost of the technique. A priming command hardcodes paths, and hardcoded paths drift. You rename `retry.ts` to `backoff.ts`, you split `billing.service.ts` into three files, you move a module - and the primer keeps confidently loading what's no longer there. Now it's worse than nothing: it either errors out or, more insidiously, primes the agent with a *partial* set and a false sense of completeness, which is exactly the polluted-window problem the primer was supposed to prevent.
+**Rules answer "what's always true." A priming command answers "what does this specific, recurring task need," on command.**
 
-The discipline is to treat the command as code that describes code, and keep them adjacent. When you refactor a module's layout, the primer is part of the blast radius - update it in the same commit. The advantage of these living as plain files in the repo is precisely that they show up in review: a teammate who sees `src/features/$module/$module.service.ts` in the diff next to a service file you just deleted has a shot at catching the rot. A primer you never revisit decays into a liability, the same way a stale comment does. The technique earns its keep only if the map stays true to the territory.
+## The numbers, run out
 
-## Reserve discovery for when you're actually lost
+Here's the toy scaled across a batch of sessions on the same recurring task:
 
-Here's where the contrarian frame earns itself: this is not "never let the agent explore." Probabilistic discovery is the *correct* tool when you genuinely don't know where the context is - a bug in code you've never touched, a dependency you're seeing for the first time, an integration whose seams you can't predict. In that regime, the agent's ability to grep, read, and self-correct is exactly what you want. Forcing a deterministic primer there would just be guessing badly in advance.
+| Sessions | Probabilistic discovery | The addressed load | Saved | % saved |
+|---:|---:|---:|---:|---:|
+| 1 | 12,000 | 6,200 | 5,800 | 48.33% |
+| 2 | 24,000 | 12,400 | 11,600 | 48.33% |
+| 3 | 36,000 | 18,600 | 17,400 | 48.33% |
+| 5 | 60,000 | 31,000 | 29,000 | 48.33% |
+| 10 | 120,000 | 62,000 | 58,000 | 48.33% |
 
-The error is using discovery as the *default* - paying full search cost on tasks where the search was already solved. The discipline is knowing which regime you're in:
+Every row lands at 48.33%. **There is no negative first row to climb out of; the line is flat starting with the first session.** That's the tell that this is a different mechanism from a cached map, not a variation on one: there's no cost to amortize, because nothing was paid once and spread across later runs. The three file paths were free to write down. They were already in your head.
 
-- **You know the files** → deterministic primer. One shot, clean window.
-- **You don't** → let the agent discover. Spend the turns, that's what they're for.
+**A break-even table has a first row you have to survive. This one doesn't have a first row to survive.**
 
-Most of your daily work is the first case wearing the costume of the second. You touch the same modules, the same layers, the same handful of files, week after week. And this is the whole game of context engineering in miniature. The agent is capable but contextless - it can read anything, but it doesn't know *your* repo, your conventions, which four files this recurring task touches. You're the opposite: narrow, but you know exactly where the bodies are buried. The primer is how that asymmetric knowledge crosses the gap. Probabilistic discovery makes the agent re-earn your map from scratch every session; a priming command hands it over directly. You're not making the agent smarter - you're stopping it from rediscovering, at search-cost, the one thing you already knew for free.
+## What this doesn't solve
 
-Discovery is for the unknown. For everything you already know, stop making the agent guess - hand it the map.
+Two failure modes are worth taking seriously, because the technique earns nothing if you ignore them.
+
+**The primer rots.** A priming command hardcodes paths, and hardcoded paths drift. Rename `retry.ts` to `backoff.ts`, split a file, move a module, and the command keeps confidently loading what's no longer there - either it errors out, or worse, it loads a partial set with a false sense of completeness, which is exactly the polluted-window problem it was supposed to prevent. **A confidently wrong primer is worse than no primer, because the agent has no reason to doubt it.** The discipline is to treat the command as code that describes code: when you refactor a module's layout, the primer is part of the blast radius, updated in the same commit, so a reviewer who sees the old path in the diff has a shot at catching the rot before it ships. [Your AGENTS.md Is Write-Once Agent Memory](/blog/your-agentsmd-is-write-once-agent-memory/) covers the sibling version of this problem for rules files; the file-selection version is the same discipline, applied to a shorter, more specific document.
+
+**Discovery is still correct when you're actually lost.** Nothing here argues for never letting the agent explore. Probabilistic discovery is the right tool for a bug in code you've never touched, a dependency you're seeing for the first time, an integration whose seams you can't predict. **Forcing a deterministic primer onto unfamiliar code is guessing badly in advance, dressed up as certainty you don't have.**
+
+There's a third boundary worth stating plainly, because it's the one that makes this piece different from its closest sibling rather than a rehash of it. Cache the Explore has an honest bad-trade case at session one: on a single run, its disposable map is a straight loss, because you pay to explore once and then pay again to write and read a summary nobody needed twice. The addressed load has no equivalent bad-trade case at session one. Its only cost is the one-time human effort of typing out a file list you already carry in your head - there's no meta-cost of writing a disposable map, because there's no map, just the three paths you already knew.
+
+Losing state across a long, multi-session build is a different problem entirely, covered by [The Relay, Not the Window](/blog/the-relay-not-the-window/) and [Treat the Plan File as External Memory](/blog/treat-the-plan-file-as-external-memory/), and scope drift on what you're building in the first place is covered by [Destination and Journey](/blog/destination-and-journey/). None of those are about which files to read first for one task; they're about carrying progress or intent across many sessions.
+
+**The only cost this technique has is the one you already paid, once, just by knowing your own repo.**
+
+## Close
+
+Put the result back on the table one more time. 12,000 tokens of probabilistic discovery, 6,200 of addressed load, 5,800 saved, every single session, starting with the first one. That's the spoiler claim from the top of this piece, reconciled: a 48% cut that doesn't need five runs, or even two, to be worth it. Row one already wins here, unlike a cached exploration map, because nothing was paid once and amortized. The human's knowledge was free to write down, and the primer just skips the detour every time it's used.
+
+Three things this piece hands forward instead of resolving. The rot problem named above is real and unfinished: a priming command is a committed artifact with no built-in staleness check, the same shape as a dated research file, and the same fix likely applies - a hook that fails the run when the primer's file paths don't resolve, rather than trusting a human to notice before the agent does. There's a newer question alongside it: packaging a primer as a [skill](/foundations/skills/) instead of a bare slash command bundles the procedure with the file list into one shareable, versioned unit, rather than a prompt template a teammate has to know exists. And there's a third, further out: research on automatic, model-driven context selection, letting the model decide and prune its own window, is active work in 2026. Whether that automation solves the problem this piece solves, or just reintroduces the guess under a different name, running inside the model instead of in front of it, is the open question a probabilistic-discovery generation of tools is about to answer.
+
+**Discovery is for the unknown. For everything you already know, stop making the agent guess, and stop making it scan. Hand it the address.**
 
 ---
 
-For the mechanics per tool, see [Slash commands](/foundations/slash-commands/) for parameterized priming, [Rules](/foundations/rules/) for standing context, and [Configuration](/foundations/configuration/) for where these files resolve.
+**About the numbers.** The token prices (search 300, read 2,000, reasoning step 200), the two searches, the two dead-end reads, and the three correct files are toy inputs, chosen to be hand-checkable rather than measured from a real session. The prices are reused from [Cache the Explore](/blog/cache-the-explore/) so the two pieces share one price list, and the 22,800 and 950 figures quoted in the compression comparison are that post's toy numbers, carried across for the same reason. Every total, the 5,800 saved, the exact-match check, and every row of the master table follow from those six inputs by arithmetic and were verified with a script before publishing. Swap in your own token counts for your own repo and the shape holds: the correct-file subtotal stays identical across both paths, the detour is still exactly what gets deleted, and the percentage saved is still flat from session one.
+
+For the mechanics per tool, see [Slash commands](/foundations/slash-commands/) for building the primer, [Rules](/foundations/rules/) for the standing context it complements, and [Configuration](/foundations/configuration/) for where these files resolve.

@@ -1,128 +1,222 @@
 ---
-title: "Stop writing rules for failures your agent never commits."
-description: "Most AGENTS.md files defend against imagined mistakes. Mine your own transcripts, count what the agent actually gets wrong, and let that decide what to write."
+title: "Weighting by blast radius never touches your #1 rule - it drops your #2 rule to dead last."
+description: "Raw frequency tells you which failures are real. It still ranks them wrong. Weight each promoted category by what one instance costs, and the rule that looked #2 by count drops to last."
+seoTitle: "Write AGENTS.md From Your Transcripts, Not Imagined Failures"
+seoDescription: "Counting corrections finds your real failures. Weighting each one by what it costs reorders which rule goes first - and the #2 slot is not what raw count says."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, rules, headless, subagents]
 draft: false
 ---
 
-Open any team's `AGENTS.md` and the first rule is almost always "do not hallucinate APIs" or "do not invent functions that don't exist." It's a reasonable fear. It's also probably not your top failure. You wrote it because the internet told you to, not because you counted.
+Open your rules file and read the first rule. In a lot of files it is some version of "do not invent functions that don't exist." If yours has that line, ask where it came from. You wrote it because somebody said agents do that, and it sounded expensive enough to spend the file's best position on. You did not write it because you counted it happening to you.
 
-That's the bug. **Your rules file is a defense against the failures you imagined, not the ones you committed.** And imagined failures and real failures are different distributions - sometimes wildly so. The agent that you're sure hallucinates APIs might actually be fine on APIs and instead reach for `npm install` on a pnpm repo, or write tests in the wrong framework, or quietly delete your error handling to make a transcript look clean. You'll never know which, because intuition doesn't count. It anchors.
+The file deserves better sourcing than that. The agent reads it at the start of every session, before it reads any of your code, and every line in it spends tokens in every session that follows. What goes in the file, and in what order, is one of the few decisions that touches every run the agent will ever make. Inherited fear is a poor way to spend it.
 
-Here's the question worth holding onto: if you ranked every correction you made this week by frequency, what would actually sit at the top - and would it be anywhere on your rules file?
+The inherited fear has a name here: **the imagined failure** - the failure you defend against because you were told to, never because you observed it. Standing against it is the sentence this piece spends its length deriving: **your rules file defends against the failure you imagined when you wrote it, while your agent's actual mistakes come from a distribution nobody has tallied.** The derivation runs in two steps, because the count has its own blind spot. Once you tally the real distribution, raw frequency hands you the wrong order for the rules you will write, and fixing that takes exactly one more question.
 
-## Your transcripts already contain the answer
+Here is the whole piece as one claim, so you can check it as you go. On one repo's 14-day window - 24 sessions, 20 logged corrections - weighting each failure category by what a single instance costs leaves the #1 rule exactly where counting put it, and drops counting's #2 rule to dead last. A category that happened 2 times finishes ahead of one that happened 3. Both halves of that claim land in tables you can check with a pencil.
 
-The normal state is writing [rules](/foundations/rules/) from vibes. You hit an annoying mistake, you add a line. Three weeks later the file is forty lines of accumulated grievances with no sense of which line earns its place. Nobody re-reads it. The agent re-reads it on every single turn - and you've handed it a priority order that reflects your recency bias, not its behavior.
+## Check what you'd bet on, before you count anything
 
-The fix is to treat your own agent sessions as a dataset. Every transcript is a log of decisions; every correction you typed is a labeled failure. You already paid for this data. You just never analyzed it.
+Don't open a terminal. From memory - no scrolling, no `grep` - write down the last five times you stopped your agent mid-move and said "no, do it this way instead." Five lines, your own words, the way you would tell a teammate.
 
-Pull the raw material first. Most agents persist sessions as JSON or JSONL on disk:
+Then ask two questions about your five. Do any two of them describe the same underlying mistake? And if you had to bet money on which failure repeats most this month, would you bet on one of your five, or on the one the internet warns about - the hallucinated API, the invented function, the failure everyone assumes and nobody has ever measured?
 
-```bash
-# Claude Code keeps sessions per-project under ~/.claude/projects/
-find ~/.claude/projects -name '*.jsonl' -mtime -14 > /tmp/recent-sessions.txt
-wc -l /tmp/recent-sessions.txt
-```
+If your five are five unrelated one-offs, or you can already name your top failure with confidence and it sits on line one of your file, you already have what this piece produces. Close the tab.
 
-Two weeks of work is usually enough to see structure. You're not chasing statistical significance - you're chasing the difference between "I think it hallucinates" and "nineteen of my forty-one corrections were the same import-style mistake."
+If the exercise felt shaky - you got to three and stalled, or your bet drifted toward the famous failure instead of your own list - keep reading. The guess is unreliable for a reason that has nothing to do with laziness. Memory doesn't sample your corrections evenly. It keeps whatever happened most recently or most dramatically, and it drops whatever was quiet and repetitive. A correction you made every day for a week, two boring seconds each, loses to the one spectacular thing the agent did last Tuesday. That's not a character flaw. It's how recall works. A tally doesn't have that bias, and that is the entire case for building one.
 
-## Code the failures the way a researcher codes interviews
+**Recency and drama pick your bet. Only a tally can check it.**
 
-Borrow a method from qualitative research: **open coding, then axial coding.** It sounds heavy. It's an hour.
+## One window, one repo, twenty corrections
 
-**Open coding** is the first pass: read each point where you corrected the agent, and tag it with a short label in your own words. Don't pre-decide the categories. Just name what you see.
+Fix one case and carry it to the end. **orders-api**: a mid-sized order-fulfillment service, a pnpm-and-vitest monorepo, the kind of repo that exists at a hundred companies under a different name. One agent, working in it for 14 days.
 
-```text
-session 03  →  ran `npm` on a pnpm repo
-session 03  →  imported lodash when repo bans it
-session 07  →  swallowed the exception, returned null
-session 07  →  ran `npm` on a pnpm repo
-session 11  →  wrote vitest test in a jest project
-session 11  →  ran `npm` on a pnpm repo
-```
+The window's constants, stated once. **24 sessions.** 20 **corrections** - the moments a human stopped the agent and redirected it, and the unit of measurement for everything below. Twenty-four sessions across 14 days is a little under two a day: steady, real traffic, not a weekend side project. Twenty corrections against 24 sessions is one per 1.2 sessions: often enough that fixing the causes is worth an evening, not so often that every session is a fight.
 
-**Axial coding** is the second pass: collapse the raw labels into categories and count. The labels above aren't six problems. They're three, and one of them is winning:
+The repo starts with a rules file, the way most repos do: copied from a template, never revisited. Its first line reads "Never invent APIs or functions that don't exist."
 
-```text
-wrong-package-manager   ███████  7
-wrong-test-framework    ███      3
-silent-error-swallow    ██       2
-banned-dependency       ██       2
-api-hallucination       ▏        0
-```
+Now the confrontation, before any method appears. Over the 24 sessions that followed, the failure line one defends against happened zero times. The failure that happened seven times - by far the most frequent thing this agent actually did wrong - appears nowhere in the file. The strongest position in the file was spent on something that never occurred, and the real top failure had no line at all.
 
-There it is. The failure the internet warned you about scored zero. The failure eating your afternoons - the agent reaching for `npm` because that's the statistical default of its training data - never made it onto a single rules file in your org, because it never felt dramatic enough to write down. **The count promotes it. Your intuition would have buried it under "don't hallucinate."**
+Stamp the data before going further, because the piece leans on it hard. orders-api is fictional. The 24 sessions, the 20 corrections, every label, the template file, and the severity scores later are invented for traceability: sized to be checked with a pencil, and sized to look like a real two-week slice rather than a toy so small it proves nothing. No number below is a measurement of a real team's transcripts. Fourteen days is the window because it is long enough for a real pattern to repeat and clear the threshold you will meet two sections down, and short enough that the categories describe this month's repo rather than last quarter's.
 
-## Promote by frequency, and bring the receipts
+**The file defended the failure that never happened, and had no line at all for the one that happened seven times.**
 
-Now the rules file writes itself, in priority order. The top category becomes the top rule, stated as a hard constraint:
+## Name what you saw before you decide what it means
 
-```md
-## Package management
-- This repo uses pnpm. NEVER run npm or yarn. Install with `pnpm add`.
-- The CI lockfile is pnpm-lock.yaml. A package-lock.json in a diff is a bug.
-```
+The method arrives, and it is borrowed rather than invented. This is **open coding**, the first half of a two-pass move that qualitative research has used for decades. The same two-pass shape shows up wherever a team reads a pile of model output and turns it into counts: support transcripts, model answers, failed agent runs. Say that plainly, because the method is established - the only thing this piece adds is what to do with the tally once you have it.
 
-But a rule is just an assertion, and assertions are the weakest form of context. The second-strongest move is to attach the *actual failing example* as a few-shot - the agent learns more from one concrete wrong→right pair than from three sentences of prohibition:
+The pass itself is one rule. Read each of the 20 corrections once. Tag it with a short label in your own words, describing an observable action. Then stop. Do not decide the categories yet.
 
-```md
-## Error handling
-- Do not swallow exceptions to produce clean output.
-  WRONG:  try: do_thing() except: return None
-  RIGHT:  let it raise, or raise a typed error with the original cause
-```
+Labels describe what happened, never how bad it was. "ran npm install on a pnpm repo" is a label. "agent was careless" is a verdict, and verdicts can't be counted, compared, or folded.
 
-Frequency decides what to write. The transcript supplies how to write it. You're no longer guessing at the failure or the phrasing - both come straight off the evidence.
+The order is the point. Start from categories - "these are probably all package-manager issues" - and you will sort each correction into whichever bucket you already believe is biggest. That is the same recency-and-drama bias the self-test just caught in you, now dressed up as analysis. The label pass exists to keep your prior out of the data.
 
-And ordering is not cosmetic. The agent re-reads this file on every turn, and the top of the file gets the most attention before the context window fills with code, diffs, and tool output. A rule buried at line thirty competes with everything you've loaded since. Putting the highest-frequency failure first isn't tidiness - it's spending your scarcest resource, the agent's attention near the top of the prompt, on the mistake it's most likely to make next.
-
-## Frequency is the default sort, not the only one
-
-Here's the obvious objection: frequency under-weights the rare catastrophe. In the table above, `silent-error-swallow` scored 2 and `wrong-package-manager` scored 7 - but an npm slip gets caught by a lockfile check in CI, while a swallowed exception ships to production and surfaces three weeks later as a null where a value should be. Counting alone would rank the cheap, loud failure above the expensive, quiet one.
-
-So don't sort by raw count. Sort by count × blast radius. Add a second column - how bad is one instance of this - and let the product decide the order:
+Here is the entire first pass on orders-api's window:
 
 ```text
-                        count   cost   rank
-silent-error-swallow      2      ▲▲▲    high
-wrong-package-manager     7      ▲      med
-wrong-test-framework      3      ▲      low
-banned-dependency         2      ▲▲     med
+ran npm install on a pnpm repo
+ran npm install on a pnpm repo
+ran npm run build instead of pnpm build
+ran npm install on a pnpm repo
+added a package-lock.json
+ran npm install on a pnpm repo
+ran npm test instead of pnpm test
+wrote a jest test in a vitest repo
+used jest.mock in a vitest file
+wrote a jest test in a vitest repo
+caught the exception and returned null
+wrapped the call in try/catch, swallowed it
+imported lodash, repo bans it
+imported moment, repo bans it
+picked jest because the task said 'add a test' with no framework named
+used tabs instead of spaces
+forgot to update the changelog
+left a console.log in the diff
+imported across a monorepo package boundary
+force-pushed over a shared branch
 ```
 
-Frequency is still the default sort, for one reason: it's the cheapest signal you have, and it corrects the worst bias - writing elaborate rules for the zero-frequency fear while the real failures go unwritten. But once the count has pulled the actual failures out of the noise, severity decides which of *them* goes first. A failure that happens twice and corrupts data outranks one that happens seven times and gets linted away. The count is your prior, not your verdict.
+Something is visible before any folding: **four of those twenty lines are the same seven words.** Your memory would never have produced that fact. Recall keeps the force-push; the tally keeps the npm install.
 
-## When the correction isn't the agent's fault
+**Label first, categorize second, or the fold inherits the guess you were trying to check.**
 
-Not every correction is a labeled agent failure, and treating them all as one will pollute your rules file with phantom defects. Two cases to filter out before you start counting.
+## Fold the labels, then filter the fold
 
-First, the ambiguity case. You told the agent "add a test," it picked vitest in a jest repo, and you corrected it. That's not misbehavior - it's a missing piece of context the agent had no way to know. The rule you write is the same (`this repo uses jest`), but the framing matters: you're filling a gap, not policing a defect, and that reframe stops you from larding the file with adversarial "NEVER do X" lines for things the agent would have gotten right with one more sentence of context.
+The second pass is **axial coding**: collapse the raw labels into a small set of named categories and count each one. But before any counting, two kinds of correction have to come out of the pile, because folding them in quietly is how a rules file ends up punishing the agent for things that were never its fault.
 
-Second, the sample-size case. A label that appears once isn't a pattern; it's noise. The method only earns its keep above a threshold of repetition - you're looking for the failure that recurs, not the one-off you happened to notice. If two weeks of sessions produce fifteen corrections and all fifteen are different, you don't have a rules problem. You have a sample-size problem, or your own prompting is the variable that's changing run to run - and no AGENTS.md rule fixes an inconsistent operator. Wait for the distribution to show structure before you write to it.
+First, the ambiguity case. "Picked jest because the task said 'add a test' with no framework named" is not the agent guessing wrong. It's a gap you left open: the task didn't carry the one fact that decided the answer. The rule you'd write afterward is identical either way - "this repo uses vitest" - but counting it as a defect is how people end up writing adversarial NEVER lines for things one more sentence of context would have fixed. One correction, out of the tally.
 
-## Make the analysis a loop, not a one-time ritual
+Second, the sample-size case. Five of the labels - the tabs, the missed changelog, the console.log, the package-boundary import, the force-push - each appear exactly once. A label seen once is **the noise floor of real work**, not a pattern yet. So the fold needs a **repeat threshold**: a category only counts once it has at least two instances. Two is not a magic number. It lines up with Anthropic's own guidance for CLAUDE.md, which says to add to the file when "Claude makes the same mistake a second time" (checked August 2026). Treat 2 as one reasonable floor, aligned with first-party guidance, that a noisier team might raise to 3.
 
-The reason most people never do this is that reading transcripts by hand is grim. So don't do it by hand. The coding pass is itself an agent task - and a perfect one for a [subagent](/foundations/subagents/), because failure analysis is exactly the kind of work you want isolated in its own context window, not polluting the session that's trying to ship code.
+What survives is 20 minus 1 minus 5: fourteen corrections, whose ten distinct raw labels fold into four named categories.
 
-Run it [headless](/foundations/headless/) on a schedule. Point an agent at the last two weeks of sessions, hand it the open-coding/axial-coding method as its instructions, and have it emit a ranked failure table plus proposed rule diffs:
+| category | count |
+|---|---:|
+| wrong-package-manager | 7 |
+| wrong-test-framework | 3 |
+| silent-error-swallow | 2 |
+| banned-dependency | 2 |
 
-```bash
-claude -p "Read the session transcripts in /tmp/recent-sessions.txt. \
-For every point where the user corrected the agent, open-code it with a short label. \
-Collapse labels into categories, count each, and output a frequency-ranked table. \
-For the top 3, draft AGENTS.md rules with a real wrong→right example pulled from the transcript." \
-  --output-format text > failure-report.md
+**Fourteen corrections, four categories, and two filters standing between the raw log and anything you would write a rule about.**
+
+## Rank them by count, the obvious way first
+
+With the fold done, do the obvious thing before any cleverness gets near the data. Sort the four categories by count. This is the ground truth every later table has to beat:
+
+| category | count | rank by count |
+|---|---:|---|
+| wrong-package-manager | 7 | #1 |
+| wrong-test-framework | 3 | #2 |
+| silent-error-swallow | 2 | #3 (tied) |
+| banned-dependency | 2 | #3 (tied) |
+
+Wrong-package-manager is #1 and it isn't close: **7 of the 20, more than a third of everything logged, in one category.** If you stopped reading here you would still be far ahead of the template file. This table alone tells you what the agent actually does wrong.
+
+Now add the row the internet told you to fear most. **api-hallucination: zero instances.** The failure occupying line one of the template file never happened once in 24 sessions. The failure everyone warns about first left no trace in this window at all.
+
+And hold one more row. **Wrong-test-framework: 3 instances, your #2 rule by raw count.** Remember that when the next table appears. **It does not survive.**
+
+## What one instance costs
+
+Frequency has a blind spot, and it sits exactly between the rows ranked #2 and #3. Look at what those two categories actually are.
+
+Wrong-test-framework is loud and cheap. The agent writes a jest test in a vitest repo; the runner refuses it within seconds; the fix is a one-line edit and the session carries on. Silent-error-swallow is quiet and expensive. The agent catches an exception and returns null; nothing fails; the diff looks done. It ships. Three weeks later somebody debugs a null where a value should have been, in production, long after anyone connected the bug to a correction in a session nobody re-read.
+
+Count treats those as 3 units against 2 units. It cannot tell them apart, because the difference lives somewhere the count never looks: in what one instance costs. So give the count a second column it can't fill in, and fill it in yourself. Score each category's **blast radius** - the cost of one instance - on a 1-to-3 **severity** scale, anchored on who catches it if you don't:
+
+- **1, loud and cheap.** Caught immediately, by CI or the test runner. Costs a rerun.
+- **2, caught eventually.** A lint pass, a slow review. Costs a delay.
+- **3, quiet and expensive.** Nothing catches it. It ships. Costs a production bug.
+
+The scale is invented for this window, like everything else here, and it is a judgment rather than a measurement - one engineer's 3 can be another's 2. What matters is what multiplying by it does to the order. Multiply count by severity, and sort by the product instead of the count:
+
+| category | count | severity | count × severity |
+|---|---:|---:|---:|
+| wrong-package-manager | 7 | 1 | 7 |
+| silent-error-swallow | 2 | 3 | 6 |
+| banned-dependency | 2 | 2 | 4 |
+| wrong-test-framework | 3 | 1 | 3 |
+
+There is the row you were holding. Wrong-package-manager doesn't move; at 7 instances it was always going to lead. Wrong-test-framework falls from #2 to dead last. Silent-error-swallow - 2 instances, less than a third of the leader's count - takes the #2 slot instead, because **2 × 3 = 6 beats 3 × 1 = 3**. Two quiet, expensive corrections outrank three loud, cheap ones the moment the cost of one instance enters the arithmetic.
+
+Call the move **the blast-radius sort**: count times severity, replacing raw count as the order you promote categories in. It gets named only now, after you watched the count's order fail in front of you, because it should not feel like cleverness. Once you have seen a paper cut and a slow leak counted as the same wound because they bled the same number of times, weighting them differently is the obvious correction.
+
+Two objections, answered here because either one ends the read if it waits. Why keep the count at all, instead of ranking by severity alone? Because severity with no frequency floor reopens the door the repeat threshold closed: a one-off scary mistake would outrank failures your repo produces weekly, and the imagined failure walks back in wearing a score of 3. And does a severity of 1 mean "ignore it"? No: wrong-package-manager keeps #1 at severity 1 because seven cheap failures still cost more in total than two expensive ones, 7 against 6. Severity demotes nothing on its own. It only reorders categories that raw count would have ranked by luck.
+
+**Frequency earns each category its place in the tally. Blast radius decides where it sits.**
+
+## Both orders, one table
+
+Put the two sorts next to each other. This is the table the rest of the piece works from, and the one the close comes back to:
+
+| category | count | severity | count × severity | rank by count | weighted rank |
+|---|---:|---:|---:|---|---|
+| wrong-package-manager | 7 | 1 | 7 | #1 | #1 |
+| silent-error-swallow | 2 | 3 | 6 | #3 (tied) | #2 |
+| banned-dependency | 2 | 2 | 4 | #3 (tied) | #3 |
+| wrong-test-framework | 3 | 1 | 3 | #2 | #4 |
+
+Read the two rank columns against each other. Exactly two categories changed position: silent-error-swallow moved up one, from a tie at #3 to #2 outright, and wrong-test-framework moved down two, from #2 to last. The tie at count 2 - silent-error-swallow against banned-dependency, indistinguishable to frequency - is broken by severity, toward the one that ships. And the spoiler from the top of the piece is now plain arithmetic: **2 instances beat 3, because 6 is bigger than 3**, and each of those is one multiplication.
+
+Check it, because checking it is the whole trust mechanism. Four additions turn 20 labels into the count column. Four multiplications turn counts into products. Two sorts produce the rank columns. Nothing is rounded, nothing is estimated, and no number in the table comes from anywhere but the 20 labels listed above. A pencil rebuilds the whole thing in a couple of minutes, and a script re-derived every figure before this was published.
+
+If all four rules get written anyway, does the order matter? It matters the day the file grows. The rules file has a budget, and crossing it shows: past a couple hundred lines, the file gets skimmed instead of read, and a skimmed rule is a rule you don't have. When the budget forces cuts, rank decides which lines survive. The rank has to be right before that pressure arrives, not after.
+
+**Both columns come from the same 20 labels. Only one of them is a plan.**
+
+## What this method doesn't do
+
+Real logs will not fold this cleanly. Twenty labels into four categories with one clean zero is a toy sized for hand-tracing. Expect labels that could sit in two categories, and categories that turn out to be two failures sharing a name. If you scale the coding pass past what you'll do by hand - a headless agent batch-labeling a month of transcripts - that messiness is exactly why a human spot-checks a sample of the judge's labels before anyone trusts the tally. Running that judge pipeline end to end, capture to verdict, is its own piece of work: [You already have labeled data](/blog/your-failed-agent-runs-are-labeled-data/).
+
+The severity scores are the softest numbers in this piece. Two engineers scoring silent-error-swallow a 2 and a 3 changes its rank, so have that argument out loud before the scores harden into a file every session loads. Don't let one person's private guess at blast radius outrank the team's counted frequency without a conversation.
+
+Don't run this on a trickle. If two weeks produces four or five corrections, you have anecdotes, not a distribution, and a ranking built on that sample is **a guess wearing math**. Fix them one by one and wait for a fuller window.
+
+The method also assumes its input exists. The 20 corrections were already sitting in a log when this piece opened; nobody here built that log. Capturing every session automatically, including the runs nobody watched, takes a hook and a pipeline, and that is the sibling post's subject, linked above, not this one's.
+
+It stops short of the last decision, too. A ranked category still has to land somewhere. Wrong-package-manager is a knowledge gap, so a line in the rules file fixes it. Banned-dependency is the agent knowing and doing it anyway, so it wants a [lint hook](/foundations/hooks/) that fails loudly, or a [permission deny](/foundations/permissions/) that makes the import impossible. Which surface for which failure is a routing question, and it has its own treatment in the same sibling post.
+
+Two boundaries while you edit. Rank decides the order of the lines; it does not decide how many lines you can afford, and Anthropic's docs put a number on that budget: target under 200 lines per CLAUDE.md, because longer files reduce adherence. Promote by rank; do not promote everything. And this method sets the file's first order only. It says nothing about a rule's later life - whether it keeps earning its tokens or quietly rots once the codebase moves on. That is [a different problem](/blog/your-agentsmd-is-write-once-agent-memory/).
+
+**Counting and ranking is one job of three: capture, rank, route. This piece is the middle one, on purpose.**
+
+## Write the file in the order the last column gives you
+
+The table once more, because it is the deliverable:
+
+| category | count | severity | count × severity | rank by count | weighted rank |
+|---|---:|---:|---:|---|---|
+| wrong-package-manager | 7 | 1 | 7 | #1 | #1 |
+| silent-error-swallow | 2 | 3 | 6 | #3 (tied) | #2 |
+| banned-dependency | 2 | 2 | 4 | #3 (tied) | #3 |
+| wrong-test-framework | 3 | 1 | 3 | #2 | #4 |
+
+Walk it into actual lines, top down:
+
+```text
+# orders-api - agent rules, in weighted order
+1. This repo uses pnpm. Never run npm, npx, or anything
+   that writes package-lock.json.
+2. Never catch an error and return null. Fail the request,
+   or log it and rethrow.
+3. Do not add lodash or moment. Utility helpers live in src/lib.
+4. Tests are vitest. Never import jest or jest.mock.
 ```
 
-Your rules file stops being a shrine to old fears and becomes a living readout of where this specific agent, on this specific codebase, keeps failing this specific team. When the distribution shifts - you fix the pnpm problem and test-framework drift moves to the top - the ranking shifts with it, and so does what you write next.
+Notice what the order bought. Three of those four categories are already caught by something cheaper than this file: CI catches the lockfile, the runner catches jest, lint catches lodash eventually. **The #2 line is the only one of the four that nothing else catches.** Raw count would have ranked it second-to-last; weighting put the file's one irreplaceable rule right after the leader. The order is the difference between that line sitting near the top or sitting near the cut line the day the budget bites.
 
-The gap between a capable agent and a useful one was never about the model. It's that the agent doesn't know your context, and the cheapest place to learn it is the record of every time it already got your context wrong. Count the corrections. The top of the list is your next rule.
+And the method's cost is close to zero, because the data was already paid for. You logged the 20 corrections once. The severity column is one judgment per category on a tally you already had: four decisions, half a minute, no second collection pass. Replacing the imagined failures with counted ones costs an evening. The weighting costs a minute on top of it.
 
-Stop defending against the failure the world fears. Defend against the one your own logs keep printing.
+Run the same two passes on your own log and every particular will differ: your categories, your counts, your zero row. The row that flips is very unlikely to be wrong-test-framework. None of that changes the method. Count, then multiply by what one instance costs. The mechanism doesn't care which four categories show up; it only cares that you ran both passes instead of stopping at the first.
+
+What the method leaves open are its own next two questions. Somebody has to keep the log full without you collecting corrections by hand every two weeks, and somebody has to decide which surface carries each promoted row: the line, the hook, or the deny. Both questions have answers in [one place](/blog/your-failed-agent-runs-are-labeled-data/) - the session-end hook that fills the log, and the routing table that splits each row by the failure's shape. That is where to go next.
+
+**The last column is the order to write the file in. The count column was only how you earned the right to trust it.**
 
 ---
 
-For the per-tool mechanics, see [Rules](/foundations/rules/) for how the file is loaded each turn, [Subagents](/foundations/subagents/) for isolating the analysis pass, and [Headless & CI](/foundations/headless/) for running it on a schedule.
+**About the numbers.** orders-api is fictional, and so is every number attached to it: the 24 sessions, the 14 days, the 20 corrections, each raw label, the template file's first line, and the 1-to-3 severity scale are toy data, invented for traceability and sized to be checked with a pencil. They are not a measurement of any real team's transcripts. The arithmetic - 20 corrections folding into 14 counted instances across 4 categories, plus 1 ambiguity case and 5 singletons filtered out; the count × severity products; and both rank orderings - follows exactly from those stated inputs and was re-derived with a script before publishing. Two lines are quoted from Anthropic's Claude Code documentation, the memory page: add to CLAUDE.md when "Claude makes the same mistake a second time," and "target under 200 lines per CLAUDE.md file." Checked August 2026; those docs are living pages, so treat the wording as of that date.
+
+For the per-tool mechanics, see [Rules](/foundations/rules/) for what a promoted line looks like in each agent, [Hooks](/foundations/hooks/) and [Permissions & sandboxing](/foundations/permissions/) for the surfaces the routing question chooses between, and [You already have labeled data](/blog/your-failed-agent-runs-are-labeled-data/) for the capture hook and the routing table this piece hands forward.

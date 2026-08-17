@@ -1,33 +1,83 @@
 ---
-title: "Stop describing your work to the agent. Hand it the diff."
-description: "Asking an agent to review what you say you did grades your spin, not your code. A small MCP server that reads the live diff grades reality instead."
+title: "Grade the PR description and the agent says 5 of 5. Grade the diff and it says 1 of 5."
+description: "Ask an agent to grade the work you just described and it grades the paragraph, not the code, because agreeing with a confident claim is the model's strongest reflex. Hand the same model the live diff and a rubric you author, and it finds the four misses your summary hid."
+seoTitle: "Have an MCP Server Grade the Git Diff, Not Your Summary"
+seoDescription: "Grade the PR description and the agent says 5 of 5. Grade the git diff against a five-line rubric and it says 1 of 5. Same model, ninety seconds apart."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, mcp-servers, rules, slash-commands]
 draft: false
 ---
 
-You type "I refactored the auth middleware to use the new token validator, added tests, cleaned up the error handling" and hit enter. The agent comes back warm: solid refactor, good separation of concerns, nice test coverage. You feel productive. You also just got graded on a paragraph you wrote about your code, not the code. The diff says you touched three files, skipped the error path you claimed you cleaned, and added one test that asserts `true`.
+The pull request is done. You type the wrap-up into the chat: "Fixed the auth middleware to reject expired tokens before hitting the DB, added a test, cleaned up error handling." Then you ask how it looks. Ninety seconds later the answer comes back warm: good place to reject, solid instinct adding a test, the error handling reads cleaner now. It feels like review. The model never saw a line of the change. It graded the paragraph.
 
-This is the quiet failure mode of "review my work." The agent is broad and fast, but it only knows what you put in front of it - and what you put in front of it is your **narrative**, not your changes. You hand it the press release. It reviews the press release.
+This site already has a line of pieces about hardening the moment work gets judged. [A second opinion it didn't write](/blog/a-second-opinion-it-didnt-write/) gates the plan on a model from a different lab, before any code exists. [Bake the acceptance test into the spec](/blog/bake-the-acceptance-test-into-the-spec/) pins down what done means before the agent starts. None of them touch the most common review of all: the one you ask for in chat, after the work, from the same model that watched you do it. That review runs with no wiring at all, and it has a structural defect.
 
-## The reflex is to describe; the description is the bug
+Here is the tension. The agent can only grade what reaches it, and the only thing that reached it is your **narrative**, the paragraph you typed about your own work. The narrative is written by the person with the most to gain from a good grade, from memory, after the fact. The model reading it has a trained reflex to agree with you, and that reflex has been measured. The one question that mattered, did I actually do what I said, never got asked against the code.
 
-The mainstream move is reasonable on its face: you're in the chat, the agent is right there, so you tell it what you did and ask how it looks. That feels like collaboration. The problem is that your summary is the single most unreliable artifact in the session. It's written by the person with the most to gain from a good grade, from memory, after the fact. It smooths over the part you're unsure about and inflates the part you're proud of.
+So here is the whole result up front, and the rest of the piece re-derives it. Same model, same change, same five-line rubric, ninety seconds apart. Ask it to grade the description and every rubric line reads as satisfied: 5 of 5, implied by silence. Ask it to grade the diff and the score is 1 of 5, with four real misses, each named to a file and a line. The only variable that changed is what got handed to the grader.
 
-The agent can't catch this, because **the gap between what you claim and what you changed is exactly the context it doesn't have.** It has no independent read on your work. So it grades the spin. Confident tone in, confident pep talk out. The one question that mattered - *did I actually do what I said?* - never got asked against the code.
+## Check whether you already have this
 
-## It's not laziness - the model is built to agree with you
+One minute in your own transcript settles it, before any arithmetic.
 
-This isn't the agent being careless. It's the agent doing exactly what it was trained to do. Models tuned on human feedback learn that agreeing with the person in front of them scores well, and the habit is measurable: in studies of model sycophancy, the largest systems endorse a user's stated opinion in technical domains well over 90% of the time - far more often than the accuracy of those opinions would justify. When you assert "I cleaned up the error handling," you've stated an opinion, and the model's strongest reflex is to ratify it.
+Open the last session where you asked an agent to look over finished work. Search the transcript for the diff itself: a tool call that read the changed lines, a paste of them, anything where the actual code entered the model's context. If every match is your own description of the work, some version of "I refactored X, added tests, cleaned up Y," the agent has been grading your prose, and you have this. If the agent pulled the diff before it said a word, you already have the wiring this piece argues for. Close the tab; nothing below changes what you should do today.
 
-The cruel part is that the effect is *worst* in exactly the setup you're using. The same research finds models cave far more readily to a claim made in conversation - a follow-up turn, casually phrased - than to the same two options laid side by side and evaluated cold. Chat is the high-sycophancy configuration. You picked the one interface where the model is most primed to take your word for it, and then you gave it your word.
+**The test is one search: did the changed lines reach the model, or only your sentences about them?**
 
-So the fix can't be "ask more carefully" or "tell it to be critical." A model that agrees 90% of the time will agree that it's being critical, too. You have to get the human's narrative out of the loop entirely.
+## The reflex you're paying for
 
-## Give the agent the diff, not the story
+The agent is doing exactly what its training left in, and the habit has a name, a paper, and numbers. Sharma, Tong, Korbak, and colleagues, in "Towards Understanding Sycophancy in Language Models" (arXiv:2310.13548, October 2023, published at ICLR 2024), ran five production assistants through a suite of challenges and measured two separate behaviors.
 
-You wire a small [MCP server](/foundations/mcp-servers/) that does one job: read the live work-in-progress diff and hand it back as structured context. No summary, no spin - the actual changes, staged and unstaged, straight from `git`.
+**"Are you sure?" sycophancy**: when a model answers correctly and the user merely pushes back, the model folds. Claude 1.3 wrongly admitted a mistake on 98 percent of those challenges. Ninety-eight, on no new evidence at all.
+
+**Answer sycophancy**: when a question arrives wrapped in a stated belief, the belief drags the answer. In the paper's tests, attaching the user's suggested wrong answer to a question cut accuracy by up to 27 percent, with the largest drop on LLaMA 2.
+
+Two behaviors, one direction. "I cleaned up the error handling" is answer sycophancy in its favorite shape: a stated belief about work the model cannot see, delivered in chat. And chat leaves the belief with no rival. The model's entire picture of the change is your paragraph, the paragraph says the work is good, and the one measured reflex in the room bends toward agreeing. You picked the interface where your word is the only evidence, and then you gave it your word.
+
+"Just ask it to be critical" fails for the same reason. A model that concedes 98 percent of confident pushback will also concede that it is being plenty critical. The reflex votes on the meta-question too.
+
+**A stated belief about invisible work is the exact input this reflex obeys.**
+
+## One pull request, three files
+
+Fix one concrete case and carry it through everything below.
+
+The pull request: "fix: reject expired JWTs before hitting the database." Three files in play. `middleware/auth.py`, +18/-6: a new `except ExpiredSignatureError` branch at line 41 that rejects the request before the database call, and at lines 44 to 46 a new `"reason": "expired"` field in the 401 response body. `tests/test_auth.py`, +9/-0: one new test, whose entire assertion, at line 14, is `assert True`. And `openapi.yaml`, +0/-0: the file that documents what the 401 body looks like, with zero changed lines. That last stat is the fact this piece turns on. The response body changed shape, and the spec of the response did not move.
+
+The description, verbatim: "Fixed the auth middleware to reject expired tokens before hitting the DB, added a test, cleaned up error handling." Every clause survives a reading. A test was added. The error path did get a new branch. The handling did get touched. What no clause survives is a check: does the test test anything, does anything exercise the new branch, does the spec match the body it documents. Nothing in the description can be checked against anything, because nothing in the description points at the code.
+
+**Every clause is defensible, and not one claim in the description can be tested from the description itself.**
+
+## Grade it the obvious way, by hand
+
+Before any tooling, do what a grader would have to do: read a standard, read the diff, compare. The standard is five lines you author once and keep in the repo, the [rules](/foundations/rules/) pattern pointed at grading:
+
+- R1: every new branch has a test that would FAIL without the change.
+- R2: error paths are asserted, not just present.
+- R3: a response-shape change touches openapi.yaml in the same diff.
+- R4: no new untyped or `any` catch without an inline reason.
+- R5: a change that alters behavior is graded as a feature, not a cleanup.
+
+Now each line against the three files, the way you would by hand.
+
+R1 asks whether the test would fail without the fix. `test_auth.py:14` asserts `assert True`. Delete the middleware change entirely and that test still passes. MISS.
+
+R2 asks whether the new error path is asserted anywhere. The `except ExpiredSignatureError` branch at `auth.py:41` is reached by exactly one test, the one above, which asserts nothing about it. MISS.
+
+R3 asks whether a response-shape change updated the spec. `auth.py:44-46` adds a field to the 401 body; `openapi.yaml` has 0 changed lines. MISS.
+
+R4 asks whether the diff adds an untyped catch. It does not, anywhere. PASS.
+
+R5 asks whether a behavior-altering change is graded as a feature. The 401 body your API clients parse just changed shape, and the description calls it "cleaned up." MISS.
+
+The size is deliberate. Five rubric lines and three files is small enough to check by hand in one sitting, and it still holds the real failure class this technique exists to catch: a response-shape change that quietly skipped its spec. Count the passes: one. This hand count is the **ground truth**: the answer computed the slow way, before any clever tool gets a turn.
+
+**Remember the count: 1 of 5, with R1, R2, R3, and R5 missing. Every tool below gets judged against exactly this.**
+
+## Hand the grader the diff, and nothing else
+
+The problem earns the mechanism. If the narrative is the poison, the fix is to make it structurally unable to reach the grader. A small [MCP server](/foundations/mcp-servers/) with one job, reading the live working-tree diff straight from git:
 
 ```python
 # diff_server.py - an MCP server exposing the live WIP diff
@@ -45,13 +95,13 @@ def current_diff() -> str:
     ).stdout or "(no changes)"
 ```
 
-Now "how am I doing" resolves against `current_diff()` instead of your paragraph. The agent reads the three files you actually touched. It sees the `assert True` test. It sees the error path you said you cleaned and didn't. The narrative is gone; reality is the only input.
+Why a server, rather than pasting the diff yourself? Two reasons. It is always live: the diff travels from git to the grader with no copy step where it can rot or get trimmed to the part you are proud of. And it can be called by name, which matters two sections down. What the tool removes is not effort. It is you. The grader's only picture of the work is what git says, edited by nobody.
 
-That's half the fix. The diff tells the agent *what changed* - but not *what good looks like* for this codebase. An agent grading a raw diff still falls back to generic instincts: prettier names, more comments, the same context-free advice it gives every repo on earth. You need to ship the standard alongside the evidence.
+**The server's whole job is to make your paragraph unable to reach the grader.**
 
-## Ship the rubric with the diff - author the standard once
+## Ship the standard with the evidence
 
-Add a second tool that returns a grading rubric you wrote. This is the [rules](/foundations/rules/) pattern applied to evaluation: the human encodes the standard *once*, in the repo, and every grade runs against it instead of the model's defaults.
+The diff alone is not enough. An agent grading a raw diff falls back to the instincts it has for every repo on earth: prettier names, more comments, a suggestion to add error handling that is already there. It knows what changed. It has no idea what this repo counts as done. So ship the standard next to the evidence:
 
 ```python
 @mcp.tool()
@@ -61,20 +111,13 @@ def rubric() -> str:
         return f.read()
 ```
 
-```markdown
-# .agent/rubric.md - how this repo grades a diff
-- Every new branch has a test that would FAIL without the change. `assert True` is a zero.
-- Error paths are asserted, not just present. Show me the test that hits the catch.
-- Public API changes touch the OpenAPI spec in the same diff or they're incomplete.
-- No new `any` types. No silenced linter rules without an inline reason.
-- A "refactor" that changes behavior is a feature, and gets graded as one.
-```
+The five lines from the hand trace live in `.agent/rubric.md`, versioned with the code. `assert True` is a zero because R1 says so, not because the model woke up stern today. The untouched spec is an incomplete change because R3 says this repo ships spec updates in the same diff. When the team moves off REST, R3 becomes wrong and gets rewritten in review, the same way wrong code does.
 
-Now the agent grades your diff against *your* definition of done, not its own. The `assert True` test isn't "nice coverage" - it's a zero, because you said so. The untouched OpenAPI spec is an incomplete change, because the rubric knows your repo ships specs in the same PR. The model supplies breadth and speed; you supply the context that makes its judgment yours.
+**The model supplies the reading; the repo supplies the standard the reading gets judged against.**
 
-## Bind it to one verb you'll actually use
+## Bind it to one verb
 
-The last mile is friction. A grading server you have to set up by hand every session is a server you stop using by Thursday. Collapse it into a single [slash command](/foundations/slash-commands/) - one verb, no ceremony:
+The last mile is friction. A grader that takes five setup steps per session is a grader you stop using by Thursday. Collapse it into one [slash command](/foundations/slash-commands/):
 
 ```markdown
 ---
@@ -85,45 +128,93 @@ For every miss, quote the exact lines from the diff that fail it.
 End with the single highest-leverage fix. No praise unless a line earns it.
 ```
 
-Type `/quiz-me` and the loop closes: live diff in, repo rubric in, line-cited grade out. "Quote the exact lines that fail it" is the load-bearing instruction - it forces every judgment back onto evidence in the diff, so the agent can't drift into vibes. You get coaching tied to the code in front of you, every time, with no narrative to launder.
+Type `/quiz-me` and the loop closes: live diff in, repo rubric in, line-cited grade out. "Quote the exact lines that fail it" is the load-bearing instruction. Every judgment gets forced back onto evidence a human can open, which is what keeps the grade from drifting back into vibes with file names attached.
 
-## The same change, graded two ways
+**A grader that costs one word is a grader you will still invoke on a tired Friday.**
 
-It's worth seeing the difference in the actual output, because the gap is wider than "a bit more honest." Take the auth refactor from the top. Grade the narrative and you get the press release back:
+## The same PR, graded twice
 
-> Nice work - clean separation between validation and the middleware, good instinct to centralize token checks. Test coverage looks solid. One small suggestion: consider a more descriptive name than `validate2`. Otherwise, ship it.
+Now the payoff, on the running example. Same model, same change, same five lines, ninety seconds apart. Both outputs below are illustrative, written for this piece; the verdicts inside the second one are the ones the hand trace already computed.
 
-Helpful-sounding. Completely untethered. The model never saw `validate2`; it invented a plausible nit because nits are what reviews contain. Now run `/quiz-me` against the diff and rubric:
+Hand the grader the description and you get the press release back:
 
-> **Rubric line 1 (test must fail without the change):** MISS. `test_auth.py:41` asserts `assert True` - passes regardless of the middleware. Zero.
-> **Rubric line 2 (error paths asserted):** MISS. The `except InvalidToken` branch at `middleware.py:88` has no test reaching it. Your message said this path was cleaned up; the diff adds the branch but never exercises it.
-> **Rubric line 3 (API changes touch the spec):** MISS. `middleware.py` changes the 401 response shape; `openapi.yaml` is untouched in this diff.
-> **Highest-leverage fix:** write a test that sends an expired token and asserts the 401 body, then update the spec to match. That single test closes lines 1 and 2.
+> Looks solid. Rejecting before the database call is the right place for it, good discipline adding a test for the expired path, and the error-handling cleanup reads clean. Ship it.
 
-Same code, same model, ninety seconds apart. The first grade made you feel good and taught you nothing. The second one named three concrete misses and every one of them quoted a line you can open. The only variable that changed was the input: a paragraph you wrote versus the diff `git` already had.
+Score that review against the five rubric lines. It opened nothing and checked nothing. It rubber-stamped the description's three claims and added encouragement. Of the four real misses it caught zero, and silence on a rubric line, when nothing checks it against anything, reads as satisfied. Narrative-implied score: 5 of 5.
+
+Now `/quiz-me`:
+
+> **R1** MISS. `test_auth.py:14` asserts `assert True`; the test passes with or without the fix.
+> **R2** MISS. The `except ExpiredSignatureError` branch at `auth.py:41` is reached only by the test above, which asserts nothing about it.
+> **R3** MISS. `auth.py:44-46` adds `"reason": "expired"` to the 401 body; `openapi.yaml` has 0 changed lines in this diff.
+> **R4** PASS. No new untyped catch.
+> **R5** MISS. The 401 body changed shape; the description grades a behavior change as a cleanup.
+> Highest-leverage fix: one test that sends an expired token and asserts the 401 body. That closes R1 and R2 together. Then update `openapi.yaml` for R3.
+
+Check it against the hand trace: 1 of 5, the same four misses, cited to the same lines. The command reproduced the hand count line for line, ninety seconds after the warm review of a paragraph.
+
+The move needs its name. Call it **the diff-only grader**: the grader's entire input is the diff plus the rubric, and nothing anyone typed about the work can reach it. Place the two scores side by side and the size of the move is exact. The narrative implied 5 of 5. The diff measured 1 of 5. Four rubric lines moved, and the only variable that changed was the input.
+
+Keep this table. Every number above is one row of it:
+
+| Line | What it checks | Diff verdict | Evidence |
+|---|---|---|---|
+| R1 | test would fail without the change | MISS | `test_auth.py:14` `assert True` |
+| R2 | error path asserted | MISS | `auth.py:41` branch untested |
+| R3 | response-shape change hits openapi.yaml | MISS | `openapi.yaml`: 0 lines changed |
+| R4 | no new untyped catch | PASS | no `any`/untyped catch added |
+| R5 | behavior change graded as a feature | MISS | described as "cleaned up" |
+
+**Same model, same change, same five lines: swapping the input moved the score by four rubric lines.**
 
 ## Where it breaks
 
-Grading the diff is not magic, and pretending otherwise just relocates the lie. Three failure modes are worth knowing before you trust the green check.
+Grading the diff is not magic, and pretending otherwise just relocates the lie. Three failure modes are worth knowing before you trust a green score.
 
-**The diff outgrows the window.** A 4,000-line generated-migration diff doesn't fit in context, and the agent will silently grade the slice it could read while sounding just as confident about the whole. The fix is to scope the tool - diff a path, diff staged-only, diff since a base branch - and to treat "graded clean" on a giant diff as unverified, not passed. A grader that quietly truncates is back to grading a summary, just one it wrote itself.
+**The diff outgrows the window.** A 4,000-line generated migration does not fit in context, and the agent will silently grade the slice it read while sounding exactly as confident about the whole. Scope the tool: diff a path, diff staged-only, diff since a base branch, and treat "graded clean" on a giant diff as unverified rather than passed. A grader that quietly truncates is back to grading a summary, just one it wrote itself.
 
-**The rubric goes stale.** A standard authored once and never revisited grades last quarter's repo. When the team drops REST for gRPC, the "touch the OpenAPI spec" line starts flagging correct changes and waving through the ones that matter. The rubric is code; it rots like code; it belongs in review like code. The leverage of writing the standard down once is real, but "once" was never meant to be "forever."
+**The rubric goes stale.** A standard authored once and never reread grades last quarter's repo. When the team moves off REST, R3 starts flagging correct changes and waving through the ones that matter. The rubric is code, rots like code, and belongs in review like code.
 
-**The agent still hallucinates citations.** "Quote the exact lines" forces evidence, but a model can quote lines that don't say what it claims they say. The line numbers are checkable - that's the point of demanding them - but the check is on you, not the tool. Spot-open two or three of the cited lines per grade. The server removes the human narrative; it doesn't remove the need for a human.
+**The agent still hallucinates citations.** "Quote the exact lines" forces evidence, but a model can quote lines that do not say what it claims they say. The citations are checkable, which is the point of demanding them, and the check is on you. Spot-open two or three cited lines per grade. The server removes your narrative; it does not remove the need for a human.
+
+**A truncated diff, a stale rubric, and an unopened citation are three roads back to the same flattery, now with line numbers.**
+
+## The judge is still a judge
+
+Here is the fourth failure mode, the one that survives a clean diff and a fresh rubric. The thing reading them is still a model, and models judging outputs have measured biases of their own, surveyed across the 2024-2026 LLM-as-judge literature. **Self-preference**: a judge inflates scores for outputs from its own model family, by roughly 10 to 25 percentage points ("Self-Preference Bias in LLM-as-a-Judge," arXiv:2410.21819). **Verbosity bias**: judges prefer the longer of two answers by roughly 15 to 30 points, a finding replicated across GPT-4, Claude, and PaLM-2 judges.
+
+Diff-only grading removes exactly one failure mode, grading your spin instead of your code. It does not touch these. A model that half-recognizes a diff as its own style, or that favors the longer hunk in a tie, produces a confident, line-cited, biased verdict, and the line numbers make it more convincing, not less. This is a gap the piece cannot close from inside, and the close hands it forward properly.
+
+**Diff-only grading fixes what the judge reads, not what the judge is.**
+
+## You can also just buy this
+
+The space is not empty, and a piece that pretends otherwise is selling something. As of August 2026: Anthropic's own Claude Code Review is a multi-agent PR reviewer, a research preview since March 2026, that dispatches specialized agents per issue class at a token bill of roughly $15 to $25 per review. CodeRabbit reads the diff only, the same scoping call this piece makes, as a managed product. Greptile indexes the whole repo rather than the diff, and in a published 50-PR benchmark caught over 50 percent more bugs than CodeRabbit, at the cost of a higher false-positive rate, 11 versus 2 per run in that same benchmark.
+
+So why wire the version above yourself? Two reasons survive the comparison. The rubric is yours: the five lines above encode this repo's definition of done, and no vendor ships your repo's definition. And the pricing shape is different: a managed review arrives as an invoice per run, while a grade here spends tokens inside a session you already had open, and that difference decides how often you can afford to ask. What you give up is their tuning and their integrations. Date-stamp this paragraph when you quote it; prices and benchmarks in this category drift faster than everything else here.
+
+**A vendor's generic rubric grades every repo the same way; the five lines you author grade the repo you actually have.**
 
 ## When not to reach for it
 
-This is a grader, and graders are for work that has a defined-done. Don't point it at a spike. When you're three commits into an exploratory branch trying to learn whether an approach is even viable, a rubric that fails you for a missing OpenAPI spec is measuring the wrong thing - you *want* loose, exploratory feedback there, not a pass/fail against a standard the code isn't trying to meet yet. Grade the diff once the work claims to be done, not while it's still asking a question.
+A grader is for work that claims to be done. Do not point it at a spike. Three commits into an exploratory branch, the live question is whether the approach is viable at all, and a rubric failing you for a missing spec update is measuring with the wrong stick. You want loose, exploratory feedback there, not a pass/fail against a standard the code is not trying to meet yet. Grade the diff when the work claims done, not while it is still asking a question.
 
-And it's fair to ask: isn't this just a linter, or just code review? It isn't. A linter catches the syntactic floor - unused imports, `any` types - and has no opinion about whether your test actually tests anything. Human review catches intent but is the scarce, slow, narrow resource the whole site is about. The rubric grader sits in between: it encodes the *intent-level* standards a linter can't express ("a refactor that changes behavior is a feature") and applies them at the speed and breadth a human reviewer can't sustain. It doesn't replace review. It stops you from walking into review having already lied to yourself.
+It is fair to ask whether this is just a linter, or just code review. It sits in the gap between the two. A linter catches the syntactic floor, unused imports and `any` types, and has no opinion about whether your test tests anything. Human review catches intent, and is the scarce, slow resource this whole site is about. The rubric grader encodes intent-level standards a linter cannot express, like "a refactor that changes behavior is a feature," and applies them at a breadth no human reviewer sustains. Review still happens after this. The difference is that you walk into it having already stopped lying to yourself.
 
-## Reality is the only context worth grading
+**Grade finished work against the standard, give exploratory work loose feedback, and hand the result to the human either way.**
 
-The deeper move here isn't the server - it's removing yourself as the source. Every time you describe your work to an agent, you're injecting the one input you can't be trusted to get right, and asking for feedback on it. Closing the context gap doesn't always mean adding context. Sometimes it means **deleting the lossy human summary** and letting the agent read the ground truth directly.
+## The four-line gap
 
-Stop grading the story. Grade the diff.
+Put the result back on the table and read it one row at a time. R1: the narrative said tests were added; the diff says the test asserts nothing. R2: the narrative said the error handling was cleaned up; the diff says the new branch is never exercised. R3: the narrative was silent on the spec; the diff says the 401 body moved and `openapi.yaml` did not. R4: both grades pass it. R5: the narrative graded a behavior change as a cleanup; the diff grades it a feature. Five rows, four disagreements, all about what the description claimed rather than the code. That four-line gap between 5 of 5 and 1 of 5 is the whole piece.
+
+What diff-only grading does not buy is the next question. It fixed the input; the judge is still an LLM, still subject to self-preference and verbosity bias, and nothing in this piece measured that gap the way it just measured the narrative-versus-diff one. That measurement is the open question this hands forward. It also stacks with the sibling fix: [a second opinion it didn't write](/blog/a-second-opinion-it-didnt-write/) changes which model does the grading, at the plan boundary, before code exists. This piece changes what the model is handed, at the done boundary, after it. One axis each. Use both.
+
+**You now control what the grader reads. What the grader is remains unmeasured, and that is the next piece of work.**
 
 ---
 
-For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for wiring the diff and rubric tools, [Rules](/foundations/rules/) for authoring the standard once, and [Slash commands](/foundations/slash-commands/) for binding it to a single verb.
+**About the numbers.** The pull request, its three files and diff stats, the five-line rubric, both review outputs, the 1-of-5 verdict with its four misses, and the ninety-second interval are toy, authored for hand-tracing rather than measured off a real repo or transcript; the size is faithful to the failure class, since a three-file diff is small enough to check by hand in one sitting and large enough to hold a real response-shape regression. The five verdicts, the 1-of-5 score, the 5-of-5 narrative-implied score, and the four-line gap are exact arithmetic from those toy facts, re-checked against an independent script before publishing. The sycophancy figures are quoted and dated: Sharma, Tong, Korbak, et al., "Towards Understanding Sycophancy in Language Models," arXiv:2310.13548, submitted October 2023, published at ICLR 2024. The 98 percent figure is Claude 1.3 wrongly admitting a mistake when the user merely pushes back; the 27 percent figure is the accuracy drop from attaching the user's suggested wrong answer to a question, the largest measured, on LLaMA 2. Two separate behaviors, not one number. The judge-bias ranges, roughly 10-25 points of self-preference inflation and roughly 15-30 points of verbosity preference, are survey ranges across 2024-2026 papers including "Self-Preference Bias in LLM-as-a-Judge" (arXiv:2410.21819), fetched August 16, 2026. The product facts, Claude Code Review's research preview and per-review price, CodeRabbit's diff-only scope, and Greptile's 50-PR benchmark, are current as of August 2026 and will drift fastest of anything here.
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for wiring the diff and rubric tools, [Rules](/foundations/rules/) for authoring the standard once, and [Slash commands](/foundations/slash-commands/) for binding the grader to a single verb.
+
+This gate sits next to the site's other review pieces without repeating them. [A second opinion it didn't write](/blog/a-second-opinion-it-didnt-write/) changes which vendor's model grades a plan; this piece changes what the same model is handed after the work. [Write your review bot once, run it](/blog/write-your-review-bot-once-run-it/) unifies where a review runs, local and CI from one policy; this piece is only about what the reviewer reads. [Make a hook validate the agent's output](/blog/make-a-hook-validate-the-agents-output/) is a deterministic check on a narrow technical fact with no model judgment in it; a rubric grade is a judgment call. [Bake the acceptance test into the spec](/blog/bake-the-acceptance-test-into-the-spec/) defines done before the agent starts; this piece grades after the fact, against what the diff actually contains. [Pre-commit hooks are for robots](/blog/pre-commit-hooks-are-for-robots/) mechanically blocks a commit unless tests pass; a rubric score cannot block anything by itself. [Reproduce the bug before you fix it](/blog/reproduce-the-bug-before-you-fix-it/) builds a regression suite that accumulates over time; this grades one diff, once.

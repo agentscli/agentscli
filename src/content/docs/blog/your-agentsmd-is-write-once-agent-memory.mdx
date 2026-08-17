@@ -1,59 +1,97 @@
 ---
-title: "An Agent That Can't Forget Is Worse Than One With No Memory"
-description: "A rules file is write-once and rots; auto-memory saves corrections on its own judgment. Add the human-gated layer between them so corrections compound."
+title: "One stale line in AGENTS.md costs about fifteen minutes of corrections a quarter. The loop that ends it starts with a loss."
+description: "A rules file is right the day you write it and silently wrong forever after, because nothing marks a reversed line. Auto-memory keeps both truths and cannot pick one. A trigger, a dated demotion, and a human gate end it."
+seoTitle: "AGENTS.md Rot vs Agent Memory: Why Rules Files Decay"
+seoDescription: "One uncurated fact in AGENTS.md costs about 900 seconds of repeated corrections a quarter. A trigger, a supersede rule, and a human gate cut it to 290."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, rules, slash-commands, hooks]
 draft: false
 ---
 
-You correct the agent for the third time this week: "We migrated off that ORM in March - stop generating Sequelize models." It nods, fixes the file, and forgets by the next session. The correction cost you ninety seconds and bought you nothing durable. Tomorrow you'll pay it again.
+Somewhere in your [rules](/foundations/rules/) file there is a line that was true the day you wrote it and is not true now. You do not know which line. That is the actual problem.
 
-So you reach for memory. You let the agent persist facts across sessions, append-only, and feel briefly clever. Then one morning it confidently writes Sequelize models *and* cites a stored note saying you use Prisma - both retrieved, both presented as truth. **You didn't fix the forgetting problem. You upgraded it into a contradiction problem.**
+[Write it down once](/blog/write-it-down-once/) is the piece on why that file exists at all and why every tool converged on reading one. This post starts the day after the last edit. You migrated off the old ORM in March, and this week you have typed "we use Prisma now, stop generating Sequelize models" three times. Each session, the agent read the same line, followed it faithfully, and made the same mistake. The file was correct once and has been quietly wrong ever since, because nothing in the stack marks a line as reversed.
 
-## A rules file is write-once; the work is write-often
+The obvious upgrade is memory, and it fails differently. A hand-written rules file only changes when a human edits it, so it goes silent the moment the world reverses. An auto-memory store only changes when the agent decides to write to it, so it never goes silent, and it never marks anything as superseded either. Both "Sequelize" and "we migrated to Prisma" end up true in the store, and nothing in the store says which one to trust. Two failures with opposite shapes, and the same fix for both.
 
-Your [rules](/foundations/rules/) file - `AGENTS.md`, `CLAUDE.md`, whatever your tool reads on startup - is the canonical place to write context down once so the agent stops asking. That's exactly its strength and exactly its failure mode. It captures *what you decided to tell it*, the day you decided to tell it, and then nobody curates it. Decisions reverse. The file doesn't.
+Here is the claim this post derives, with the price attached. On one concrete example, a single uncurated fact in that file costs **about fifteen minutes of repeated correction over one quarter**. The loop that ends it carries its own honest row: on the exact touch where it first fires, it costs **twenty seconds more than doing nothing**. Both numbers are derived below, and the second one is why the first one can be believed.
+
+## First, check whether you have this
+
+Open the rules file your main project loads, `AGENTS.md` or `CLAUDE.md` or your tool's equivalent, and read it top to bottom. Thirty lines takes a minute. On every line ask one question: is this still true, and when did I last check?
+
+Every line current, with a commit touching the file in living memory? You do not have this problem. Close the tab.
+
+One line you cannot vouch for is enough. The team migrated, the convention changed, the version moved, and the line still states January's truth with January's confidence. It loads at the start of every session with full authority, and the only thing standing between it and the agent's output is your memory of the reversal. That is the exact shape this post works on.
+
+One boundary before the numbers. If your file is current but the agent ignores half of it anyway, a different failure is at work: attention to persistent context degrades as the window fills, and [injecting the reminder at the point of use](/blog/inject-the-reminder-when-the-agent-forgets/) is the piece on that. This post assumes the file is read faithfully every single time, and is simply wrong.
+
+**If you cannot vouch for every line in your rules file, the file is already lying on your behalf.**
+
+## One reversed line, one quarter
+
+Fix one example and carry it through everything below: one fact, one file, one team.
 
 ```markdown
-# AGENTS.md
-- ORM: Sequelize          # written January
-- Use class components    # written 2022, nobody deleted it
+# AGENTS.md (excerpt)
+- ORM: Sequelize          # written 2026-01-12
 ```
 
-Six months later that file is an archaeology dig. The agent reads "Sequelize" with the same confidence as the line you wrote yesterday, because to the model there is no yesterday - *within* one file, line 3 and line 30 carry equal authority, and nothing marks one as reversed. (The loading *system* does have a precedence order - managed rules override user, which override project, which override the local file, closest-wins - but that resolves which file you read, not which line inside it is stale.) A write-once artifact can't track a write-often reality. **The rot isn't a bug in rules; it's the absence of a curation loop around them.**
+On 2026-03-02 the team finishes a migration to Prisma. The migration is real and complete; every model file has moved. The line does not change. Nobody decided to skip updating it. There was simply no moment in anyone's week where "retire the stale line in the agent's instructions" existed as a task.
 
-The bloat compounds the problem. AGENTS.md is now a governed open standard - released by OpenAI in August 2025 and, as of December 2025, stewarded under the Linux Foundation's Agentic AI Foundation, read by 60,000-plus repositories across roughly twenty-five tools - but the standard says nothing about pruning. Anthropic's own guidance is to keep a memory file under ~200 lines, because adherence drops as it grows; frontier models reliably follow only the first ~150–200 instructions before later ones start sliding. Your archaeology dig isn't just confusing the reader of the file - past a certain length it's quietly *not being followed at all*.
+Now count the quarter that follows: 2026-03-02 through 2026-06-01, thirteen weeks. The team touches ORM-adjacent code **ten times**. Every one of those sessions starts the same way: the agent reads the file, sees a clear instruction from January, and follows it. You review the diff, see a Sequelize model, and type the correction. Call that correction **ninety seconds** - notice the wrong model, type the sentence, wait for the redo. The seconds are invented, round numbers chosen so you can check every figure below with a pencil; the full disclosure sits at the end of the post.
 
-There's a sharper version of the same failure. Despite the standard, Claude Code reads `CLAUDE.md`, not `AGENTS.md`, unless you explicitly `@`-import the latter. A repo that standardized on `AGENTS.md` and assumed every agent would pick it up has a curated, true context file that one of the most common agents silently ignores. That's the write-once-nobody-curates thesis in its purest form: the file exists, the file is right, and nobody checks that it's actually being loaded.
+Ten touches, same sentence, one quarter: **900 seconds**. Fifteen minutes of repeating a fact that was decided in January and reversed in March. From one line nobody was ever asked to edit.
 
-## Memory without forgetting is a slow-motion hallucination engine
+The file cannot defend itself, because the model has no clock. Within one file, line 3 and line 30 carry equal authority, and nothing marks one as expired. The loading system does order your files - managed policy first, then your personal file, then the project file, closest to the code read last - but that decides *which files load*, never *which line inside one of them has gone stale*. Give the failure its name: **rot**, a line that was true when it was written, is false now, and carries no marker of the change.
 
-The obvious fix is the wrong one. Everyone optimizes recall - bigger memory stores, better retrieval, more facts surfaced. Vendors have started shipping *forgetting* too: background consolidation that prunes stale memories, context-editing that drops aged content out of the window. What stays rare is forgetting you can *audit* - principled, user-visible precedence where you can see which fact won and why. And steel-manning the recall camp for a second: yes, an agent that remembers your stack across sessions is genuinely useful, and append-only is the safest write pattern because you never lose data.
+This rot reaches a governed format, which makes it concrete. AGENTS.md is an open standard - released by OpenAI in August 2025 and, as of December 2025, stewarded under the Linux Foundation's Agentic AI Foundation, read by 60,000-plus repositories. The standard governs how the file is read. It says nothing about how a line in it is retired. Claude Code's `/doctor` will happily propose trims to a bloated `CLAUDE.md`, cutting content that is derivable from the code and keeping pitfalls and conventions - useful, but a different axis entirely. Trimming treats dilution, the too-long-file problem that [splitting context by directory](/blog/hierarchical-context/) solves. Rot is a file that is short, tidy, and wrong. No trim fixes that.
 
-But never losing data is the problem when the data reverses. An append-only memory store keeps both "we use Sequelize" and "we migrated to Prisma," and retrieval has no principled reason to prefer the newer one. So here's the question worth sitting with: **if you can't tell the agent to forget, what stops a stale fact from being retrieved as current truth?** Nothing does. The mistake is now durable and confidently cited - strictly worse than an agent with no memory at all, which at least asks.
+**Rot is what a rules file does when the only thing that can retire a line is a human who was never asked.**
 
-## Build the loop: propose durable edits, resolve conflicts, gate on a human
+## What auto-memory does with the same fact
 
-Worth being precise about what already ships before you build anything. There are two files in play and they have different owners. *You* write the rules file - `CLAUDE.md`, `AGENTS.md` - and it's static until you touch it. The *agent* writes its own auto-memory, and that one evolves: Claude Code's auto-memory already saves notes based on your corrections and preferences, and it triggers when the agent catches itself repeating a mistake. So correction-saving is not the void this post once implied. The void is the *curation discipline between the two files* - and that's the layer the vendors leave open for you to own.
+Be precise about what already ships, because the fix is not "add memory." Claude Code's auto memory shipped in v2.1.59 and sits **on by default** today (official memory documentation, read August 2026): it saves notes from your corrections and preferences into files scoped to the project, and it decides for itself when a correction was worth keeping. That is genuinely useful - an agent that remembers your stack across sessions beats one that re-asks every Monday. And the write pattern, append-only, is the safest one, because you never lose data.
 
-The fix is two small mechanisms in that gap, and a non-negotiable human in the middle.
+Never losing data is exactly the problem when the data reverses.
 
-**First, a [slash command](/foundations/slash-commands/) you write that proposes durable additions** instead of letting corrections evaporate. What auto-memory gives you is a qualitative judgment call - it saves when *it* decides a correction was worth keeping. What you add is a *deterministic* trigger and an explicit *human gate*: the third time you correct the same thing in a session, that's not a judgment call, that's a countable signal of a missing rule. The command counts, reads the correction, and drafts a one-line edit for you to approve - promoting a transient correction into the canonical rules file, not just the agent's private store.
+Walk the running example into the store. In a January session you correct something about models; the agent saves a note: "ORM: Sequelize." In a March session you explain the migration; it saves another: "migrated to Prisma, 2026-03." **Both notes were true when written.** The store now holds both, and nothing marks the second as the replacement for the first. Retrieval surfaces both with equal confidence, and nothing in the store answers the only question that matters: which one wins?
 
-```bash
-# /remember - proposes a rules edit, never writes silently
+So the failure arrives on schedule. The agent writes a Sequelize model and cites its own Prisma note in the same breath, both presented as the store's truth. Compare that with no memory at all: the agent with no memory asks, which costs you a sentence. The agent with contradictory memory acts on a tie its own records created. **The upgrade made the failure durable and confident.**
+
+Everyone optimizes recall: bigger stores, better retrieval, more facts surfaced. Vendors have started shipping forgetting too - consolidation that merges or drops stale entries on the agent's own schedule. What stays rare is forgetting you can audit: precedence you can see, where you can tell which fact won and why it won. (If what you actually want is to search your raw session transcripts as they happened, [searching your own past sessions](/blog/agentic-search-across-your-own-past-sessions/) is that piece. This one is about the curated store, and about keeping its facts from contradicting each other.)
+
+**An append-only store turns a reversed fact into two facts, and retrieval has no principled way to prefer the newer one.**
+
+## The supersede rule
+
+At this point the fix is small enough to name, and you could have written it yourself. **The supersede rule**: when a fact reverses, mark the old fact *superseded*, with a date, and put the new fact in its place. Never delete the old line. Never append the contradiction beneath it.
+
+Each half earns its keep. The date is what makes precedence principled: newer wins, and the record shows what it won over, so "which fact is current" becomes a lookup instead of a guess. Keeping the old line, marked, preserves the audit trail and covers the case where the reversal itself reverses - the team that migrates back to Sequelize in September needs January's truth again, still dated. Precedence, not memory, decides which fact the agent trusts.
+
+Notice the rules file obeys the same law when a human curates it. The proposed edit in the next section *replaces* the stale line; it does not stack a correction under it. One rule, two surfaces.
+
+**Superseded-with-a-date beats both alternatives: deleting loses the audit trail, and appending creates the contradiction.**
+
+## The loop: a trigger, a diff, and a gate
+
+Two small mechanisms and one human who has to say yes.
+
+First, the deterministic trigger. Auto memory saves when the agent decides a correction was worth keeping - a judgment call made by the party with the least context about your roadmap. Flip the ownership. The third time you correct the same fact is countable, across sessions - Tuesday, then Friday, then the week after - and a count needs no judgment to see that a line is missing or stale. So write a [slash command](/foundations/slash-commands/), call it `/remember`, that counts corrections across sessions and, on the third strike, reads the correction and drafts a one-line edit:
+
+```text
 /remember
-Detected 3 corrections about the ORM this session.
+Detected 3 corrections about the ORM across recent sessions.
 Proposed edit to AGENTS.md:
   - ORM: Sequelize
   + ORM: Prisma (migrated 2026-03; do not generate Sequelize)
 Apply? [y/N]
 ```
 
-Note the diff *replaces* the stale line. It doesn't append a contradiction beneath it. The command's job is to keep the write-once file honest by turning your repeated corrections into curation events.
+Look at what the diff does. It replaces. The stale line leaves the file, the new fact arrives with its date attached, and that transaction is the supersede rule executed by a human holding a proposed edit. The command proposes; it never writes on its own.
 
-**Second, a [hook](/foundations/hooks/) that fires on conflict** - when a session asserts a fact that contradicts a stored one. Instead of silently carrying both, the hook surfaces the collision and applies one rule: the newer fact wins, pending confirmation.
+Second, the conflict check, as a [hook](/foundations/hooks/) that fires when a session asserts a fact contradicting a stored one:
 
 ```python
 # pseudocode hook: on memory write, detect + resolve contradiction
@@ -64,33 +102,92 @@ def on_remember(new_fact, store):
               f"vs new '{new_fact.value}' ({new_fact.date})")
         print("Newer fact taken as source of truth. Confirm? [y/N]")
         if confirm():
-            store.supersede(clash, new_fact)  # mark old as superseded, don't delete
+            store.supersede(clash, new_fact)  # mark old superseded, don't delete
     else:
         store.add(new_fact)
 ```
 
-`supersede` is the whole trick. You don't destroy history - you demote it, so the old fact stops being retrievable as current while staying auditable. That's forgetting done responsibly: not amnesia, *precedence*.
+Third, the **human gate**, and this is the load-bearing part. Both mechanisms above propose; neither writes unattended. The asymmetry is why: a missing fact makes the agent ask, which costs you a sentence, while a wrong fact retrieved as truth makes the agent act, which costs a debugging session and your trust in the store. An agent allowed to silently rewrite its own durable context will eventually persist a hallucination and cite it back to you as established fact. Keep the write under your [permissions](/foundations/permissions/) policy, outside the agent's discretion.
 
-Be honest about what that pseudocode can and can't catch, though. `contradicts` here is doing the easy version - same key, different value, `ORM: Sequelize` versus `ORM: Prisma`. Most real reversals aren't that tidy. "We use REST" and "the new billing service is gRPC-only" don't share a key; they're a *scoped* contradiction the string match sails straight past. A correction like "stop assuming every table is soft-deleted - that was only the legacy schema" has no prior line to supersede at all; it's a fresh constraint that quietly invalidates a dozen unstated assumptions. The detector will miss these, and that's fine - the deterministic trigger was never meant to be a perfect contradiction oracle. Its job is to put a *cheap, frequent prompt* in front of the human, who is the only one who can tell a scoped exception from a global reversal. The machine surfaces the candidate; the judgment stays yours.
+Two neighbors, one clause each. If the correction you keep repeating is a procedure - branch naming, build gates, diff etiquette - [turning it into a command](/blog/stop-re-typing-the-same-correction/) needs none of this machinery, because there is only ever one version of the truth to write. And if what you need is to decide which *new* rules deserve a line at all, [letting the failure distribution write your AGENTS.md](/blog/let-the-failure-distribution-write-your-agentsmd/) mines the transcript history for candidates. This loop runs the opposite direction: it retires and corrects lines that already exist.
 
-**Third, and this is the load-bearing part: the human approval gate.** Both mechanisms *propose*; neither writes unattended. That gate is the only thing standing between "memory that compounds" and "memory that drifts into confident nonsense." An agent allowed to silently rewrite its own durable context will, eventually, persist a hallucination and then cite it to you as established fact. The asymmetry is the whole reason to bother: a *missing* fact makes the agent ask, which costs you a sentence; a *wrong* fact retrieved as truth makes the agent act, which costs you a debugging session and your trust in the store. Unattended writes optimize for the cheap failure and quietly manufacture the expensive one. The approval prompt is cheap insurance against your memory store becoming a generator of fiction. Keep it under your [permissions](/foundations/permissions/) policy, not the agent's discretion.
+Now price it. Run this loop on the running example and the quarter's price splits in two: the ten touches cost **900 seconds with no loop** and **290 with it**, and the difference, **610 seconds**, is what one approved edit buys back. The next section derives both numbers, two independent ways. The ledger also carries a row it does not hide: at the touch where the trigger fires, the loop is **twenty seconds behind doing nothing**.
 
-## When the loop costs more than the rot
+**The trigger proposes the precedence decision, and the human gate is what makes it safe to let a machine near the file at all.**
 
-The loop earns its keep on a long-lived codebase with a team and a decision history - a context that *reverses*, repeatedly, over months. Aim it at the wrong target and the curation becomes its own kind of rot.
+## The ledger, touch by touch
 
-Don't promote ephemera. A correction like "use port 3001 this time, 3000 is taken" is true for an afternoon, not a quarter; bake it into the rules file and you've manufactured a stale line the moment you reboot. The deterministic trigger counts *repetition across sessions* for exactly this reason - a fact worth a durable edit is one you've re-corrected on Tuesday and again on Friday, not three times inside one debugging spiral about the same flaky test. Three corrections can be one missing rule, or they can be three faces of a problem that evaporates the instant you fix the underlying bug. The counter only flags the candidate; the human gate is what tells those two apart.
+Ground truth first, the obvious way: simulate every touch.
 
-And on a solo throwaway prototype, skip the apparatus entirely. The rot thesis assumes the file outlives your memory of writing it. If the project won't, an un-curated `AGENTS.md` is perfectly fine - the cheapest curation loop is a short-lived project. The discipline scales with the lifespan of the context, not with the existence of an agent.
+Without the loop, all ten touches are identical. The agent reads the stale line, writes the wrong model, you correct it. Ninety seconds each, and because the file never changes, nothing ever improves: 90 after the first touch, 180 after the second, 270, 360, on up to 900 after the tenth. That is the size confrontation from earlier, now with its arithmetic showing.
 
-## What this buys you
+With the loop, walk it slowly. The **strike threshold** - the number of repeated corrections that fires the trigger - is three:
 
-The third correction stops being wasted breath - it becomes a one-line edit you approve in two seconds, and the agent never generates a Sequelize model again. A later session that contradicts a stored fact doesn't quietly poison the store; it raises a flag, takes the newer truth, and demotes the old one with a paper trail. Corrections *compound* into a sharper rules file instead of *accumulating* into a self-contradicting one.
+- Touch 1: the correction happens, 90 seconds. One strike on the counter.
+- Touch 2: same correction, 90 more, 180 cumulative. Two strikes.
+- Touch 3: the agent still read the stale line going into this session, so the correction still happens: 90 more, 270 cumulative. That correction is also the third strike, so the trigger fires, the diff appears, and you read one line and its replacement and approve: 20 seconds on top. Cumulative **290**.
+- Touches 4 through 10: the file says Prisma now. The agent reads the file and writes the right model. Nothing to correct, nothing to approve. Add zero, seven times. Cumulative stays **290**.
 
-This is the gap the whole site is about, viewed through one primitive. The agent is fast and broad but contextless - it has no yesterday, no sense that a decision reversed. You have the context but you're tired of repeating it. The loop is the bridge: it converts your scarce, expensive corrections into the agent's cheap, durable context, without letting the durability calcify into rot.
+900 against 290, saved 610: the numbers planted at the end of the last section, paid off exactly by walking the touches.
 
-Recall is easy. Every vendor ships it. Even forgetting now ships - automatically, on the agent's judgment, inside its own store. What no vendor ships, and what this loop is, is *audited* forgetting: a human-gated curation layer sitting between the file you write and the memory the agent writes itself. Keeping a rules file true over time is a context-engineering discipline, and it's precisely the part the agent can't do for you unsupervised - because the judgment about which yesterday is now wrong is yours, not the model's.
+Cross-check it a second way, because one derivation can hide an error. Closed form: without the loop, cost(n) = 90n. With it, cost(n) = 90 x min(n, 3) + 20 once n reaches 3 - three corrections happen regardless (the third one *is* the trigger), the approval is paid once, and every touch past the third is free. At n = 10: 90 x 3 + 20 = 290. The formula matches the touch-by-touch trace at all ten points. Two methods, one number; the ledger is not a fudge.
+
+And the row that keeps it honest: at touch 3, doing nothing has cost 270 and the loop has cost 290. On the exact touch where the trigger fires, the loop is 20 seconds behind, because you pay the correction and the approval on the same touch. It moves ahead on the very next touch, 360 against 290, and every touch after that widens the gap by another 90.
+
+**610 seconds back over one quarter, from a mechanism that is 20 seconds in the hole when it fires.**
+
+## The table
+
+This is the **correction-cost ledger**: the same fact, the same quarter, two policies. The close replays it.
+
+| Touches on the fact | No curation (s) | 3-strike loop (s) | Saved (s) |
+|---:|---:|---:|---:|
+| 1 | 90 | 90 | 0 |
+| 2 | 180 | 180 | 0 |
+| 3 | 270 | 290 | **-20** |
+| 5 | 450 | 290 | 160 |
+| 10 | 900 | 290 | **610** |
+
+Three rows do the arguing. Rows 1 and 2 are identical because the loop does not exist yet: before the third strike, a correction is just a correction, and both policies pay it. Row 3 is negative on purpose - the loop buys its future with 20 seconds of present. Row 10 is the planted result: 900 seconds of repeating yourself, against 290 and one approved edit.
+
+**Row 3 is the price, row 10 is the payoff, and the distance between them is seven touches of a file that no longer lies.**
+
+## What the loop does not solve
+
+The detector is doing the easy version of its job. `contradicts()` above is same-key, different-value string matching. It catches "ORM: Sequelize" against "ORM: Prisma" and nothing else. A scoped reversal with no shared key - "we use REST" against "the new billing service is gRPC-only" - sails past it. A correction that invalidates an unstated assumption rather than a prior line - "stop assuming every table is soft-deleted; that was the legacy schema" - has nothing to contradict, so nothing fires. The trigger has the same blind spot from its own side: three strikes cannot tell three repetitions of one missing rule from three faces of a single bug that evaporates the moment you fix the underlying defect. In every one of those cases the machine surfaces a candidate, at best. The judgment stays yours, every time.
+
+The shipped record, dated. Claude Code's auto memory shipped in v2.1.59 (release notes) and is on by default (official memory documentation, read August 2026): it writes a `MEMORY.md` index plus topic files under `~/.claude/projects/<project>/memory/`, is project-scoped and machine-local - shared across the worktrees of one repo, not across your tools or your machines - and since v2.1.214 stamps a `modified` ISO-8601 timestamp on the memory files it writes. The docs describe that timestamp's job plainly: it "shows how current the fact is." Showing is the boundary. The fact now carries its date - half the supersede rule, shipped. What is still missing: the agent decides what to write, there is no deterministic trigger, and there is no human gate. The timestamp records staleness without preventing it.
+
+The same documentation hands you the hand-written half of this failure in the vendor's own words: "if two rules contradict each other, Claude may pick one arbitrarily." The prescribed fix on that page is manual - review your CLAUDE.md files periodically and remove outdated or conflicting instructions. The vendor names the failure, states plainly that the resolution is arbitrary, and leaves the cure as a chore. That is the write-once-nobody-curates thesis, from the source.
+
+Scope of the claim: the loop buys insurance against exactly two failures, and only those - a reversed line nobody marks, and a contradiction nobody settles. Those are the two a countable trigger and a human gate can catch. It does not generalize to "the agent might remember something wrong." And whatever store you run - the agent's own, your rules file, or one of the many persistent and vector memory layers pitched at agent builders - the two axes that decide whether its facts can go quietly wrong are the same on every one of them: who fires the write, and who approves it. Recall keeps getting cheaper from vendors. Those two axes are the part you own.
+
+**Auto-memory dates its facts now; nothing on the market triggers the write deterministically or gates it on a human, and that pair is what this loop adds.**
+
+## When the loop is the wrong tool
+
+Two cases where the machinery costs more than the rot it prevents.
+
+A fact with a shelf life of one afternoon. "Use port 3001 this time; 3000 is taken" is true until the next reboot. Promote it to the rules file and you have manufactured tomorrow's stale line, this time with your own approval stamp on it. This is why the trigger counts repetitions *across sessions* rather than within one: a fact worth a durable edit is one you corrected on Tuesday and again on Friday, not three times inside a single debugging spiral about the same flaky test.
+
+A project that will not outlive the session. The rot thesis assumes the file outlives your memory of writing it. On a solo throwaway prototype there is no March migration and no next quarter, so an uncurated `AGENTS.md` is fine. The discipline scales with the lifespan of the context; the presence of an agent alone never justifies it.
+
+**Promote facts that survive a quarter, and let one-afternoon facts die in the chat where they were true exactly once.**
+
+## Back to the table
+
+Row 10, one more time: 900 seconds of repeating yourself against 290 with the loop. Saved: 610 seconds, about ten minutes, from one approved edit. Row 3 is the reconciliation that number needs: on the touch where the trigger fired, the loop was 20 seconds behind doing nothing. The mechanism is not free; it is amortized, and it only pays past the strike threshold.
+
+Two costs the loop itself creates, and this post leaves both open.
+
+The same-key match misses scoped reversals. The harder version of the supersede rule needs a way to detect a correction that invalidates an assumption rather than a line - "the new billing service is gRPC-only" against a file that never mentioned transport at all. That is a different and harder mechanism than string matching, and nothing here solves it.
+
+A gate flooded with proposals stops being a gate. A human who approves fifty one-line diffs a week degrades into a rubber stamp, exactly the way auto-memory's unattended writes degrade today. The gate only stays a gate while the proposals stay rare, which makes the strike threshold a dial worth tuning on your own repo, never a constant to copy.
+
+**Date the demotion, gate the write, and keep the proposals rare enough that approving one still means something.**
 
 ---
 
-For the per-tool mechanics, see [Rules](/foundations/rules/) for the canonical context, [Slash commands](/foundations/slash-commands/) for proposing edits, and [Hooks](/foundations/hooks/) for gating writes.
+**About the numbers.** The two costs (90 seconds per spoken correction, 20 seconds per approved edit), the strike threshold of 3, and the toy quarter (2026-03-02 through 2026-06-01, thirteen weeks, ten touches on ORM-adjacent code) are invented for traceability, so every figure in this post can be checked with a pencil; no public source measures either cost, and none is claimed. Every other number - the 900/290/610 ledger, the -20 row at touch 3, the break-even at touch 4 - is exact arithmetic on those inputs, computed two independent ways and re-checked with a script before publishing. The claim does not depend on the seconds: any positive recurring correction cost set against a one-time approval cost that ends the recurrence produces the same shape, with row 3 still negative. The Claude Code facts come from two public sources, both read August 2026: the official memory documentation (auto memory on by default, the `modified` timestamp since v2.1.214, the contradiction guidance) and the release notes (auto memory arriving in v2.1.59). The AGENTS.md governance facts (OpenAI, August 2025; Linux Foundation stewardship, December 2025; 60,000-plus repositories) are public and stated as of writing.
+
+For the per-tool mechanics, see [Rules](/foundations/rules/) for the file itself, [Slash commands](/foundations/slash-commands/) for the proposing command, and [Hooks](/foundations/hooks/) for the conflict check under your [Permissions](/foundations/permissions/) policy.
