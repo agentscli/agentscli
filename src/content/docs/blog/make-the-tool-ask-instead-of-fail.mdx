@@ -1,125 +1,177 @@
 ---
-title: "A missing parameter is the agent asking what only you know."
-description: "When a tool call lacks a parameter, the agent's two instincts - fail or guess - are both wrong. Have the server elicit the missing field against a schema."
+title: "A tool that asks costs exactly two round trips. A tool that fails or guesses costs one that means nothing."
+description: "When a required tool parameter is a fact only the human holds, the two familiar responses, fail and guess, each cost one round trip on the wire and guarantee nothing. Under the MCP spec current since 2026-07-28, asking costs exactly two round trips, fixed, whatever the human answers."
+seoTitle: "MCP Elicitation: Have Tools Ask for Missing Parameters"
+seoDescription: "An MCP elicitation costs exactly 2 round trips under the 2026-07-28 spec: accept, decline, or cancel. Fail and guess look cheaper at 1, and guarantee nothing."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, mcp-servers, permissions]
 draft: false
 ---
 
-The user types `book me a flight`. The agent has a `book_flight` tool wired up, a calendar it can read, and exactly zero idea which city you're flying to. So it does one of two things, both bad. It returns `{error: "destination is required"}` and dumps the failure back in the user's lap. Or - worse, because it looks like it worked - it infers `SFO` from your last trip and books a ticket to the wrong coast.
+You wired the tool, wrote its description, listed every parameter. The moment arrives anyway. The user types `book me a flight`. The agent has a `book_flight` tool, a calendar it can read, and a departure date it pulled from that calendar. What it does not have is the destination, because the destination is not in the calendar, not in the repo, and not in any system the agent can reach. It lives in exactly one place, the user's head, and the call is one required field short of legal.
 
-Both responses share a root cause: the tool treated a **missing parameter as a terminal condition**. Fail or fabricate. But the missing destination was never an error in the tool. It was the single piece of context the agent could not possibly hold, sitting in the only place it lives - the user's head.
+A required parameter only the human holds. Every tool author meets this edge and reaches for one of two familiar responses. **Fail**: return `destination is required` and end the call, leaving the recovery to the user. **Guess**: infer a city from the last trip, book it, and return a result that looks like success. Neither response is stupid. Each is a reasonable answer to "the argument is incomplete" from a piece of software that cannot complete it.
 
-That's the gap this whole publication is about. Agents are broad and fast and will happily call any tool you give them; they are also contextless about your intent, your trip, your domain. The destination isn't data the agent forgot to fetch. **It's a fact only the human is the source of.** So the correct move when the tool hits that wall is neither of the agent's two instincts. It's a third one: pause, and ask - with structure.
+Here is the tension this piece runs on. On the wire, both responses look cheap: one request each, then a terminal result. But neither 1 means anything. What follows a fail is a fresh, human-driven loop, notice the error, retype, hope the agent passes the field this time, that the protocol never sees and never bounds. What follows a wrong guess is worse, because nothing on the wire distinguishes it from a right one. The familiar responses look priced. They are not.
 
-## The fix is a handoff, not a retry
+There is a third response: ask. The mechanism for it is **elicitation**, the protocol's way for a tool call to hand the human a typed question and get the answer back on the wire. And under the [MCP](/foundations/mcp-servers/) specification that became current on 2026-07-28, ask is the only one of the three responses with a price fixed in the protocol itself. Whether the human accepts, declines, or dismisses the question, an elicitation costs the server exactly two protocol round trips. Never more, never fewer: the count is fixed by the retry rules, not by the answer. Fail and guess both look cheaper at one round trip. Their 1 is the start of a bill nobody can count.
 
-Most retry logic treats a missing field as a problem to route around: re-prompt the model, re-parse the user's message, hope it volunteers the city this time. That's the agent guessing again, just with more steps. The protocol-level answer is **elicitation**, a capability the [MCP](/foundations/mcp-servers/) spec added in its June 2025 revision: the server responds to an under-specified call not with an error but with a request - *I need these fields, here is the schema, render a form*. The client shows the user a typed input. The user fills it. The original action proceeds with complete arguments.
+Two round trips against one will sound like a loss, so settle it now. It would be a loss if both numbers were prices. Only one of them is a promise about the future, and the table later in this piece shows exactly what each 1 and each 2 buys.
 
-Here's the server side. The tool detects what it's missing and elicits it instead of throwing:
+One correction before the numbers, because most writing on this topic still carries the old picture. If you learned elicitation as a server suspending the tool call mid-flight while it waits for the human, that mechanism is gone. The 2026-07-28 spec retired it by name: "The previous pattern of server-initiated requests is no longer supported. This is a breaking change." What replaced it is the reason the price of asking is countable at all.
 
-```python
-@server.tool()
-async def book_flight(destination: str | None = None, date: str | None = None):
-    missing = {}
-    if not destination:
-        missing["destination"] = {"type": "string", "title": "Destination city"}
-    if not date:
-        missing["date"] = {"type": "string", "format": "date", "title": "Departure date"}
+## Check whether you have this problem
 
-    if missing:
-        result = await server.elicit(
-            message="I need a couple of details to book this flight.",
-            requested_schema={"type": "object", "properties": missing,
-                              "required": list(missing)},
-        )
-        if result.action != "accept":
-            return {"status": result.action}   # decline | cancel - see below
-        destination = destination or result.content["destination"]
-        date = date or result.content["date"]
+Before any counting, thirty seconds on your own code settles whether this piece is for you.
 
-    return do_booking(destination, date)
+Open the handler for a tool you ship that takes a required parameter the model cannot derive on its own: a customer id that exists only in the user's intent, an environment name, a destination, a target record. Now imagine the call arriving without that field, the way `book me a flight` arrives without a city. Or run it, in a test, with the field blank. What comes back?
+
+An error payload puts you on the fail branch. A default, an inference from context, or a smart fallback puts you on the guess branch. Either answer means the rest of this piece is worth your time. A structured request for the missing field means you already ask; skip ahead to what the flat rate does not solve. And if you ship no tool with a human-held parameter, every argument derivable from the repo, the conversation, or the request itself, you do not have this problem. Close the tab.
+
+**One blank required field in a test is all it takes to learn which branch your tool is on.**
+
+## What fail and guess cost on the wire
+
+Define the unit first, because the whole argument is a count. A **round trip** is one client-to-server JSON-RPC `tools/call` request, together with whatever the server sends back. Nothing else counts: no chat turns, no human seconds, no dollars. Those matter, and the honesty section comes back to them, but the protocol only sees requests.
+
+The fail branch, drawn:
+
+```text
+client -> server   tools/call  id:1   {date: "2026-09-04"}
+server -> client   Result id:1   error: "destination is required"    terminal
 ```
 
-The schema is the load-bearing part. `format: "date"` means the client can render a date picker and reject `"next thursdayish"` before it ever reaches your booking logic. You're not parsing free text and praying. **The validation lives in the schema, so the answer is well-formed by construction** - the same discipline a typed function signature gives you, pushed out to the human boundary. The spec deliberately keeps these schemas to flat objects of primitives - strings, numbers, booleans, enums - so there's no temptation to elicit a deeply nested config in one dialog. Ask for the few fields a human can fill in a single glance.
+**One round trip.** The call is over at the protocol level, and it is over unresolved. No ticket exists, and the only route to one is a fresh conversation turn: the human reads the error, rephrases, and the agent issues a new `tools/call` with a new id. That reissue is not a retry in the spec's sense, because the first call already returned a normal Result, so no protocol rule governs it. The honest count for fail is one, plus however many requests the human-driven loop burns, which the protocol does not see.
 
-## "Accept" is the easy case. The other two are where tools rot
+The guess branch:
 
-Here's the open question most elicitation implementations get wrong, and I'll come back to it: what happens when the user *doesn't* fill in the form?
-
-A naive handler checks for the data and assumes its presence. But an elicitation has three outcomes, not one. **Accept** - the user submitted values. **Decline** - the user actively said no, don't book anything. **Cancel** - the user dismissed the dialog without deciding. These are semantically different and the protocol keeps them distinct on purpose. Collapse them and you get the classic bug: a user hits Escape, your code reads an empty payload as "no destination provided," loops back, and re-asks forever. Or treats a decline as a soft default and books the flight anyway.
-
-So the handoff has to be exhaustive:
-
-```python
-result = await server.elicit(message="...", requested_schema=schema)
-
-match result.action:
-    case "accept":
-        return do_booking(**result.content)
-    case "decline":
-        return {"status": "cancelled", "reason": "user declined"}
-    case "cancel":
-        return {"status": "dismissed"}   # no action, no retry storm
+```text
+client -> server   tools/call  id:1   {date: "2026-09-04"}
+server -> client   Result id:1   booking confirmed for SFO           terminal
 ```
 
-This is where elicitation stops being a UX nicety and becomes a [permissions](/foundations/permissions/) boundary. A `decline` on a `book_flight` call is the user withholding consent for a state-changing, money-spending action. The tool that can't tell "I didn't answer" from "I said no" is the tool that books a flight you tried to cancel. **Treat the three actions as a guardrail, not an enum you can flatten.**
+**One round trip**, and this time the job is done. On the wire it is indistinguishable from a correct booking. That is the trap. From inside the trace, nobody can tell whether the inferred city was right, including the server that made the inference. If it was wrong, recovery starts whenever a human notices, which could be at check-in.
 
-## A second shape: when the agent has the options but not the choice
+So the ledger so far: fail costs 1 and leaves the job undone. Guess costs 1 and leaves the job done but unverifiable. Neither 1 comes with a guarantee, because the recovery that follows each one lives outside the protocol, where nothing counts it.
 
-Flights are the obvious case - the user holds a fact the agent can't see. But elicitation earns its keep just as often in the inverse situation, where the *agent* gathered the options and only the *choice* is user-held. An `apply_migration` tool that finds three pending migration files. An `edit_record` call that matches four customers named "Acme." The agent isn't missing data here; it has too much, and nothing in the request tells it which one you meant.
+**Fail and guess each cost one round trip, and that one is a down payment on a recovery the protocol never sees.**
 
-An enum turns that into a one-tap decision:
+## What the spec says an ask costs now
 
-```python
-candidates = find_matching_files(pattern)
-if len(candidates) > 1:
-    result = await server.elicit(
-        message=f"{len(candidates)} files match. Which one?",
-        requested_schema={
-            "type": "object",
-            "properties": {
-                "file": {"type": "string", "enum": candidates,
-                         "title": "File to edit"},
-            },
-            "required": ["file"],
-        },
-    )
-    if result.action != "accept":
-        return {"status": result.action}
-    target = result.content["file"]
+The 2026-07-28 revision of MCP rebuilt the plumbing under elicitation. The mechanism is **Multi Round-Trip Requests**, or **MRTR**: the server no longer holds anything open. It ends the original call with a special result and makes asking the human the client's job. Drawn for the same call:
+
+```text
+client -> server   tools/call  id:1   {date: "2026-09-04"}
+server -> client   InputRequiredResult id:1
+                   resultType: "input_required"
+                   inputRequests:  one entry for destination (a title, a small schema)
+                   requestState:   an opaque token
+      ... the client renders the request; the human answers ...
+client -> server   tools/call  id:2   {date, inputResponses: the human's action and
+                                      content, requestState: the same token}
+server -> client   Result id:2                                            terminal
 ```
 
-The server does the work it's good at - globbing the filesystem, querying the customer table - and hands the human the one decision it can't make. That's the division of labour in miniature: capability on the agent's side, intent on the user's, a typed enum as the seam between them. Note that the agent never sees a free-text answer it has to re-interpret. The user can only return one of the candidates the server already produced, so an ambiguous match can't degrade into a wrong guess.
+Two rules carry the load, both quoted from the spec's client requirements. First: "If a client receives an InputRequiredResult that contains the inputRequests field, the client MUST construct the requested inputs before retrying the original request." The retry is not optional, and it is not the human's choice. Second: "The JSON-RPC id MUST be different between the initial request and the retry, as they are independent requests." A different id means a second, independent request on the wire, and that is exactly what makes the cost countable.
+
+Count the arrows above: two client-to-server requests, ids 1 and 2, the same two-request shape the spec's own worked example draws. Fix that number now, because the rest of this piece pays it off: **an ask is 2 round trips, and what the human answers cannot change it.** There is no other channel back to the server. The three possible answers differ only in the content of request 2, never in whether request 2 happens.
+
+The three answers themselves survived the rewrite unchanged, and the spec still defines them the same way. **Accept**: "User explicitly approved and submitted with data." **Decline**: "User explicitly declined the request." **Cancel**: "User dismissed without making an explicit choice." Only the transport changed. The answer now rides inside `inputResponses` on the retried call, where it used to be the return value of a call the server held open.
+
+**MRTR makes an ask cost exactly two requests, because the retry is mandatory and it is the only road back.**
+
+## The toy: one missing field, five responses
+
+Now run every response to the same missing `destination` through the same counter, the obvious way: draw the sequence, count the client-to-server arrows. Five branches, one per way a tool can answer a gap it cannot fill.
+
+Fail and guess are already drawn above: one request each, terminal, and either unresolved or unverifiable.
+
+The three ask branches share a spine. Request 1 goes out, an `InputRequiredResult` comes back, the client must retry, and the retry carries a new id. Then the human's answer rides request 2 home:
+
+- accept: request 2 carries a typed, schema-checked city. The server books and returns a terminal Result. **Two requests.** Job done, and the server holds the exact validated value.
+- decline: request 2 carries an explicit no. The server returns a terminal Result without booking. **Two requests.** Job not done, and the server is certain that is correct.
+- cancel: request 2 carries no decision at all. The server returns a terminal Result without booking. **Two requests.** Job not done, and the server knows it does not know.
+
+That is the whole trace, and it lands in one table:
+
+| Branch | Round trips | Fixed by spec? | Job done? | Job correct? | What the server can prove afterward |
+|---|---:|---|---|---|---|
+| fail | 1 | No | No | unknown | nothing; the human must restart |
+| guess | 1 | No | Yes | unknown | nothing; the guess is unverifiable from inside the trace |
+| ask + accept | 2 | Yes | Yes | Yes | the exact validated value |
+| ask + decline | 2 | Yes | No | Yes | the human was asked and said no |
+| ask + cancel | 2 | Yes | No | unknown | the human was asked and did not decide |
+
+Check the payoff against the number planted a section ago. All three ask branches land on exactly 2, whatever the human answered. Fail and guess land on 1, and the "fixed by spec?" column says No for both: nothing in the protocol promises that 1, or anything after it. Every count here comes from the two quoted rules plus arrow-counting. The counts are integers, nothing is rounded, and they were re-checked against a script before publishing.
+
+**Every ask branch costs exactly 2 because request 2 is mandatory, and no fail or guess branch has a number the protocol stands behind.**
+
+## Name the trick: the flat-rate ask
+
+Call the asymmetry what it is: **the flat-rate ask**. The protocol prices asking the human at a fixed, published rate, two round trips in the flow the spec itself draws, and it leaves failing and guessing unpriced. Their 1 is a down payment, and the balance due depends entirely on what a human does next, off the wire.
+
+Once you know that the retry is mandatory and the only road back, the flat rate should feel forced rather than clever. The spec's authors did not just declare a price for asking. They made request 2 unavoidable, so two is simply the count of roads out of an ask, and no answer the human gives can add or remove a road.
+
+The flat rate is what makes asking plannable. A client author can budget for two requests. A test can assert that a well-behaved elicitation lands on two, because the spec says the retry must exist and must carry a new id. A rules file can tell the agent that a paused call is a normal outcome, because the pause has a known shape and a known cost. The flat rate is not a discount, and it does not need to be: a number you can trust beats a smaller number you cannot.
+
+**Asking is the only response with a published price, and a published price is the only one you can plan around.**
+
+## The wire up close, and one SDK's shape today
+
+Write the handler against the wire, not against any one SDK's idioms, because the SDKs are still moving. A well-behaved server, on the first call, does three things: notice that `destination` is missing and required; end the call with an `InputRequiredResult` whose `inputRequests` entry names the field with a title and a small schema, plus a `requestState` token the retry must echo; and on the retry, read the action inside `inputResponses` and branch on all three.
+
+The branching is where tools rot, same as before the rewrite. The retry arrives carrying one of three actions, and two of them are not accept. Collapse them, treat decline and cancel both as "cancelled", or read a missing payload as "no destination provided" and ask again, and you rebuild the classic bugs: the re-ask loop on cancel, or the decline read as a soft default that books anyway. MRTR makes the collapse easier to write by accident, because the answer is now a field on an ordinary-looking request rather than the return value of a special call. The distinction deserves its branches: a decline is the human saying no, a cancel is the human not saying anything.
+
+*One SDK, today, for calibration.* The Python SDK, version 2, keeps `ctx.elicit()` working for clients on legacy, pre-2026-07-28 connections. On a modern connection it raises `NoBackChannelError`, because the server can no longer hold a request open to push a question through. The SDK's replacement is a `Resolve()`-style helper attached to a tool parameter, written to span both protocol eras. That is the shape of the ecosystem 19 days after the spec: two paths, one bridge, nothing settled. Lead with the wire, and treat every SDK helper as a convenience layer over the two-request flow above.
+
+**The wire is the stable artifact: two requests, three actions, and a handler that must branch on all three.**
 
 ## Teach the agent that asking is the success path
 
-The protocol gives you the mechanism. Whether the agent *reaches for it* is a context-engineering decision, and it belongs in your [rules](/foundations/rules/). Left to default behavior, a model will often prefer to look competent - infer the missing argument and move on - because failing and asking both feel like admitting it doesn't know. You have to overwrite that instinct in writing:
+Whether the agent reaches for the ask is a context-engineering decision, and it belongs in your [rules](/foundations/rules/). Left to its defaults, a model will often prefer to look competent: infer the missing argument and move on, because failing and asking both feel like admitting it does not know. Say the opposite in writing:
 
 ```markdown
 ## Tool calls with missing parameters
 
-When a tool reports a missing or ambiguous required field, do NOT
-guess a value from prior context or conversation history. The missing
-field is user-held context. Surface the elicitation form and wait.
-A paused, asking tool call is a correct outcome - not a failure.
+When a tool reports a missing or ambiguous required field, do NOT guess a
+value from prior context or conversation history. The missing field is
+user-held. Surface the elicitation request and wait. A paused, asking
+tool call is a correct outcome, not a failure.
 ```
 
-That last line is the whole reframe. The agent's reflex equates "I had to ask" with "I failed." Your rules file says the opposite: **a half-specified request that becomes a clean dialogue is the tool working exactly as designed.** `book me a flight` was never an error. It was an opening move, and the schema is how the agent answers without inventing the rest of the sentence.
+The reframe is the point. `book me a flight` was never an error condition. It was an opening move, and the ask is the tool's legal reply: two round trips, a typed answer, and a booking the server can prove.
 
-The obvious objection is that a paused tool is a slow tool - that every elicitation is a round-trip the user has to service, and three of them in a row feel like a customs form. True, and it's exactly why the flat-schema constraint matters: one object, a handful of primitive fields, fillable at a glance. A well-built elicitation isn't a wizard; it's the single question the agent would have had to ask anyway, asked once in a typed box instead of guessed wrong and unwound over three correction turns. Measured end to end, asking is usually the *faster* path. It's just the one honest enough to admit it's asking.
+**The ask is a correct outcome at a published price, and the agent will not act like it unless your rules say so.**
 
-The deeper pattern generalizes past flights. Any action where the agent holds the *capability* but the user holds the *specifics* - which environment to deploy to, which customer record to amend, which of three matching files you meant - is a candidate for elicitation. The agent's gap and the user's knowledge are the two halves of the same call. Structured asking is just the protocol admitting that out loud.
+## What the flat rate does not solve
 
-## Where elicitation is the wrong tool
+**It is not free.** Two round trips is real wall-clock latency and a UI interruption stacked in front of the user, twice over: once to render the request, once to carry the answer. And the flat rate prices one ask, not a conversation. A tool that elicits three missing fields one at a time spends three ask rounds, which is four requests total; one form carrying all three fields is still two. Same counting rules as the table, and the chatty server is the expensive one.
 
-Two boundaries keep this from rotting into a nag. First, the spec draws a hard line: a server **must not** elicit sensitive information. No passwords, no API keys, no card numbers, no PII fished through a tool dialog. Elicitation collects the *shape* of an action - a city, a date, a file, an environment - never credentials. Secrets belong in the client's auth layer, where the user already trusts the boundary; routing them through an arbitrary server's form is precisely the confused-deputy move the protocol is built to prevent. A tool that pops a "please enter your password" elicitation isn't using the feature, it's abusing it.
+**The 1 on the guess row is not cheap either.** The table marks the guess branch "job correct: unknown", because the server cannot verify its own inference from inside the trace. To make that concrete: a wrongly guessed, non-refundable fare is $340 in this piece's toy terms, spent on a branch that reported success. The real figure is whatever your fare rules and refund windows say. The protocol has no opinion, which is the whole point of the row.
 
-Second - and this is the boundary good tools quietly cross - don't elicit what the agent can find out for itself. If the missing value sits in a file the agent can read, in git history, in an environment variable, in the conversation two turns up, then asking isn't caution, it's laziness in a costume. The entire premise is that the destination lives in the user's head and *nowhere else*. The moment you start eliciting facts the agent could have fetched, you've rebuilt the click-through wizard everyone closes without reading, and the user learns to dismiss your dialogs on reflex - which is how a real `decline` ends up indistinguishable from "ugh, this thing again." Elicit the irreducibly human; fetch everything else.
+**The guarantee assumes a well-behaved server.** The spec says so itself: "Servers MUST NOT assume that clients will fulfill the inputRequests or retry the original request. Servers MAY choose to return an InputRequiredResult on multiple attempts at the same request if they want to repeatedly prompt the user for information until they have what they need to complete the request." So "two, always" is the baseline the spec draws, not a ceiling it enforces on the server's own choices. A server that re-prompts once on a single field costs three requests, and every extra round it schedules adds exactly one more.
 
-Don't catch the missing parameter and fail. Don't fill it in and lie. Hand the user a form and let them close the gap they're the only one who can.
+**Adoption is early.** The 2026-07-28 spec is 19 days old as of this piece's fact check, 2026-08-16. The Python SDK detail above is the honest picture of where things stand: two paths, a bridging helper, nothing universal yet. A server author supporting both eras needs an explicit compatibility path, not an assumption that clients have caught up.
+
+**This piece is scoped to the missing-parameter case.** Elicitation has a second everyday job: confirming a decision the model already made, such as a destructive delete that has every argument it needs and still deserves a human checkpoint. That case, plus the capability clause that decides which clients can be asked at all, is [its own argument](/blog/elicitation-plus-tool-annotations/). URL-mode elicitation, for secrets and OAuth collected out of band on a trusted page, lives there too. Form mode must not collect secrets in the first place; keeping credentials out of tool calls entirely is [the server's job](/blog/the-server-is-the-trust-boundary/). And MRTR carries more than elicitation: sampling and roots/list ride the same umbrella and are not covered here.
+
+**The request state is real security surface.** The `requestState` token exists so the server can match a retry to the ask that produced it. Replay, tampering, and the phishing scenario the spec's own security section documents are live concerns, and this piece does not cover them. Know the surface exists before you ship a server that leans on the token.
+
+**When not to ask at all.** If the missing value sits somewhere the agent can reach, a file, git history, an environment variable, two turns up in the conversation, then asking is laziness in a costume, and it trains the user to dismiss your dialogs on reflex. The entire premise is a fact that lives only in the human's head. Elicit what only the human holds; fetch everything else.
+
+**The flat rate prices the ask; it does not price the asking habit, the re-prompt, the secret, or the token, and each of those has its own bill.**
+
+## Back to the table
+
+Read the second column top to bottom: No, No, Yes, Yes, Yes. Three responses have a price fixed by the protocol, two do not, and the two without one are the two that tools ship by default. Then read the rows whole. Fail: cheapest on the wire, nothing done, nothing provable. Guess: cheapest on the wire, something done, nothing provable, the only branch where "job done" and "job correct" can quietly disagree. Ask plus accept: two round trips, done, correct, provable. Ask plus decline: two, not done, correct, provable. Ask plus cancel: two, not done, honest about not knowing. **Only one row in five is both done and provable, and it is an ask row.**
+
+Which leaves the cost the flat rate itself created. The protocol now prices one ask at a fixed two, but nothing prices how many separate asks a tool schedules: three missing fields, asked one at a time, is four requests where one form is two. Nothing binds a server that finds reasons to re-prompt, either; each extra round adds one, and the flat rate quietly stops being flat. The fail-or-guess instinct never had to answer either question, because it never had a number to keep honest. You do now.
+
+**Ship the ask: two round trips, a provable outcome, a bill you can finally read. Then count how many times your tool asks.**
 
 ---
 
-For the elicitation protocol and tool wiring, see [MCP servers](/foundations/mcp-servers/); for treating decline/cancel as a consent boundary, see [Permissions](/foundations/permissions/); for teaching the agent that asking beats guessing, see [Rules](/foundations/rules/).
+**About the numbers.** The round-trip counts are original arithmetic derived from the message-flow rules the 2026-07-28 MCP spec states: the mandatory retry, the required new JSON-RPC id, and the permission to re-prompt. The spec states the rules, not the sums, and the accounting for what follows a fail or a wrong guess, an unbounded, uncounted human-driven recovery, is this piece's synthesis. The five-row table, the planted 2, and the form-versus-one-at-a-time comparison (two requests against four for three fields) were computed from those rules and re-checked against a script before publishing. The spec quotations, the current version, the breaking-change line, the two client requirements, the re-prompt clause, and the three action definitions, are quoted verbatim from the live specification, fetched 2026-08-16. The spec's age, 19 days, is date arithmetic from 2026-07-28 to 2026-08-16. The Python SDK account, legacy `ctx.elicit()`, `NoBackChannelError`, the `Resolve()`-style helper, comes from the SDK's own what's-new page fetched 2026-08-16 through one summarizing step, so treat the method names as checkable against that page rather than as verbatim quotes. The $340 misbooked fare and the `book_flight` example are invented for traceability.
+
+Where the neighbors sit: [Elicitation plus tool annotations](/blog/elicitation-plus-tool-annotations/) confirms a decision the model already made and adds the client-capability clause this piece skips; [Type your tool boundaries](/blog/type-your-tool-boundaries/) types what a tool tells you when it is done, where this piece types what it asks before it starts; [The server is the trust boundary](/blog/the-server-is-the-trust-boundary/) keeps credentials out of tool calls entirely, where this piece is about the one class of plain fact that should cross; [The confused deputy server](/blog/the-confused-deputy-server/) is about a server exercising authority it was never granted, where this is about a tool admitting a fact it does not have. For the primitives, see [MCP servers](/foundations/mcp-servers/), [Permissions](/foundations/permissions/), and [Rules](/foundations/rules/).

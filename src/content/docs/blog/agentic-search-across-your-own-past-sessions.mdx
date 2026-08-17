@@ -1,95 +1,98 @@
 ---
-title: "Your agent re-litigates decisions because you delete the answer."
-description: "Session transcripts are an external memory most people delete after 30 days. A skill that greps and re-ranks them turns 'what did we decide' into an answer."
+title: "Grep ranks the reversed decision 9 to 3 over the true one. A supersede pass fixes it."
+description: "Your session transcripts hold every decision you've made with an agent, and the only free way to search them counts mentions instead of truth. Rank the survivors by date and the reversed decision stops winning."
+seoTitle: "Search Claude Code Session Transcripts Before They Delete"
+seoDescription: "Claude Code deletes transcripts after 30 days by default, and grep ranks a reversed decision 9 to 3 over the current one. A supersede pass fixes it."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, skills, subagents, model-selection]
 draft: false
 ---
 
-Three weeks ago you and the agent spent forty minutes deciding to keep retries in the job runner, not the HTTP client, because the client gets swapped per-environment and you didn't want retry policy leaking across boundaries. Today the agent proposes adding retries to the HTTP client. It is confident. It is wrong in exactly the way you already corrected. And you have no fast way to prove it, because the conversation where you settled this scrolled off into a transcript file you will never open again.
+Every session with an agent starts blank. The standard answer is to write the durable knowledge down once, in rules files the agent loads every turn, covering the conventions you know you will need again. That machinery serves the decisions you remember making. The decision you have forgotten making lives somewhere else: in the session transcripts, on disk, in plain text, quietly going stale.
 
-This is the quiet tax of working with a contextless collaborator. The agent is broad and fast, but it has no memory of *your* decisions - only the ones still in the window. **The window forgets, and you pay the forgetting cost in re-argued settled questions.** Here's the part nobody acts on: the answer wasn't lost. It's sitting in `~/.claude/projects/` or your CLI's equivalent, fully transcribed, timestamped, and - by default - scheduled for deletion in thirty days.
+On 2026-06-02, one session in the `checkout-service` transcript history decided retries belong in the job runner, because the HTTP client gets swapped per environment and retry policy should not leak across that boundary. On 2026-07-14, 42 days later, another session reversed it: retries moved to the gateway, because the job runner had started timing out under load. Today the agent proposes putting retry logic back in the HTTP client. Nothing tells it this question was settled, then unsettled, then settled again, because neither session is in its window anymore. Both files are still on disk: Claude Code writes each session to `~/.claude/projects/<project>/<session>.jsonl`, a full transcript of every message, tool call, and tool result.
 
-## You are deleting your most expensive context store on a timer
+Session transcripts are the highest-fidelity record of every decision you have made with an agent, because they capture what you actually did under deadline pressure rather than what you meant to write down later. They are also close to unsearchable by the only free tool everyone already has. Keyword search counts mentions, and a decision argued out loud over an hour out-mentions a decision reversed in three lines. Search that history for "retry" and rank by **match count**, the number of times the term appears in a file, and the reversed decision wins 9 matches to 3: a specific, checkable, confident answer pointing at the file whose decision no longer holds.
 
-The mainstream instinct is reasonable: transcripts are noise. They're enormous, repetitive, full of tool spam and dead ends, and grepping them returns a flood. Search `retry` across a few weeks of heavy sessions and you get four hundred hits, most of them an agent narrating a stack trace. So you leave retention at its default and move on. The history feels like exhaust, not asset.
+One extra step fixes it. After the search, rank the surviving decisions by date and check whether they contradict each other. On the twelve-session corpus below, that step overrides the 9-to-3 count, returns the current decision, and lands on exactly the file you would pick from reading all twelve transcripts by hand. Nothing below needs a new database, a new index, or a new habit: it is one more pass on top of the search you are probably already running badly.
 
-That instinct is wrong about the value and right about the access method. The transcripts *are* a growing record of every decision, dead end, and "no, do it this way" you ever issued - the single richest source of your team's actual conventions, more honest than any doc because it's what you really did under pressure.
+## Check whether you already have this problem
 
-And they don't linger. Claude Code purges every transcript older than `cleanupPeriodDays` - which defaults to 30 - at startup, silently, going straight to `unlink()`: no prompt, no soft-delete folder, no `restore` command, not even the macOS Trash. The asset shreds itself on a timer you set without thinking, before you ever consider mining it. The reason it feels useless in the meantime is that **plain keyword search is the wrong retrieval tool for it.** Keyword search optimizes for recall; what you need is relevance. You don't want every line mentioning retries. You want the three exchanges where a *decision* was made.
+One minute settles whether this piece is for you. Pick a decision you made with an agent, changed your mind about later, and would recognize on sight: something with two dates, not one. Grep your own `~/.claude/projects/<project>/` directory for the topic and see which file has the most hits. Read that file first.
 
-The open question, then: how do you get relevance out of a corpus too big and too messy to read, without building a vector database and an ingestion pipeline you'll never maintain?
+If the top hit is the decision still true today, you can stop here. Either you have not reversed a decision recently, or your corpus is too young to hide one behind a bigger match count. **Close the tab.**
 
-## Fork a cheap model to do the relevance work you can't
+If the top hit is the stale one, or you cannot tell without opening three more files, keep reading. And check one more thing on the way in, because the corpus has to survive long enough to be searched at all. Claude Code deletes session transcripts older than `cleanupPeriodDays` at startup, and that setting defaults to 30 days. Left untouched, it may already have eaten the history this test needs. **A corpus with a 30-day memory cannot answer a question about last quarter.**
 
-The fix is a [skill](/foundations/skills/) that treats your session history as external memory and queries it the way you'd query a fast, disposable research assistant. The expensive model - the one in your main session - never reads four hundred grep hits. It dispatches the search to a [subagent](/foundations/subagents/) running a cheap model, whose entire job is to grep wide, expand around the hits, and hand back a ranked shortlist.
+## One repo, one question asked twice
 
-The mechanic is a three-pass funnel, and each pass is deliberately dumb so the next one can be smart:
+Fix the corpus once; every number below comes from it. One repo, `checkout-service`. One recurring question: where does retry logic live? Twelve session transcripts spanning 2026-05-20 to 2026-07-22, nine weeks. Under the stock 30-day retention window, six of the twelve, session-03 included, would already have crossed the deletion line by the last session's date.
+
+Two decisions live in that history, and they contradict each other. **Decision A**, session-03, 2026-06-02: retries live in the job runner, and the team built against that. **Decision B**, session-11, 2026-07-14: retries move to the gateway, because the job runner was timing out. B postdates A by 42 days. B is what holds today.
+
+Nothing on disk marks A as dead. It is an older file sitting next to a newer one, both fully preserved, both reading as a settled, confident call if you open either one alone. A transcript cannot say "this got overturned later," because it was written before the overturning happened. **The corpus records what was decided; whether that is still true is a question the corpus itself never answers.**
+
+## Read the twelve by hand
+
+Before trusting any tool with this, get the answer the boring way. Below is a **toy corpus**, twelve invented transcripts small enough to trace inside this piece, with what each session contributes:
+
+| Session | Date | "retry" mentions | Decision? |
+|---|---|---:|---|
+| session-01 | 2026-05-20 | 0 | unrelated (auth) |
+| session-02 | 2026-05-25 | 2 | narrates a stack trace |
+| session-03 | 2026-06-02 | 9 | **A: job runner, not HTTP client** |
+| session-04 | 2026-06-08 | 1 | passing mention |
+| session-05 | 2026-06-15 | 0 | unrelated (billing) |
+| session-06 | 2026-06-19 | 4 | debugs against A, decides nothing new |
+| session-07 | 2026-06-25 | 0 | unrelated (auth) |
+| session-08 | 2026-07-01 | 2 | narrates a test failure |
+| session-09 | 2026-07-05 | 0 | unrelated (deploy config) |
+| session-10 | 2026-07-09 | 1 | mentions a retry-count env var |
+| session-11 | 2026-07-14 | 3 | **B: gateway, job runner was timing out** |
+| session-12 | 2026-07-22 | 0 | unrelated (onboarding docs) |
+
+Seven of the twelve mention retry at all. Five of those seven are noise wearing the costume of signal: a stack trace that happens to contain the word, a debugging session that pokes at decision A without changing it, an environment variable named `RETRY_COUNT` that says nothing about where the logic lives. Two contain an actual decision, and reading those two in date order takes no skill: **session-11 is newer, so session-11 holds, and session-03 was reversed.**
+
+A real project directory runs to hundreds of transcripts, not twelve; twelve keeps this corpus hand-checkable inside the piece. The shape survives the shrink. Most files that mention a topic decide nothing, decisions are sparse, and a reversal sits in the pile unmarked. **A patient reader lands on session-11 without trying, and that is the bar every tool below has to clear, on corpora too big to read at all.**
+
+## The naive rank hands you the reversed decision
+
+Now do what most people actually do: grep, and sort by how many times the term shows up.
 
 ```bash
-# Pass 1 - grep wide, cheaply. Recall over precision.
-grep -rl -i "retry\|backoff\|idempoten" ~/.claude/projects/<project>/ \
-  | head -50 > /tmp/candidates.txt
+grep -rc -i "retry" ~/.claude/projects/checkout-service/ \
+  | sort -t: -k2 -rn
+```
 
-# Pass 2 - for each candidate, pull a window of context around the hit,
-# not just the matching line. Decisions live in the surrounding exchange.
+The top of that list: session-03 with 9 hits, then session-06 with 4, session-11 with 3, and four more in single digits. **Match count says session-03 wins 9 to 3 over session-11.** Every hit is real. Session-03 really was the longer exchange, a back-and-forth weighing tradeoffs out loud, while session-11's call was quick because the case for moving retries had been building for weeks. The count is honest about effort. What it cannot see is that effort spent arguing a decision into existence says nothing about whether the decision survived.
+
+That blindness is what makes this failure dangerous. The tool returns a confident top result, backed by a real, checkable number, pointing straight at the superseded decision. An empty search result at least tells you to keep looking. **This one tells you to stop, and it is wrong.**
+
+## Grep wide, then rerank for decisions
+
+Grep with a wider net returns every on-topic file and no ranking inside it. That pile is **the flood**, and the way out is a second pass over the same results. First, widen the net past a single keyword, so a query does not miss a decision phrased differently than you would guess:
+
+```bash
+grep -rl -i "retry\|backoff\|idempoten" ~/.claude/projects/checkout-service/ \
+  | head -50 > /tmp/candidates.txt
+```
+
+Then pull context around every hit, not just the matching line, because a decision lives in the surrounding exchange:
+
+```bash
 while read f; do
   grep -n -i -A8 -B4 "retry\|backoff" "$f"
 done < /tmp/candidates.txt > /tmp/expanded.txt
 ```
 
-Then the third pass - the one that earns its keep - hands `/tmp/expanded.txt` to a cheap model with a re-ranking prompt:
+Hand those expanded windows to a fast model with one instruction: return only the excerpts where a decision got made, and discard tool output, stack traces, and abandoned approaches. Telling a decision from a mention is recognition work, the kind of call a small model makes cheaply; the full price of routing that reading through a cheap model instead of your main window is already worked out in [the cheap reader](/blog/stop-reading-your-codebase-in-the-window/), which owns that arithmetic. This piece just points the same funnel at a different corpus.
 
-```markdown
-You are searching past session transcripts. The user asked:
-"What did we decide about where retry logic lives?"
+Seven mentions collapse to two candidates: session-03 and session-11. That is real progress: **recall**, finding everything on topic, has been narrowed to **precision**, returning only what matters. It is also exactly where a plain rerank stalls out. Two decisions, flatly contradicting each other. Returning whichever candidate the reranker happened to list first is the same coin flip grep was already making, with better-looking inputs. **The rerank can tell you both files decided something; it has no rule for choosing which decision to believe.**
 
-Below are grep windows from old sessions. Return ONLY the 3 most
-relevant excerpts where an actual DECISION was made (not where the
-topic was merely mentioned). For each, give the verbatim snippet,
-the session file, and one line on what was decided.
-Discard tool output, stack traces, and abandoned approaches.
-```
+## The supersede pass
 
-The cheap model is good enough for this. Sorting "decision" from "mention" is a recognition task, not a reasoning one - exactly where a small, fast model is cost-justified, and exactly the call [model selection](/foundations/model-selection/) exists to make. You burn pennies on a thousand grep windows so your expensive context never has to see them. **The result that comes back isn't a flood; it's three snippets, each linked to the session and date where you said it.**
-
-## The same funnel finds the bug you already fixed
-
-Decisions are the obvious payload, but the funnel works on anything you've solved once and forgotten. Picture the other recurring tax: a test goes red with `ECONNRESET` from the staging queue, and the agent rolls up its sleeves to debug it from zero - adds logging, reads the client, theorizes about timeouts. You have the unshakeable feeling you watched it solve this exact failure last month. You did. The fix is in a transcript.
-
-Here the query shape changes but the machinery doesn't. You grep the *error signature* instead of a topic, and the re-rank prompt hunts for a resolution rather than a decision:
-
-```bash
-grep -rl -i "ECONNRESET\|staging.*queue\|socket hang up" \
-  ~/.claude/projects/<project>/ | head -50 > /tmp/candidates.txt
-```
-
-```markdown
-Below are grep windows from old sessions mentioning this error.
-Return ONLY excerpts where the error was actually RESOLVED - the
-change that made it go away. Give the verbatim fix, the session
-file, and one line on the root cause. Ignore failed attempts and
-re-statements of the symptom.
-```
-
-What comes back is the one exchange where you discovered the staging queue drops idle connections after sixty seconds and the fix was a keep-alive ping - not the four sessions where you guessed wrong first. The agent skips the hour of re-derivation and goes straight to the known root cause. Same three-pass funnel, different target: a decision query asks *what did we choose*, a debugging query asks *what made it stop breaking*. Both are recognition tasks a cheap model handles for pennies.
-
-## This is the same trick that keeps long context from rotting
-
-Notice what just happened structurally. You took a corpus too large to hold in context, queried it with a forked pass, and pulled back only the distilled, relevant fragment. That is *recursive query-as-memory* - the same move that lets agents operate over codebases far larger than any window: don't load it all, query it on demand and re-rank.
-
-Your session history is just the most under-exploited instance of it. The transcripts already exist. The retrieval is three shell commands and a prompt. There's no model to train, no index to keep warm - only a timer quietly deleting the corpus before you ever query it.
-
-"But this is what a vector database is for." It isn't, and the reason is operational, not theoretical. A vector store buys you semantic recall in exchange for an ingestion pipeline you have to keep alive: every new session has to be chunked, embedded, and indexed, the embeddings drift as your model versions change, and the moment you skip a sync the index lies to you with the confidence of fresh data. Grep has none of that overhead because the transcripts are *append-only plaintext on local disk* - the index is the filesystem, and it's never stale. The cheap-model re-rank is precisely the part that recovers the semantic relevance grep can't, without the standing infrastructure embeddings demand. For a corpus that already exists, already updates itself, and already sits in a known directory, the higher-ROI move is to query it on demand, not to mirror it into a second system you'll forget to feed.
-
-The same answer dispatches the "just use `/resume`" objection. `/resume` reopens a whole conversation - it assumes you already know *which* of two hundred sessions holds the answer, and then hands you forty minutes of scrollback to find it. Recall hands you the three lines. One restores a session; the other restores a decision.
-
-## Where this breaks: the answer you already reversed
-
-The dangerous failure mode isn't an empty result - it's a confident, stale one. Transcripts are history, and history accumulates decisions you *changed your mind about*. Suppose three weeks ago you put retries in the job runner, and last week you moved them to the gateway after the runner started timing out. Both exchanges are in the corpus. A naive funnel greps "retry," finds a clean decision in the older session, and returns it - and now your recall tool is actively arguing for the architecture you abandoned. That's worse than no memory: forgetting makes the agent guess, but a stale hit makes it cite chapter and verse for the wrong answer.
-
-The fix is to make the funnel time-aware. The grep windows already know their source file, and every transcript filename and `mtime` carries a date - so feed that date into each window and make the re-rank prompt prefer the *most recent* decision, and flag contradictions instead of silently picking one:
+Neither candidate is wrong about what it decided. One of them is just older. Every session file carries a date, and a superseded decision keeps its file, its reasoning, and its confident tone; it is merely out of date. So bolt a fourth pass onto the funnel that does exactly one new thing: when candidate decisions on the same topic disagree, sort them by date and say which one wins, out loud.
 
 ```markdown
 Each excerpt is tagged with its session date. If two excerpts
@@ -98,29 +101,67 @@ disagree, prefer the most RECENT decision and say so explicitly:
 decision as current without noting it was overridden.
 ```
 
-Recency isn't a nicety here; it's what separates a memory from a museum. The whole value of mining your own history is that it reflects what you decided *last*, not what you decided *first*.
+Call this the **supersede pass**. Run it on the two candidates: session-03, 2026-06-02, against session-11, 2026-07-14. The gap is 42 days. Session-11 wins, tagged "supersedes session-03, superseded on 2026-07-14, 42 days after it was made." Set that beside the by-hand read from earlier: session-11, same file, same verdict, reached by a different route. The match is exact on the one answer that matters, which is the only kind of agreement worth trusting; a fourth pass agreeing with itself would prove nothing.
 
-So change the schedule. In your [configuration](/foundations/configuration/), turn `cleanupPeriodDays` up to something generous - but not to `0`, which on Claude Code disables persistence entirely instead of disabling cleanup, deleting the very thing you're trying to keep. Then point the skill at the transcript directory and give it a trigger phrase:
+A reasonable objection: if dates settle it, why run the rerank at all? Why not sort every mentioning file by date and read the newest? Because date order filters nothing. On this corpus the newest file mentioning retry happens to be session-11, but that is an accident of vocabulary; five of the seven mentioning files decide nothing, and in a corpus of hundreds, the newest mention is almost always a passing one. The rerank finds the decisions, and the dates then order them. Skip the rerank and you have traded grep's coin flip for a calendar's.
+
+**The supersede pass does not out-guess grep. It asks the question grep never asked: which answer is still true.**
+
+## Build it once, as a skill with a cheap reader
+
+None of this needs a database. It needs a [skill](/foundations/skills/) that treats the session directory as a corpus to query, and a [subagent](/foundations/subagents/) to run the four passes without dragging the raw grep output and the expanded windows into your main session. The parent model only ever reads the three or four sentences that come back; the [model selection](/foundations/model-selection/) call that keeps the reader cheap is the same one the cheap reader piece already prices out.
 
 ```markdown
 ---
 name: recall
 description: Search past session transcripts for prior decisions.
   Use when the user asks "what did we decide about X" or "have we
-  hit this before". Fans out a cheap model to grep, expand, re-rank.
+  hit this before". Fans out a cheap model to grep, expand, rerank,
+  and check dates for contradictions.
 ---
 ```
 
-Now "what did we decide about retries three weeks ago" returns the exchange where you decided it - verbatim, dated, and citable. The agent stops proposing the HTTP-client retry. You stop re-arguing it. The decision, made once, stays made.
+With that wired in, "what did we decide about retries three weeks ago" returns session-11, dated, with the reversal noted, in place of a guess or a flood. The funnel generalizes beyond decisions, too: point it at a bug's error signature and it returns the session where the fix actually landed, skipping the sessions where you only guessed. **The corpus stayed as dumb as ever; the last pass finally asked it something precise.**
+
+## The setting that quietly undoes all of this
+
+None of the four passes helps if the transcripts are already gone. Claude Code deletes session transcripts older than `cleanupPeriodDays` at startup. The default is 30 days, the documented minimum is 1, and setting the value to 0 fails with a validation error, so "just set it to zero and keep everything" is not an option the tool offers. Disabling transcript writes entirely is a separate mechanism, an environment variable, and the exact opposite of what a search corpus wants.
+
+The practical move, in [configuration](/foundations/configuration/), is to set the number comfortably above 30, past the longest gap you would expect between a decision and its reversal. The corpus above needed session-03 still on disk 42 days after it was written, or the supersede pass would have had one candidate and nothing to compare. Forty-two days is longer than the default thirty, so under stock settings the July session would have arrived to reverse a decision the corpus no longer contained: the reversal itself would have happened blind. By the corpus's last date, six of the twelve sessions, the older half of the contradiction included, would already be gone. **The funnel is only as good as the corpus the retention window lets survive.**
+
+## The neighborhood this sits in
+
+Several pieces on this site touch memory or search, and each one is a different job. [The relay](/blog/the-relay-not-the-window/), [the plan file as external memory](/blog/treat-the-plan-file-as-external-memory/), and [the handoff file](/blog/the-handoff-file/) carry state forward inside one still-running build; this piece retrieves backward, across sessions that already ended. [Deterministic context](/blog/deterministic-context/) primes files you already know matter, and [the disposable map](/blog/cache-the-explore/) caches one repeated exploration; here you cannot know which session holds the answer, so there is nothing to prime and nothing to cache. [Hierarchical context](/blog/hierarchical-context/) shrinks the always-loaded rules file, a different axis entirely. [The loop that rereads its diary](/blog/the-loop-that-rereads-its-diary/) mines the git log, a different corpus, for its own continuity. [Retrieval versus generation failures](/blog/retrieval-vs-generation-failures/) splits a wrong answer into its two bug classes in the live task. [Stop re-typing the same correction](/blog/stop-re-typing-the-same-correction/) encodes a fix you keep repeating as a rule, before it recurs again; this piece retrieves after the fact, for the decision nobody thought to encode. **Every neighbor relays state forward or encodes a fix in advance; this is the piece about questioning an archive that is already over.**
+
+## This already has products, and a vendor answer
+
+Three admissions belong here, because leaving any of them out would make this piece look unaware of its own neighborhood.
+
+First, the DIY skill is one option among several, and the others are real shipped products. claude-mem compresses transcripts into typed observations in SQLite with full-text search and an optional Chroma vector index, which is exactly what catches a query phrased nothing like the original decision; kcp-memory does similar work; cc-session-search exposes the same search over transcripts as an MCP server you run; and claude-grep is a grep-based CLI for precisely this job, with no server to run. On a fuzzy, badly worded query, claude-mem's combined full-text plus vector index will out-recall plain grep, and saying otherwise would be salesmanship. The honest case for the four-pass skill is that it is small and readable: a few dozen lines you can read and change in an afternoon, with no index to keep warm. **"No database needed" describes this specific DIY approach; the trade it makes is convenience against recall, and the recall is real.**
+
+Second, Anthropic ships its own memory tool on the Messages API (`memory_20250818`, generally available, no beta header required), and it runs in the opposite direction through time. That tool is Claude writing memory files forward from now on, scoped by the model's own judgment about what is worth keeping. This piece is retrieval backward, over transcripts that already exist and that the model never chose to write down as memory. **Writes-forward memory and reads-backward retrieval answer different questions, and confusing the two oversells one at the other's expense.**
+
+Third, and no tool in this section fixes it: recall here is reactive. You ask, the funnel searches, an answer comes back. Nothing stops the agent from proposing the reversed decision again next Tuesday, unprompted, because the fix only fires once somebody remembers to ask the question. **A search that only runs on request cannot catch the mistake nobody asked about.**
 
 ## When the answer should stop being a search
 
-There's a boundary worth naming, because recall is the wrong tool past it. If you find yourself querying the *same* decision every week, the lesson isn't "I need a faster search" - it's "this decision should never have been cold storage." Search is retrieval for the long tail: the hundreds of small calls too numerous to enshrine, each one worth pennies to fetch on the rare occasion it resurfaces. But the handful of decisions you keep re-litigating aren't the long tail. They're the head, and the head belongs in [rules](/foundations/rules/) - written down once in `AGENTS.md` or `CLAUDE.md` where the agent reads it on every single turn, no query required.
+Replay the whole funnel on one table, the same corpus all the way down:
 
-Think of it as two tiers of memory. Rules are hot memory: always loaded, always in front of the agent, reserved for the conventions it must never violate. Transcript recall is cold memory: enormous, cheap to keep, queried only on demand. The mistake is putting a hot decision in cold storage and paying the retrieval tax forever. When a recall query keeps returning the same snippet, that's your signal to promote it - copy the decision into your rules and let it stop being a search at all. Recall is how you mine the corpus; rules are how you retire the questions that mining keeps surfacing.
+| Pass | Returns | Answer | Verdict |
+|---|---|---|---|
+| Naive grep, top match count | 1 | session-03 | wrong - stale, reversed |
+| Grep wide (recall) | 7 | buried in 7 | unranked |
+| Expand + rerank (decisions only) | 2 | 2 candidates | ambiguous, contradicts |
+| + supersede pass (dates + contradiction check) | 1 | session-11 | correct - current, dated, flagged |
 
-The gap between an agent and an expert was never raw capability. It's that the expert remembers the meeting and the agent re-opens it. **Your past sessions are the meeting minutes. Stop shredding them and start querying them.**
+Row by row: the naive count confidently returns the wrong file; the wide grep finds the right file and buries it in seven; the rerank surfaces both decisions and cannot choose; the supersede pass reads the dates, flags the contradiction, and returns the one file the by-hand read picked. Row four is the only row that matches a careful human, and the only one that makes the archive a memory instead of a museum: an answer that knows what it replaced.
+
+That closes the tension from the top. The transcripts were never the problem; they sat there for nine weeks, intact and free to read. The missing column was a date, and the missing question was which answer had expired.
+
+One cost survives the fix, and handing it forward beats pretending it is closed. A recall tool that answers the same query every few weeks is telling you something: the answer belongs where the agent reads it every turn, in the rules file, rather than in cold storage somebody has to keep querying. [Rules as write-once agent memory](/blog/your-agentsmd-is-write-once-agent-memory/) makes that promotion argument end to end; this piece's job is finding the decision worth promoting. **What to do with it once found is that piece's job, not this one's.**
 
 ---
 
-For the retrieval mechanics, see [Skills](/foundations/skills/) and [Subagents](/foundations/subagents/); for putting the cheap model on the grunt pass, [Model selection](/foundations/model-selection/); for the retention settings that decide whether any of this survives, [Configuration](/foundations/configuration/).
+**About the numbers.** The 12-session corpus, its dates, its "retry" mention counts, the two decisions (session-03 and session-11), the 9-to-3 match count, the 7-mentions/2-decisions split, the 42-day gap, and the six-of-twelve retention count are toy particulars, authored for hand-tracing rather than measured off a real transcript directory; they are asserted by name in an accompanying gate script, re-run before publishing, and every number in this piece traces to it. The transcript path `~/.claude/projects/<project>/<session>.jsonl` and its contents (every message, tool call, and tool result) are quoted from Claude Code's own directory reference. `cleanupPeriodDays` defaulting to 30 days, its documented minimum of 1, setting it to 0 failing with a validation error, deletion at startup, and disabling transcript writes being a separate setting are quoted from the same references, checked 2026-08-16. The memory tool's general availability on the Messages API, with no beta header required, is quoted from Anthropic's own tool-use documentation, checked 2026-08-16. The named tools (claude-mem, kcp-memory, cc-session-search, claude-grep) are public, checkable repositories, checked 2026-08-16.
+
+For the per-tool mechanics, see [Skills](/foundations/skills/) and [Subagents](/foundations/subagents/); for pinning the reader to a cheap model, [Model selection](/foundations/model-selection/); for the retention setting that decides whether any of this survives, [Configuration](/foundations/configuration/). For the two posts this one leans on hardest, see [the cheap reader](/blog/stop-reading-your-codebase-in-the-window/) and [rules as write-once agent memory](/blog/your-agentsmd-is-write-once-agent-memory/).

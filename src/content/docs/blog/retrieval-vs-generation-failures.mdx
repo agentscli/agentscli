@@ -1,0 +1,180 @@
+---
+title: "Your wrong-answer rate can hold flat at 50% while the fix works: score recall and faithfulness separately"
+description: "A confidently wrong answer is two bugs in one costume: a fact that never reached the context window, and a fact that arrived and got ignored. Log the window, score two binaries, and each bug routes to a different layer of the stack."
+seoTitle: "RAG Debugging: Retrieval Failures vs Generation Failures"
+seoDescription: "A 20-question bot holds a 50% wrong rate across an index fix: recall rose 30 points, faithfulness fell 27.8. Score the two separately."
+authors: sourabh
+date: 2026-05-31
+tags: [context-engineering, mcp-servers, rules]
+draft: false
+---
+
+Somebody asks the on-call bot a question in Slack: does `orders` retry failed webhooks three times? The bot answers instantly. Yes, three times. The runbook says zero. The reflex in the room is unanimous: it hallucinated, so harden the prompt. Add a line - "Only state facts you can verify from retrieved context. Do not guess." Ship it. Feel better.
+
+That line does nothing if the retry policy was never in the context window at all. There is no sentence you can write that makes a model reason over text it does not have. And that is the tension this whole piece turns on: **a confidently wrong answer is two unrelated bugs wearing the same costume** - a fact the agent never received, and a fact it received and then ignored. From the outside they are identical. They have nothing else in common. You cannot tell which one you have, and you cannot fix the right layer of your stack, until you have logged what actually reached the context window and scored those two things separately.
+
+Fix one case now and keep it for the rest of the piece. An on-call Slack bot for the `orders` service, wired to the team's runbook corpus through an MCP search tool. It fields the numeric policy questions on-call people actually ask: how many retries, what timeout in milliseconds, what rate limit per minute, what payload cap in kilobytes. Twenty such questions, each one a single number in the runbook - the exact class of fact that is easy to fail to retrieve and easy to misquote.
+
+The team scores all twenty questions, ships exactly one fix, and scores the same twenty again a week later. The fix is real: several runbook entries were missing from the search index, and an engineer closes them. The prompt is untouched. The rules file is untouched.
+
+The blended wrong-answer rate - count every wrong answer, divide by twenty - is 50% in week one and 50% in week two. **Flat, across a real fix.** Read alone, that number says the fix did nothing, and that number is wrong about that. Underneath it, the share of questions whose supporting chunk got retrieved at all rose from 60% to 90%, and the share of retrieved chunks quoted correctly fell from 83.3% to 55.6%. The fix that looks like it failed is the one that worked, and a second bug appeared the moment the fix uncovered it. Every one of those numbers comes from twenty questions you can count by hand, and this piece counts them in front of you.
+
+## Check whether you already have this
+
+Before any of the arithmetic, thirty seconds on your own transcript settles whether this piece is for you.
+
+Find the last time your retrieval-backed agent was confidently wrong. Open the transcript. Find the wrong sentence. Now answer one question: which chunks did the search tool actually return, right before the model wrote that?
+
+If you can answer it without re-running anything, and you can also say whether the supporting fact was inside those chunks, you already score this way and you can close the tab. If you cannot answer it - if the transcript shows the question, the answer, and nothing in between - you have the problem this piece fixes, and the rest is worth your time. **A wrong answer you cannot attach to a retrieved context is a bug you cannot route, so every fix you try on it is a guess.**
+
+## The window is invisible unless you log it
+
+Give the prompt-first reflex a fair hearing before it loses. Steel-manned: a capable model with the facts in front of it that still fabricates is a model that needs tighter constraints. That failure is real. It is just not the only one, and when your agent reaches your systems through an [MCP server](/foundations/mcp-servers/), it is not even the half to check first. If you are still deciding whether to wire the corpus in at all, that is the [101 case](/blog/your-agent-cant-read-your-jira/); this piece starts one question later, with the wiring live and the agent already wrong sometimes.
+
+When the agent queries your runbooks through MCP, the retrieval step is silent. The tool call returns something, the model folds it into the window, and you see only the prose at the end. The evidence the model actually reasoned over is invisible unless you log it. The first move is not a prompt. It is a probe:
+
+```python
+def on_mcp_tool_result(tool_name, query, result):
+    log.info("retrieval", extra={
+        "tool": tool_name,
+        "query": query,
+        "chunks": [c["id"] for c in result.get("chunks", [])],
+        "raw": result.get("text", ""),
+    })
+    return result
+```
+
+Log the retrieved payload verbatim, on every tool call, before the model touches it. Now the wrong answer stops being a mystery. Either the retry-policy chunk is in that `raw` blob or it is not, and that one visible fact is the difference between an afternoon spent fixing your index and an afternoon spent wordsmithing a prompt that cannot reach the bug. **You cannot debug a context window you cannot see, so the logging comes before everything else in this piece.**
+
+## Two bugs, one costume
+
+Now the split, named. Every wrong answer from a retrieval-backed agent is one of two failures.
+
+A **retrieval failure**: the chunk holding the supporting fact never made it into the context window, so the model answered from priors. "Three times" is what a webhook retry policy sounds like when a model guesses.
+
+A **generation failure**: the chunk was in the window and the answer contradicted it, rounded it, or blended it with something else. The evaluation frameworks give this axis a name - **faithfulness**, the metric the RAGAS framework uses for whether an answer is consistent with its retrieved context. The other axis they call **recall**: whether the supporting fact was retrieved at all. This split is standard error analysis for retrieval-augmented systems, formalized on both sides: RAGAS scores generator-side faithfulness, and RAGChecker scores retriever-side recall at the level of individual claims. **Two layers, two scorecards.**
+
+Trace the flagship question both ways and the costume comes off.
+
+Week one:
+
+```text
+question: "does orders retry failed webhooks three times?"
+  recall(retry_policy):  MISS   <- chunk absent from the logged context
+  faithfulness:          not scored - nothing to be faithful to
+  verdict: RETRIEVAL FAILURE
+```
+
+Week two, after the index fix:
+
+```text
+question: "does orders retry failed webhooks three times?"
+  recall(retry_policy):  HIT    <- chunk says "retries: 0"
+  faithfulness:          FAIL   <- answer contradicts the chunk
+  verdict: GENERATION FAILURE
+```
+
+Same question. Same wrong sentence, word for word. Two weeks, two different bugs. In week one the model guessed, because nothing in the wiring put the page in front of it. In week two the page was in front of it and it still said three. The fix depends entirely on which week you are standing in, and the answer itself cannot tell you. **The confidence of an answer carries no information about which layer lost the fact.**
+
+## Twenty questions, scored twice
+
+The twenty questions are the toy: small enough to count by hand, faithful to the real shape of a runbook corpus reached through search. Each question is one runbook line, one number - retry count, timeout, rate limit, payload cap, queue-depth threshold, and fifteen more. The ground truth is declared per question: the runbook's value, whether the chunk was retrieved, and whether the answer matched it. Those outcomes are invented for traceability, sized to be realistic, not measured from any real bot. Everything below is counted from them.
+
+Week one, the baseline. Of the twenty questions, eight never get their chunk retrieved: the index has no entry for them. Twelve chunks arrive. Of those twelve, the model quotes ten correctly and contradicts two. Score it the obvious way, one blended number:
+
+```text
+wrong = 8 recall misses + 2 contradicted = 10 of 20 = 50%
+```
+
+Hold that. Between the snapshots the team ships the index fix. It closes the missing entries for the eight unindexed questions and leaves two edge-case lines out of the new index, so eighteen of the twenty questions are covered. Prompt untouched, rules untouched. A week later, the same twenty questions:
+
+```text
+wrong = 2 recall misses + 8 contradicted = 10 of 20 = 50%
+```
+
+There is the number from the top of the piece, paid off exactly: **10 of 20 both weeks, flat across a fix that genuinely worked.** Nothing rounded, nothing estimated - both columns are plain counts, and the first question of the set is the flagship from the opening line: one of the eight misses in week one, and in week two its chunk arrives and the answer still says three times, one of the eight contradictions.
+
+Lay the two weeks out as one table, because every section from here on reads a row of it:
+
+| | Week 1 | Week 2 | Delta |
+|---|---:|---:|---:|
+| Recall miss (wrong) | 8 | 2 | -6 |
+| Faithfulness miss (wrong) | 2 | 8 | +6 |
+| Correct (hit + faithful) | 10 | 10 | 0 |
+| Total wrong | 10 | 10 | 0 |
+| Wrong rate | 1/2 (50%) | 1/2 (50%) | flat |
+
+Now score the two binaries separately, straight off the table's rows. Recall, from rows one and three: 12 hits of 20 in week one, 18 of 20 in week two - 60% to 90%, a rise of **30 points**. Faithfulness, from rows two and three: of the twelve week-one hits, ten quoted correctly, 83.3%; of the eighteen week-two hits, ten, 55.6% - a fall of **27.8 points**.
+
+Read the two movements together and the flat 50% explains itself. Recall rose thirty points: the index fix worked, completely, exactly as intended. Faithfulness among hits fell 27.8 points: of the eighteen chunks now arriving, the model contradicted eight, and the eight it contradicted are precisely the eight that were invisible in week one. The newly indexed entries sit in a second runbook table that restates the same policies in different words, and the model blended the two wordings. Week one could never show this bug, because the confusable chunks never arrived to be confused. **The corpus held the makings of this bug the whole time; the fix is what surfaced it.**
+
+Six fewer recall misses, six more contradictions. Same wrong total, same wrong rate. **The blended score said nothing changed; the two binaries said both halves of the pipeline moved, in opposite directions, for opposite reasons.**
+
+## The recall gate
+
+Look back at the week-one scoring and notice what you never did. You never asked whether the model was faithful on the eight questions whose chunks never arrived. The question is malformed. There is nothing to be faithful to, and a model cannot contradict evidence it never saw. Score it anyway and you have marked a wiring problem as a behavior problem - which is precisely the mislabel that sends teams to rewrite the prompt.
+
+So the discipline gets a name and an order: **the recall gate**. Score recall first, and only score faithfulness on the questions that pass it. **Below the gate, faithfulness is undefined, not failed.** The gate held in both weeks of the toy - check the table: every contradiction in either week sits on a question whose chunk arrived, and not one faithfulness score exists on a recall miss.
+
+The gate is also why a single blended score goes dark at the worst moment. A blended number has no gate. It cannot report that recall moved thirty points while faithfulness moved twenty-seven the other way; it can only report that 50% stayed 50%. The week the stack actually shifted under you is the week it says nothing at all. Splitting one blurred signal into two so each can be routed differently is the same device as [splitting one eval suite into two clocks](/blog/two-loops/): that one splits a suite by cadence, this one splits a wrong answer by failure axis. **Score recall first and let faithfulness exist only above the gate; any metric that blends them is blind exactly when the stack moves.**
+
+## Each verdict routes to a different layer
+
+This is where the split pays for itself, because the two verdicts have fixes on different surfaces, owned by different files.
+
+A recall miss is a wiring problem, and no prompt instruction touches it. The fact never entered scope, so there is no sentence you can add that makes the model reason over text it does not have. The fix lives in the MCP layer: the runbook entry is not indexed, or the search tool's query never matched it, or chunking split the policy across a boundary so the relevant line scored too low to return. You fix the index, the tool, or the chunking - never the prose.
+
+A faithfulness miss is a behavior problem, and that is exactly what a [rules file](/foundations/rules/) is for. The evidence was present; the model still drifted. Now the instruction everyone wanted to write on day one lands, because it lands on a failure that actually exists:
+
+```markdown
+# AGENTS.md - answering from retrieved context
+
+- Quote the exact value from retrieved docs. Never round, infer, or
+  generalize a numeric or policy field (retry counts, timeouts, limits).
+- If retrieved context does not contain the answer, say so and name the
+  gap. Do not fall back to general knowledge for system-specific facts.
+```
+
+The second bullet does quiet double duty. With it in place, an agent that still cannot find the retry policy says "I couldn't find the retry policy" instead of guessing - which converts a silent recall miss into a loud one and points you straight back at the index.
+
+Scoring at volume: do not do it in your own window. Spin a [subagent](/foundations/subagents/) whose only job is to read the logged chunks plus the final answer and emit the two binaries, with no access to the live tools. A grader that can fetch its own context will paper over exactly the retrieval gaps you are trying to measure. Two boundaries on the ambition: this two-way cut is the specific knife for the sounded-confident-but-was-wrong cluster - if you want the broader cut across all failure causes, that is [clustering your failed runs](/blog/your-failed-agent-runs-are-labeled-data/) consuming this one's output. And once you know which bug you have, enforcement can leave prose entirely: a [hook can validate the output](/blog/make-a-hook-validate-the-agents-output/) after the fact, but only this diagnosis tells you whether the hook should be checking the index or the behavior. **Route recall misses to the index and faithfulness misses to the rules file: each verdict owns a different layer, and swapping them spends the fix on the bug you do not have.**
+
+## Where recall stops being a single binary
+
+The axes bend first on questions that need more than one fact. "Does the EU tier inherit the orders retry policy?" needs two chunks: the tier-inheritance rule and the retry value itself. An answer built on one of the two is wrong no matter how faithful it is to the half that arrived.
+
+Run the toy version. Required claims: the inheritance rule and the retry value. Retrieved: the retry value only. Whole-question recall scores this a flat miss, correctly - but now you cannot tell whether the index is half-broken or fully broken. So score recall per required claim, not per question: one of two claims landed, **claim-level recall** of 1/2, and the fix aims at the exact missing hop. This is what RAGChecker's claim-level scoring exists for, and the moment your answers depend on more than one fact, whole-question binaries are too coarse to route with. **Once an answer needs two facts, score recall per claim, or you cannot say which hop failed.**
+
+## What this does not solve
+
+**The stale document passes every check.** Recall hits - the chunk is in the window. Faithfulness holds - the answer quotes it word for word. And the answer is still wrong, because the runbook itself is stale: the page says the timeout is 5000 milliseconds, the code was changed to 2000 last quarter, and nobody updated the page. This is the failure the two-binary scorecard cannot catch by construction. Both axes read clean while the user walks away misinformed, and it arrives wearing the same confidence as a correct answer because, by the pipeline's own standard, it is one. What the scorecard still does is corner it: when both axes pass and the answer is wrong anyway, you have ruled out the wiring and the model and localized the fault to the document. That is a third surface - source-of-truth hygiene, owned by whoever owns the docs - and you reach it only by eliminating the other two first.
+
+**Do not hand-roll the grader past a certain scale.** The clean-room subagent above is the right shape for twenty questions and the wrong one for two thousand. This exact check ships as off-the-shelf tooling: TruLens, DeepEval, and Arize Phoenix all instrument retrieval and generation separately, and the RAGAS and RAGChecker metrics named earlier are the shared vocabulary. Build the manual version once, to learn what your corpus actually does; move to the tools when the wrong-answer count outruns your afternoons. A related habit worth naming: requiring the agent to cite the exact source span each answer rests on shrinks the faithfulness-checking burden, though the two-binary scheme works without it.
+
+**Which bucket dominates is corpus-dependent, and the minor case may not be the one you assume.** The easy telling of this story is "retrieval is the under-diagnosed bug," and for teams whose reflex is always the prompt, it usually is. But published work from 2026 on agentic retrieval-augmented generation suggests that in some corpora, generation-side grounding failures - evidence the model retrieved and then ignored or overrode - can outnumber pure retrieval misses. Treat the split as the diagnostic and your own logged counts as the finding. Do not inherit either bucket as the default.
+
+**Two cases do not need any of this.** An agent with no retrieval layer - no MCP, no docs, no tools in the loop - has no recall axis to score, and every wrong answer genuinely is a generation problem. If the files the agent needs are known ahead of time, you can often skip search entirely and [load them deterministically](/blog/deterministic-context/); this piece is for the live search layer you cannot fully pin down, where failures get diagnosed after the fact. And below a handful of wrong answers a week, read the transcripts by hand - the logging harness costs more than the triage it buys. **The two binaries localize the wiring and the model; a document lying to both of them is the failure that survives this scorecard.**
+
+## Same 50%, opposite composition
+
+Replay the master table one last time, row by row, because each row is a different verdict on the same fix:
+
+| | Week 1 | Week 2 | Delta |
+|---|---:|---:|---:|
+| Recall miss (wrong) | 8 | 2 | -6 |
+| Faithfulness miss (wrong) | 2 | 8 | +6 |
+| Correct (hit + faithful) | 10 | 10 | 0 |
+| Total wrong | 10 | 10 | 0 |
+| Wrong rate | 1/2 (50%) | 1/2 (50%) | flat |
+
+**Row one says the fix worked. Row two says it uncovered a second bug the first week could not show.** Rows four and five are the rows everyone actually reads, and they say nothing happened. Even the correct row hides movement under its flat 10: two questions that contradicted their chunks in week one quoted them correctly in week two, and two questions answered correctly in week one lost their chunks entirely, because the fix never covered them. **Same totals all the way down, churn everywhere underneath.**
+
+Teams stall on "hallucinations" because every wrong answer looks like a generation problem from the outside: confident prose, wrong fact, obvious fix. Log the retrieval, score two binaries, and the costume comes off. **The fix you reach for first is usually the fix for the bug you do not have.**
+
+Which leaves this solution's own cost as the open question. Two binaries and a human router work at the volume this piece assumes - twenty questions, one reviewer, one afternoon. But the routing decision you just learned to make by hand, recall miss to the index and faithfulness miss to the rules, is exactly the decision a self-correcting retrieval loop makes on every answer, not just the ones a person happens to review. The Corrective RAG and Self-RAG pattern families check a draft answer against what was retrieved and re-retrieve automatically instead of waiting for a human. So the question this piece does not answer: at what volume does manual triage stop being the right layer, and the routing itself become the thing you automate - and what happens the first time that loop re-retrieves at machine speed, confidently, from a corpus nobody keeps honest? **Log the window, gate on recall, read the table by hand - right up until the day the table gets too long for a person, and that day is the next problem this fix created.**
+
+---
+
+**About the numbers.** The twenty-question toy is invented for traceability: the per-question ground truth (which chunks arrived, which answers contradicted them) is declared, not measured from any real bot, and sized to be realistic for a runbook corpus reached through search. Every other number in this piece - the 50% wrong rates in both weeks, the 60%-to-90% recall movement (+30 points), the 83.3%-to-55.6% faithfulness movement (-27.8 points), the master table, and the 1/2 claim-level recall on the multi-hop question - is exact arithmetic counted from those declared outcomes and was re-checked against an independent script before publishing. The framework facts (RAGAS's faithfulness metric, RAGChecker's claim-level recall, TruLens, DeepEval, Arize Phoenix, and the Corrective RAG and Self-RAG pattern families) are named as public work; no number in this piece is attributed to any of them.
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for the retrieval layer, [Rules](/foundations/rules/) for faithfulness behavior, and [Subagents](/foundations/subagents/) for the isolated grader.

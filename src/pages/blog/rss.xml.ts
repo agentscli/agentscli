@@ -16,7 +16,7 @@ export async function GET(context: APIContext) {
     items: posts.map((post) => {
       const data = post.data as any;
       return {
-        title: data.title,
+        title: data.seoTitle || data.title,
         description: data.description || data.excerpt || '',
         pubDate: new Date(data.date),
         link: `/blog/${post.id.replace('blog/', '')}/`,

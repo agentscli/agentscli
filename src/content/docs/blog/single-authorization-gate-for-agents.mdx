@@ -1,0 +1,263 @@
+---
+title: "Eleven routes, each 90% right: a 68.6% chance one is silently wrong. One gate makes it 10%."
+description: "Every inline authorization check an agent writes is an independent guess at the same policy. The guesses disagree, quietly. Here is the arithmetic of how fast that compounds, and the one call that stops it."
+seoTitle: "Stop Broken Function Level Authorization in AI-Written Code"
+seoDescription: "At 11 agent-written routes, each right 90% of the time, there is a 68.6% chance one is silently wrong. One shared gate call drops that to 10%, flat."
+authors: sourabh
+date: 2026-05-31
+tags: [context-engineering, rules, hooks]
+draft: false
+---
+
+The route the agent just added works. `POST /collections` - clean handler, input validation, a database write, tests green. It also lets a free-tier user create their eleventh collection when the limit is ten. The agent wrote that limit check on `create_item` last week, on `upload` yesterday, on `delete_item` the week before. Three routes gated. One missed. No error, no failing test, just a quiet hole in your business model that nobody finds until a free account is sitting on fifty collections.
+
+That is the most predictable failure an agent has: a contextless worker, re-deriving the same policy at every call site. The rest of this post is the arithmetic of exactly that.
+
+The villain needs a name before anything else: **policy drift**, the same decision written down independently in many places, slowly stopping agreeing with itself. Everything below is aimed at it.
+
+Here is where the arithmetic ends up, so you can decide now whether the derivation is worth your time. On a SaaS surface with eleven routes that each need an authorization decision - a completely ordinary count - an agent that writes the check inline, and gets each individual check right 90 percent of the time, leaves a **68.6 percent chance that at least one route is silently wrong right now**. That is worse than a coin flip. Collapse the eleven checks into one shared gate call and the failure chance stops depending on eleven routes at all: **10 percent, flat**, at two routes or two hundred.
+
+One boundary, stated before those numbers do any work: **the 90 percent is a toy figure, invented so you can check every step with a pencil.** It is not a measurement of any model or team. The measured facts in this post are cited with names and dates where they appear, and kept separate from the toy throughout.
+
+## Check whether you already have this
+
+Do not take the post's word for it. Two commands on your own repo settle it in under a minute:
+
+```bash
+# 1. How many route files need a permission decision?
+grep -rlE '\.(post|put|patch|delete|get)\(' src/routes --include='*.ts' | wc -l
+
+# 2. How many files spell the policy inline?
+grep -rlE 'plan (===|!==)|subscriptionTier|seatCount|ownerId ===' src/routes --include='*.ts'
+```
+
+Read the two answers together.
+
+**Command 2 prints nothing, and every route imports one shared gate function: close the tab.** You already did this; the only thing left for you here is the enforcement section at the end.
+
+**Command 2 prints the same policy spelled two or more ways across two or more files, or prints nothing on a route you know needs a check: keep reading.** That is the fourth route from the opening, sitting in your repo today.
+
+**The test is spellings per decision. One helper everywhere means you do not have this. Two spellings anywhere means you do.**
+
+## The failure already has a name and a CVE
+
+The forgotten check has two entries on the OWASP API Security Top 10, 2023 edition. **BFLA**, Broken Function Level Authorization, is API5:2023 - the check that decides whether this user may perform this action at all, the free-tier limit. Its read-side cousin **BOLA**, Broken Object Level Authorization, is API1:2023 - first on the whole list - returning a record by its ID without confirming the caller owns it. Two entries, one mistake at two depths: a permission decision that had to hold in every place it applied, and did not.
+
+For AI-written code specifically, this stopped being hypothetical in May 2025. CVE-2025-48757: apps built with the Lovable platform on Supabase shipped with **Row-Level Security**, the database setting that hides each row from anyone who does not own it, left off. Security researcher Matt Palmer sampled 1,645 of those apps and found about 170 - roughly one in ten - openly readable and writable by anyone, unauthenticated, exposing users, payments, and API keys. CVSS 9.3, critical. That is BOLA at production scale, in AI-generated code, in live apps that worked fine while anyone could read them.
+
+The industry has measured the pattern, too. Veracode's 2025 GenAI Code Security Report found that 45 percent of AI-generated code samples failed security tests outright, and 72 percent failed in Java. OX Security, in a May 2026 write-up citing a Carnegie Mellon study, reports that 61 percent of AI-generated code functions correctly while only 10.5 percent passes security review. Those are industry measurements, and they count security failures broadly rather than authorization alone. But the shape is consistent everywhere AI code is measured: it works far more often than it is safe.
+
+One scoping line, because this layer gets confused with a neighbor. Everything above lives in your application routes, what your app lets the end user do. What the agent itself may call through tools and MCP servers is a different layer, with its own posts: [the confused deputy server](/blog/the-confused-deputy-server/) and [the server is the trust boundary](/blog/the-server-is-the-trust-boundary/). This piece stays on the app layer, where the CVE lived.
+
+**Measured, dated, and specific to AI-written code: authorization gaps are a known failure mode with a CVE number, and the gap between works and safe is real.**
+
+## One policy, eleven derivations
+
+Fix the running example now, because every number from here on belongs to it. Picture a small SaaS product with a free tier and team features, about six months in. Eleven routes need an authorization decision:
+
+```text
+create_collection   upload              create_item
+delete_item         invite_member       export_data
+cancel_subscription refund              update_seat_count
+view_collection     transfer_ownership
+```
+
+Eleven is an ordinary count: billing, files, and a team seat concept get you there.
+
+The policy underneath all eleven is short. Plan limits: free tier gets ten collections, a storage cap, one seat. Ownership: a record belongs to whoever created it, and a workspace admin can touch more than their own. Two ideas. You could hold the entire policy in your head.
+
+The agent meets that policy eleven separate times, and no route sees another route. Each handler is a fresh page, so the agent re-derives "can this user do this" from whatever vocabulary is in front of it. Left inline, the eleven derivations diverge on their own schedule. `create_collection` ends up checking `user.plan === 'pro'`. `upload` checks `user.subscriptionTier !== 'free'`. `update_seat_count` forgets the seat cap entirely. `view_collection` checks nothing, because the test fixture's user happens to own the fixture's collection and the test passes anyway. Four call sites, four subtly different policies. Which one is correct? You don't know either - and that open question is the entire problem.
+
+Why not just tell the agent every time? You can, and you should, and it scales to exactly zero routes. A reminder is conversation, and conversation evaporates. The next route is written by a session that never saw it. You have made enforcement a property of how well you remembered to nag, which is the same as making it luck. The durable version of telling the agent is a [rules](/foundations/rules/) file, and it is half of the fix below; [write it down once](/blog/write-it-down-once/) covers that mechanics properly. No rule can make eleven independent derivations agree with each other. That needs structure, because the disagreement is a counting problem.
+
+**Eleven routes do not make eleven decisions. They make eleven independent guesses at one decision.**
+
+## The toy: four routes and a pencil
+
+Shrink to the four-route slice from the opening: `create_item`, `upload`, and `delete_item`, each gated in a different week by a different session, plus `create_collection`, the one just added, not gated. Four guesses at one policy. Small enough to multiply by hand.
+
+One invented input: the chance that a single independently-written inline check is right. Call it 90 percent, and stamp it now - a toy figure, invented for traceability and measuring nothing. Everything downstream is exact arithmetic on that one declared input.
+
+Compute the probability that all four checks are correct, the obvious way, one route at a time:
+
+| After route | P(all correct so far) |
+|---|---:|
+| 1 - `create_item` | 1 x 0.90 = 0.9000 |
+| 2 - `upload` | 0.9000 x 0.90 = 0.8100 |
+| 3 - `delete_item` | 0.8100 x 0.90 = 0.7290 |
+| 4 - `create_collection` | 0.7290 x 0.90 = 0.6561 |
+
+P(all four correct) = 0.6561. So P(at least one silently wrong) = 1 - 0.6561 = 0.3439.
+
+**34.4 percent.** Hold that number. It is attached to a checkable claim: this is why the fourth route was the one that drifted. Three individually fine routes only got the policy fully right 72.9 percent of the time, and the fourth independent guess is where a one-in-three chance of a silent hole assembled itself out of parts that each looked good.
+
+Now apply the fix to the same four routes. All four call one shared derivation instead of writing four. There is one guess, so there is one chance to be wrong, and it does not compound, because route four's check is route one's check. The failure chance is 1 - 0.90 = 10 percent. Flat.
+
+Check the stamp. The 34.4 was computed two independent ways - the running product above, and 1 - 0.90^4 - and they match to the fourth decimal. The 10 is one subtraction, 1 - 0.90, with no N left in it to compound. No rounding anywhere. You can verify every line of this section with a pencil, which is the only reason the toy is this size.
+
+**Four independent guesses at one policy fail 34.4 percent of the time. One guess, reused four times, fails 10 percent, and the difference came from structure alone.**
+
+## Eleven routes: 68.6 percent
+
+The running example has eleven routes, seven more than the toy, and seven more of the same guess. Here is the claim, stated against its arithmetic: eleven independently-written checks, each right 90 percent of the time, leave at least one silently wrong **68.6 percent** of the time. Worse than a coin flip. Derive it the same way, just faster:
+
+```text
+0.90^11  = 0.3138        P(all 11 correct)
+1 - 0.3138 = 0.6862      P(at least one silently wrong) = 68.6%
+```
+
+Read that carefully: every single route can be 90 percent right, and the system is still more likely wrong somewhere than right everywhere. The failure is a property of the count, and eleven is an ordinary count of routes to own.
+
+Anti-hype, immediately, while the number is fresh: the 68.6 is exact arithmetic on an invented 0.90. It says nothing about whether your team's real per-route reliability sits near 90 percent or near 99. The direction - more guesses fail more often than one guess - holds at any reliability. The specific number does not transfer to your repo, and nothing in this post can tell you your number.
+
+Now the move, named at the moment it should feel obvious. Eleven inline checks are eleven independent flips of the same coin. Flip it once. Write the policy decision a single time, in one function, and make every route call it. Call this **the one-flip gate**: eleven flips become one flip, reused eleven times, and the failure chance stops being a function of how many routes you have. It becomes a property of one function you can read, test, and watch.
+
+The security literature has settled names for the two halves of that shape. The gate is a **Policy Decision Point**, the one place that decides. Each call site is a **Policy Enforcement Point**, one of the many places that ask and obey. Keep those terms; a security-literate teammate will say them on sight, and they predate agents by decades. The one-flip gate is this post's name for why the shape works: it is reliability arithmetic, and the arithmetic says the flips, not the coin, are what you control.
+
+**The gate does not improve the guess. It makes the number of guesses stop being eleven, which is the only variable you own.**
+
+## Build the one-flip gate
+
+One function holds the entire derivation. The eleven-case switch is the whole policy, in one file, where a wrong line is findable:
+
+```ts
+// authz/gate.ts - the single derivation of the policy
+export type Action =
+  | "create_collection" | "upload" | "create_item" | "delete_item"
+  | "invite_member" | "export_data" | "cancel_subscription" | "refund"
+  | "update_seat_count" | "view_collection" | "transfer_ownership";
+
+export function canPerform(user: User, action: Action, record?: OwnedRecord): GateResult {
+  const limits = PLAN_LIMITS[user.plan];   // one table, one place
+  switch (action) {
+    case "create_collection":
+      return user.collectionCount < limits.collections
+        ? { ok: true }
+        : { ok: false, reason: "collection_limit_reached" };
+    case "update_seat_count":
+      return user.seatCount < limits.seats
+        ? { ok: true }
+        : { ok: false, reason: "seat_limit_reached" };
+    // ...one case per action, all eleven visible in one file
+  }
+}
+```
+
+Every route narrows to the same two lines:
+
+```ts
+const gate = canPerform(req.user, "create_collection");
+if (!gate.ok) return res.status(402).json({ error: gate.reason });
+```
+
+Ownership rides in as one more case, and it retires the BOLA exposure from the problem section:
+
+```ts
+case "view_collection":
+  return record.ownerId === user.id
+    ? { ok: true }
+    : { ok: false, reason: "not_owner" };
+```
+
+Why this works on agents specifically. Writing the check inline is a generative task: re-derive the policy, in this file, in this framework's idioms, and hope the output matches ten other derivations you never see side by side. Every generation is an independent draw, and independent draws diverge. Calling a named function is a lookup task: find the gate, pass the action, honor the result. Agents are good at lookup, and the table never assumed more than that: the gate column prices one ordinary 90-percent derivation, reused. You have converted the probabilistic half of the job into a deterministic call. This is the same conversion [make a hook validate the agent's output](/blog/make-a-hook-validate-the-agents-output/) argues for at the output layer - deterministic checks beat prompting - applied one layer down, to the code the agent writes.
+
+And when the free-tier collection limit changes from ten to five, you change one number, and eleven routes inherit it in the same build. Policy drift has nowhere left to live, because there is no second copy to drift from.
+
+**A route can only drift from a policy it no longer writes.**
+
+## The table to keep
+
+Every number this post has shown so far is one row of one table. Here it is, and the close comes back to it.
+
+| Routes (N) | Inline: P(at least one wrong) | Gate: P(wrong) | Gap |
+|---:|---:|---:|---:|
+| 1 | 10.0% | 10.0% | +0.0pp |
+| 2 | 19.0% | 10.0% | +9.0pp |
+| 4 | 34.4% | 10.0% | +24.4pp |
+| 8 | 57.0% | 10.0% | +47.0pp |
+| 11 | 68.6% | 10.0% | +58.6pp |
+| 20 | 87.8% | 10.0% | +77.8pp |
+
+The inline column is 1 - 0.90^N. The gate column is 10 percent at every N, because one guess does not compound. Read the rows that carry an argument.
+
+**Row 1 is "don't build this on day one," as arithmetic.** At one route the gap is exactly zero. A `canPerform` with a single case is ceremony: an indirection around the simplest handler, buying nothing. There is nothing to centralize until a second guess exists. The instinct always said so; the table now proves it.
+
+**Row 2 is "earns its keep at the second call site."** The gap is nine full points the moment a second route needs the same decision. The pattern pays for itself at the second inline check it prevents, and every row after pays more.
+
+**Row 4 is the toy, paid off.** 34.4 percent, exactly as multiplied by hand, sitting where the derivation said it would.
+
+**Row 11 is the claim from the opening, paid in full.** 68.6 against a flat 10, a 58.6-point gap - 6.86 times lower risk, from restructuring the same 90-percent guess rather than improving it.
+
+**Row 20 is where real products live.** At twenty routes, inline authorization is more likely wrong somewhere than right everywhere. If your grep in the self-test counted twenty-plus route files, that is your row.
+
+**The inline column climbs with every route you add, forever. The gate column never moves, and that stillness is the entire feature.**
+
+## Make the call unavoidable
+
+A helper the agent does not know about is dead code. Structure creates the single decision; two thin layers make sure the agent uses it.
+
+The rule, in the [rules](/foundations/rules/) file the agent loads every session:
+
+```md
+## Authorization
+
+Every route that mutates or reads gated data MUST call `canPerform(user, action)`
+from `authz/gate.ts` before acting. Never inline a plan, limit, or ownership check.
+If the action is not in the `Action` union, add it to the gate - do not gate inline.
+```
+
+The hook, because rules shape behavior without guaranteeing it. A deterministic check that fails loudly when a route file skips the helper:
+
+```bash
+# .agent/hooks/pre-commit - block route files that bypass the gate
+routes=$(git diff --cached --name-only | grep 'routes/.*\.ts$')
+for f in $routes; do
+  if grep -Eq '\.(post|put|patch|delete)\(' "$f" && ! grep -q 'canPerform(' "$f"; then
+    echo "BLOCKED: $f mutates but never calls canPerform()." >&2
+    exit 1
+  fi
+done
+```
+
+Why a hook is the right primitive for agent-hostile friction at all is [pre-commit hooks are for robots](/blog/pre-commit-hooks-are-for-robots/)'s argument; this piece is its one-policy instance. For the primitives themselves, see [Rules](/foundations/rules/), [Hooks](/foundations/hooks/), and [Slash commands](/foundations/slash-commands/).
+
+Be honest about the blind spot, because a grep-based hook earns more confidence than it deserves. It checks that the string `canPerform(` appears in the file. It cannot check that the result was honored:
+
+```ts
+canPerform(req.user, "create_collection");   // called, result dropped
+await db.collections.insert(...);            // hook green, hole open
+```
+
+The durable answer is to make the gate hard to misuse: have `canPerform` throw on denial, or return a branded token that the write functions require. Then "called but ignored" stops compiling, and the hook drops back to a cheap second line. A gate you can call and discard is a suggestion. A gate you cannot write past is policy.
+
+One more line, for the review-minded: this piece is a code-structure fix, and it removes the need to spread review attention evenly, because there is one place a mistake can hide. [Build risky agent code behind a flag](/blog/build-risky-agent-code-behind-a-flag/) is the complementary review-process move, spending scrutiny unevenly by blast radius, for whatever risk remains once the structure is right.
+
+**The rule tells the agent the gate exists, the hook makes skipping it a build failure, and the types make ignoring it not compile.**
+
+## What this does not solve
+
+Three boundaries, and the first one bears repeating at full length.
+
+**The 0.90 is invented.** Every percentage in this post is exact arithmetic on one declared toy input. Your team's real per-route reliability is unknowable from here. If it is 99 percent, your N=11 row is 10.5 percent rather than 68.6 - and the gate still flattens it to 1 percent, so the direction of the argument survives. The specific numbers do not transfer. Swap in your own guess and the table recomputes; that is the point of showing the arithmetic.
+
+**A grown gate is a homegrown policy engine.** At real scale, `canPerform` stops being a switch and becomes a system: attribute rules like "deny if the record's region differs from the user's," policies composed from other policies, questions asked from more than one service. The mature version of this exact idea has names and production implementations - OPA with its Rego language (a CNCF-graduated project), Cerbos, Oso, and Casbin, all active as of 2026. When the switch grows past a handful of resource types or needs attribute-based rules, reach for one of those rather than growing the switch. This post does not compare them; each would need its own traced walkthrough, which is a different piece with a different shape.
+
+**Some routes do not share a decision.** When each route's authorization is genuinely custom - different inputs, different external calls, no common shape - forcing it all through one signature produces a god-function with a tangle of optional parameters and a switch nobody can hold in their head. At that point the single gate stops being a source of truth and becomes a place bugs hide. The test is whether the routes share a decision, not whether they share the word "authorization." If they share it, one gate. If they don't, separate gates that each do one thing, and a rule that points the agent at the right one.
+
+**The gate ends policy drift. The one remaining derivation still has to be right.**
+
+## Back to the table
+
+Row 11, one last time: **68.6 percent against a flat 10**, from the same 90-percent guess made once instead of eleven times.
+
+The fix's own cost comes due here, and you own it now. The gate is the single point of failure it just eliminated eleven of. One wrong line in `canPerform` is wrong on every route at once, at deploy time, instead of wrong on one route sometimes. You traded a frequent, partial, probabilistic bug for a rare, total one. The trade is favorable - 10 beats 68.6 - but it is a trade, and it moves the weight: testing `canPerform` thoroughly now carries the load that used to be spread thin across eleven code reviews. Every property the policy has, every limit and every ownership rule, deserves a test with a name, because there is exactly one place left for it to be wrong.
+
+And one scope line you should see coming. All of this is one backend service. The moment a second service needs the same policy, "one gate" stops being one function and becomes a shared library, a policy service, or a sidecar - and choosing between those shapes, each with its own failure modes, is its own open question. This post ends at the edge of it.
+
+Authorization written inline is a policy you re-decide at every keystroke, and the table says how that compounds.
+
+**Authorization behind one flip is a policy you decided once, and can finally test.**
+
+---
+
+**About the numbers.** The 0.90 per-route reliability is a toy, invented so every downstream figure is checkable with a pencil; it is not a measurement of any model, agent, or team. Every percentage in the toy walkthrough, the running example, and the master table is exact arithmetic on that one input (1 - 0.90^N), recomputed with an independent script before publishing; the N=4 row was computed two different ways and matched exactly. Three things are quoted, each with a source and a date: OWASP's API Security Top 10, 2023 edition, ranks BOLA first and BFLA fifth; CVE-2025-48757, disclosed May 2025, left about 170 of 1,645 sampled Lovable-built apps openly readable and writable, CVSS 9.3; Veracode's 2025 GenAI Code Security Report found 45 percent of AI-generated samples failed security tests (72 percent in Java), and OX Security in May 2026, citing a Carnegie Mellon study, reports 10.5 percent of AI-generated code passes security review. The measured figures describe the industry, and the toy figure describes nothing at all - it exists so you can replace it with your own guess and watch the table recompute.

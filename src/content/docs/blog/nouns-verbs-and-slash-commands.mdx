@@ -1,107 +1,144 @@
 ---
-title: "Three control axes are sitting in the MCP spec. Most teams use one."
-description: "An MCP server exposes resources, tools, and prompts - context the app pulls, actions the model takes, workflows the user invokes. Most teams wire only one."
+title: "Sort MCP capabilities by who pulls the trigger, or pay a 1,248-token tool tax every session"
+description: "The MCP spec hands a server three levers: resources for the application, tools for the model, prompts for the user. Skip that sort and your reads ride the tool list every turn, at a price you can compute."
+seoTitle: "MCP Resources, Tools, and Prompts: the Three Primitives"
+seoDescription: "MCP splits control three ways: resources app-controlled, tools model-controlled, prompts user-controlled. Misclassified reads cost 1,248 tokens a session."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, mcp-servers, slash-commands, rules]
 draft: false
 ---
 
-You wrap your internal deploy API in an [MCP server](/foundations/mcp-servers/). You expose three tools: `get_deploy_config`, `list_recent_deploys`, `trigger_deploy`. It works. The agent calls them, reads the JSON, makes a decision. Ship it.
+You wrapped the company's deploy API in an [MCP server](/foundations/mcp-servers/), and it works. Ask it about deploys and the agent pulls the production config, checks what shipped last week, and triggers the build when you say go. Every capability went in the same way, registered as a **tool**: the one primitive the model can call on its own. That last clause is the whole reason. If you want the agent to do something, it has to be a tool, so everything the agent touches becomes one.
 
-It's also the wrong shape. You just turned two reads and a write into three identical hammers, and handed the model the job of deciding when to swing each one. The protocol gave you a way to say "this is context, that is an action, and this third thing is a workflow my team already trusts" - and you flattened all three into `tool`.
+The Model Context Protocol actually hands a server three separate levers for the same job, sorted along one axis: **who controls invocation**. In the current spec, dated 2026-07-28, resources are application-controlled, tools are model-controlled, prompts are user-controlled. The host application can decide that something runs. The model can decide. A human can decide. Three levers, and the tool reflex reaches for the same one every time.
 
-**The reflex to make everything a tool is understandable - tools are the only primitive the model can call on its own.** If you want the agent to *do* something, it must be a tool. So teams reason backwards: everything the agent touches becomes a tool, because tools are what the agent touches. Clean. Uniform. Easy to register.
+The cost of that collapse is quiet, recurring, and computable. A tool definition rides in the model's tool list on every turn of every session for as long as the server stays connected, whether or not the model ever calls it. Here is the claim, stated up front and re-derived below: demote the two reads in a small deploy server from tool to resource, and one ordinary eight-turn deploy-review session sheds **1,248 tokens** of schema the model was never asked to weigh. The reads do not get cheaper. They stop being re-offered to the model as a choice on every single turn.
 
-And quietly wasteful. The Model Context Protocol defines three primitives, and the spec separates them along a single axis: *who controls invocation*. In its own words, resources are **application-controlled**, tools are **model-controlled**, prompts are **user-controlled**. Not what they technically do - who pulls the trigger. Register everything as a tool and you've thrown away two-thirds of that control surface before the agent runs once.
+## Check whether you're already paying this
 
-## Resources are context the application pulls, not actions the model chooses
+One minute on your own server settles whether this piece is for you, and it settles it before any arithmetic below.
 
-A **resource** is read-only data the host application fetches and injects - a file, a record, a config blob, a schema. The application decides when to pull it. The model never has to *choose* to read it; it's just there, in context, like an attachment.
+Open the file where your server registers its capabilities and count the tools. For each one, ask: does the model need to decide, mid-conversation, whether to run this, or would nearly every session that wants this answer want it the same way? A config lookup, a record fetch, a schema dump: every session wants those identically, at the same point, with the same parameters. A mutation, or a search whose query the model composes on the spot: those are decisions.
 
-That distinction is the whole game. When your deploy config is a tool call, the model spends a turn deciding to call it, a turn reading the result, and budget reasoning about whether it needed it. When it's a resource, the host attaches it deterministically:
+If everything in your tool list is a genuine decision, this sort will not move anything for you. Close the tab; nothing below applies. If reads are sitting in the tool list, which is the default shape most teams ship, the rest of this piece prices what that costs per turn and shows the re-sort that removes it.
+
+**A read that every session wants the same way is not a decision, and only decisions belong in the tool list.**
+
+## One server, four capabilities, eight turns
+
+Fix one example and carry it through every section, the way this site's arithmetic pieces do.
+
+The server wraps an internal deploy API and owns four capabilities. Two reads: `get_deploy_config(environment)`, which returns the region (`us-east-1`), the strategy (`blue-green`), the required approvers (`@platform`), and the healthy-instance floor (`min_healthy: 2`); and `list_recent_deploys(environment, limit)`, which returns build ids, deployers, and timestamps. One write: `trigger_deploy(build_id, environment)`, which mutates infrastructure and requires explicit confirmation. One checklist: `deploy_review(build_id)`, the pre-production review procedure the team already trusts, currently living in a README half of them have opened.
+
+A sibling piece on this site argues why one MCP server beats ten hand-written integrations ([one server, not ten](/blog/one-server-not-ten-integrations/)); that is the how-many-servers question. This piece takes the server as given and asks the question inside it: which of the three primitives each capability belongs on.
+
+The session to price is one ordinary deploy review: is build 4821 safe to ship to production? Eight turns. One, you ask the question. Two, the model calls for the production config. Three, it reads the result. Four, it calls for recent deploys. Five, it reads them. Six, it weighs the decision. Seven, you confirm. Eight, it triggers the deploy.
+
+The yardstick, declared once so every number below is checkable: each definition gets written out as its actual JSON and measured as the compact wire form, with characters divided by four as the token estimate. That chars-per-four ratio is an approximation. What the argument leans on is the ratio between definition sizes and the arithmetic built on them, and both survive any consistent estimate. The window is 200,000 tokens, the same convention this site's other pieces use.
+
+**Four named capabilities, one eight-turn conversation, one declared yardstick: everything below is arithmetic on these fixed inputs.**
+
+## The reflex design: reads as tools, 78 tokens each
+
+Compute the obvious design first, the one most teams ship, before anything clever appears.
+
+Everything the agent touches is a tool, so the two reads and the write all register the same way. Here is `get_deploy_config` exactly as the model sees it:
+
+```json
+{
+  "name": "get_deploy_config",
+  "description": "Get the deploy configuration for an environment: region, deploy strategy, required approvers, and minimum healthy instance count.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "environment": { "type": "string", "enum": ["staging", "production"] }
+    },
+    "required": ["environment"]
+  }
+}
+```
+
+Compact that onto the wire and it is 312 characters: 78 tokens at four characters per token. `list_recent_deploys` measures 78 too, and so does `trigger_deploy`, because all three share a shape: a name, a description, and an **inputSchema**, the block telling the model what it may fill in. The inputSchema carries most of the weight, and it exists for a reason. The model is being asked to decide to make this call, and to parameterize it.
+
+Now the step that turns a one-time cost into a per-turn one. Hosts drive the model through a completions API, and the tools array is part of the request. Every turn where the model might call a tool, the whole array goes along: every name, every description, every inputSchema, again. The 2026-07-28 revision made the protocol itself stateless, which pushes the same way: the request carries what the model needs, every time, and nothing server-side fills in the gaps. The site's own [MCP servers](/foundations/mcp-servers/) chapter already warns that a server exposing 60 tools can become a 60-tool tax, depending on the host. That dependence is real: a host can put definitions in context immediately, defer schemas until first use, or index them. The common shape, and the one priced below, is the first: definitions resident from the first turn.
+
+Count only the two reads. The trigger's 78 tokens are the fair price of a real decision; they sit in the tool list in every design in this piece, so they cancel out of the comparison. The two reads are the misclassification, and they are what the arithmetic counts. Two reads at 78 tokens each is **156 tokens of schema riding along per turn**. Across the eight-turn session: 156 times 8 is 1,248 tokens of schema, sent on the two turns where the model actually calls the reads, and sent again on the six turns where it never touches them. On turn six, while the model weighs whether build 4821 is safe, both reads' schemas are still sitting in its tool list as options it could pick.
+
+**Remember 1,248: the schema deadweight two misclassified reads cost one ordinary session, priced before any fix has been named.**
+
+## The same reads as resources: 25 tokens, no schema
+
+Re-sort the two reads onto the lever the spec built for them, and pay the plant off.
+
+A **resource** is read-only data the host application fetches and injects: a file, a record, a config blob. The application decides when to pull it. Here is the production config as a resource, as the host sees it:
 
 ```json
 {
   "uri": "deploy://config/production",
   "name": "Production deploy config",
-  "mimeType": "application/json",
-  "text": "{ \"region\": \"us-east-1\", \"strategy\": \"blue-green\", \"approvers\": [\"@platform\"], \"min_healthy\": 2 }"
+  "mimeType": "application/json"
 }
 ```
 
-The agent now *knows* production is blue-green with a two-instance floor and a `@platform` approval gate - not because it called a tool and got lucky, but because the application handed it the spec. This is the gap-closing move in its purest form: **your deep, specific, slow-won context flows in as data, so the agent stops inventing the schema you already have.** No more guessed region. No more hallucinated `strategy: rolling` because rolling is the statistically common answer.
+One hundred characters compact: 25 tokens. The recent-deploys resource measures 26. Notice what is missing. No inputSchema, nothing for the model to fill in, because the model never decides to call one. A resource is never a candidate in the tool list at all: the host either has injected the data by the time the model reads the question, or it has not, and the model is never asked to weigh should-I-call-this as an option, turn after turn. On turn six of the same session, the config facts are already in context and the tool list holds one entry instead of three.
 
-Here's the open question to hold onto: if resources carry your context for free, what's left for tools to do? Less than you think.
+Pay off the plant. All-tool design: 156 tokens of read-schema per turn, 1,248 across eight turns. Three-primitive design: zero per turn, zero across the session, because the reads are no longer in the tool list to be resent. **The saving is exactly 1,248, matching the plant with no arithmetic slack.** The config data itself sits deliberately outside the comparison: the model needs those facts under either design, so only the recurring schema cost is being counted. Every step of this is checkable with a pencil, which is the point of sizing the toy this way.
 
-## Tools are for consequential, model-decided actions - and nothing else
+Two properties keep a resource from being a frozen one-time dump, and both came through the 2026-07-28 revision unchanged in shape. Each resource can carry **annotations**: an `audience` (user, assistant, or both), a `priority` from 0.0 to 1.0, and a `lastModified` timestamp. Mark the deploy-config resource priority 1.0 and you have told the host it is the most important context you serve; mark a verbose changelog 0.2 and you have flagged it as the first thing to drop when the budget tightens. And resources stay live mid-session: subscriptions go through the general `subscriptions/listen` request with a `resourceSubscriptions` filter, and the server pushes `notifications/resources/updated` when a resource changes, so the host re-reads and the model's picture of production stays current without a single tool call.
 
-A **tool** is an action the *model* elects to invoke. The cost of a tool isn't the API call; it's the decision. Every tool you register is another branch the model evaluates on every turn, another entry in the "what should I do now" budget. Twelve read-only tools don't make the agent smarter - they make it slower and less decisive, because nine of them are just data wearing a verb.
+**A resource costs 25 tokens, never recurs, and never asks the model to decide anything: that is what the application-controlled lever buys.**
 
-So the rule sharpens: **a tool should exist only when invoking it changes the world or commits the model to a path.** Reads become resources. Actions stay tools.
+## The trigger sort
 
-```json
-{
-  "name": "trigger_deploy",
-  "description": "Deploy a build to an environment. Mutates infrastructure. Requires explicit confirmation.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "build_id": { "type": "string" },
-      "environment": { "enum": ["staging", "production"] }
-    },
-    "required": ["build_id", "environment"]
-  }
-}
-```
+The move deserves a name, and by now it should feel forced rather than clever.
 
-That's a real tool. It mutates infrastructure; the model has to *decide* to call it; it belongs in the action budget. `get_deploy_config` does not - it's the resource above. Strip the reads out and the model's decision space collapses to the choices that actually matter. The narrower the tool surface, the sharper the agent on it.
+Before deciding a capability's primitive, ask one question: who should pull the trigger? Should the application decide this runs, should the model decide mid-conversation, or should a human reach for it deliberately? Let that answer, and not "can the model reach it," choose resource, tool, or prompt.
 
-## Prompts are your team's known-good workflow, frozen as a slash command
+Run the four capabilities through it. The deploy config: every session that asks about production wants it identically, so the application should decide. Resource. Recent deploys: same reasoning, same lever. Resource. Triggering a build: a decision with consequences, weighed fresh each time, so the model should decide, inside whatever confirmation gate you build around it. Tool. Gating a tool that genuinely is a tool, and deciding what a server may be trusted to touch once invoked, are separate questions with their own pieces ([elicitation plus tool annotations](/blog/elicitation-plus-tool-annotations/), [the confused deputy server](/blog/the-confused-deputy-server/), [the server is the trust boundary](/blog/the-server-is-the-trust-boundary/)). The review checklist: a procedure a person reaches for at review time, on purpose. Prompt.
 
-The third primitive is the one nobody wires up. A **prompt** is a templated workflow the *user* invokes - surfaced in the host as a [slash command](/foundations/slash-commands/). Not the model's choice, not the app's injection. A human reaches for it deliberately.
+The reflex design answered a different question, "what can the model call," and sorted everything onto the one lever that answer exposes.
 
-This is where a team's hard-won procedure stops living in a senior engineer's head and becomes one click. Your deploy review checklist - the sequence everyone *should* run before production but half the team forgets - ships as a prompt:
+**The trigger sort asks who should decide, and lets the control axis the spec already shipped do the sorting for you.**
+
+## The checklist as a prompt: 43 tokens
+
+The third stop on the same toy, priced with the same yardstick.
+
+A **prompt** is a templated workflow the user invokes, surfaced by the host as a [slash command](/foundations/slash-commands/). Here is the deploy review as the host lists it:
 
 ```json
 {
   "name": "deploy_review",
+  "title": "Review a build for production",
   "description": "Run the pre-production deploy checklist",
-  "arguments": [{ "name": "build_id", "required": true }],
-  "messages": [{
-    "role": "user",
-    "content": "Review build {{build_id}} for production. Confirm migrations are reversible, check the deploy://config/production resource for the approval gate, verify no open incidents, and summarize blockers before proposing trigger_deploy."
-  }]
+  "arguments": [{ "name": "build_id", "required": true }]
 }
 ```
 
-Now `/deploy_review 4821` runs the workflow your best engineer would run - pulling the resource, weighing the action, in the order your team agreed on. The procedure that used to be tribal knowledge is encoded in the protocol. That's the same instinct behind writing [rules](/foundations/rules/) into an `AGENTS.md`: capture the convention once, and every agent inherits it instead of rediscovering it.
+One hundred seventy characters: 43 tokens for the listing. The template body, the checklist itself, ships inside the prompt and enters the conversation once, on the turn a human types `/deploy_review 4821`. Like a resource, and unlike a tool, nothing here recurs in the model's tool list while it sits unused. The zero it earns in the table below is a different zero from the resource's, and the difference matters: the resource's data was needed in the session and got injected; the prompt carries a workflow, and was never a read at all.
 
-## A resource isn't a one-time dump - it's live, prioritized context
+This section stays thin on purpose. What a prompt buys a team once you have decided to ship one, how to embed resources into its messages, the completion API, and when not to ship a prompt are covered in depth by [write the prompt so your team doesn't have to](/blog/write-the-prompt-so-your-team-doesnt/). That piece begins where the classification decision is already made. This piece is about the decision itself, and the per-turn price of skipping it. (If your real goal is bundling that slash command together with subagents, hooks, and servers into one shareable unit, that is a packaging question, and [package the workflow](/blog/package-the-workflow-not-the-prompt/) is its piece.)
 
-The objection to moving reads out of the tool list is usually "but the config changes, and a resource is frozen at injection." It isn't. The protocol lets the client subscribe to a resource and the server push an update notification when it changes; the host re-reads and the agent's view of production stays current mid-session, with no tool call and no stale guess. A tool gives you a snapshot the moment the model decides to ask. A subscribed resource gives you a feed.
+**A prompt puts the workflow on the user's lever at 43 tokens standing by, and costs the model's window nothing until a human invokes it.**
 
-Resources also aren't undifferentiated context you dump and pray fits the window. Each one can carry annotations - a `priority` from 0.0 to 1.0 and an `audience` of `user`, `assistant`, or both. Mark the production approval gate `priority: 1.0` and the host treats it as effectively required; mark a verbose changelog `0.2` and it's the first thing dropped when the budget tightens.
+## What 1,248 tokens is, and what it is not
 
-```json
-{
-  "uri": "deploy://config/production",
-  "name": "Production deploy config",
-  "annotations": {
-    "audience": ["assistant"],
-    "priority": 1.0,
-    "lastModified": "2026-05-30T18:00:00Z"
-  }
-}
-```
+Convert the plant into the two currencies this site keeps separate.
 
-You're not just handing the model data - you're telling the host how much that data matters and how fresh it is. That's a control knob a wall of identical tools doesn't have.
+Window space first, because it is the axis that does not go away. On a 200,000-token window, 1,248 tokens is 0.624 percent of everything the model will ever hold, spent on schemas nobody needed. That is one session of one server with two misclassified reads. The table at the end runs the same arithmetic at larger miscounts.
 
-## When a read should still be a tool
+Dollars, with the label on them. At Claude Opus 5's list input price of $5 per million tokens, 1,248 tokens costs $0.00624 uncached. **Worst case, stated as a ceiling**: most real hosts get prompt-caching discounts on a repeated, unchanged block like a tool schema, so the actual bill is smaller than the raw count suggests. If the dollar figure is what ends your interest, notice what the concession does and does not buy. A cached token still occupies the window, still sits between the model and the conversation, on every turn. The price-versus-footprint split is the one [stop reading your codebase in the window](/blog/stop-reading-your-codebase-in-the-window/) already drew for search traffic, and it applies unchanged to schema the model never needed at all.
 
-"Make every read a resource" is the right default, not an absolute. The honest counter-argument: sometimes the model genuinely needs to *choose* what to read, with a parameter it computes at runtime. You don't want a separate resource per environment, and you can't pre-list every build someone might inspect.
+**The dollars are a rounding error; the window occupancy is the bill that never clears.**
 
-The spec's first answer is a **resource template** - a parameterized URI the host fills in on demand:
+## When a read should stay a tool
+
+"Make every read a resource" overshoots, and the honest boundary is worth drawing before the table hardens it.
+
+Some reads have a parameter the model genuinely computes at runtime. Search is the clearest case: "find the deploy that introduced this regression" carries a query the model composes from its reading of the problem, over a space you cannot list in advance. Choosing what to read is itself the work there, so the model-controlled lever is right, and the inputSchema is the fair price of it. A config lookup does not meet that bar. A code search does.
+
+For the parameterized-but-enumerable middle, the spec ships a dedicated shape: a **resource template**, a URI with variables the host fills in on demand.
 
 ```json
 {
@@ -111,26 +148,60 @@ The spec's first answer is a **resource template** - a parameterized URI the hos
 }
 ```
 
-One template covers `staging`, `production`, and whatever environment you add next, without registering a tool per environment. Templates handle the parameterized-but-enumerable case while keeping the read on the application-controlled plane.
+One template covers staging, production, and whatever environment gets added next, without registering one tool per environment. And what a tool returns once it is one is a separate question again: [type your tool boundaries](/blog/type-your-tool-boundaries/) gives a tool a declared output schema so a UI can trust the structured result over the agent's prose.
 
-The line worth drawing is open-endedness. If the read is *search* - "find the deploy that introduced this regression," where the query is reasoning rather than a lookup - that's a model decision, and a tool is the right primitive. The test was never read-versus-write. It's whether choosing what to read is itself the work. A config lookup isn't; a code search is. Keep the lookups as resources and templates; let the genuinely investigative reads stay tools, and keep that set small.
+**Keep lookups on resources and templates, let genuinely investigative reads stay tools, and keep that tool set small enough to defend item by item.**
 
-## The control axis is a design constraint, so design against it
+## The whole taxonomy, one line each
 
-Before you register anything, sort it by who pulls the trigger:
+Everything above reduces to one table. The control column is the spec's own, dated 2026-07-28; the sizes are this piece's toy; the last column is the session already priced.
 
-- **The application** should pull it → **resource.** Records, configs, schemas, files. Read-only context, injected deterministically.
-- **The model** should decide it → **tool.** Mutations and commitments only. Keep this surface ruthlessly small.
-- **The user** should invoke it → **prompt.** Your team's trusted workflows, surfaced as slash commands.
+| Primitive | Who controls it (MCP spec, 2026-07-28) | Definition size (this toy, tokens) | Recurs in the tool list every turn? | 8-turn cost from these 2 reads |
+|---|---|---:|---|---:|
+| Resource | Application | 25 | No | 0 |
+| Tool | Model | 78 | Yes | 1,248 |
+| Prompt | User | 43 | No | 0 |
 
-Run your draft server through that filter and most of what you reflexively called a tool falls out into resources, where it costs the model nothing and grounds it for free. The deploy server we started with had three tools. Sorted by trigger, it's one tool (`trigger_deploy`), two resources (`get_deploy_config`, `list_recent_deploys` - or a single `deploy://{environment}` template), and one prompt (`deploy_review`). The model's decision space went from "which of three things do I call" to "do I deploy, yes or no" - with the config already in context and the checklist a keystroke away. That ratio holds as servers grow: the realistic shape of a mature server is a handful of tools, a wall of resources, and a shelf of trusted prompts - not a flat list of forty verbs.
+Read the tool row precisely. The 1,248 is what the two reads cost when they are modeled as tools; the trigger's schema also recurs, in every design, and that recurrence is the honest price of a real action. The prompt's zero means it was never a read to begin with.
 
-What remains is a tight set of consequential actions and the workflows your team actually trusts.
+**One axis, three levers, three sizes, one recurring cost: this table is the whole piece compressed.**
 
-The deep context that makes a senior engineer valuable - the configs they've memorized, the checks they never skip, the order they do things in - isn't lost to the agent because the agent is dumb. It's lost because you encoded it as twelve indistinguishable tools instead of the three axes the spec already gave you.
+## What this does not settle
 
-Map the surface to who controls it, and the agent reads your specifics instead of guessing at them.
+Four limits, said out loud rather than implied away.
+
+The dollar figure is a worst-case ceiling. It assumes no caching, most hosts cache, and the window occupancy underneath it is the part that survives.
+
+This piece is anchored to the 2026-07-28 specification, and the dating matters more than usual: that revision is the largest since MCP launched. Sessions went stateless, the initialize handshake is gone, and Sampling, Roots, and Logging entered a formal 12-month deprecation window. All of that is named here and then deliberately set aside. The three server primitives this piece sorts came through that revision intact, and the who-controls-it mapping is quoted from the revision's own pages.
+
+The trigger sort is necessary, not sufficient. A server can sort every capability correctly and still register twenty genuine model-controlled actions, and every one still pays its own per-turn schema tax, with no primitive-level shortcut. How many tools is too many is a real question, and it is handed forward below rather than answered here.
+
+The token counts are the declared chars-per-four approximation throughout; no tokenizer ran. The ratio between definition sizes and the linearity of the tax carry the argument, and both survive any consistent estimate. The absolute counts are illustrative.
+
+**Nothing here fixes a server with too many real tools; it stops reads from pretending to be them.**
+
+## Back to the table
+
+Close on the same map, replayed row by row.
+
+Resource: application-controlled, 25 tokens, never recurs, zero across the session. Tool: model-controlled, 78 tokens, recurs every turn, 1,248 for these two reads across eight turns. Prompt: user-controlled, 43 tokens, never recurs, zero, because it was never data the model needed.
+
+Widen one column and the shape holds past the toy. The same two formulas, per-turn tax equals reads times 78 and session tax equals per-turn times turns, run at growing server maturity:
+
+| Reads misclassified as tools | Per-turn tax (tokens) | 8-turn total (tokens) | Share of a 200,000-token window |
+|---:|---:|---:|---:|
+| 2 | 156 | 1,248 | 0.62% |
+| 5 | 390 | 3,120 | 1.56% |
+| 12 | 936 | 7,488 | 3.74% |
+
+The twelve-read row is this server as many teams actually ship it, a flat list of a dozen near-identical verbs: 7,488 tokens of schema per ordinary session, 3.74 percent of the window, spent re-offering choices nobody needed. The tax is **linear in the miscount and linear in turns**. It never compounds cleverly, and it never turns off: it is a flat rate charged on every turn for as long as the server stays connected.
+
+Two questions this piece hands forward rather than pretends to settle. First, the trigger sort tells you which primitive a capability belongs on, never how many capabilities legitimately belong on the model's axis at all: a correctly sorted server can still hand the model real actions by the dozen, and each keeps paying its own per-turn tax, with no shortcut priced here. Second, the three primitives this piece sorted are the base the spec's newer extensions, Tasks, Skills over MCP, and MCP Apps, build on top of, and none of them are explored here.
+
+**Sort every capability by who should pull the trigger, and the tax that remains is at least the tax you chose.**
 
 ---
 
-For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/); for surfacing prompts as commands, [Slash commands](/foundations/slash-commands/); for the broader pattern of encoding convention once, [Rules](/foundations/rules/).
+**About the numbers.** The four capability definitions, their compact character counts (312, 311, 309, 100, 101, 170), the token sizes derived from them (78, 78, 78, 25, 26, 43), the eight-turn session, and every figure built on those (156 per turn, the 1,248 plant and payoff, 3,120, 7,488, 0.624 percent, $0.00624) are toy numbers authored for hand-tracing and re-checked by a script before publishing. The token counts use the declared chars-per-four approximation, so the ratios are load-bearing rather than the absolute counts. Claude Opus 5's $5 per million input tokens is quoted from Anthropic's own pricing page, fetched August 16, 2026, and will drift. The who-controls-it mapping, the annotations shape, and the subscriptions mechanism are quoted from the MCP specification dated 2026-07-28 (its server-concepts and resources pages, fetched August 16, 2026); the stateless redesign and the 12-month deprecation of Sampling, Roots, and Logging come from the protocol's own 2026-07-28 release announcement. The 200,000-token window is this site's standing convention, not a measured limit of any model.
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for building the server, [Slash commands](/foundations/slash-commands/) for surfacing prompts, and [Rules](/foundations/rules/) for the broader pattern of writing a convention down once.

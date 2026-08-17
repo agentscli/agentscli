@@ -1,6 +1,8 @@
 ---
-title: "'It worked for me' is not a test for a non-deterministic system."
-description: "Treat prompts like code: a golden dataset run headless on every change, gated by a hook that fails the build below baseline. Only a blocking eval works."
+title: "A prompt fix that visibly works can still fail its own gate: fixing one case dropped a six-case eval from 0.833 to 0.500, a 33-point fall."
+description: "A one-line AGENTS.md fix that visibly resolves the case you were chasing can still fail its own regression gate. Fixing one case here drops a six-case eval from 0.833 to 0.500 - and only a baseline that ratchets upward catches it before a user does."
+seoTitle: "Prompt Regression Tests: Gate AGENTS.md Changes in CI"
+seoDescription: "Editing a prompt or rules file can fix one case and break three others. Run a golden dataset headlessly and fail the build if the score drops."
 authors: sourabh
 date: 2026-05-29
 tags: [context-engineering, headless, hooks, evals]
@@ -11,17 +13,36 @@ You edited the prompt. Ran it once. The output looked right, so you shipped it. 
 
 For a system that returns a different answer to the same input twice, that sentence means nothing. You sampled one draw from a distribution and called it a proof. You wouldn't merge a payments change because the unit test passed *once* on your laptop - but you'll merge a change to the agent's instructions on a single happy-path glance, because the agent isn't "code," it's "the prompt," and the prompt feels like prose you're allowed to wing.
 
-It isn't prose. It's the program. And right now you're shipping it without tests.
+It isn't prose. It's the program. And an edit to it looks local - one line, one file, easy to verify by trying it once. It isn't local. `AGENTS.md` and every rules file load into every future generation, for every request, until someone edits them again. A local-looking edit to a global, non-deterministic input, checked against exactly one draw: that's the whole failure mode this piece is about, and it has a number attached to it. Fix the one case that was bothering you, and a six-case regression suite built around that exact edit drops from **0.833 to 0.500** - a 33-point fall, hiding behind a fix that, eyeballed, looks like a clean win. Remember those two numbers. The rest of this piece is how you catch that drop before a user does, and why a script has to be the one doing the catching.
+
+## Check whether you already have this
+
+Thirty seconds settles whether this is your problem too.
+
+Open the git log for your rules file - `AGENTS.md`, `CLAUDE.md`, whatever your tool reads on every session. Find the last five edits that added or changed an instruction, not just reformatted one. For each, ask one question: **when that edit landed, did anything besides the one case that motivated it get re-tested before the merge?**
+
+If the honest answer is yes for all five, you already have a gate, even if you don't call it one, and the rest of this is worth skimming rather than building. If the answer is no for even one of them, you have a change sitting in production that was verified exactly once, on exactly the case that prompted it, and checked against nothing else. **Keep reading. The next section is that scenario, with the receipts.**
 
 ## The edit that fixes one case and breaks three
 
-Here's the shape of the failure. A teammate notices the agent keeps generating REST handlers that bypass your repository layer. They open `AGENTS.md`, add a line - *"never call the ORM directly from route handlers; go through `db/repo/`"* - try it on the one endpoint that was broken, see it work, and merge.
+Here's the shape of the failure, in full.
 
-What they didn't re-test: the migration script the agent now refuses to write inline, the seed file it overcomplicates routing through a repo that doesn't exist yet, the two background jobs where the direct call was correct. One line of context fixed one case and quietly degraded three. Nobody noticed, because nobody re-ran the three.
+A teammate notices the agent keeps generating REST handlers that bypass your repository layer. They open `AGENTS.md` and add one line: *"never call the ORM directly from route handlers; go through `db/repo/`."* They try it on the one endpoint that was broken. It works. They merge.
 
-**This is the tax of a non-deterministic, global input.** A prompt or a rules file isn't a local change - it's a parameter on every future generation. Editing it is closer to changing a compiler flag than fixing a function. You cannot reason about its blast radius by inspection, and you cannot verify it by trying the one case you had in mind.
+Call that endpoint `repo-layer-001`. It's one case in a golden set built around exactly this scenario - six cases total, the ones a route-handler rule like this one actually touches:
 
-So you learn about the regression the way everyone learns about it: from a trace, after a user hit it, a week later, when you've forgotten which of the eleven prompt edits that sprint caused it.
+- `repo-layer-001` - the route handler the edit was written to fix.
+- `migration-inline-001` - a migration that has to stay inline SQL; there's no repo layer for a table that doesn't exist yet.
+- `seed-file-001` - a seed script that has to seed directly, for the same reason.
+- `background-job-001` - a background job where the direct ORM call was already correct.
+- `background-job-002` - a second, unrelated background job.
+- `pnpm-001` - an unrelated case about which package manager to use, included because the edit shouldn't touch it at all.
+
+Watch what the edit does to all six, not just the one your teammate checked. `repo-layer-001` starts failing and ends passing - the fix works exactly as intended. But the same instruction that tells the agent "go through `db/repo/`" doesn't know that a migration file has no repo to go through, or that a seed script is supposed to write directly, or that one of the two background jobs was calling the ORM on purpose. Three cases that were fine before the edit are not fine after it.
+
+Nobody caught that, because nobody re-ran the other five. That's the tax of a non-deterministic, global input: a prompt or a rules file isn't a local change, it's a parameter on every future generation, and you cannot reason about its blast radius by inspection or verify it by trying the one case you had in mind. A team editing `AGENTS.md` eleven times in a sprint - a completely normal sprint - is making eleven of these bets, each one checked on exactly the case that prompted it and nowhere else.
+
+**So you learn about the regression the way everyone learns about it: from a trace, after a user hits it, a week later, when you've forgotten which of the eleven edits caused it.**
 
 ## Tracing is an autopsy. The golden dataset is a vaccine.
 
@@ -29,21 +50,24 @@ When teams get burned by this, they reach for observability. Wire up tracing, sh
 
 The thing that actually stops the regression is older and far more boring: **a checked-in dataset of known-good behavior that runs before the merge and fails the build when the score drops.** Not a dashboard you have to remember to look at. A gate that won't let the bad change through.
 
-This is the same move we make everywhere else in engineering and somehow suspend the moment the word "AI" appears. You don't trust that the refactor preserved behavior because you eyeballed it - you trust the test suite that's red until it does. The agent's context deserves the same suite. The recipe combines three primitives you already have: [headless](/foundations/headless/) execution to run the agent without a human, [rules](/foundations/rules/) versioned like the source they are, and a [hook](/foundations/hooks/) that turns the score into a gate.
+This is the same move you make everywhere else in engineering and somehow suspend the moment the word "AI" shows up. You don't trust that a refactor preserved behavior because you eyeballed it - you trust the test suite that's red until it doesn't lie to you. **The agent's context deserves the same suite.** The recipe combines three primitives you already have: [headless](/foundations/headless/) execution to run the agent without a human, [rules](/foundations/rules/) versioned like the source they are, and a [hook](/foundations/hooks/) that turns the score into a gate.
 
 ## Step 1 - Write down the known-good behavior as data
 
 Your SME knowledge - *which* endpoint should go through the repo, *which* migration is correctly inline - is exactly the context the agent lacks. The gap this whole site is about. A golden dataset is that knowledge, frozen into checkable form: an input, and the behavior you know is correct for it.
 
-Keep it dead simple. A JSONL file in the repo, one case per line:
+Keep it dead simple. A JSONL file in the repo, one case per line, all six from the scenario above:
 
 ```jsonl
 {"id":"repo-layer-001","input":"Add a GET /users/:id endpoint","assert":{"must_call":"db/repo/users","must_not_match":"ORM\\.|prisma\\.|knex\\("}}
 {"id":"migration-inline-001","input":"Write a migration adding a nullable last_login column","assert":{"must_match":"ALTER TABLE","must_not_call":"db/repo/"}}
+{"id":"seed-file-001","input":"Write a seed script for 20 demo users","assert":{"must_match":"prisma\\.|knex\\(","must_not_call":"db/repo/"}}
+{"id":"background-job-001","input":"Write a nightly job that purges expired sessions directly against the sessions table","assert":{"must_match":"ORM\\.|prisma\\.|knex\\(","must_not_call":"db/repo/"}}
+{"id":"background-job-002","input":"Write a job that recalculates monthly usage totals","assert":{"must_match":"SELECT|aggregate"}}
 {"id":"pnpm-001","input":"Add the date-fns dependency and show the install command","assert":{"must_match":"pnpm add date-fns","must_not_match":"npm install|yarn add"}}
 ```
 
-These aren't trick questions. They're the corrections you've already typed into chat twice - promoted from throwaway corrections into permanent, executable expectations. Every time the agent gets something wrong in a way a *rule* should have caught, that wrong becomes a new line in this file. The dataset grows with your scars.
+These aren't trick questions. They're the corrections you've already typed into chat, more than once - promoted from throwaway corrections into permanent, executable expectations. Every time the agent gets something wrong in a way a *rule* should have caught, that wrong becomes a new line in this file. **The dataset grows with your scars.**
 
 ## Step 2 - Run it headless and score it
 
@@ -79,11 +103,43 @@ Run it and you get a number, not a vibe. Because the system is non-deterministic
 
 Don't try to make the flakiness go away by pinning the temperature to zero. It won't. Temperature controls token *sampling*, not the inference pipeline underneath it, and that pipeline is non-deterministic for reasons that have nothing to do with creativity. Floating-point addition isn't associative - `(a + b) + c` doesn't always equal `a + (b + c)` once rounding enters - so the matrix multiplies inside the model can land on slightly different logits run to run. When two candidate tokens are nearly tied, a rounding error a dozen decimal places down flips their order, and the generation diverges from there. On top of that, production inference *batches* requests: your prompt is processed alongside whatever other requests happened to arrive in the same window, and the batch it lands in shifts the numbers. This is why a prompt behaves perfectly in your isolated test and turns flaky under load - the system around it changed, not the model's mood. Running each case `n` times is how you sample that distribution instead of pretending it's a point.
 
-While you're at it, measure cost and latency, not just correctness. You don't have to scrape token counts: with `--output-format json`, Claude Code hands back `total_cost_usd` and a per-model breakdown for every call, and `codex exec --json` streams structured events you can sum the same way. A prompt edit that lifts accuracy two points but doubles cost and latency is a regression too - just an invisible one until you put it on the board.
+While you're at it, measure cost and latency, not just correctness. You don't have to scrape token counts: with `--output-format json`, Claude Code hands back `total_cost_usd` and a per-model breakdown for every call, and `codex exec --json` streams structured events you can sum the same way. **A prompt edit that lifts accuracy two points but doubles cost and latency is a regression too - just an invisible one until you put it on the board.**
+
+## The six cases, before and after
+
+Do the count by hand before you run anything, because the hand count is what makes the automated version trustworthy later.
+
+Before the edit lands, run all six cases three times each and mark each draw. Five of six pass every one of their three draws. The one that doesn't is `repo-layer-001` - it's failing on purpose right now, which is why your teammate is about to fix it.
+
+Five out of six, scored pass-all-three: **0.833**. Remember that number. It's the score the moment before the edit lands, and it's what the edit is about to cost you.
+
+Now the edit lands: *"never call the ORM directly from route handlers; go through `db/repo/`."* Eyeball the result the way your teammate did. `repo-layer-001` passes now - the fix worked, plainly, in front of you. Skim a couple of the others and nothing jumps out. Looks like a clean win. Merge it.
+
+Run the actual gate script instead of eyeballing it, scoring all six cases three draws each, same as before:
+
+| case | before (3 draws) | verdict | after (3 draws) | verdict |
+|---|---|---|---|---|
+| repo-layer-001 | [0, 0, 0] | FAIL | [1, 1, 1] | PASS |
+| migration-inline-001 | [1, 1, 1] | PASS | [1, 0, 1] | FAIL (flaky) |
+| seed-file-001 | [1, 1, 1] | PASS | [0, 0, 0] | FAIL |
+| background-job-001 | [1, 1, 1] | PASS | [0, 0, 1] | FAIL (flaky) |
+| background-job-002 | [1, 1, 1] | PASS | [1, 1, 1] | PASS |
+| pnpm-001 | [1, 1, 1] | PASS | [1, 1, 1] | PASS |
+| **SCORE** | | **0.833** | | **0.500** |
+
+Three of six pass every draw now, not five: **0.500**. The edit that visibly fixed the case your teammate was chasing dropped the score from 0.833 to 0.500 - a 33-point fall, a 40 percent relative drop, while the one case anyone actually looked at was turning green.
+
+Two of the three regressions are worth a second look, because eyeballing would never have caught them even if your teammate had thought to check. `migration-inline-001` and `background-job-001` don't fail every draw - they pass some and fail others. That's **flaky**, and under this piece's own scoring rule (green only if every draw passes) flaky counts as a fail, same as `seed-file-001`'s clean, every-draw failure. Run either flaky case exactly once, the way a single manual check does, and there's a real chance you draw the passing run and conclude the case is fine.
+
+That's not hypothetical here. Score all six cases on their first draw only, the way one glance at one output does: `repo-layer-001`, `migration-inline-001`, `background-job-002`, and `pnpm-001` all show a pass on draw one, and only `seed-file-001` shows red. One-draw score: 4 of 6, or 0.667 - a visible drop from 0.833, but a shallow one, and it catches only one of the three real regressions. The other two, the flaky ones, hide behind a first draw that happened to pass. A single glance would have told you the edit cost you one case. It actually cost you three.
+
+Nothing here was guessed. The gate script counted the same eighteen draws - six cases, three draws each - that a patient human could count by hand, and landed on exactly what the hand count predicts: 0.833 before, 0.500 after. That match, script against hand count, is the entire reason you can trust a script to do this counting on every merge instead of a person doing it once and never again.
+
+A one-line fix. A visible pass on the case that motivated it. A third of your regression suite gone, two of the three losses invisible to a single glance. That's not an argument against making the edit - it was probably still worth making, once `migration-inline-001` and the rest get fixed too. It's an argument against trusting a look. Call the file that makes this catchable **the ratchet**: a committed baseline score that a hook is only ever allowed to move up, in a deliberate commit, never down and never silently. `repo-layer-001` passing is not, by itself, a reason to move it. 0.500 is below 0.833. The ratchet doesn't move, and neither does the merge.
 
 ## Step 3 - Gate the merge with a hook
 
-A score nobody enforces is a dashboard. The point of this recipe is the gate. A [hook](/foundations/hooks/) is a script the system runs at a defined moment - here, before a merge or as the required CI check - and a non-zero exit blocks the action. That's the whole mechanism: the build goes red below baseline.
+The six-case table above is what a [hook](/foundations/hooks/) turns into a yes-or-no before anyone has to eyeball anything. A hook is a script the system runs at a defined moment - here, before a merge or as a required CI check - and a non-zero exit blocks the action.
 
 ```bash
 #!/usr/bin/env bash
@@ -92,7 +148,7 @@ set -euo pipefail
 
 ./scripts/eval.sh
 new=$(cat eval/.last-score)
-base=$(cat eval/baseline-score)   # committed; the last known-good
+base=$(cat eval/baseline-score)   # committed; the ratchet
 
 if awk "BEGIN{exit !($new < $base)}"; then
   echo "BLOCKED: eval $new is below baseline $base"
@@ -102,7 +158,9 @@ fi
 echo "OK: eval $new >= baseline $base"
 ```
 
-The baseline is a committed file. You only move it *up*, in a deliberate commit, when a change genuinely improves behavior - never silently, never down. Lowering the bar to get a merge through is now a visible act in the diff, with your name on it, which is exactly the social pressure you want.
+Run that against the numbers above and it prints `BLOCKED: eval 0.500 is below baseline 0.833` and stops the merge, cold, before the three quiet regressions ship. That's the ratchet doing its one job: `eval/baseline-score` only ever moves up, and only in a deliberate commit, when a change genuinely improves the score. Lowering it to force a merge through is now a visible act in the diff, with your name on it - exactly the social pressure you want on the person tempted to do it.
+
+And the objection you're already forming: eighteen agent calls - six cases, three draws each - before every merge is too slow to sit through on every PR. It would be, at real scale. So tier it. A small smoke set, the cases that cover your load-bearing rules (all six, here, at toy size), runs on every PR and gates the merge in a minute or two. A bigger set, scored `n` times and sourced closer to the hundred-to-two-hundred-cases-per-route scale further down, runs nightly or on demand instead, and a drop there opens an issue rather than blocking a human mid-flow. **Keeping the merge gate lean is a feature, not a compromise:** it should test only the behavior you cannot afford to lose, because a check that takes fifteen minutes to say "you're fine" is the fastest way to get routed around.
 
 ## Step 4 - Version the prompts so every score has a cause
 
@@ -112,11 +170,12 @@ Now every change to the agent's behavior is a diff, and every diff carries an ev
 
 ```text
 prompts: forbid direct ORM calls in route handlers
-  eval: 0.870 -> 0.910  (repo-layer-001 ✓, migration-inline-001 ✗ regressed)
-  cost:  +3% tokens   latency: +0.4s/case
+  eval: 0.833 -> 0.500  (repo-layer-001 fixed; migration-inline-001, seed-file-001,
+                          background-job-001 regressed - 2 flaky, 1 clean fail)
+  gate: BLOCKED
 ```
 
-That single block turns prompt tuning from a random walk into engineering. You can bisect a behavior regression to the exact line of context that caused it. You can defend a change with a number. You can refuse a "harmless" rule tweak because the data says it cost you three other cases. The agent's instructions finally have a blame layer and a test suite, like the rest of your system already does.
+That single block turns prompt tuning from a random walk into engineering. You can bisect a behavior regression to the exact line of context that caused it. You can defend a change with a number. You can refuse a "harmless" rule tweak because the data says it cost you three other cases. **The agent's instructions finally have a blame layer and a test suite, like the rest of your system already does.**
 
 ## Where the gate stops, and what to pair it with
 
@@ -124,16 +183,28 @@ A golden dataset is a regression net, not a safety net. It catches the failures 
 
 So pair the gate with discovery. The gate is the deterministic guard: a lean, curated dataset that must stay green before a merge. Discovery is the opposite shape - throw a broad, messy stream of real or sampled prompts at the changed agent and *look* for new failures, with no pass/fail threshold. Discovery is allowed to be noisy and slow because it runs out of band, not on the merge button. When discovery surfaces a new failure mode, you don't argue about it - you promote it to a line in `golden.jsonl`, and now the gate guards it forever. The two systems feed each other: the gate keeps you from going backward, sampling keeps you finding the front.
 
-The second limit is the assertion. Regex `must_match` / `must_not_match` checks are perfect for the cases that *are* string-shaped - "uses `pnpm`, never `npm`," "imports from `db/repo/`, never the ORM." They fall apart the moment correctness is a judgment: "the explanation is accurate," "the refactor preserved behavior," "the tone matches our docs." For those you need a model to grade the output - an LLM-as-judge. Useful, but remember what it is: you've added a *second* non-deterministic system to score the first. Pin the judge's own prompt in the repo, version it like everything else, and run *it* against a handful of hand-graded cases so a drift in the judge can't silently move your scores. A judge you don't test is just vibes with extra latency.
+The second limit is the assertion. Regex `must_match` / `must_not_match` checks are perfect for the cases that *are* string-shaped - "uses `pnpm`, never `npm`," "imports from `db/repo/`, never the ORM." They fall apart the moment correctness is a judgment: "the explanation is accurate," "the refactor preserved behavior," "the tone matches our docs." For those you need a model to grade the output - an **LLM-as-judge**. Useful, but remember what it is: you've added a *second* non-deterministic system to score the first. Pin the judge's own prompt in the repo, version it like everything else, and run *it* against a handful of hand-graded cases so a drift in the judge can't silently move your scores. A judge you don't test is just vibes with extra latency.
 
-And the objection you're already forming: *this is too slow and too expensive to run on every PR.* It would be, if you ran everything every time. Don't. Tier it. A small smoke set - the ten cases that cover your load-bearing rules - runs on every PR and gates the merge in a minute. The full dataset, scored `n` times, runs nightly or on demand, and a drop there opens an issue instead of blocking a human who's mid-flow. Keeping the gate lean is a feature, not a compromise: the merge guard should test the behavior you cannot afford to lose, and nothing pulls a team off evals faster than a check that takes fifteen minutes to tell them they're fine.
+The third limit is scale, and it's the one this piece's six cases have been quietly dodging. Six hand-typed cases are hand-traceable, which is the whole point of a toy - the same shape holds at sixty and at six hundred. Real teams don't type their golden set in by hand at that size, though. They pull cases from production traces, stratified by intent, and land somewhere around a hundred to two hundred cases per route once the set matures. Getting from six cases you wrote in an afternoon to that scale is a real sourcing problem - which traces to keep, how to dedupe near-identical ones, how to weight a rare-but-costly failure over a common-but-cheap one - and this piece hasn't solved it. It's told you what to do with the cases once you have them.
+
+The fourth limit is what the assertions check for. `must_match`, `must_not_match`, and even an LLM-as-judge grade correctness and behavior: did it call the right function, did it follow the right convention. None of that touches whether your agent can be talked into doing something you never asked for - prompt injection buried in a file it reads, a jailbreak in a ticket description, a customer record it wasn't supposed to echo back. That's a different dataset, adversarial rather than golden, and a different discipline; some tools in this space (promptfoo's red-team mode is one) build it as a distinct feature for exactly that reason. If your agent reads untrusted input - a webpage, a ticket, a file from outside your repo - this piece's gate is not the control that protects you from that. See [trust and evaluation](/foundations/trust-and-evaluation/) for where that control lives.
+
+And a fifth, practical one: by 2026 you don't have to hand-roll `scripts/eval.sh` in bash and jq the way this piece just did. A tooling category exists now - promptfoo, DeepEval, Braintrust, LangSmith, and others - that ships golden-set evals as a product, CI-native, with assertions wired straight into your existing test framework instead of a grep. Hand-rolling earns its keep only as long as your assertions stay a couple of regexes; past that, one of those tools saves more time than it costs to adopt. This piece built the bash version because the mechanism is the point, not because you should ship it that way at real scale.
+
+None of that is a reason to skip the gate. **It's a reason to know exactly what green means before you trust it: a passing regression suite proves the agent didn't get worse at what you tested for. It proves nothing about the rest.**
 
 ## What you've actually built
 
-A broad, capable agent that knows everything in general and nothing about your repo, wired to a narrow, deep record of how your team specifically wants it to behave - and a gate that won't let anyone weaken that record by accident. That's context engineering with a regression net under it. The golden dataset *is* your SME knowledge, made executable; the hook is what stops the next well-meaning edit from quietly forgetting it.
+Look at the table from a few sections back one more time, because it's the whole piece in six rows and two columns. Before the edit: five green, one red, score 0.833. After: three green, three red - one of them the fix everyone saw, two of them regressions nobody looked for - score 0.500. A hook reads exactly those two numbers and decides, in under a second, what a human glancing at one passing endpoint could not: whether this edit is allowed to ship.
 
-"It worked when I tried it" was never a claim about the system. It was a claim about your luck on one draw. Replace the luck with a number that has to go up.
+That's what you've built. A broad, capable agent that knows everything in general and nothing about your repo, wired to a narrow, deep record of how your team specifically wants it to behave, and a ratchet that won't let anyone weaken that record by accident. The golden dataset *is* your SME knowledge, made executable. The hook is what stops the next well-meaning edit from quietly forgetting it.
+
+"It worked when I tried it" was never a claim about the system. It was a claim about your luck on one draw, on one case, out of six you didn't check. Replace the luck with a number that has to go up.
+
+That leaves the gate's own limit as the open question, and it's a different one from the five above. Every step in this piece still puts a human at the keyboard: someone edits `AGENTS.md`, the gate scores it, the human reads the result and decides the next edit. Nothing here stops that loop from being automated end to end - a search that treats the eval score itself as the thing to optimize, and proposes the next edit on its own, the direction tools like DSPy are already pushing prompt engineering toward. This piece only covers the loop with a person still in it. What happens once the search is automated too, and who ratchets the ratchet at that point, is the next open question, not this piece's to answer.
 
 ---
+
+**About the numbers.** The six cases and their eighteen draws (six cases, three draws each, before and after the edit) are toy data, invented for traceability and matched exactly to the scenario the piece narrates: one case fixed, three regressed (two flaky, one clean fail), two untouched. Every score, delta, and percentage derived from those eighteen draws - 0.833, 0.500, the 33-point fall, the 40 percent relative drop, the single-draw score of 0.667 - is arithmetic on that toy data, re-checked against an independent script before publishing, not a measurement of any real team's eval run. The eleven-edits-a-sprint figure is a plausible round number for scale, not a measured average. The tooling names (promptfoo, DeepEval, Braintrust, LangSmith) and the mention of red-team testing as a distinct feature are named because those products and that category exist as of 2026; no claim is made about which is best, and none was checked. The hundred-to-two-hundred-cases-per-route figure describes common practice, not a cited statistic. Swap in your own cases and the shape doesn't change: one fix, some regressions, some untouched, and a single glance that would have missed most of it.
 
 For the per-tool mechanics, see [Headless & CI](/foundations/headless/) for running the agent without a human in the loop, [Rules](/foundations/rules/) for versioning the agent's context like source, and [Hooks](/foundations/hooks/) for gating the merge on the eval score.

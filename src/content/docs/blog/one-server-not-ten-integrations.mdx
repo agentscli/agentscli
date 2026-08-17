@@ -1,48 +1,154 @@
 ---
-title: "Adding a system to your agent should be a config line, not a codebase."
-description: "Hand-writing an adapter per external system is the contextless agent's biggest tax. An MCP server collapses the blowup into one connection, configured once."
+title: "Three agents, three systems: 108 hours of adapters by hand, 40.5 with MCP servers. Every new agent widens the gap."
+description: "A team wiring three agent surfaces to three systems by hand pays for nine adapters, 108 hours of year-one work. One MCP server per system, pointed at from each agent, costs 40.5 hours, and the ratio climbs with every agent the team adds."
+seoTitle: "One MCP Server Replaces Every Custom Tool Integration"
+seoDescription: "Hand-written adapters multiply: three agents times three systems is nine adapters and 108 hours in year one. MCP servers cut that to 40.5 hours."
 authors: sourabh
 date: 2026-05-29
 tags: [context-engineering, mcp-servers, permissions]
 draft: false
 ---
 
-There's a ticket in your backlog that says "let the agent see our deploy state." It's been sitting there a sprint. Not because it's hard to understand - everyone agrees the agent would be more useful if it could read which build is live - but because *doing* it means writing yet another adapter. Auth handling, request shaping, response parsing, error retries, a thin tool surface, tests for all of it. Then you own that code forever.
+There is a ticket in your backlog that says "let the agent see our deploy state." It has sat there a sprint. Nobody disagrees the agent would be better with eyes on which build is live. The ticket sits because everyone knows what finishing it means: another adapter. Auth handling, request shaping, response parsing, retries, a thin tool surface, tests for all of it, and then you own that code for as long as the system exists.
 
-That ticket shouldn't exist. Adding a system to your agent should be a line in a config file, not a module in your codebase.
+If you are still deciding whether agents should reach your external systems at all, [that case is made here](/blog/your-agent-cant-read-your-jira/). This piece assumes it and asks the question that comes after: what does that reach cost to build and keep, once more than one agent wants it?
 
-## The integration layer is where agentic reach goes to die
+The tension, in one sentence: every system you wire to an agent by hand costs you again for every other agent that wants the same reach, and the fix is not writing better adapters. It is noticing that half of that multiplication was never yours to pay.
 
-Here's the asymmetry this whole site is about. Your agent is broad and shallow: it has read more code than you ever will, but it knows nothing about *your* stack - your Jira, your Postgres, your deploy pipeline. You are narrow and deep: you know exactly where the deploy state lives, but you can only act on one thing at a time. **Context engineering is closing that gap**, and reaching external systems is one of its largest surfaces.
+Here is where this piece ends up, so you can check the derivation against it. For a team running three agent surfaces against three systems, hand-wiring costs **108 hours** of adapter work in year one. Doing it with MCP servers costs **40.5**. That is a 2.67x cut, and it grows: the ratio climbs toward a 24x ceiling as the team adds agents, because the agent-side half of the protocol was already built into Copilot, Cursor, and every other client before anyone on the team touched a config file.
 
-The naive way to close it is to write glue. The agent needs to read a ticket, so you write a function that calls the Jira API and exposes it as a tool. It needs the live schema, so you write another against Postgres. It needs deploy state, so - back to that backlog ticket - you write a third. Each one is real code: you ship it, you test it, you patch it when the upstream API changes.
+Every hour figure in this post comes from six toy assumptions you can check with a pencil. Before any of that arithmetic, spend thirty seconds finding out whether the problem is yours.
 
-Now multiply. You don't run one agent - your team uses Copilot in the IDE, somebody's piloting Cursor, the platform folks live in a terminal agent. Each wants tools wired its own way. **M systems times N agents is the integration blowup**, and it's where reach actually dies: not in a dramatic failure, but in a backlog of adapters nobody has time to write. The agent stays blind to half your stack, and the half it *can* see is held together by code you now maintain.
+## The thirty-second check
 
-## One protocol collapses M×N to M+N
+List the agent surfaces your team actually runs. Copilot in the IDE for most people, a Cursor pilot in one corner, a terminal agent the platform folks live in. Next to each, list the external systems it can reach through code someone on your team wrote: the Jira wrapper, the Postgres bridge, the deploy-status script.
 
-The fix is to stop writing the integration into your code at all. An **MCP server** - Model Context Protocol, the open standard the major agent tools have [converged on](/foundations/mcp-servers/) - is a standalone process that exposes typed tools (`postgres.query`, `jira.get_ticket`, `fs.read_file`) over a standard protocol. Your agent is the *client*. On connect, it asks the server "what can you do?" and the server hands back its tool list. The agent enumerates those tools at runtime and can call them immediately.
+The check is one question: **does the same system appear twice, wired twice, for two different agents?**
 
-This isn't an Anthropic-only bet anymore. OpenAI wired MCP into its Agents SDK and ChatGPT in early 2025; Google committed Gemini to it weeks later; by the end of the year the protocol had been handed to a Linux Foundation body with OpenAI, Microsoft, AWS, Google, and Cloudflare all signed on. That matters for one practical reason: the server you write - or install - outlives any single vendor's agent. You're not integrating against Claude Code or Cursor. You're integrating against a wire format all of them speak.
+Jira under Copilot and Jira again under the terminal agent, in two codebases, by two authors. That duplication is the thing this piece prices. If no system appears twice, you have a list of one-off integrations, and the honest move is to close the tab and come back when the second agent arrives. And if your team runs exactly one agent surface, the table ahead has your row: year one is a wash, and it says so out loud.
+
+For everyone else, here is what the duplicates cost.
+
+**If you have never wired the same system twice for two different agents, this piece is not about your team yet.**
+
+## What hand-wiring costs
+
+Fix one example and keep it for the whole piece. A team shaped like the check above: three agent surfaces (Copilot in the IDE, Cursor, a terminal agent) and three systems they need to reach (Jira, Postgres, GitHub Actions deploy state, the ticket from the top). Call the number of agent surfaces M and the number of systems N. This team is M=3, N=3.
+
+Each hand-written adapter carries the same weight no matter which agent it serves. Eight hours to build: the auth flow, the request shaping, the response parsing, the retry logic, the tool surface, the tests. Four hours a year to keep alive, patching when the upstream API moves. That is **12 hours per adapter in year one**. These are toy numbers, chosen so every total in this post comes out of them with a pencil; swap in your own hours and the shape of everything below survives.
+
+Now count the work the obvious way, one artifact at a time. Copilot needs Jira: an adapter. Cursor needs Jira: an adapter. The terminal agent needs Jira: an adapter. Three artifacts for one system, and the Jira adapter for Cursor is almost all of the Jira adapter for Copilot, but nobody reuses it, because each harness wants its tools wired its own way. Then the same again for Postgres, and the same again for deploy state.
+
+M × N is 3 × 3: **nine adapters**, each carrying the full 12 hours. That is **the multiplication**, the recurring cost this post tracks.
+
+```text
+9 adapters x 12 hours = 108
+```
+
+**108 hours. All of it real code.** That is the size of the problem before any fix is named: nine artifacts, 108 hours, all of it yours, and every new agent or system multiplies the pile again.
+
+**Hand-wiring multiplies integrations: M × N artifacts, each carrying full weight, each yours forever.**
+
+## One protocol collapses the matrix
+
+The fix is to stop writing the integration into your code at all. An **MCP server** (Model Context Protocol, the open standard the major agent tools have converged on; the [per-tool mechanics are here](/foundations/mcp-servers/)) is a standalone process that exposes typed tools (`postgres.query`, `jira.get_ticket`, `fs.read_file`) over a standard protocol. Your agent is the client. On connect, the agent asks the server what it can do, the server hands back its tool list, and the agent can call those tools immediately.
 
 The shape change is the whole point:
 
 ```text
-Bespoke adapters:        MCP servers:
+Bespoke: one adapter per pair        MCP: one server per system
 
-agent A ─┬─ adapter→ Jira      agent A ─┐
-agent B ─┼─ adapter→ Jira      agent B ─┼─→ jira-mcp ─→ Jira
-agent C ─┴─ adapter→ Jira      agent C ─┘
+Copilot  ─ adapter → Jira            Copilot  ─┐
+Cursor   ─ adapter → Jira            Cursor   ─┼─→ jira server ──→ Jira
+terminal ─ adapter → Jira            terminal ─┘
+                                          postgres server ──→ Postgres
+(the same three again                    actions server  ──→ deploy state
+ for Postgres, and the same
+ three again for deploy state)       each agent holds one config file
+                                     pointing at all three servers
 
-M agents × N systems           M agents + N systems
-= code you write per pair      = one server per system, reused by all
+M x N = 9 adapters                   N servers + M config files = 6 artifacts
 ```
 
-You write Jira once, as a server (or, far more often, you install one someone already wrote). Every agent that speaks MCP connects to the same server. The integration surface moves *out of your codebase* and into a process boundary. Your config just points at it.
+Count the artifacts again for the same team and the same needs. One server per system: a Jira server, a Postgres server, an actions server. Three. One config file per agent, listing the servers it connects to. Three more. **Six artifacts where the bespoke world had nine.**
 
-## The recipe: two servers, one config, scoped at the door
+Done the obvious way, the count comparison undersells the win: 9 against 6 is a 1.5x cut. Hold that number. It is the naive prediction, and the real gap is bigger, for a reason the next section prices.
 
-Here's the actual artifact. A client config wiring two MCP servers - a filesystem server and GitHub's official server - both standard, neither written by you:
+This is no longer a single-vendor bet. OpenAI wired MCP into its Agents SDK and ChatGPT in early 2025; Google committed Gemini to it weeks later. In December 2025, Anthropic donated the protocol to the Linux Foundation's new Agentic AI Foundation, with OpenAI and Block as fellow founding contributors and AWS, Google, Microsoft, Cloudflare, and Bloomberg among the members. That matters here for one practical reason: the server you write, or install, outlives any single vendor's agent. You integrate against a wire format all of them speak.
+
+**The matrix collapses from M × N artifacts to M + N: one server per system, one config per agent, nothing written per pair.**
+
+## Price the two sides of M + N
+
+The count treated all six artifacts as equal. They are not, and the difference is the whole argument. Price each kind, year one, same toy convention:
+
+| Artifact | Build | Maintain (year one) | Unit cost |
+|---|---:|---:|---:|
+| Bespoke adapter | 8h | 4h | 12h |
+| MCP server | 8h | 4h | 12h |
+| Config pointer | 0.25h | 0.25h | 0.5h |
+
+Read the middle row carefully. An MCP server costs the same as an adapter because it is the same code: same auth, same parsing, same retries, same tests, just written to the protocol once instead of per agent. The server side of M + N buys you nothing by itself.
+
+The third row is the one to sit with. A **config pointer**, one server block in one agent's config file, is a quarter hour to add and a quarter hour a year to maintain, mostly token rotation. **0.5 hours per pointer. A pointer, not a program.**
+
+And 12 divided by 0.5 is **24**. An adapter costs 24 times what a pointer costs. Remember 24. It explains the gap in a moment, and it returns at the end of this piece as a ceiling.
+
+Now the full cost, computed the obvious way, summing every artifact's unit price. Bespoke is already done: 9 × 12 = 108 hours. For MCP, the servers are 3 × 12 = 36 hours. The pointers hide the part the count missed. Each agent's config file holds one pointer per system, so pointers still go as M × N: 9 of them, at 0.5 hours each, 4.5 hours. Total:
+
+```text
+servers   3 x 12            = 36.0
+pointers  3 x 3 x 0.5       =  4.5
+                            ------
+MCP, year one               = 40.5 hours
+
+bespoke 108.0 - MCP 40.5    = 67.5 saved
+ratio      108 / 40.5       = 2.6667x
+```
+
+There is the claim from the top of the post, re-derived: 108 against 40.5, a 2.67x cut, 67.5 hours back.
+
+And there is the gap flagged earlier: the count promised 1.5x, the cost says 2.67x. Check it with a shortcut before trusting it. The ratio written out is (M × N × 12) / (N × 12 + M × N × 0.5). Both terms of the denominator carry an N; factor it out and N cancels top and bottom entirely, leaving M × 12 / (12 + M × 0.5). At M=3: 36 / 13.5 = 2.6667. Exact match against the summed line above, no approximation.
+
+**The two sides of M + N are priced differently, 12 hours against half an hour, and that difference is why the real win beats the count's 1.5x promise.**
+
+## The client half is already paid for
+
+Why does a pointer cost a 24th of an adapter? Both connect an agent to a system. By now you could derive the answer yourself, so here it is with a name: **the client half of the protocol is already paid for.**
+
+Half of any integration is client capability: discovering what a server offers, reading its typed tool list, routing calls, speaking the protocol. In the bespoke world you rebuild that half every time, inside every adapter, for every agent, because each harness has its own tool plumbing. In the MCP world you never build it at all. Anthropic, GitHub, Cursor's team, and every other client vendor already shipped it, inside the agent, before your team touched anything.
+
+Your half hour is the price of pointing at work those engineers already did. That is why the M side of M + N is nearly free: the client vendors built that half once, shipped it inside every agent, and MCP is the agreement that lets any team point at the same finished half.
+
+This also explains something the count could not: why the win grows when the team adds an agent. The next table makes it precise.
+
+**The expensive half of every integration ships inside the agent already; all you pay for is pointing at it.**
+
+## How the ratio grows
+
+Hold N at this team's three systems and vary the number of agent surfaces. This table is the picture to keep; every claim left in this post is a row of it.
+
+| Agent surfaces (M) | Bespoke hours | MCP hours | Saved | Ratio |
+|---:|---:|---:|---:|---:|
+| 1 | 36.0 | 37.5 | -1.5 | 0.96x |
+| 3 | 108.0 | 40.5 | 67.5 | 2.67x |
+| 6 | 216.0 | 45.0 | 171.0 | 4.80x |
+| 12 | 432.0 | 54.0 | 378.0 | 8.00x |
+| 100 | 3,600.0 | 186.0 | 3,414.0 | 19.35x |
+
+**Row 1 is negative.** One agent surface and three systems: 36 hours of adapters against 37.5 for servers plus pointers, a loss of 1.5 hours. A team that will only ever run one agent gets nothing from this, and the table says so before any booster does.
+
+Row 3 is this post's team: 2.67x, 67.5 hours back. By row 12 the ratio is 8.00x. At 100 agent surfaces it is 19.35x and still climbing. Toward what? Run the closed form with M growing: M × 12 / (12 + M × 0.5) approaches 12 / 0.5, which is 24. **The per-unit ratio planted two sections ago is the ceiling.** At M=100 the ratio sits at 19.35x; at M=10,000 it reaches 23.94x, within one of the ceiling, and it never crosses it. The 24x plant pays off exactly.
+
+One more property, verified by re-running every row of this table with N=8 systems instead of 3: every ratio comes out identical. The ratio depends on how many agent surfaces you run and never on how many systems you wire. The closed form already said so, since N canceled.
+
+That lands the practical advice, and it sharpens the usual pitch for MCP. Adding another system is linear in both worlds: three adapters, 36 hours, by hand, against one 12-hour server plus three pointers, 13.5 hours. "To add a system, add a config block" is true, but adding systems is where the two worlds stay closest. Adding an agent is where MCP compounds: a fourth agent costs three more adapters, 36 hours, by hand, and three pointers, 1.5 hours, with servers. That marginal gap is the full 24x, the unit-price ratio, paid again on every agent. The payoff rides on agent adoption inside your team, and on nothing else.
+
+**The ratio tracks how many agents run, ignores how many systems they wire, and climbs toward 24x without crossing it.**
+
+## The config, scoped at the door
+
+The half-hour artifact, concretely. A client config wiring two MCP servers, both standard, neither written by you:
 
 ```jsonc
 {
@@ -62,79 +168,49 @@ Here's the actual artifact. A client config wiring two MCP servers - a filesyste
         "ghcr.io/github/github-mcp-server"
       ],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"  // pulled from your shell, never inline
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"  // from your shell, never inline
       }
     }
   }
 }
 ```
 
-Two entries. No adapter code anywhere in your repo. When the agent connects, it reports the merged tool list it discovered:
+Two entries. No adapter code anywhere in the repo. And the deploy-state ticket this post opened with dissolves here: deploys already run as GitHub Actions, the GitHub server reads workflow-run state with a token from the environment, and the agent learned about all of it from one config block. That is the 0.5 hours.
 
-```text
-filesystem  →  read_file, write_file, list_directory, search_files, …
-github      →  list_workflow_runs, get_workflow_run, get_pull_request, …
+Scoping happens at the same door. The filesystem server above is pinned to one directory; it cannot `read_file` outside that path because it was never given a wider window. The GitHub server has the same dial in two more notches: `GITHUB_TOOLSETS=actions` exposes only the workflow tools, so the agent never even sees `create_pull_request`, and `GITHUB_READ_ONLY=1` strips every write tool no matter what the client allows downstream. The token stays in the environment, never inline, never in the repo, never in the model's context; [the trust-boundary piece](/blog/the-server-is-the-trust-boundary/) owns that argument in full.
 
-Every tool above discovered at connect - none written by you.
-```
+Where the server runs is one line either way: stdio as a local subprocess, or a hosted endpoint over HTTP. GitHub ships both, and a platform team can stand the hosted one up once for the whole org, which is the M side of M + N made literal: every agent points at the same running thing, and nobody else manages a secret.
 
-That deploy-state ticket? It was never an adapter. Your deploys run as GitHub Actions, and the GitHub server reads their run state with a token from the environment - a config entry, exactly as promised. To add the next system, you add another block. The agent's reach grows; your codebase doesn't.
+**Reach becomes one config entry plus one scoping decision, made at the boundary and inherited by every session after it.**
 
-## The win is scope, not tool count
+## What this piece does not settle
 
-Now the part most "add MCP and the agent gets superpowers" takes get wrong. **More tools is not the win.** A dozen servers wired in is a dozen ways for the agent to do the wrong thing fast, and wrapping an API in MCP does not magically make the model pick it correctly - that's still a job for [rules](/foundations/rules/) and a well-named tool surface.
+Three honest caveats and two scope lines.
 
-The real win is that the integration surface stops living in your code *and* every server's reach becomes a decision you make once, at the door. Look back at the config: the filesystem server is pinned to a single directory. That's not an afterthought - it's the security boundary. The agent literally cannot `read_file` outside that path, because the server it's talking to was never given a wider window.
+The 8-hour server build is the worst case. Far more often you install a server someone already wrote: the official MCP registry, live in preview since September 2025, listed thousands of servers within its first year, by public counts. That drops the toy's server side from 36 hours to 1.5, three installs at pointer prices, and the M=3 row climbs from 2.67x to a straight 18x. Two caveats ride with it: the registry is still in preview, and it lists rather than vets. Installing someone else's server is a trust decision, and this piece's arithmetic does not price it.
 
-The GitHub server gives you the same dial in two more notches. Hand it `GITHUB_TOOLSETS=actions` and the only tools it exposes are the workflow ones - the agent never even *sees* `create_pull_request`, because the toolset that defines it was never enabled. Set `GITHUB_READ_ONLY=1` and every write tool vanishes; it's a strict filter that overrides everything downstream, so even a tool explicitly allowlisted at the client can't mutate state if the server refused to hand it over. Two environment variables, and that deploy-state use case is locked to exactly what it needs: read workflow runs, touch nothing else.
+The equal pricing is an assumption this piece chose. A server was priced at 12 hours because it is the same code as an adapter. Price it at double, for the protocol work and packaging, and every ratio below the ceiling shrinks. The shape survives: the ratio still climbs with M toward 24x, because the ceiling comes from the adapter-to-pointer price alone.
 
-That's a [permissions](/foundations/permissions/) decision, and MCP gives you two layers to make it at:
+And this piece priced the build, never the run. Every server you wire in adds its tool list to the model's context on every turn. The scale of that bill, from Anthropic's own engineering post on advanced tool use (November 2025): a client loaded with 50-plus MCP tools carries about 72,000 tokens of definitions before the first prompt runs. Two measured costs follow. Tokens: RAG-MCP (Gan and Sun, [arXiv 2505.03275](https://arxiv.org/abs/2505.03275), May 2025) found that retrieving only the relevant tool descriptions cut prompt tokens by more than half. Judgment: the same paper's stress test measured tool selection at 43.13% accuracy when the relevant definitions are fetched first, against 13.62% for its baseline without retrieval. The industry's answers exist and are worth looking up by name: Anthropic's Tool Search Tool (November 2025) loads tool definitions on demand, which Anthropic reports cutting tool-definition tokens by up to 85%, and Cloudflare's Code Mode (February 2026) gives an agent an entire API in about a thousand tokens by having it write code against one typed interface instead of loading every endpoint as a tool. This site already owns the context-window villain in two pieces, [cache-the-explore](/blog/cache-the-explore/) and [stop-reading-your-codebase-in-the-window](/blog/stop-reading-your-codebase-in-the-window/); go there for the **run tax**, the ongoing context bill for everything you wired in.
 
-```jsonc
-// 1. Scope at the server - what the server itself can reach.
-//    Filesystem server: one directory. GitHub server: one read-scoped PAT.
+Two scope lines, because a reader in 2026 arrives expecting both. Security is out of scope here: this is the build-cost argument, and the safety argument lives in four sibling pieces, [the confused deputy](/blog/the-confused-deputy-server/) (one server holding read and write scope at once), [credentials server-side](/blog/the-server-is-the-trust-boundary/), [typed output boundaries](/blog/type-your-tool-boundaries/), and [confirmation gates on destructive tools](/blog/elicitation-plus-tool-annotations/). And Agent Skills, the other primitive you have heard of, is a complement here rather than a rival: MCP is what the agent can reach, [Skills](/foundations/skills/) are what it does once it gets there, the live connection versus the stable procedure. A skill will not query your deploy state; a server will not encode your release checklist.
 
-// 2. Gate at the client - which discovered tools the agent may call,
-//    and which need your approval first.
-{
-  "permissions": {
-    "allow": ["mcp__filesystem__read_file", "mcp__github__list_workflow_runs"],
-    "ask":   ["mcp__filesystem__write_file", "mcp__github__create_pull_request"]
-  }
-}
-```
+**The build math is honest about its own edges: worst-case hours, a chosen cost model, and a run tax it never priced.**
 
-Reads flow; writes and state changes stop for confirmation. The secret stays in `${GITHUB_PAT}` in your shell - never inline in the config, never in the repo, never in the model's context. Scope it once and every session inherits it. Compare that to bespoke adapters, where the blast radius is buried in whatever your code happened to do - and you only find out when it does something you didn't intend.
+## The build tax and the run tax
 
-This is the configured-once part of the thesis. The adapter approach makes reach a maintenance burden you carry forever; the MCP approach makes it a [configuration](/foundations/configuration/) entry plus a scoping decision you make deliberately at the boundary.
+Back to the table, row by row, because it is the picture to keep. One agent surface: 0.96x, a loss of 1.5 hours. Three, this team: 2.67x, 67.5 hours back. Six: 4.80x. Twelve: 8.00x. A hundred: 19.35x. Ten thousand: 23.94x, still under a ceiling of exactly 24, the price ratio between an adapter and a pointer, and the number this post planted the first time it priced anything. That is the opening claim reconciled: 108 hours against 40.5 for the team shape you probably have, computed from six toy hours you can check with a pencil.
 
-## One more knob: where the server runs
+The advice the table encodes: spend your energy where the ratio lives. Wiring a fifth system into four agents costs 48 hours by hand and 14 with servers, the close case. Wiring a fourth agent into five systems costs 60 by hand and 2.5 with servers, the 24x case, and it is 24x on every agent after that, because the **build tax**, the one-time hours this piece counted, shrinks toward zero as agents arrive. Which is another way of saying the client vendors already paid it.
 
-Each server also picks a transport, and the choice maps cleanly to the work:
+So go delete that backlog ticket. The work it describes is a process you point at, a directory you scope, a token you keep in the environment, and one block of config the agent reads on connect.
 
-- **stdio** - the agent launches the server as a local subprocess and talks over stdin/stdout. Zero network, no service to host. This is what both servers above use - yes, even the Docker one; `docker run -i` is just a subprocess. Best for **local, stateless** tools: filesystem, a CLI wrapper, a one-shot fetch.
-- **Streamable HTTP** - the server is a long-running service the agent connects to over the network. Best for **stateful or shared** tools: a server that holds a session, or one a platform team hosts once for the whole org instead of every laptop spawning its own.
+And the open question this piece hands you: it never priced the run. Every server in that config ships its tools into context on every turn, and the better the build math looks, the more servers you are tempted to wire. The build tax falls as your team adopts agents; the run tax rises as you wire systems; and the second bill is the one to read next, in [cache-the-explore](/blog/cache-the-explore/) and [stop-reading-your-codebase-in-the-window](/blog/stop-reading-your-codebase-in-the-window/).
 
-GitHub ships both, and the contrast is the cleanest illustration there is. The Docker entry above runs the server on your laptop over stdio. Point an agent at `https://api.githubcopilot.com/mcp/` instead and you get the *identical* tool list from a server GitHub hosts, authenticated with OAuth rather than a personal access token you minted and now have to rotate. The same `actions`/read-only scoping is just expressed as `X-MCP-Toolsets` and `X-MCP-Readonly` headers instead of env vars. A platform team stands that up once for everyone; nobody else spawns a subprocess or manages a secret. Switching from one to the other is a one-line config change - the agent code, the tool names, the prompts that use them, none of it moves.
-
-Same protocol, same discovery, same tool list. The transport is an operational detail, not a rewrite - which is exactly the property you want when "add a system" is supposed to be a config line.
-
-## Where this stops being free
-
-MCP moves the integration surface out of your code; it doesn't make reach free. Two failure modes are worth naming before you wire in your tenth server.
-
-The first is context cost. Every tool a connected server exposes ships its name and description into the model's context on *every* turn. Ten servers with a dozen tools each is a hundred-plus tool definitions the model reads past to pick the right one - and selection accuracy drops as the list grows. A server you query once a week is often cheaper as a script the agent shells out to on demand than as a permanent fixture in its tool list. Wire in what the agent reaches for repeatedly; leave the long tail out. This is the other reason "more tools is not the win" - it's not just that extra reach is dangerous, it's that extra reach is *expensive*, paid in degraded judgment on the tools that matter.
-
-The second is the confused deputy. An MCP server acts with *its* credentials, not the agent's, and the agent decides when to call it based on text it was handed - including text from the very systems it can read. A server scoped to read issues and open PRs, driving a model that just ingested an attacker-authored issue, is one well-worded instruction away from being a write primitive someone else is steering. The agent isn't compromised; it's obediently doing what the issue told it to, with the server's permissions. This is exactly why the scope-at-the-door discipline isn't optional: read-only by default, writes gated behind a confirmation, and the narrowest toolset that does the job. The blast radius of a server is whatever you granted it - so grant assuming something will eventually try to use all of it.
-
-None of this is an argument against MCP. It's the argument for being deliberate about *which* reach you configure - which is the same [permissions](/foundations/permissions/) muscle the bespoke-adapter world let you skip, because each adapter only ever did the one thing you coded it to.
-
-## Reach you configure, not reach you maintain
-
-Go delete that backlog ticket. The work it described - teaching the agent to see your deploy state - was never a codebase. It was a process you point at, a directory you scope, a token you keep in the environment, and one block of config the agent reads on connect.
-
-The contextless agent's biggest tax was never that it couldn't reach your systems. It was that *you* were the integration layer, paying it one bespoke adapter at a time. Move that surface out of your code, and the question stops being "who's writing the next adapter" and becomes "what should this server be allowed to touch" - which is the only question worth your time anyway.
+**The build tax shrinks toward zero as your team adopts agents; the run tax is the bill this piece hands you unread.**
 
 ---
 
-For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for the protocol and server setup, [Permissions, sandboxing & approval modes](/foundations/permissions/) for scoping and gating at the boundary, and [Configuration & profiles](/foundations/configuration/) for the config-entry approach to agent reach.
+**About the numbers.** The six unit hours (8 build + 4 maintain for an adapter, 8 + 4 for a server, 0.25 + 0.25 for a config pointer) are toy numbers, invented for traceability, not measured off any real team. Every other hour figure in this piece, the 108, the 40.5, the 67.5, the marginal costs of one more system or one more agent, the 18x registry row, and every row of the master table, is arithmetic that follows from those six, re-checked against a script before publishing. Swap in your own hours and the shape survives: row one stays negative until the second agent arrives, N still cancels, and the ceiling becomes your own adapter-to-pointer price. The quoted figures, each dated: the RAG-MCP results (43.13% against 13.62%, and the over-50% prompt-token cut) are from Gan and Sun's paper, arXiv 2505.03275, May 2025; the 72,000 tokens for 50-plus tools and the up-to-85% token reduction are Anthropic's own figures, from its advanced tool use post, November 2025; the thousand-token API figure is from Cloudflare's Code Mode post, February 2026; the registry's September 2025 preview launch is public record, and server counts on it drift by the month. The Agentic AI Foundation facts are from the Linux Foundation's December 2025 announcement.
+
+For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/) for the protocol and server setup, [Permissions, sandboxing & approval modes](/foundations/permissions/) for gating discovered tools at the client, and [Skills](/foundations/skills/) for the complementary primitive: stable procedure rather than live reach.

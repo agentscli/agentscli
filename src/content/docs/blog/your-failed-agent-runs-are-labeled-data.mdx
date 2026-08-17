@@ -1,29 +1,41 @@
 ---
-title: "You already have labeled data. It's the transcripts you throw away."
-description: "Every failed agent session is a labeled example of where your context falls short. Capture them, cluster them, and fix the top category once in your rules file."
+title: "14 failures in one team's log. Exactly 7 are rule-shaped. The other 7 resist a rules edit, however well it's written."
+description: "Every failed agent run is a labeled example. Capture them with a hook, judge them, count them. The count tells you which failure to fix first. The shape of the failure tells you where the fix belongs, and in one two-week log, half the rows are not fixable in the rules file at all."
+seoTitle: "Turn Failed AI Agent Runs into Labeled Training Data"
+seoDescription: "Capture failed agent runs with a hook, judge them, tally them. One 40-session window: 14 failures split 7 rule-shaped, 4 hook-shaped, 3 permission-shaped."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, hooks, rules]
 draft: false
 ---
 
-"The agent keeps getting our auth flow wrong." Everyone on the team nods. Nobody can say how often, in which way, or whether it's one bug or five wearing the same coat. So the fix is a vibe: someone adds a paragraph to the rules file, the complaints get quieter for a week, and the cycle resets. You are debugging a system you have never actually looked at.
+"The agent keeps getting our auth flow wrong." Everyone on the team nods. Nobody can say how often, in which way, or whether it's one bug or five wearing the same coat. So the fix arrives the only way it knows how: someone opens the [rules](/foundations/rules/) file and adds a paragraph. The complaints get quieter for a week, and the cycle resets.
 
-Here is the thing you walked past on the way to that paragraph. **Every failed run is a labeled example.** The label is "this went wrong," and the transcript is the feature vector - the prompt, the context the agent had, the tool calls it made, the wrong turn it took. You generate dozens of these a day and then close the terminal. That's a dataset hitting the floor.
+That paragraph isn't the wrong tool. It's one tool, and for most teams it is the only one they ever reach for. Underneath the habit sits an assumption nobody decided to make: that the fix for any failure belongs in the rules file. It doesn't. A rules edit can only fix a failure the agent didn't know about, and a large share of what shows up in a real failure log is the agent knowing and doing it anyway. **No amount of prose touches that.**
 
-## The instinct to clean up the transcript is the bug
+How large a share? Here is the whole piece as one claim you can check as you go. Over a two-week window on one repo, the pipeline below produces 40 logged sessions and **14 judged failures, and exactly 7 of them are reachable by a rules-file edit, however well written**. The other 7 need a hook or a permission deny. Most teams only ever reach for the first tool, then conclude the agent is unfixable when the paragraph doesn't hold.
 
-When a run fails, the tidy move is to clear it and start fresh. Clean slate, no clutter. But the failure you just dismissed is the only direct measurement you have of where your agent's context is thin. The mainstream advice - write better rules, pick a [stronger model](/foundations/model-selection/), tune your prompts - is reasonable, and it is also guessing. You're proposing fixes to a distribution you've never measured.
+The rest of the piece is how you get that count honestly, and what you do with each row once you have it.
 
-The contrarian move is boring and it wins: **look at your data.** Almost nobody reads their failed transcripts, which is exactly why everyone keeps re-correcting the same five things by hand. The model isn't the bottleneck. Your ignorance of your own failure modes is.
+## Check whether your rules file is the right tool
 
-So the open question is: what does "looking at your data" mean when the data is a hundred sprawling, semi-structured session logs you don't have time to read? You don't read them. You make a machine read them.
+Thirty seconds and your own memory settle whether this is your problem.
 
-## Capture every session with a hook, automatically
+Think of the last three paragraphs you added to a rules file to stop a misbehavior. Not boilerplate copied from a template; the ones you wrote because the agent did something wrong. Ask one question of each: **did the agent fail because it didn't know, or because it knew and did it anyway?**
 
-You can't analyze what you don't keep. The capture has to be automatic, because anything that depends on a human remembering to save the bad run will only ever capture the runs that weren't that bad.
+**You probably can't answer, and that inability is the finding.** You shipped three fixes without knowing which kind of failure each one was, into the one surface that can only carry one of the two kinds. If you can answer, and all three were missing facts, then every failure you've hit was ignorance and the rules file is the right tool for all of it. Close the tab; nothing below will change what you do.
 
-Use a [hook](/foundations/hooks/) that fires when a session ends and appends the transcript to a log. The point is that it runs every time, with zero ceremony:
+If even one of the three was the agent knowing and doing it anyway, keep reading. That paragraph is sitting in your rules file right now, not working, and the pipeline below is how you find it and where its fix actually goes.
+
+**A rule written without knowing the failure's kind is a guess wearing prose.**
+
+## One repo, two weeks, forty sessions
+
+Fix one case and carry it to the end of the piece. **ledger-api**: a mid-sized service one team runs agents against all day, a vitest monorepo, with three particulars that matter later. Session checks go through a helper called `requireSession()` in `src/lib/auth.ts`. Each package in the monorepo owns its own tests outright. And `src/gen` holds generated files nobody is supposed to edit by hand.
+
+Capture comes first, because you can't count what you deleted. The tidy move after a failed run is to clear the terminal and start fresh, and every cleared failure was the only direct measurement you had of where your agent's context is thin. So the capture has to be automatic, and it has to catch runs nobody watched: the headless CI passes, the overnight loops, the sessions where no human was present to type a correction. That last part is a real blind spot of the manual alternative. Mining corrections you typed by hand can only see failures someone was sitting next to.
+
+A [hook](/foundations/hooks/) that fires when a session ends and appends the transcript to a log runs every time, with zero ceremony:
 
 ```bash
 #!/usr/bin/env bash
@@ -31,24 +43,26 @@ Use a [hook](/foundations/hooks/) that fires when a session ends and appends the
 SESSION_DIR="${HOME}/.agent-runs"
 mkdir -p "$SESSION_DIR"
 
-# SessionEnd hands the hook a JSON payload on stdin - the transcript path and the
-# reason the session ended live in there, not in environment variables.
+# SessionEnd hands the hook a JSON payload on stdin - the transcript path and
+# the reason the session ended live in there, not in environment variables.
 payload=$(cat)
 transcript=$(jq -r '.transcript_path' <<<"$payload")
 reason=$(jq -r '.reason' <<<"$payload")
 
-# The transcript file itself is JSONL - one message object per line - so slurp it
-# into an array (-s) and fold it into a single record for the run log.
+# The transcript file itself is JSONL, one message object per line, so slurp
+# it into an array (-s) and fold it into a single record for the run log.
 jq -cs --arg reason "$reason" \
   '{ts: now, reason: $reason, transcript: .}' \
   "$transcript" >> "$SESSION_DIR/runs.jsonl"
 ```
 
-Now `runs.jsonl` accumulates the real distribution of your work - successes and failures, undifferentiated, which is fine. You don't need to label them by hand. That's the next step's job. The hook's only job is to make sure nothing reaches the floor.
+`runs.jsonl` now accumulates the real distribution of the team's work, successes and failures alike. Over one two-week window on ledger-api: 40 sessions. Judged by the next section's method, 26 succeeded and **14 failed. More than a third of the runs.** Each of those 14 arrives with its own label attached: what the agent had, what it did, where it turned wrong.
 
-## Let an LLM judge cluster the failures into counts
+**Every failed run is a labeled example, and the hook is the only thing standing between you and deleting it.**
 
-A pile of transcripts is not insight. You need them sorted into named categories with counts, and reading a hundred of them yourself defeats the point. Run a model over the log in a [headless](/foundations/headless/) batch and have it act as a judge: did this run succeed, and if not, what category of failure was it?
+## Let a judge read the log, then count it once by hand
+
+A pile of transcripts is not insight until it sorts into named categories with counts, and reading forty of them yourself is the thing nobody has time for. So make a machine do the reading: run the log through an agent in a [headless](/foundations/headless/) batch and have it act as a judge, one structured verdict per run.
 
 ```bash
 # --output-format json here is Claude Code's flag (Codex's equivalent is
@@ -63,7 +77,37 @@ while read -r run; do
 done < ~/.agent-runs/runs.jsonl > ~/.agent-runs/judged.jsonl
 ```
 
-Then collapse it to the only artifact that matters - a ranked tally:
+Done by hand on corrections you typed, this same motion is a named method: **open coding**, then **axial coding**, tag each item in your own words and fold the tags into categories. [The sibling post on counting your corrections](/blog/let-the-failure-distribution-write-your-agentsmd/) walks that manual route and it is not re-taught here. What this piece adds on top is the two halves the manual route lacks: capture that doesn't depend on a human having been present, and a routing step that decides where each counted fix actually goes.
+
+The judge's output for the window, filtered to failures, is the entire dataset for the rest of the piece. Fourteen lines:
+
+| session | judged category |
+|---|---|
+| run-003 | invented-auth-middleware |
+| run-005 | wrong-test-runner |
+| run-006 | invented-auth-middleware |
+| run-008 | edited-generated-files |
+| run-009 | invented-auth-middleware |
+| run-011 | wrong-test-runner |
+| run-012 | misread-package-boundaries |
+| run-014 | invented-auth-middleware |
+| run-015 | edited-generated-files |
+| run-018 | wrong-test-runner |
+| run-019 | invented-auth-middleware |
+| run-021 | edited-generated-files |
+| run-024 | wrong-test-runner |
+| run-027 | invented-auth-middleware |
+
+Count them the obvious way first: read each line, note the category, tally by hand. **Six auth, four test runner, three generated files, one package boundary.**
+
+```text
+invented-auth-middleware       6
+wrong-test-runner              4
+edited-generated-files         3
+misread-package-boundaries     1
+```
+
+Now run the automated way over the same fourteen lines and compare:
 
 ```bash
 jq -r 'select(.outcome=="failure") | .category' \
@@ -71,19 +115,21 @@ jq -r 'select(.outcome=="failure") | .category' \
 ```
 
 ```text
-  31 invented-auth-middleware-instead-of-using-requireSession
-  12 wrong-test-runner (used jest, repo uses vitest)
-   9 edited-generated-files-in-src/gen
-   4 misread-monorepo-package-boundaries
+   6 invented-auth-middleware
+   4 wrong-test-runner
+   3 edited-generated-files
+   1 misread-package-boundaries
 ```
 
-"The agent keeps getting our auth flow wrong" was never one problem. It was **31 instances of the same specific mistake** - inventing middleware instead of calling the helper you already wrote - plus a long tail of unrelated noise. The vibe is now a number, and the number tells you exactly where the leverage is.
+**Identical, line for line.** The match is guaranteed by construction: grouping and counting is arithmetic, and arithmetic cannot drift from itself. The distinction matters, because the two halves of the pipeline deserve different trust. The judge's category labels are a first pass you should spot-check. The tally built on top of them is exact. "The agent keeps getting our auth flow wrong" was never one problem: it was six instances of one specific mistake plus a tail, and now it has a count.
 
-One caution before you trust the tally: read a dozen of the judged transcripts yourself, especially near the category boundaries. An LLM judge inherits the same kind of blind spots as the model that failed - it has documented biases toward output that looks like its own and toward whichever answer it saw first - so its categories are a fast first pass, not ground truth. You're hunting for the places it lumped two distinct failures under one label, or minted a vague category to be agreeable. The count is only as honest as a human spot-check makes it. This is the part the people who do this for a living are adamant about: look at your data with your own eyes first, then let the machine scale what you learned.
+**Trust the tally completely; trust the labels exactly as far as your spot-check takes them.**
 
-## Fix the top category once, in your rules file
+## Where the rules-file instinct works, and where it stalls
 
-The whole exercise pays off here. That top row isn't a bug to squash run-by-run; it's a **missing piece of persistent context.** The agent reinvents `requireSession` because nothing in its context told it the helper exists. So you tell it once, in the [rules](/foundations/rules/) file every session loads:
+Start with the top row, because the instinct is right about it.
+
+`invented-auth-middleware`, six of fourteen and 42.9 percent of the whole log, is a plain missing fact. The agent wrote cookie-parsing middleware by hand because nothing in its context said a helper already existed. Tell it once, in the rules file every session loads:
 
 ```md
 ## Auth - do not reinvent
@@ -91,35 +137,94 @@ The whole exercise pays off here. That top row isn't a bug to squash run-by-run;
 Session checks go through `requireSession()` in `src/lib/auth.ts`.
 Never write custom middleware that reads cookies or verifies JWTs by hand.
 Protected routes: wrap the handler, don't add a guard inside it.
-
-    import { requireSession } from "@/lib/auth";
-    export const POST = requireSession(async (req, session) => { /* ... */ });
 ```
 
-One edit retires 31 future corrections. This is the highest-ROI move in the whole practice, and it isn't a hunch - teams who run error analysis formally find the same shape every time: a handful of categories cover most of the failures, and fixing one at its root can turn a class that failed most of the time into one that rarely does. The leverage is real, and it's concentrated in the top row. And because the loop is data-driven, you can prove it worked: run the judge again next week and watch that row shrink. If it doesn't, your fix was wrong - which is itself information you'd never have had from a vibe. The rules file stops being a junk drawer of guesses and becomes a changelog of measured failures, each entry earning its place. Let the count be your threshold: promote a category only once it clears some bar - say five instances - so the file stays a guardrail per recurring class, not a diary of every one-off nitpick. A bloated rules file gets skimmed and ignored; a tight one gets followed.
+**One edit retires the whole row.** Run the judge again next week and the six should go to zero; if it doesn't, the rule was wrong, which is information you would never have gotten from a vibe. This is the strongest move in the whole practice, and nothing below takes it away. `misread-package-boundaries`, one instance, is the same shape: a fact about which package owns what, fixed by one line.
 
-## The category tells you which surface to fix it on
+Now scroll down the tally, because this is where the instinct quietly breaks.
 
-The auth row lands in the rules file because the failure is a missing fact - the agent didn't know `requireSession` existed. But scroll down the tally and the other rows want different tools, and the label tells you which.
+`wrong-test-runner`, four instances: the agent ran jest in a vitest repo. This also looks like a missing fact, so you write the sentence, "this repo uses vitest, never jest," and the sentence is true, and the failures keep coming. The agent doesn't consult the rules file at the moment it types the test command. It reaches for jest on reflex, the way a person reaches for their usual mug. **The rule arrives too early and speaks too quietly.**
 
-`wrong-test-runner (used jest, repo uses vitest)` is also a knowledge gap, but it's the kind a sentence in the rules file is too quiet to fix. The agent reaches for `jest` on reflex before it consults anything. A [hook](/foundations/hooks/) that intercepts the test command and rejects `jest` outright is louder than a rule, because it fires at the moment of the mistake instead of hoping the agent remembered a paragraph from session start.
+`edited-generated-files`, three instances: the agent edited files in `src/gen`. Read the transcripts and the pattern is worse than ignorance. The agent often knows the files are generated and edits them anyway, because nothing stops it. **There is no wording of a rule that prevents an action the agent takes while knowing the rule.**
 
-`edited-generated-files-in-src/gen` isn't a knowledge gap at all - the agent often knows the files are generated and edits them anyway because nothing stops it. That's a [permissions](/foundations/permissions/) problem: deny writes to `src/gen` and the category drops to zero by construction, no persuasion required.
+Add up what just happened. Two rows, seven failures, were missing facts, and prose fixes them. Two rows, seven failures, were something else, and prose does not touch them. **7 of these 14 failures, exactly half, are the kind a rules-file edit can reach at all.** Hold onto that split. It gets paid off twice below, and the second time is the close.
 
-So the tally does double duty. The count tells you which row to fix first; the *shape* of the category tells you whether the fix is a rule (it didn't know), a hook (it knew but acted on reflex), or a deny rule (it knew and you have to stop it). Reading each failure as "what kind of context was missing" is what turns a list of complaints into a routing table.
+**The rules file fixes what the agent didn't know. For what it knew and did anyway, it has no tool.**
 
-And the count is what stops you fixing the wrong row first. Left to instinct, you'll go after whichever failure annoys *you* most - the test-runner mix-up that broke your flow this morning - while the 31-instance auth hole keeps bleeding quietly because no single occurrence ever felt dramatic. The squeaky wheel and the expensive wheel are rarely the same wheel. The tally is the only thing that tells them apart.
+## The shape test
 
-## When the loop isn't worth running
+The question to ask before writing a rule is not "what should the agent know?" It is "what kind of failure was this?" Three answers cover the whole log:
 
-This is a volume play, and it's worth being honest about the floor. If you generate five agent runs a week on a solo weekend project, you don't have a distribution - you have anecdotes, and the right response to an anecdote is to just fix it and move on. The hook, the judge batch, and the spot-check are overhead that only pays back when the same mistake is expensive *because it recurs*: a team sharing one codebase, a long-lived repo, an agent you invoke dozens of times a day. Below that threshold you're building a measurement apparatus for a signal too sparse to read. Reach for it when the corrections start feeling like a loop you're stuck in - that feeling is the distribution telling you it's large enough to measure.
+- **knowledge gap** - the agent didn't know. The fix is a rule: the missing fact goes into persistent context and the failure has nothing left to feed on.
+- **reflex** - the agent knew, and defaulted on reflex anyway. The fix is a [hook](/foundations/hooks/) that fires at the moment of the mistake and says no. Correction delivered where the reflex fired beats truth delivered at session start.
+- **license** - the agent knew, and nothing stopped it. The fix is a [permissions](/foundations/permissions/) deny that makes the action impossible.
 
-Two honest caveats, because capturing everything has a cost. A log of every transcript is also a log of every secret, token, and customer detail that passed through the agent - treat `runs.jsonl` as sensitive, redact before it leaves your machine, and don't let it outlive its usefulness. And don't over-fit: the failures you captured are a sample, not the whole truth, so a fix that empties one row of your log isn't proven until it holds on runs you haven't seen yet. The tally tells you where to look; it doesn't excuse you from looking.
+Call this **the shape test**, and run it over the tally. This table is the point of the whole pipeline; every section from here is a row of it.
 
-This is context engineering with the guessing removed. The agent is broad and fast and contextless; it will confidently rebuild what it can't see. Your transcripts are the highest-resolution map of what it can't see, generated for free, every single day. The only question is whether you keep them.
+| category | count | shape | surface |
+|---|---:|---|---|
+| invented-auth-middleware | 6 | knowledge gap | rule |
+| wrong-test-runner | 4 | reflex | hook |
+| edited-generated-files | 3 | license | permission deny |
+| misread-package-boundaries | 1 | knowledge gap | rule |
 
-Clean transcripts feel productive. Counted transcripts make you smarter. Stop clearing the failures - start tallying them.
+Roll the count up by surface and the split from the last section lands as arithmetic: rule 7 (50 percent), hook 4 (28.6), permission 3 (21.4). There is the payoff of the seven. The other half of the log, four reflex failures and three license failures, sits in the rules file's blind spot no matter how the paragraph is worded. **A better-written rule reaches exactly as far as a badly written one.**
+
+Note the division of labor, because both halves are load-bearing. The count tells you which row to fix first: left to instinct, you go after whichever failure annoyed you most recently, while the six-instance auth hole keeps bleeding because no single occurrence ever felt dramatic. The shape tells you where the fix goes, which is a different question and one most teams never ask. Counting without the shape test dumps every failure into the rules file; the shape test without the count fixes rows in the order they irritate rather than the order they occur.
+
+Splitting failures into named buckets that route to different fixes is an old move; retrieval pipelines split wrong answers into retrieval failures and generation failures for exactly this reason. The difference is that those buckets are fixed in advance by the pipeline's design, while yours are discovered from your own log and route to the agent's own primitives.
+
+**Count picks the row. Shape picks the surface.**
+
+## Fix each row on its own surface
+
+The fixes, row by row.
+
+The rule rows are done: the auth paragraph above, plus one line about package boundaries. Knowledge gaps close when the fact arrives, and that is the whole mechanism.
+
+The hook row needs the mistake intercepted while it happens. A hook that fires before the test command runs, checks whether the command says jest, and exits nonzero with "this repo uses vitest" turns a reflex into a hard stop at the exact moment the reflex fires. The correction lands inside the run, where the behavior lives. **Four failures, one hook.**
+
+The license row wants no argument at all. Deny writes to `src/gen` and the tool call is refused before the model's opinions matter. This is the cleanest row in the table: **the fix removes the capability outright. Three failures, one deny line.**
+
+Three surfaces, three fixes, fourteen failures covered. And notice what didn't happen: nothing was added to the rules file for the rows it couldn't reach. That restraint is itself a payoff. A rules file that only carries rules the failures justify stays short enough to be read, and every line in it is backed by a count.
+
+**Route each row to the surface its shape names, and the rules file turns into a changelog of measured failures, every line earning its place.**
+
+## What this doesn't solve
+
+The judge's labels are a first pass, and a first pass needs a check. A judge built from the same kind of model that failed the runs inherits that family's blind spots: it can favor output that reads like its own, and it can be swayed by whichever verdict it reached first. So spot-check. Open a dozen judged transcripts yourself, especially near category boundaries, and hunt for two distinct failures lumped under one label or a vague category minted to be agreeable. Before you trust a judge's aggregate counts at any real scale, the standard guard is to check it against a reference set you labeled yourself; that check is called **calibration**, and the dozen-transcript spot-check is its lightweight version. The foundations chapter on [trust and evaluation](/foundations/trust-and-evaluation/) covers the wider loop this sits inside.
+
+One label per run is as fine as this method sees. The judge says a session failed and names the category; it does not say which tool call inside the session went wrong. Turn-by-turn diagnosis from execution traces is a deeper, separate discipline, and this piece deliberately doesn't attempt it. It finds which category to fix; which step inside a run went wrong is a finer question it doesn't ask.
+
+Capturing everything has a cost. A log of every transcript is also a log of every secret, token, and customer detail that passed through the agent. Treat `runs.jsonl` as sensitive, redact before it leaves your machine, and don't let it outlive its usefulness.
+
+The sample can mislead. Fourteen failures in one window is a sample, not the whole truth, and a fix that empties a row isn't proven until it holds on runs you haven't seen yet. The tally tells you where to look; it doesn't excuse you from looking.
+
+And below a volume floor, don't run the loop at all. Five runs a week on a solo weekend project produces anecdotes, and the honest response to an anecdote is to fix it and move on. The hook, the judge batch, and the spot-check pay back when a mistake is expensive because it recurs: a shared codebase, a long-lived repo, an agent invoked dozens of times a day.
+
+One more boundary. This piece discovers what recurs. Encoding a recurrence you already know about, as a command or a skill, is a different job and has [its own post](/blog/stop-re-typing-the-same-correction/).
+
+**The tally is one window, judged by a model you spot-checked, at one label per run. Use it for what it says.**
+
+## Next week's tally
+
+Run the pipeline again in two weeks and the master table gets one more column:
+
+| category | this window | next window (projected) |
+|---|---:|---:|
+| invented-auth-middleware | 6 | 0 |
+| wrong-test-runner | 4 | 0 |
+| edited-generated-files | 3 | 0 |
+| misread-package-boundaries | 1 | 0 |
+
+Zeros across the projection, and say the caveat out loud before the zeros go to your head: **every 0 assumes the fix holds and the next window draws from the same distribution.** Neither is guaranteed. A hook wired to the wrong event, a deny that doesn't match the path, a rule that gets skimmed: each leaves its row exactly where it was. The projection is a bet, and running the judge again is how you settle it. That is also the reconciliation of the claim from the top: seven of fourteen, half the log, out of the rules file's reach, and the table above is what reaching them actually cost. **One rule, one hook, one deny.**
+
+The fix itself creates the next problem, which is the one this piece hands forward. That auth paragraph is an edit to the agent's context. An edit to context loads into every future session, for every task, and it can regress cases that were passing exactly the way any prompt change can: a rule written to stop six auth failures can quietly bend three unrelated behaviors. The gate that catches that is a golden dataset run before the change merges, and it is [its own piece](/blog/prompt-regression-tests/).
+
+Counting told you which row to fix. The shape test told you where to fix it. **Whether the fix held is the next thing to measure.**
 
 ---
 
-For the per-tool mechanics, see [Hooks](/foundations/hooks/) for the session-end capture, [Headless](/foundations/headless/) for running the judge in batch, and [Rules](/foundations/rules/) for where the fix lands.
+**About the numbers.** All of it is toy, invented for traceability: the 40 sessions, the 26 successes, the 14 failures, every session id, all four category counts, the shape tags, and the projected zeros. The arithmetic on top, meaning the 35 percent failure rate, the 42.9 percent top-category share, the 7/4/3 surface rollup, the 50/28.6/21.4 split, and the hand-count versus jq-tally match, follows from those inputs and was re-checked with a script before publishing. The skew is the realistic part: one category out front with a tail behind it, the same shape the manual-count sibling's window produces, shrunk to a size you can tally in your head. The half-and-half split is a property of this toy log; your own log's split is whatever your shape test says it is, and there is no reason to expect it to land on exactly 50. No number here is a measurement of a real team's transcripts, and none is quoted from an outside source.
+
+For the per-tool mechanics, see [Hooks](/foundations/hooks/) for the session-end capture and the test-command interception, [Headless & CI](/foundations/headless/) for running the judge in batch, and [Rules](/foundations/rules/) and [Permissions](/foundations/permissions/) for where the fixes land.

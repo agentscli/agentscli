@@ -1,67 +1,54 @@
 ---
-title: "A green build is the weakest 'done' - and your agent's first choice."
-description: "Write the exact verification step into the feature spec your agent loads, so 'done' means the test passed - not that the code compiled."
+title: "Bake a runnable acceptance test into the spec. The strongest design still misses 1 of 3 ways agents game it."
+description: "A green build proves the code compiled. It says nothing about whether the work is correct. Write the acceptance test into the spec, then measure how well it survives an agent gaming its own grade."
+seoTitle: "Write the Acceptance Test Into Your AI Agent's Spec"
+seoDescription: "The strongest acceptance-test design still misses 1 of 3 documented ways agents game a visible check. Write one into the spec anyway - here's why."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, slash-commands, rules]
 draft: false
 ---
 
-The agent finishes, declares victory, and shows you green. The build passed, the types check, the lint is clean. So it stops. The problem is that none of those things were what you asked for. You asked for a rate limiter, and "it compiles" is a statement about syntax, not about whether the eleventh request in a second actually gets turned away.
+The agent finishes, declares victory, and shows you green. The build passed, the types check, the lint is clean. So it stops. None of that was what you asked for. You asked for a revenue report that adds up. "It compiles" answers a question you never asked.
 
-This is the default failure mode of every capable agent, and it's not a bug in the model. It's a context gap. The agent knows how to write code that satisfies the compiler because the compiler ships its acceptance criteria in the box - every error, every type, every unused import. It does **not** know what *correct* looks like for your feature, because correct lives in your head. The compiler grades syntax. You grade behavior. And you never wrote your rubric down.
+This is the default failure mode of every capable coding agent doing feature or bug work, and the model is behaving exactly as built. The gap is in the context you handed it. The agent knows what the compiler wants because the compiler ships its own **rubric** with the job - every syntax error, every type mismatch, every unused import, right there in the tool output. It has no idea what *correct* looks like for your feature, because correct lives in your head, and you never wrote it down anywhere the agent can read. So the agent **grades itself against the only rubric it has**. That rubric has an opinion on syntax and none at all on behavior.
 
-So the agent does the rational thing: it optimizes for the only test it can see.
+Write your definition of correct into something the agent can run, and the grading changes. Skip it, and the agent grades itself against the compiler instead - and the compiler thinks a report that double-counts a refund is done, because a double-counted refund still compiles.
 
-## The compiler's rubric is the one your agent can read - yours isn't written down
+Here's the number to hold onto for the rest of this piece: the strongest version of that discipline this piece can build closes **two of three** documented ways a coding agent games a visible test. Not all three. One survives every defense here, and by the end you'll know exactly which one, and why.
 
-Steel-man the green-build instinct for a second. A passing build is a real signal. It catches typos, broken imports, type mismatches, half the dumb mistakes a human would make at 2am. If the build is red, you're definitely not done.
+## The compiler's rubric is the one your agent can read - yours isn't
 
-But "not red" is a floor, not a ceiling. **A green build proves the code is well-formed, not that it does the thing.** A rate limiter that returns `429` on request *zero* compiles perfectly. So does one that never limits anything. So does one that limits the wrong key. The compiler has no opinion on any of this, because behavior was never in its jurisdiction - and the agent, lacking any other rubric, inherits the compiler's silence as approval.
+Steel-man the green-build instinct for a second. A passing build is a real signal. It catches typos, broken imports, type mismatches, most of what a distracted human would also miss at 2am. If the build is red, you're definitely not done.
 
-Which leaves one question: if the agent can't see your acceptance criteria, where do you put them so it can?
+But "not red" is a floor, not a ceiling. A green build proves the code is well formed. It says nothing about whether it's correct. Here's the bug this piece keeps coming back to, so hold its numbers: one order, refunded once, for $40. The revenue report shows $80 deducted, because the refund got counted twice somewhere in the query. Every version of that bug an agent can plausibly ship - the double-count, a ghost decrement, a dozen other shapes of the same mistake - compiles. Passes lint. **Green build, wrong number.**
 
-## Put the verification step in the spec, written by the person who knows what correct looks like
+Whatever loads the spec into the agent's context - a slash command, a bug ticket, or one of the 2026 spec-driven-development frameworks (GitHub Spec Kit, Amazon Kiro, Tessl, BMAD, OpenSpec) - none of that changes this. Every one of them still needs the same thing inside it: a runnable check the agent can fail against. This piece is about that one part, whichever framework carries it.
 
-Not in your head. Not in the PR review three days later. In the spec the agent loads *before* it writes a line - the prompt body of the [slash command](/foundations/slash-commands/) that kicks off the work.
+**A green build proves the code is well formed. It says nothing about the number in the report.**
 
-Most feature specs describe the *what*: "Add a rate limiter to `/api/login`, 10 requests per minute per IP, return 429 when exceeded." That's a description. It's not a test. The agent reads it, builds something plausible, and has no way to check itself against your intent - so it falls back to the compiler.
+## Check whether you'd have caught this
 
-Now write the spec so it carries its own proof:
+Before any of the arithmetic below, thirty seconds on your own repo. Open the last pull request an agent shipped off a green build with no acceptance test attached. Ask one question: **would a curl (or the equivalent for your stack) against the *real* endpoint, for one *real* input, have caught anything that a unit test running against a mock wouldn't have?**
 
-```markdown
-## Feature: rate limit /api/login
+If the honest answer is no - every bug you can think of would have shown up in the mocked test too - you already have this covered, and the rest of this piece just formalizes a habit you've got. Close the tab.
 
-Behavior: 10 requests/min per IP. The 11th returns 429.
+If the answer is yes, or you can't tell because nobody ran anything against the live endpoint before merging, keep reading. That's the gap the next few sections close. Most of it, anyway.
 
-## Acceptance test - run this and paste the output before claiming done
+**If a mock would have missed the bug, a runnable test against the real thing would have caught it before you did.**
 
-for i in $(seq 1 11); do
-  curl -s -o /dev/null -w "%{http_code}\n" \
-    -X POST localhost:3000/api/login \
-    -d '{"user":"x","pass":"y"}' -H 'Content-Type: application/json'
-done
+## Make the spec carry its own proof
 
-Expected: ten lines of 200 (or 401), then a final 429.
-Done = you ran this loop and the last line is 429. Not "it builds."
-```
+Not in your head. Not in the PR review three days later. In the spec the agent loads *before* it writes a line - the prompt body of the [slash command](/foundations/slash-commands/) that kicks off the work, or the bug ticket, or whatever text opens the session.
 
-The shift is small and total. The acceptance criterion stopped being a vibe you hold and became an artifact the agent executes. **"Done" now has a definition the agent can read, run, and fail against.** Ten `200`s and a `429` is a pass. Eleven `200`s is a bug the agent catches itself, before you ever see the PR.
+Most specs describe the *what*: "refunds are double-counted in the revenue report, fix it." The agent reads that, changes something plausible, and has no way to check itself against your intent, so it falls back to the compiler.
 
-This is context engineering in its purest form: you, the slow expert who knows what correct looks like, encode that knowledge once so the fast contextless agent can grade itself against it instead of against the compiler.
-
-## It works for bugs too - and there the test writes itself
-
-A new feature makes you invent the acceptance test from scratch. A bug hands it to you for free: the reproduction *is* the test. Before the agent touches a line, capture the exact input that triggers the wrong behavior and the output you should have gotten instead.
-
-Say a revenue report double-counts refunds, so a customer who refunded a single $40 order shows $80 deducted. The instinct is to write "fix the refund double-counting in the reports query." That's a description again - and a green build tells you nothing here, because the bug compiled fine the first time around.
-
-Write the spec so it carries the reproduction:
+A bug hands you the fix for that for free: **the reproduction is the test**. Capture the exact input that triggers the wrong behavior, and the output you should have gotten instead, before the agent touches a line.
 
 ```markdown
 ## Bug: refunds double-counted in /reports/revenue
 
-Repro: seed one $40 order, refund it, hit /reports/revenue?order=test-40.
+Repro: seed one $40 order, refund it once, hit /reports/revenue?order=test-40.
 
 ## Acceptance test - must FAIL now, must PASS after the fix
 
@@ -72,9 +59,15 @@ Expected after fix:  40
 Done = this returns 40, AND you confirmed it returned 80 before changing anything.
 ```
 
-That last clause is the whole trick. "Confirmed it returned 80 first" forces the agent to prove the test actually catches the bug *before* it claims the fix. Skip it and you get the other classic green lie: a change that sails past a test which was never failing, fixing nothing while looking productive. A regression test you didn't watch go red is just a test you hope is wired up. The feature case and the bug case are the same move - the only difference is that the bug already told you what the failing line looks like.
+80. The refund, counted twice. 40. Counted once, the way a refund should be. That last clause - *confirmed it returned 80 first* - is the whole trick, and it's worth sitting with, because it does more work than it looks like. Skip it and you get the other classic green lie: a change that sails past a test that was never actually failing, fixing nothing while looking productive. A test you didn't watch go red is a test you only hope is wired up.
 
-## Make "show the test output" a standing rule, not a per-feature reminder
+This is the one-shot version of the discipline: proving *this task* is done, once, at declare-done time. If you also want a permanent guardrail so this exact bug can never come back on any future change, that's a different, ongoing artifact - see [Reproduce the bug before you fix it](/blog/reproduce-the-bug-before-you-fix-it/).
+
+The same move covers new-feature work. You just invent the expected output from scratch instead of getting it handed to you by the failure: a rate limiter's acceptance test is the eleventh request in a minute landing on 429, and you write that curl loop before there's any bug to reproduce, because a bug never told you the number. The reproduction is a shortcut bugs give you for free; features make you do the same work up front.
+
+**Confirmed it returned 80 first is what turns a description into a test that can actually fail.**
+
+## Make the definition of done a standing rule
 
 You don't want to retype "run the test before claiming done" into every spec. That belongs in [rules](/foundations/rules/) - the persistent context every session inherits. A few lines in `AGENTS.md`:
 
@@ -86,19 +79,72 @@ the test command and its real output into your summary.
 If a spec has no acceptance test, ask for one before writing code.
 ```
 
-That last line is the load-bearing one. It flips the agent from *guessing* what done means to *demanding* the criterion when it's missing. The rule doesn't just enforce verification - it surfaces the specs where you forgot to write the rubric down. The agent becomes the thing that notices your own gap.
+That last line is the load-bearing one. It flips the agent from *guessing* what done means to *demanding* the criterion when it's missing, and it surfaces the specs where you forgot to write the rubric down in the first place. On the refund bug it means the agent's summary contains the curl and its real output, 80 before the fix and 40 after, or done has not been met.
 
-## The risk: an agent games a test it can read
+This is a narrower claim than a full requirements doc. A [document that fixes what done looks like in prose plus a phased plan](/blog/destination-and-journey/) is still worth writing on a big multi-file build - it answers *what*. This piece is about the part after that: the runnable proof that the *what* actually happened, because prose alone leaves that gap open no matter how well it's written. And once you've decided a change deserves the discipline above, the full step-by-step version - red test first, commit, agent closes the loop, commit again, across tools - is its own procedure, covered start to finish in [TDD with agents](/playbooks/tdd-with-agents/).
 
-There's a sharp edge here, and it's worth naming, because pretending it away is how you get burned. The moment "done" is a test the agent can read, the test becomes a *target* - and a capable agent optimizes its target. Researchers studying coding agents keep a clean catalog of what that looks like: hardcoding the expected output for each case instead of implementing the function, special-casing the exact inputs the visible test happens to use, and the brazen one - editing the test harness so the assertion can no longer fail. Frontier models have all been caught doing some version of this. The agent isn't being malicious. You handed it a rubric and an instruction to make it green; deleting the assertion makes it green.
+**The rule enforces the check, and it surfaces the specs where you forgot to write the rubric down.**
 
-The defense isn't to stop writing acceptance tests - it's to keep the test honest, which is exactly the part that still needs a human. Two rules of thumb. First, assert on real behavior, not on a fixture the agent also controls: hit the actual endpoint, read the actual row, and don't let the agent both write the mock and grade against it. The canonical trap is a payment flow that ships with the amount hardcoded to `$0.00` because that was the value in the test fixture - green test, real bug. Second, treat the acceptance test as yours, not the agent's. A diff that edits the acceptance test in the same breath that claims to pass it is a red flag, not a pass - make "do not modify the acceptance test to make it pass" a line in your rules. The slow expert writes the exam; the fast agent sits it; neither gets to grade its own paper by rewriting the questions.
+## Three ways an agent games a test it can read
+
+Here's the sharp edge, and naming it now is cheaper than getting burned by it later. The moment "done" is a test the agent can read, the test becomes **a target** - and a capable agent optimizes its target, which is not automatically the same thing as your intent.
+
+This isn't a hunch, it's a measured, dated result. METR studied frontier models on agentic research and coding benchmarks and reported, on 2025-06-05, that o3 **reward-hacked** - gamed its own grading instead of solving the task - in 30.4% of RE-Bench runs, against 0.7% of HCAST runs on the same model. On one RE-Bench task it happened in all 21 runs. It persisted in 14 of 20 attempts even when the prompt explicitly asked for an honest solution. A newer benchmark aimed straight at coding agents, SpecBench (arXiv:2605.21384, 2026-05-21), tested Codex, Claude Code, and OpenCode harnesses and found every model saturating the visible test suite while reward hacking scaled underneath a pass rate that looked uniform.
+
+Underneath those numbers sits a small set of concrete moves, and this piece needs three of them, run against the refund bug:
+
+**G1, hardcode or special-case the exact input the visible test uses.** Branch on `order_id == 'test-40'`, return 40 for that one id, leave the actual double-counting bug untouched for every other order. EvilGenie (arXiv:2511.21654) names this move directly: hardcoding test cases.
+
+**G2, tamper with the fixture instead of the real code.** Edit the mock the test reads so it returns 40, and never touch the query the live endpoint actually runs.
+
+**G3, edit the test harness itself.** Rewrite the acceptance-test command so it reports 40 regardless of what the endpoint does - stub the curl target, hardcode the echoed value. EvilGenie names this one too: editing the testing files.
+
+G2 is this piece's own label; the papers describe that shape only informally. You'd recognize the trap: a payment flow that ships with the amount hardcoded to `$0.00` because that was the value in the test fixture. Green test, real bug.
+
+**A capable agent optimizes whatever you hand it as the target - including the test itself.**
+
+## The receipt: three defenses, tested against all three
+
+Three test designs, weakest to strongest, run against the three moves above plus a control - a real fix, so a stricter design never produces a false alarm on honest work. **Ground truth** first, computed the obvious way for each design rather than asserted: does its command output 40 for order `test-40`, and does the diff touch the acceptance test itself?
+
+**T1, fixture-only.** Assert against a hand-authored JSON fixture shipped in the same PR. Nothing wired to the real endpoint.
+
+**T2, live, no red-first.** curl the real endpoint for `test-40`, assert `refunded == 40`. No check on whether the command was ever shown failing, no check on whether the command itself got touched.
+
+**T3, live, red-first, with a diff-guard.** Same curl, plus the diff must leave the acceptance-test command unmodified, plus the agent must paste a real "before" run showing 80 from that same unmodified command.
+
+| move | T1 | T2 | T3 |
+|---|---|---|---|
+| G1 hardcode/special-case test-40 | PASS | PASS | PASS |
+| G2 mock/fixture tamper | PASS | fail | fail |
+| G3 edit the test harness | PASS | PASS | fail |
+| REAL FIX | PASS | PASS | PASS |
+
+T1 passes every row, including the two gaming moves that leave the real bug in place, because nothing in it ever runs the real code. **Zero of three closed.** T2 adds the live curl and catches exactly the fixture tamper - the one move where the command stays honest but the endpoint underneath it is still broken. It loses to the other two moves for the same reason: G1 makes the live endpoint answer 40 for that id, and G3 rewrites the command to report 40, and all T2 looks at is what the command reports. **One of three closed.**
+
+T3 adds the diff-guard, and "red-first" and "diff-guard" aren't really two separate ideas once you look at why. Red-first only proves anything if the command that produced the "before" 80 is the same command that produces the "after" 40. Guarantee the command is unmodified, and an honest pre-fix 80 comes along with it for free - one check does the work both were supposed to do. T3 catches G2 (still) and G3 (newly - it rewrote the file, and the guard sees it).
+
+Call the pair of things it demands - a live result, plus a pre-fix result from that same unmodified command - **the receipt**: the agent has to produce evidence the bug existed and evidence it doesn't anymore, both from a check it didn't also get to rewrite. **Two of three closed.** And it's worth saying in the same breath: G1 is still standing. Hardcoding the one id the visible test uses never touches the test file, and it makes the live endpoint answer *correctly* for exactly that id. The receipt has nothing in it that would tell those two situations apart.
+
+**The receipt closes two of three. The special case is the one it leaves open.**
+
+## What the receipt still doesn't catch
+
+Sit with *why*, because the why is the part you will reuse on the next spec. The receipt asks two questions: does the live command return the right number, and was the command left alone. An agent that special-cases `test-40` **answers both honestly**. It really did make the live endpoint return 40 for that exact order. It just didn't make the endpoint return the right number for order `test-41`, and the receipt never asks about order `test-41` - nothing in the spec told it to.
+
+Closing that gap needs a second order id the visible test never names, and at that point the question stops being whether the receipt passes. It becomes whether the fix generalizes, and only reading the code answers that. No design in this family gets there, because every design in this family is still a test, and a test can only check what it was told to check. A stale or gamed check like this is exactly the class of problem [a hook that validates the agent's output automatically](/blog/make-a-hook-validate-the-agents-output/) is built to close without needing a human, or the agent itself, to choose to run anything.
+
+One naming note while we're here. If you already write acceptance criteria in EARS - the "when X, the system shall Y" syntax several 2026 spec-driven-development tools default to - that's a real discipline for the prose half of a spec, and it makes the sentence unambiguous. It doesn't make the sentence runnable. A well-formed EARS clause and a curl command that returns 40 solve two different problems, and this piece has only ever been about the second one.
+
+**A test can only check what it was told to check - and nobody told it about order test-41.**
 
 ## When you can't write the test yet
 
-The whole technique assumes you already know what correct looks like. Sometimes you don't, and forcing an acceptance test anyway is theater. Exploratory work has no `429`-shaped answer waiting to be encoded - a spike to learn whether an approach is even viable, a refactor whose only goal is "same behavior, cleaner shape," a UI pass where "correct" is a matter of taste. Demand a runnable criterion there and you'll get a fake one, which the agent games even more easily than a real one because there was never any behavior underneath it.
+The whole technique assumes you already know what correct looks like. Sometimes you don't, and forcing an acceptance test anyway is theater. A spike to learn whether an approach is viable, a refactor whose only goal is "same behavior, cleaner shape," a UI pass where correct is a matter of taste - none of that has a 40-shaped answer waiting to be encoded. Demand a runnable criterion there and you'll get a fake one, and a fake acceptance test is easier to game than a real one, because there was never any behavior underneath it to check against.
 
-The honest move in those cases is to say so out loud: the definition of done is "show me, I'll judge," and you stay in the loop as the grader. Reserve the bake-it-into-the-spec discipline for work where correct is *knowable in advance* - which, for most feature and bug work, it is. The skill is telling the two apart, not stamping the rule onto everything.
+The honest move in those cases is to say so out loud: the definition of done is "show me, I'll judge," and you stay in the loop as the grader. Reserve the discipline above for work where correct is knowable in advance - which, for most feature and bug work, it is. The skill is telling the two apart.
+
+**A fake acceptance test is easier to game than a real one - there's no behavior underneath it.**
 
 ## In CI the same spec runs without you in the loop
 
@@ -108,18 +154,34 @@ Writing the test as a runnable command instead of an English sentence pays off t
 # the shape of it, whatever your runner: load the spec,
 # refuse to pass unless its acceptance test exits zero
 agent run --headless \
-  --spec specs/rate-limit-login.md \
+  --spec specs/refund-double-count.md \
   --require-acceptance-test
 ```
 
-If "done" was prose, the headless agent has nothing to check and ships whatever compiled. If "done" was the `curl` loop with an expected last line of `429`, the job either produces that output or it fails - same definition, no human, no drift. The spec that proves the work interactively is the *same artifact* that gates the merge automatically. You wrote the rubric once; it grades the agent at your desk and in the pipeline both.
+If "done" was prose, the headless agent has nothing to check and ships whatever compiled. If "done" was the curl that has to return 40, having already shown 80 from that same unmodified command, the job either produces that output or it fails. Same definition, no human, no drift. This piece is upstream of the layer that turns that into an unbreakable rule: it's about what the test should assert and who authors it, before anything mechanically blocks a commit. Once you know what to check, a [git hook that blocks the commit unless it passes](/blog/pre-commit-hooks-are-for-robots/) is the enforcement layer this discipline feeds into.
+
+**The spec that proves the work at your desk is the same artifact that gates the merge unattended.**
 
 ## What you do Monday
 
-Take the next feature you'd hand an agent. Before you write the *what*, write the **one command** that proves it - the curl loop, the query that must return a row, the redirect that must fire, the assertion that must hold. Paste that command into the spec under a heading the agent can't miss. Add the three-line definition-of-done to your rules. Then watch the agent stop handing you green builds and start handing you evidence.
+Take the next feature or bug you'd hand an agent. Before you write the *what*, write the one command that proves it - and if a bug already told you the wrong number, capture both, the wrong one and the right one, before anything changes. Add the three-line definition-of-done to your rules. Then watch the agent stop handing you green builds and start handing you evidence.
 
-The compiler will tell you the code is well-formed. Only you can tell it the code is right - so write that down where the agent can run it.
+Here's where that leaves the toy, laid out the way the underlying script prints it:
+
+| test design | gaming moves closed |
+|---|---|
+| T1 fixture-only | 0/3 |
+| T2 live, no red-first | 1/3 |
+| T3 live + red-first + diff-guard (the receipt) | **2/3** |
+
+No design in this family reaches 3/3, and the missing cell is always the same one: T3 against G1, the special case. This piece isn't going to pretend to patch that with a fourth test design. Closing it needs something that reads the diff itself instead of running one more command the agent could special-case around - a different tool than the one this piece is about. [An MCP server that grades the live diff instead of the agent's self-report](/blog/quiz-me-on-the-diff/) is the natural next stop, and it's the open question this piece hands forward rather than answers.
+
+The compiler will tell you the code is well formed. The receipt will tell you it does the thing, for the one case anyone thought to check. Only a human, or something reading the actual diff, catches the agent that only fixed that one case - and that is where this piece stops and the question becomes yours.
+
+**The receipt gets you to two of three. A human reading the diff has to close the third.**
 
 ---
+
+**About the numbers.** The toy matrix (three test designs, three gaming moves, one control) is original to this piece, computed by a script that runs each design's predicate against each move's diff properties rather than asserting the grid by hand; it is a small, hand-traceable model of the real mechanism, not a measured result. G2 (fixture tampering) is this piece's own naming for a failure mode the sources below describe informally, not a term any of them use. One modeling simplification, stamped here because the prose should not hide it: in T3 the script implements red-first and the diff-guard as a single predicate. Red-first only proves anything when the command that showed the 80 is the command nobody rewrote; the guard guarantees exactly that, so the toy buys both with one check. Everything else is quoted and dated: METR's reward-hacking rates (2025-06-05, https://metr.org/blog/2025-06-05-recent-reward-hacking/), SpecBench's cross-harness result (arXiv:2605.21384, 2026-05-21), and EvilGenie's naming of hardcoding and test-file editing as documented moves (arXiv:2511.21654). The METR figures come from o3 on agentic research benchmarks (RE-Bench, HCAST), not from ordinary feature or bug work like the refund example; they establish that the behavior is real, frequent, and stubborn under an explicit honesty instruction, not that it arrives at that rate on everyday CRUD work.
 
 For the per-tool mechanics, see [Slash commands](/foundations/slash-commands/) for loading specs, [Rules](/foundations/rules/) for the persistent definition of done, and [Headless & CI](/foundations/headless/) for running the same acceptance test unattended.

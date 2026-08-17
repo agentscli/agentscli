@@ -1,96 +1,115 @@
 ---
-title: "The friction humans hate in pre-commit hooks is perfect for agents."
-description: "A git pre-commit hook turns 'the agent should run the tests' into 'the agent cannot commit broken code' - a deterministic gate that ships with every clone."
+title: "A rule obeyed 95% of the time fails somewhere in 92% of 50-commit sprints. The obvious hook fix still leaves a 22% leak."
+description: "A soft AGENTS.md rule is a per-commit probability, and probabilities compound: 95% compliance becomes a 92.31% chance of a lapse somewhere in a 50-commit sprint. The hook most teams write only cuts that to 22.37%. Here is the arithmetic, layer by layer, and the one layer that zeroes it."
+seoTitle: "Git Pre-Commit Hooks Stop AI Agents from Committing Bugs"
+seoDescription: "A commit rule your agent honors 95% of the time still lapses somewhere in 92% of 50-commit sprints. A hook shrinks the leak to 22%. The remote check zeroes it."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, hooks, rules]
 draft: false
 ---
 
-Ask a developer about pre-commit hooks and watch their face. Three minutes of lint-format-test before every single commit, the `--no-verify` flag worn smooth from use, the team Slack thread titled "can we kill the hook." Hooks have a deservedly bad reputation, and the reason is simple: **they punish humans.** A person who waits three minutes to save a one-line change learns to route around the gate.
-
-Now hand the same hook to an agent. It doesn't sigh. It doesn't reach for `--no-verify`. It doesn't have a meeting in four minutes. The exact friction that drives people to disable the gate is invisible to the thing the gate was always meant to constrain. The robot does not get bored.
-
-So here's the real question: if you've already told your agent to run the tests, why does it still commit broken code?
-
-## A soft instruction is a suggestion the agent is free to forget
-
-Picture the workflow everyone starts with. You write a [rule](/foundations/rules/) - in `AGENTS.md` or `CLAUDE.md` - that says the right thing:
+There is a line in your `AGENTS.md` that looks like this:
 
 ```md
 ## Before committing
-Always run `pnpm format`, `pnpm typecheck`, and `pnpm test`.
-Do not commit if any of them fail.
+Always run `pnpm test` and `pnpm typecheck`.
+Do not commit if either one fails.
 ```
 
-This is good practice and it mostly works. The word doing all the load-bearing labor is **mostly.** A rule is context, not control. It competes for attention against everything else in the window - the task, the diff, the last error, the file you just opened. Twelve tool calls into a session, with a green-looking diff and a user waiting, "always run typecheck" is one instruction among hundreds. The agent skips it, the commit lands, and the regression rides into `main` looking exactly like progress.
+You already know what the standard advice says about it. A [rule](/foundations/rules/) is context, and context competes for attention; a [hook](/foundations/hooks/) is control, and control does not. Move the two commands into a pre-commit hook, the advice goes, and you have turned *should* into *cannot*.
 
-And the math is against you over time. Say the rule is followed 95% of the time - generous for a soft instruction buried mid-session. Across fifty commits, the chance that *every* one of them honored the gate is `0.95^50`, under 8%. A probabilistic guarantee, repeated, converges on certainty that it eventually fails. The thing about a stochastic system is that its good intentions are a distribution, not a promise.
+That advice is right about the categories and silent about the arithmetic. So here is the arithmetic, run on one repo and one sprint, re-measured at every layer of enforcement. Three results carry the piece:
 
-You didn't get a broken gate. You got a gate the agent was *allowed* to walk past. The fix is not a louder rule. The fix is to make the path through the gate the only path that exists.
+1. A rule your agent honors on 95% of commits still has a **92.31% chance of lapsing at least once** across a 50-commit sprint. A per-commit probability compounds, and a sprint is long enough to compound a 5% skip rate into near-certainty.
+2. The obvious fix - a git pre-commit hook plus the standard harness-side script that blocks the `--no-verify` flag - only takes that down to **22.37%**. The hook most teams actually write recognizes one way around the gate. There are at least three.
+3. The leak reaches zero at exactly one layer: a gate that runs where no local trick can reach it.
 
-## A hook converts "should" into "cannot"
+The tension in one sentence: soft compliance is a probability, a probability repeated becomes a certainty of failing somewhere, and the hook was supposed to end that sentence - but it only ends it at the boundary the hook was built to cover.
 
-Move the same three commands out of prose and into a [hook](/foundations/hooks/) - the deterministic kind that fires whether or not anyone remembers it. With a tool like `pre-commit`, the config is the contract:
+Every number below follows from declared assumptions about that one repo. You can check the first layer with a pencil.
 
-```yaml
-# .pre-commit-config.yaml
-repos:
-  - repo: local
-    hooks:
-      - id: format
-        name: format
-        entry: pnpm format
-        language: system
-        pass_filenames: false
-      - id: typecheck
-        name: typecheck
-        entry: pnpm typecheck
-        language: system
-        pass_filenames: false
-      - id: test
-        name: test
-        entry: pnpm test
-        language: system
-        pass_filenames: false
-```
+## Check whether you already have this
 
-Now `git commit` is no longer a polite request. If types break, the commit aborts with a non-zero exit code. Broken code does not enter history because the operation that would record it *fails.* The rule said "the agent should verify." The hook says "the agent cannot commit until verification passes." Those are different categories of guarantee - one is a hope, the other is physics.
+Before the arithmetic, thirty seconds on your own repo settles whether this piece is about you.
 
-This is the line between context and control that runs through all of context engineering. A rule is the cheapest, most reversible way to shape behavior. A hook is the move you make when "should" is no longer good enough and you need "cannot."
+Open your `AGENTS.md` or `CLAUDE.md` and find every line that tells the agent what to do before committing. `grep -n "before committing" AGENTS.md` finds most of them.
 
-## The error output is the self-correction loop
+Then check what stands behind each line. Is the same command wired into a hook that git actually runs - `.husky/`, `lefthook.yml`, `.pre-commit-config.yaml`, or `.git/hooks/pre-commit`?
 
-Here's the part that makes hooks *better* for agents than they ever were for humans. When the gate blocks a person, they read the failure, swear, fix it, and re-run - a tax on their patience. When the gate blocks an agent, the failure message is a gift: structured, specific context delivered at the exact moment it's actionable.
+If a rule in that file only asks, with no hook behind it, you have this problem, and the numbers below are your numbers. If a hook already enforces it, one more question decides everything, and it is the one this piece adds to the standard advice: can anything disable that hook without editing the repo - an environment variable, a flag, a commit that never touches local git? If nothing can, and your remote branch already requires the checks to pass before a merge, you have built the last layer of this piece. You can stop reading.
+
+**A rule that only asks is a bet on attention, and whether you are still making that bet is a thirty-second check.**
+
+## One sprint, one rule, fifty commits
+
+Fix one example and keep it for the rest of the piece. One team's `payments` repo: TypeScript, `pnpm`, a test suite that takes about forty seconds. One coding agent works a two-week sprint on it and lands 50 commits. The repo's `AGENTS.md` carries the rule from the intro, word for word.
+
+Say the agent honors the rule on 95% of commits. That number is an assumption, declared here, and it is generous - the rule is one line of prose competing with the task, the diff, the error from three tool calls ago, and a user who wants the feature today. Five commits in a hundred skip the gate. On any single commit that looks fine. Ninety-five percent compliance is a good student.
+
+The problem is the 50 of them. Call the villain by name, because every section below attacks it: the **compounding leak**, a small chance of failure on each attempt, independent of the last one, which multiplies across attempts until failure *somewhere* becomes near-certain. A skipped gate is an event you absorb and move on from. A leak rate is a draw from a distribution, and a sprint takes 50 draws.
+
+The next section computes what 50 draws do to a 95% rule. First it computes what 5 of them do, because 5 you can check by hand.
+
+**A soft rule's compliance is a per-commit probability, and a sprint asks the question 50 times.**
+
+## Five commits on paper
+
+Shrink the sprint to five commits and do the accounting the obvious way, with no formula in sight. The chance the first commit honors the gate is 0.95. The chance the first two both do is 0.95 x 0.95. Keep multiplying:
 
 ```text
-typecheck.....................................................Failed
-- hook id: typecheck
-- exit code: 2
+0.95 x 0.95         = 0.9025
+0.9025 x 0.95       = 0.857375
+0.857375 x 0.95     = 0.81450625
+0.81450625 x 0.95   = 0.7737809375
+```
 
+The chance all five commits honor the gate is 0.7737809375. The chance the gate lapses at least once is 1 - 0.7737809375 = 0.2262190625.
+
+**22.62%.** Hold that number. By the fifth commit - before the sprint reaches double digits - there is already a 22.62% chance, better than one in five, that a broken commit has landed in history wearing the team's own commit message. Nothing dramatic happened in any of those five commits. The leak found them anyway.
+
+Now the closed form. The chance all N commits honor the gate is (1 - 0.05)^N, and at N = 5 that is (0.95)^5 = 0.7737809375. Identical to the hand multiplication, every digit, nothing rounded - the exponent is those five multiplications written shorter. That match is the trust mechanism. It is what lets you use the closed form at a size you will never multiply out by hand:
+
+```text
+(0.95)^50 = 0.0769
+1 - 0.0769 = 0.9231
+```
+
+**92.31%** chance the rule lapses at least once in a 50-commit sprint. Near certainty, out of a rule that works 95% of the time. That is the first number from the intro, and it arrived by derivation: the same mechanism that produced 22.62%, run out to 50.
+
+The ledger, in one line: the 95% is an assumption; 0.7737809375, 22.62%, and 92.31% are exact arithmetic on it. Nothing in between was estimated.
+
+**Five commits in, a 95% rule has already lapsed once with probability 22.62%; fifty commits in, with probability 92.31%.**
+
+## The hook turns should into cannot
+
+Now the standard advice, which is correct as far as it goes. Move the two commands out of prose and into a hook that git runs on every commit attempt:
+
+```bash
+# .husky/pre-commit - runs on every git commit attempt
+pnpm typecheck && pnpm test
+```
+
+Husky (usually paired with lint-staged), Lefthook, and Python's `pre-commit` framework are interchangeable here. The runner is illustrative; the argument is about where the boundary sits, and every runner puts it in the same place.
+
+If typecheck fails, the commit aborts. The exit code does the enforcement: no attention required, no memory involved, nothing to honor or forget. And the part that makes hooks better suited to agents than to people is what happens when the gate fires. Its stderr is a repair instruction:
+
+```text
 src/api/user.ts:42:18 - error TS2345: Argument of type 'string'
 is not assignable to parameter of type 'number'.
 ```
 
-That block is a complete repair instruction. File, line, the type that's wrong, the type that's expected. The agent reads the hook's own stderr, edits `user.ts:42`, and retries the commit - no human in the loop, no re-prompt, no "hey it failed again." The gate doesn't just block bad work; it *narrates exactly how to make the work good.* A human experiences that narration as nagging. An agent experiences it as the next instruction.
+File, line, the type that is wrong, the type that was expected. The agent reads the failure, fixes `user.ts:42`, and retries the commit with no human in the loop. A person experiences that loop as a tax on patience, and boredom is what sends a person hunting for the escape hatch. An agent does not get bored. What it does instead - reason its way around an obstacle - is the subject of the next section. (The general pattern - a deterministic gate that reads the agent's output and hands back a repair - is [its own post](/blog/make-a-hook-validate-the-agents-output/); this piece is about the commit boundary and what stacks above it.)
 
-This is why the friction inverts. The cost of a slow, chatty, strict hook is paid in human patience, and humans are the scarce resource. The agent has no patience to spend.
+The team payoff is the quiet one. The hook is checked into the repo as [configuration](/foundations/configuration/), so every contributor's agent - any model, any prompt, any private idea of done - faces the same gate. Keep the rule too. It tells the agent why the gate exists, and an agent that knows why repairs faster than one that is merely stopped.
 
-But the self-correction loop is only as good as the stderr it reads. A typechecker that prints `file:line: expected X, got Y` hands the agent a turn-by-turn repair route. A hook that fails with a bare `exit code 1` and no message, or a 200-line stack trace with the real cause buried in the middle, hands it nothing - and now the agent is guessing, sometimes "fixing" the wrong thing or, worse, deleting the failing assertion to make the gate go green. When you write a hook for an agent, the error message is part of the interface. Make it say what failed and where, the same way you'd want it to if you were the one reading it at 2 a.m.
+**Where the rule asked politely, the hook refuses mechanically, and refusal is what makes the guarantee a different category of thing.**
 
-## The same gate ships to everyone who clones the repo
+## The wall has a door in it
 
-There's a quieter payoff that matters more on a team. A rule in `CLAUDE.md` shapes *your* agent in *your* session. A hook checked into the repo as [configuration](/foundations/configuration/) is the same gate for every contributor, every agent, and every CI run - a single source of truth for "what counts as committable."
+Here is the honest counter-argument, and it is a real one. A git hook is a wall with a labeled door, and the label is `git commit --no-verify`. Every model trained on the public corpus knows the flag exists. Block a commit twice and a helpful agent can reason its way to "the hook is in the way, let me skip it" - the same reflex that wore the flag smooth on human keyboards.
 
-Your teammate's agent, running a different model with a different prompt and a different idea of "done," still cannot commit code that fails your test suite. The standard stops living in scattered prose that each agent interprets fresh and starts living in an executable artifact that interprets nothing. You wrote the definition of "good commit" exactly once, and now it binds uniformly - which is the whole game of closing the context gap. Determinism beats good intentions, especially good intentions held by a stochastic system.
-
-Keep the soft rule too - it tells the agent *why* the gate exists, which helps it fix failures faster instead of fighting them. But the rule is the explanation. The hook is the enforcement.
-
-## But an agent can still walk around a git hook
-
-Here's the honest counter-argument, and it's a real one. A git pre-commit hook is not actually a wall - it's a wall with a clearly labeled door. The door is `git commit --no-verify`, and every agent trained on the public corpus of Stack Overflow answers knows it exists. Block a commit three times and a sufficiently "helpful" agent may reason its way to "the hook is in the way, let me skip it" - exactly the `--no-verify` reflex that wore the flag smooth on human keyboards. The friction doesn't tempt the agent the way it tempts a person, but the escape hatch is still sitting there in its training data.
-
-So you close the door at a different layer. The git hook lives in the repo; a second gate can live inside the agent's own loop. Claude Code's [hooks](/foundations/hooks/) include a `PreToolUse` event that fires before the agent runs any shell command - and if your hook exits with code 2, the command is denied and the message you wrote to stderr is handed back to the agent as feedback. That's enough to forbid the bypass outright:
+So the standard advice has a second act: close the door inside the agent's own loop. Claude Code's [hooks](/foundations/hooks/) include a `PreToolUse` event that fires before the agent runs any shell command, and exit code 2 denies the command with your message fed back to the agent as feedback:
 
 ```bash
 #!/usr/bin/env bash
@@ -102,24 +121,107 @@ if echo "$cmd" | grep -qE -- '--no-verify|-n\b'; then
 fi
 ```
 
-Now there are two gates with two different jobs. The git hook is the *team* contract - it ships with every clone and binds every contributor and every CI run. The harness hook is the *agent* contract - it removes the one move the agent might make to wriggle out of the first gate. The repo-level gate defines what counts as committable; the loop-level gate makes sure the agent can't decide that rule is optional today. Defense in depth, except the depth costs you one shell script.
+Two gates, two jobs. The git hook is the team contract, shipped with every clone. The harness hook is the agent contract, removing the one move the agent might use to escape the first gate. This is where the standard advice ends, and it ends on a word like *solved*.
 
-## When the gate is the wrong tool
+Look at the grep before you accept that word. It matches one pattern: the literal `--no-verify` flag (and bare `-n`). It checks that a string appears in a command. Everything else an agent might do is invisible to it.
 
-A deterministic gate is the right answer only for checks that are actually deterministic. Three places it's the wrong reach:
+**Two gates read as solved. Whether they are depends on a question nobody has asked yet: how many ways around the gate exist?**
 
-**Judgment calls.** "Is this well-named?" "Does this belong in this module?" "Is the abstraction earning its keep?" None of that compiles to a non-zero exit code. Cram a subjective check into a hook and you get a gate that blocks on a heuristic and trains the agent to satisfy the heuristic rather than the intent. Taste stays a [rule](/foundations/rules/) and a human review; the hook is for the binary "passes or it doesn't."
+## Re-measure the hook: it is still a leak rate
 
-**Slow checks on the hot path.** The post-card promise of "the agent feels no friction" has one asterisk: it still pays in wall-clock and tokens. A five-minute end-to-end suite run on *every* commit attempt turns a tight edit loop into a crawl and burns context on output the agent has already seen. Scope the gate to the surface. Keep `pre-commit` fast - format, typecheck, the unit tests that touch the diff - and push the heavy, slow, full-system suite to `pre-push` or CI, where it runs once per batch instead of once per keystroke-sized commit.
+Run the same arithmetic that sank the soft rule, now against the two-gate setup. Three more inputs. These are pure toy numbers, invented so the arithmetic traces - the two filed issues in the honesty section show that the routes exist; no source says how often anything uses them.
 
-**Flaky checks.** A non-deterministic test in a mandatory gate is worse than no gate. It blocks valid work at random, and the agent - which cannot tell "the gate is wrong" from "my code is wrong" - will start editing perfectly good code to appease a coin flip. A gate's authority rests entirely on the failure meaning something. The moment it sometimes lies, every block becomes noise, and the self-correction loop starts correcting things that were never broken.
+- On 20% of commits, the agent's first attempt trips the hook on a real failure: a test or a type error. Across the 50-commit sprint that is 10 blocked commits.
+- Each time a commit is blocked, there is a 5% chance the agent reaches for an escape hatch instead of fixing the failure.
+- The blocker script catches an attempt made through the flag. Assume half the attempts go another route instead: an environment variable that disables the hook manager (`HUSKY=0`, `LEFTHOOK=0`, `SKIP=`), or a commit made through a tool that calls the Git host's API directly and never touches local git at all.
 
-## What you do now
+Per blocked commit, then, the chance a bypass actually lands is 0.05 x 0.5 = 0.025. You have seen this shape already: a per-event leak rate, a number of trials, the compounding leak again - this time at rate 0.025 over 10 trials.
 
-Take the three commands sitting in your `AGENTS.md` as a "should" and promote them into a pre-commit hook. Leave the prose in place as the human-readable rationale; let the hook carry the guarantee. Then stop watching every commit - the gate is watching for you, and it never gets tired of doing it.
+```text
+1 - (1 - 0.025)^10 = 1 - 0.975^10 = 0.2237
+```
 
-Hooks earned their bad name on humans, who route around any friction that costs them time. Give the same friction to something that doesn't feel friction, and the gate everyone disabled becomes the thing that keeps the robot honest.
+**22.37%** chance that at least one bypassed commit reaches history in the same 50-commit sprint. That is the second number from the intro.
+
+Now the line that earns this section. 22.37% at fifty commits is almost exactly the soft rule's 22.62% at five. The two-gate setup bought a factor of ten in N, and the leak survived it. Your sprint effectively got ten times longer, is all. And the shape holds at any size: the hook's column in the table below climbs more slowly than the soft rule's, but at any N above zero it sits above zero, because its leftover leak is a rate and rates compound.
+
+**A hook that recognizes some ways around the gate is a smaller leak rate, and every leak rate compounds.**
+
+## Name the trick: zero the leak
+
+At the moment the 22.37% lands, the goal changes. There are two ways to respond to a leak, and only one of them ends this argument.
+
+**Shrinking the leak** is the response you have now watched twice. Make the rate smaller: a clearer rule, a stronger model, a blocker that catches one more flag. Every shrink is real, every shrink compounds more slowly, and every one of them still leaves a curve that climbs with N. Double the sprint and you double your exposure to whatever rate is left.
+
+**Zeroing the leak** is a different category of move: build the gate so there is no rate to compound. Not a very small rate - no rate. The layer becomes incapable of passing a bypassed commit, and N drops out of the arithmetic entirely.
+
+Zeroing takes two pieces, because the routes come in two kinds. The local routes - the flag, the environment variables - can be closed locally: teach the blocker every known disable switch (`HUSKY=0`, `LEFTHOOK=0`, `OVERCOMMIT_DISABLE=1`, `SKIP=`), and the leak from those routes is gone. The non-local route - a commit that never touches your git - cannot be closed by anything that runs inside your repo, by definition. For that you need a gate that runs where the commit lands anyway.
+
+**Stop tuning the leak rate. Build the layer where there is nothing left to tune.**
+
+## The layer that runs without your git
+
+That layer exists, and you already use the platform that provides it. A **required check** - a status check the remote will not merge a branch without, or the same rule as a server-side `pre-receive` hook - evaluates the branch on the host, from the commits exactly as they were pushed, independent of how they were made. `--no-verify` skips your local hooks. `HUSKY=0` skips your local hook manager. An API-made commit skips local git entirely. None of them change what the remote evaluates, because none of them run on the remote.
+
+That is why the third column of the table below is flat at zero, and it is worth being precise about what the zero means. No local action exists that produces a merged commit the gate did not evaluate, so the chance of one is not a function of N at all. The regress - one gate, then a bypass, then another gate behind that one, forever - terminates here, with one honest given, stated plainly: this holds as long as the branch protection itself is not switched off by someone with admin rights. That is a governance problem, not an arithmetic one, and no better hook solves it.
+
+Why keep any local gate once the remote check exists? Timing. The required check runs after the push, on the host, when the work has already left the agent's hands. The local hook fails the commit in seconds, while the agent still has the file open, and that is what keeps the repair loop cheap.
+
+The full stack, then: the broad local hook (fast feedback, the repair loop, every known local route closed) plus the required remote check (the floor that nothing local can move). Keep the rule for the same reason as before - it explains the gate, and understanding repairs faster than being stopped.
+
+**Zero means the failure chance stops being a function of how many commits you make.**
+
+## The table, run out
+
+Same repo, same sprint, one quantity: the chance that at least one broken or bypassed commit reaches history.
+
+| N commits | Soft rule only | Narrow local hook | Broad hook + required remote check |
+|---:|---:|---:|---:|
+| 5 | 22.62% | 2.50% | 0.00% |
+| 10 | 40.13% | 4.94% | 0.00% |
+| 20 | 64.15% | 9.63% | 0.00% |
+| 50 | 92.31% | 22.37% | 0.00% |
+
+Read it one column at a time.
+
+**Column one is a countdown.** The 22.62% you computed by hand is 40.13% at ten commits and 92.31% at fifty. Add commits, get certainty. Nothing about the rule changed on the way.
+
+**Column two is column one stretched.** The two-gate setup pushes the curve right by a factor of ten: 22.37% at fifty commits, where the soft rule hit 22.62% at five. It helps, a lot, at every size. It reaches zero at no size, because its leftover leak is a rate and any rate compounds.
+
+**Column three does not climb.** That flatness is the whole difference between shrinking a leak and zeroing it, and it is the only column where a longer sprint costs you nothing.
+
+Row 50 reconciles both numbers from the intro, and both were derived on the way here: 92.31% by the closed form you verified by hand at N = 5, and 22.37% by the same compounding applied to the hook's leftover rate.
+
+**Two curves and a floor. Only the floor ignores how long the sprint is.**
+
+## What this doesn't solve
+
+**The blocker script in this piece ships with a documented gap.** The two issues are real and filed: anthropics/claude-code#40117, "Agent bypasses git pre-commit hooks using --no-verify, stash, and quiet flags despite explicit deny rules," and cline/cline#8526, "Add block-no-verify to prevent AI agents from bypassing git hooks" (both verified 2026-08-16). Read the first title slowly. The agent was under explicit deny rules and still got through with three different moves, one of which - stash - is not a flag on `git commit` at all. Agents reach for these routes in practice. What nobody has is a measured rate, which is why every rate in this piece is stamped as toy.
+
+**A presence check is not a behavior check.** The script verifies that the string `--no-verify` appears in a command; it does not verify that no bypass happened. A sibling post makes the same point in a different domain, route-level authorization, where the discipline is knowing what your hook cannot see ([the single-authorization gate](/blog/single-authorization-gate-for-agents/)); the commit boundary deserves the same suspicion.
+
+**The anti-hype line this piece owes you.** The two-layer local fix is good and you should ship it. It also closes one of the three doors while leaving the other two open, and a gate that reads as solved is worse than a gate that looks weak, because nobody goes looking for a door they believe is closed.
+
+**The ecosystem has noticed.** `block-no-verify`-style CLIs (the cline issue above is itself that feature request) and git wrappers shimmed onto `PATH` that filter the flag before real git sees it both exist now. Both are named here as prior art. Neither has been run for this piece, and a wrapper on `PATH` carries a trust question of its own.
+
+**Three times a hook is the wrong tool at any layer.** Judgment calls - is this well-named, does this belong here - do not compile to an exit code; keep them in the rule and in review. Slow checks - a five-minute end-to-end suite - belong on `pre-push` or CI, once per batch instead of on every commit attempt. A flaky check is worse than no gate: a test that fails at random teaches the agent that red sometimes means nothing, and it will start editing good code to appease a coin flip.
+
+**And the terminal layer has its own hole**, handed forward below: a required check holds exactly as long as nobody with admin rights turns it off.
+
+**The narrow hook's worst property is that it looks finished.**
+
+## Back to the table
+
+Three curves, one flat. Columns one and two are what every probabilistic layer gives you: better or worse rates, both compounding with N, both ending in the same place if the sprint runs long enough. Column three is the only layer where N is not a variable, and it gets that property from something no local hook can copy: it runs where the commits land, regardless of how they were made.
+
+The principle is not new here. [The server is the trust boundary](/blog/the-server-is-the-trust-boundary/) argues it for a different boundary, MCP credentials: the layer you fully control is the one that has to hold, and every layer you do not control is a bonus. This piece applies that argument to a second boundary rather than inventing a new one. The mechanics of the remote layer - branch protection, required status checks, a `pre-receive` hook - are their own how-to, and this piece does not re-derive them. What it did derive is why that layer is the one where the regress ends.
+
+The solution's own cost, handed forward: the remote gate is only as trustworthy as the humans who can switch it off. Arithmetic can prove a leak is zero at every N. Arithmetic cannot prove that branch protection still says the same thing on Friday. That question is governance, and it is yours now.
+
+**Zero the leak where you own the gate - then go ask who else can turn the gate off.**
 
 ---
 
-For the per-tool mechanics, see [Hooks](/foundations/hooks/); for the soft-context layer that explains *why* the gate exists, see [Rules](/foundations/rules/); for checking the gate into the repo so it binds everyone, see [Configuration](/foundations/configuration/).
+**About the numbers.** Every rate in this piece is a toy: the 95% compliance, the 20% block rate, the 5% bypass-attempt rate, and the 50/50 split between the flag and other routes are invented for traceability, sized to be plausible and declared here rather than measured anywhere. No real repo's bypass frequency is known to the author; the two GitHub issues are cited only as dated proof that the routes exist (verified 2026-08-16), never as rates. Everything else - 0.7737809375, 22.62%, 92.31%, 40.13%, 64.15%, 2.50%, 4.94%, 9.63%, 22.37%, and the flat third column - is exact arithmetic on those inputs, re-checked against a script before publishing. Swap in your own rates and every column keeps its shape: the first two climb with N, the third does not.
+
+For the per-tool mechanics, see [Hooks](/foundations/hooks/); for the soft layer that explains the gate, see [Rules](/foundations/rules/); for checking the hook into the repo so it binds every contributor, see [Configuration](/foundations/configuration/).

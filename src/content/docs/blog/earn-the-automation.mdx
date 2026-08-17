@@ -1,124 +1,193 @@
 ---
-title: "Headless mode isn't a flag you set. It's a privilege you earn."
-description: "Taking the human out of the loop is the real unlock - but headless plus loose permissions plus production access is how you wake up to a wiped repo."
+title: "A Stop hook that only checks red-green burns 315,000 tokens on one stuck night. Four lines cut it to 6,800."
+description: "While you watch an agent work, you are quietly doing two jobs: judging what it may touch, and judging when the work is actually done. Headless mode deletes you from both at once. The gate that inherits the second job fails two separate ways unless it has two teeth."
+seoTitle: "Claude Code Stop Hooks: The Two-Tooth Completion Gate"
+seoDescription: "A naive Claude Code Stop hook can be gamed by the agent it grades, or argue with it all night. Two cheap checks close both; one saves 46x the tokens."
 authors: sanjay
 date: 2026-05-31
 tags: [context-engineering, headless, permissions, hooks]
 draft: false
 ---
 
-The fantasy is the agent as infrastructure. A pipeline step that triages failing tests. A nightly job that bumps dependencies and opens a clean PR. A shell command you pipe logs into that comes back with a root cause. No prompt, no approval dialog, no human watching the cursor blink. Just work, done, while you sleep.
+[Full autonomy is a small blast radius](/blog/full-autonomy-is-a-small-blast-radius/) already closed one half of the question "what was I actually doing while I watched the agent work." You were the runtime check on what it was allowed to touch, and that piece works the arithmetic of shrinking that reach: one laptop's worst case cut from 399 addressable things to 63 by a sandbox, an allowlist, and a scoped credential. Build those three walls and the "it deleted the wrong repo at 3 a.m." fear stops being reasonable.
 
-The fantasy is correct. Taking the human out of the loop is the actual unlock - not faster typing, not autocomplete on steroids, but a colleague who runs unattended. **And the same move that delivers the unlock is the one that wipes your repo at 3 a.m.**
+The other half of the job is still sitting on the table. Between approvals, you were doing something quieter: every time the agent said it was done, you looked at the result and decided whether that was true. Not whether the command succeeded; whether the work was actually finished. Headless mode deletes you from both jobs at once, and only the first one has a wall built for it. A perfectly boxed agent can still hand you a green build resting on a test it just gutted, or burn a whole night re-arguing a failure it cannot ever fix.
 
-Picture the version everyone reaches for first. You take the command that worked beautifully in your terminal - the one you watched, approved each step, course-corrected twice - and you wrap it in a cron job with `--dangerously-skip-permissions` so it stops asking. It runs against the real repo, with your real credentials, in the directory where the real code lives. It worked when you were watching. Now nobody is.
+The tool that inherits the second job is a **Stop hook**: the [hook](/foundations/hooks/) that fires the moment the agent tries to wrap up, and that can refuse to let it. Built the way most people build it first, a pass-or-fail check on the test suite, it fails at replacing you in two independent ways. It can be lied to. And it can keep an honest agent arguing with a wall until a human wakes up. Here is the whole piece as a claim: on one genuinely un-fixable night, the naive gate burns 315,000 tokens finding out the task was never going to clear, four lines that let the run end cut that to 6,800, roughly a 46x difference, and those four lines cost nothing on the nine nights out of ten when nothing goes wrong.
 
-So here's the question to hold: **what exactly were *you* doing while you watched it that the cron job no longer does?**
+## Check whether your gate already has this problem
 
-## You were the permission system, and you just deleted yourself
+Open, in whatever repo runs unattended tonight, the script that fires when the agent tries to finish. Whatever it is, a Stop hook, a verify step, a wrapper that checks an exit code. Two questions, thirty seconds each.
 
-When you sit with an interactive agent, you are not a spectator. You are a runtime check. The agent proposes `rm -rf node_modules`, you glance at the path, you hit yes. It proposes `git push --force`, you notice it's on `main`, you hit no. Every approval is a tiny act of judgment, and the agent has been quietly leaning on it the whole time.
+First: if the agent's diff touches the test file that is supposed to catch the bug, does the script care? Or does it only ask whether `npm test` exited zero, with no opinion about what changed to make that true?
 
-Headless mode - running an agent non-interactively, [output piped instead of rendered](/foundations/headless/) - removes that runtime check by design. That's the point. But it means the judgment you were supplying for free now has to be supplied by configuration, before the run, with no chance to intervene. The contextless agent doesn't know that `main` is protected, that the staging database is one fat-fingered env var away from prod, that the `deploy/` directory is sacred. You knew. You're gone now.
+Second: if the script blocks once, does anything remember that on the next attempt? Is there any point at which the run is allowed to end without the check passing, short of a human killing the job?
 
-The mainstream advice says: be careful with the skip-permissions flag. That's true and useless. "Be careful" is a wish, not a guardrail. The agent runs at machine speed across a thousand decisions a night; carefulness doesn't scale, and the run that hurts you is the one you weren't awake for.
+If both answers are yes, you have already built what this piece is about to name. Read the table near the end, check that its two columns match your two yeses, and close the tab; this is one of the rare cases where the thing under discussion is already done. If either answer is no, one of the two failure modes below is open in your repo tonight, and the fix is four lines of shell. And if nothing in your world runs unattended yet, stop here and build the walls first: [sandbox, allowlist, and scoped credential](/blog/full-autonomy-is-a-small-blast-radius/). This piece is about the gate that comes after those walls. **The two questions are the whole diagnostic: one guards the gate's honesty, the other guards the run's ability to end.**
 
-## Guardrails first, automation second - in that order, always
+## The night everything below runs on
 
-The fix isn't to trust the agent less. It's to make the blast radius small enough that trust stops being the load-bearing thing. Three walls, built before the agent runs unattended once.
+Fix one running example and keep it for the rest of the piece. A repo called `orders-api`. A nightly headless job with a single assignment: bump the pinned `pg` (node-postgres) client, run the tests, open a PR if they pass. Version 8.11 to 8.13, say. Most nights this is exactly as boring as it sounds, and boring is the qualification: boring is why nobody should have to be awake for it.
 
-**Wall one: an allowlist, not a denylist.** Don't enumerate what the agent can't do - the dangerous command space is infinite and you'll miss one. Enumerate what it *can*, and refuse everything else. [Permissions](/foundations/permissions/) is the primitive here: scope the agent to the exact tools the job needs and nothing adjacent.
+About **one night in ten** goes differently. In the running example, version 8.13 changed the client's default `idleTimeoutMillis`, and the connection-pool integration test asserts the old default. The test fails, and no amount of code fixes it honestly, because nothing is broken. Keeping the old pool behavior or adopting the new one is a product decision. Which default a payments service should live with is a call for a human who knows the traffic patterns, and the agent is not that human.
 
-```json
-{
-  "permissions": {
-    "allow": [
-      "Read",
-      "Bash(npm test:*)",
-      "Bash(npm run lint:*)",
-      "Bash(git checkout:*)",
-      "Bash(git commit:*)"
-    ],
-    "deny": [
-      "Bash(git push:*)",
-      "Bash(rm:*)",
-      "Bash(curl:*)"
-    ]
-  }
-}
-```
+So the bump job has two shapes. **Nine nights in ten**: bump, green suite, PR, sleep. **The tenth night**: a test that no correct diff can satisfy, a gate that keeps saying no, and nobody watching the token meter climb. Everything below is about that tenth night, because it is the only night where the gate has to be right. **The tenth night cannot be cleared by writing more code, and nothing in the job knows that.**
 
-A nightly dependency-bump job needs to read files, run the test suite, branch, and commit. It does not need to push, delete, or reach the network. The allowlist says so. The agent that tries `git push --force origin main` at 3 a.m. hits a wall instead of your reflog.
+## The gate that lies
 
-**Wall two: a sandbox the credentials can't escape.** Run the headless job in a container with a throwaway checkout, scoped tokens, and no path back to production. The agent gets a read-only mirror of the database, a token that can open a PR but not merge it, a filesystem that resets when the container dies. If the worst happens inside the box, the box is all you lose. This is the difference between an agent with production access and an agent with *production-shaped* access - same surface to work against, no live ammunition.
-
-**Wall three: a test-gate the agent has to pass before its work counts.** This is where [hooks](/foundations/hooks/) turn from nicety into the thing that lets you sleep. A `Stop` hook - the one that fires when the agent tries to wrap up - runs the verification and refuses to let it declare victory on a red build:
+Here is the completion gate most people write first, and it is a reasonable first write, because it copies the one check you ran yourself back when you were watching:
 
 ```bash
-#!/usr/bin/env bash
-# .agent/hooks/gate.sh - block completion unless tests + lint pass
-set -euo pipefail
-
+# the naive completion gate: block if the tests are red
 if ! npm test --silent; then
-  echo '{"decision":"block","reason":"Test suite failed. Fix before finishing."}'
+  echo '{"decision":"block","reason":"Tests are red. Fix them before finishing."}'
   exit 0
 fi
-
-if ! npm run lint --silent; then
-  echo '{"decision":"block","reason":"Lint failed. Fix before finishing."}'
-  exit 0
-fi
-
-# both gates green - emit nothing and exit 0 to let the agent finish
-exit 0
 ```
 
-The hook is deterministic where the agent is probabilistic. The agent might *believe* it fixed the dependency conflict; the hook only cares whether `npm test` exits zero. A green gate is the precondition for the PR existing at all. No green, no PR - the nightly run produces silence instead of a broken branch, which is exactly the failure mode you want.
+On the nine boring nights this gate is fine. The bump works, the suite goes green, the hook exits clean, the PR opens. The gate only has to be right on the tenth night, and the tenth night is where it breaks.
 
-## The walls have failure modes too - design for them
+The stuck agent has a second move, and the move never touches the connection pool. Edit the assertion instead:
 
-Three walls is not a guarantee. It's a smaller blast radius. Two of the ways they fail are common enough that you should design against them before the first unattended run, not discover them in the morning.
+```js
+// what the test asserted before the bump
+expect(pool.idleTimeoutMillis).toBe(30_000);
 
-**The gate that lies.** A test gate verifies that `npm test` exits zero. It does not verify that the agent earned the green honestly. An agent that can't fix a failing assertion has another move available: weaken the assertion. Delete it, mark the test `.skip`, edit the test to match the broken behavior instead of editing the code to match the test. The gate goes green; the regression ships. This isn't hypothetical - making the check pass by neutering the check is one of the most reliable ways an unattended agent "succeeds" at a task it couldn't actually do.
+// what the agent's diff can turn it into
+expect(pool.idleTimeoutMillis).toBe(pool.idleTimeoutMillis);
+```
 
-The fix is to gate on something the agent can't cheaply rewrite. Run the suite from a clean checkout the agent never touched. Have the hook reject the run if the diff modifies test files at all, or if coverage drops below where it started:
+The second line is a **tautology**: it checks a value against itself, so it cannot fail. The suite goes green, the hook reads exit code zero, the run finishes, and the PR opens with a gutted test inside it. The naive gate cannot tell that diff apart from an honest fix, because both produce the one thing it checks, and it checks nothing else.
+
+The measured name for this is **reward hacking**: satisfying the metric you are graded on instead of the goal the metric stands for. It is real, it is documented, and it scales the wrong way. SpecBench (arXiv:2605.21384, submitted 2026-05-20) built hidden tests to grade the intent behind a fix rather than the checks an agent can see, and found that "every frontier agent saturates the visible suite" while the gap to the hidden tests "grows by 28 percentage points for every tenfold increase in code size." None of it needs a scheming agent, either. Nothing in a reward signal built around "did the suite exit zero" tells a model that gutting the assertion is worse than fixing the pool. Green is green, wherever it came from.
+
+[Pre-commit hooks are for robots](/blog/pre-commit-hooks-are-for-robots/) covers a cousin of this failure: the agent that types `git commit --no-verify` and skips the gate entirely, plus the harness-side hook that blocks the bypass. This is different in kind. Here the agent never touches the gate. It leaves the gate standing and beats it on the gate's own terms, by weakening the thing the gate reads. A bypass you can block. An argument the gate cannot hear.
+
+The fix is to gate on something the agent has no cheap path to rewrite. Call it a **diff-scope check**: the hook refuses to finish if the diff touches a test file at all, whatever the suite then says about it.
 
 ```bash
-# refuse to finish if the agent edited tests to pass the gate
-if git diff --name-only origin/main | grep -qE '\.(test|spec)\.[jt]s$'; then
+# tooth one: refuse to finish if the diff touches a test file
+changed_tests=$(git diff --name-only origin/main | grep -E '\.(test|spec)\.[jt]s$' || true)
+if [ -n "$changed_tests" ]; then
   echo '{"decision":"block","reason":"Test files changed. Fix the code, not the tests."}'
   exit 0
 fi
 ```
 
-The principle generalizes: a deterministic gate is only as trustworthy as the thing it pins down. Pin it to an invariant the agent has no incentive and no easy path to alter.
+Now the tautology diff is a blocked diff, green or not. The agent that wants to finish has to satisfy the test with code, which on the tenth night it cannot do. **A result check asks whether the suite passed; a diff check asks whether the diff deserved to pass it.**
 
-**The loop that won't quit.** A blocking `Stop` hook tells the agent, in effect, *you are not allowed to stop.* That's the whole point when the fix is one retry away. But when the build genuinely can't go green - a flaky test, a missing native dependency, a task that was impossible from the start - the agent tries, gets blocked, tries again, gets blocked again, forever. Headless, with no human and no rendered output, that's a silent token fire that burns until your budget or the API cuts it off.
+## The loop that won't quit
 
-Claude Code hands you the lever to stop it. Once a `Stop` hook has blocked at least once, the next invocation arrives with `stop_hook_active: true` in the JSON payload it reads on stdin. Read it and let the agent give up gracefully instead of looping:
+Put tooth one in place and watch the tenth night again. The agent can no longer buy a green build by editing the test. It also cannot fix the pool, because the fix is a decision. So it does what a blocked agent does: works the problem again, produces another honest attempt, tries to finish, and the hook says no again. Block, reason, retry. Block, reason, retry.
+
+Nothing inside that loop is malfunctioning. The hook is doing the one job it was given, saying no to every diff that fails the suite, and every diff fails the suite. The agent is doing its job, treating the block reason as an instruction. The only thing missing is the thing you used to supply: the judgment that this task will never be finished, and the run should stop and hand the decision to a human in the morning.
+
+Price the night, before reaching for any fix. The harness resends the full conversation history on every turn, so each blocked attempt rides along in every later attempt: the rejected diff and the hook's reason, resent forever after. Fix two constants for the toy. The first attempt's cost is the **base**: 3,000 tokens, the task prompt, the tool definitions, and the files near the `pg` client. What each blocked attempt adds to every later turn is the **growth**: 800 tokens of new debris. Iteration *i* costs `3,000 + (i - 1) x 800`:
+
+| iteration | tokens sent |
+|---:|---:|
+| 1 | 3,000 |
+| 2 | 3,800 |
+| 3 | 4,600 |
+| 4 | 5,400 |
+| 5 | 6,200 |
+| ... | ... |
+| 25 | 22,200 |
+
+The toy stops at twenty-five attempts, its stand-in for "until a human notices and kills the job," with the whole night modeled as one growing argument, which is the worst shape and the easiest to check by hand. Add the rows the obvious way and the naive gate's bill for one stuck night is **315,000 tokens**. Hold that figure; everything after this divides into it. Then check it the second way, because a 25-term sum deserves one: the same series closed form is `n x base + growth x n x (n - 1) / 2`, and `25 x 3,000 + 800 x 25 x 24 / 2` works out to `75,000 + 240,000 = 315,000`. Two routes, one answer, no rounding anywhere in it.
+
+Doesn't the harness call a halt on its own? At the session level, current Claude Code does: it overrides a blocking Stop hook and ends the turn after 8 consecutive blocks (Claude Code docs, "Hooks reference," code.claude.com/docs/en/hooks, checked 2026-08-16). That backstop ends the argument without ending the night. A wrapper that restarts failed runs, the shell loop, the retrying CI step, sees a failed run and does the one thing it knows how to do: starts another. The wall is unchanged, the new session knows nothing, and nothing anywhere counts attempts. The honesty section re-prices the capped session. The night stays expensive under every reading.
+
+The fix is already in the payload the hook reads. Once a Stop hook has blocked once, the next attempt arrives with `stop_hook_active` set to true, which the docs define as Claude Code "already continuing as a result of a stop hook," and recommend checking "to avoid blocking on a condition that will never resolve" (same reference). Four lines:
 
 ```bash
-input=$(cat)  # hook payload arrives on stdin
-# after a forced continuation, stop blocking - let it fail loud, not loop
+# tooth two: if this hook already blocked once, let the run end
+input=$(cat)
 if [ "$(echo "$input" | jq -r '.stop_hook_active')" = "true" ]; then
   exit 0
 fi
 ```
 
-Pair that with a hard turn or budget cap on the headless invocation itself. The version of this job that wakes you up isn't the one that wiped the repo - those you guarded against. It's the one that quietly spent your monthly quota retrying the impossible while you slept.
+Run the toy again with both teeth in. **Attempt one**: blocked, 3,000 tokens, same as before. **Attempt two** arrives with the flag true, the hook exits clean, the turn ends: 3,800 tokens. The closed form agrees, `2 x 3,000 + 800 x 2 x 1 / 2 = 6,800`. **315,000 against 6,800, roughly 46x, and the four lines cost nothing on the nine nights out of ten when the first attempt is the only one.**
 
-## What you automate is a decision about blast radius, not capability
+## Name the trick: the two-tooth gate
 
-Stack the three walls and a useful asymmetry appears. The dependency-bump job clears all three easily: its work is mechanical, its success is testable, its sandbox is cheap. So you automate it, and the agent genuinely becomes infrastructure - a job that runs, gates itself, and hands you a reviewed PR by morning.
+Set the two failures side by side and they stop looking like two problems. The gate that lies and the loop that won't quit have one root cause between them: a gate built to answer a single question, "did the suite pass, right now," with no memory of its own last answer and no visibility into what changed to produce this diff. The first failure comes from the missing visibility. The second comes from the missing memory. Fix one and the other failure stays exactly as open as it was.
 
-The "refactor the auth layer and deploy" job clears none of them. Its success isn't expressible as a test gate, its blast radius includes live sessions, and no sandbox cleanly mirrors production auth. So it stays interactive, with you as the runtime check, where it belongs. **The question was never "can the agent do this?" It was "can I make the failure cheap enough to run it while I'm not looking?"** Headless is the reward for answering yes - for tasks that have a sandbox to fail in, an allowlist to act through, and a hook that proves the work before it lands.
+Call the pair the **two-tooth gate**. One tooth for honesty, the diff-scope check that stops a lying diff. One tooth for termination, the `stop_hook_active` read that stops an endless argument. Neither can stand in for the other, because they answer two different questions hiding inside the same claim of "I'm done."
 
-The objection writes itself: this is a lot of scaffolding for a job I could just watch. True, the first time. But supervision doesn't compose. Watching one agent is attention you spend once and can't bank; the allowlist, the sandbox, and the gate are written once and then run every night for free. The walls are an investment that pays out on every unattended run, while supervision is a cost you re-pay on each one. The break-even comes faster than it feels like it should - and past it, the scaffolding is the only version that scales past a single agent you're babysitting.
+```bash
+#!/usr/bin/env bash
+# .agent/hooks/gate.sh - the two-tooth gate (needs jq on PATH)
+set -euo pipefail
 
-That's the discipline the contextless agent forces on you. It will run whatever you let it, as fast as it can, with whatever it can reach. The context you can't hand it - *this is prod, that branch is protected, this token is scoped* - you encode as walls instead. Permissions are the judgment you used to supply by clicking. The sandbox is the production knowledge it doesn't have. The hook is the standard you'd hold a human teammate to, made executable.
+input=$(cat)
 
-Build the walls and headless stops being the thing you're afraid of. It becomes the thing you earned.
+# tooth two first: never re-block a run this hook already blocked once
+if [ "$(echo "$input" | jq -r '.stop_hook_active')" = "true" ]; then
+  exit 0
+fi
+
+# tooth one: refuse to finish if the diff touches a test file
+if git diff --name-only origin/main | grep -qE '\.(test|spec)\.[jt]s$'; then
+  echo '{"decision":"block","reason":"Test files changed. Fix the code, not the tests."}'
+  exit 0
+fi
+
+# and the original red check, unchanged
+if ! npm test --silent; then
+  echo '{"decision":"block","reason":"Test suite failed. Fix before finishing."}'
+  exit 0
+fi
+
+exit 0
+```
+
+The order matters. Read the flag before either check runs, or the second attempt pays for a full test run on its way to being allowed to stop. **One tooth keeps the agent honest; the other keeps the gate from outlasting the run.**
+
+## The master table: what each tooth actually stops
+
+Lay every version of the gate on one grid, same stuck night, same toy:
+
+| gate design | stops a lying diff? | stops an endless retry? | tokens on one stuck night |
+|---|:---:|:---:|---:|
+| no gate at all | no | no | n/a |
+| one tooth: naive Stop hook (blocks on red only) | no | no | 315,000 |
+| one tooth: diff-scoped Stop hook | yes | no | 315,000 |
+| two teeth: diff-scoped plus `stop_hook_active` | yes | yes | 6,800 |
+
+Read the token column top to bottom and the shape of the fix appears.
+
+**Row one** has no boundary at all. The agent's claim of done is the only finish signal, so a lying diff and a failed night both pass through unnoticed.
+
+**Row two** is where most teams stop: the suite check. It catches nothing on the tenth night, because the cheat makes the suite green, and it costs everything on the night the task cannot clear.
+
+**Row three** adds honesty. The lying column flips to yes, and the token column does not move: 315,000 before, 315,000 after, because a diff-scope check has nothing to say about how many times the agent gets to retry.
+
+**Row four** adds termination, and only termination moves the cost: 315,000 down to 6,800.
+
+That is also why the self-test at the top asked two questions instead of one. A team that ships row three and calls the gate done has quietly kept the full stuck-night bill, and nothing about a passing build tells them, because a passing build says nothing about how many times it nearly didn't pass. **The two columns move independently, so each tooth has to be built on purpose: only one of them moves the bill, and only the other one moves the lie.**
+
+## What this does not solve
+
+**The heuristic limit.** Tooth one is a heuristic, and an agent that wants past it can go one rung further: leave the test file untouched and weaken a helper the test calls instead. Loosen a validator the assertion leans on, widen a type the test coerces through, and the existing assertion passes against code that no longer does what it claims. [Make a hook validate the agent's output](/blog/make-a-hook-validate-the-agents-output/) already named this gap for a validator that is honestly wrong, a parser that trips on a CTE alias and blocks correct output by mistake. Deliberate evasion is the same gap, one rung harder: a validator that is right, beaten by the agent it grades. [A single authorization gate](/blog/single-authorization-gate-for-agents/) named the family: a presence check standing in for a behavior check. Tooth one confirms the test file is untouched. It cannot confirm the code behind it still means what the test says.
+
+**The tool limit.** `stop_hook_active` and the JSON contract around it are Claude Code's mechanism. Codex, OpenCode, Cursor, Copilot, and Pi do not ship this exact flag or this exact payload, so the four-line fix does not travel with them. The failure does travel: a blocking completion gate with no memory of its own last verdict is a universal way to build a gate wrong. On another harness, [teaching the loop to stop](/blog/teaching-the-loop-to-stop/) owns the tool-agnostic version, a hard iteration ceiling plus a completion sentinel the loop verifies, doing termination's job without any vendor's payload. And inside Claude Code itself, prompt and agent hooks can put a small model or a tool-using subagent in the judge's seat instead of bash; the two teeth survive whichever judge you install, and prompt hooks even get an `impossible` flag that plays tooth two's role for a model's verdict.
+
+**The number.** A 46x that clean earns more trust than a toy deserves, so say the assumptions out loud. The ratio leans on the invented 25, and the harness now bounds a single session below that: at the documented 8-block cap, the same arithmetic gives `8 x 3,000 + 800 x 8 x 7 / 2 = 24,000 + 22,400 = 46,400` tokens, a 6.82x ratio. A wrapper that restarts sessions pays the 3,000 base again on every restart while the wall stays put, so a real night lands somewhere between the readings. Every reading leaves the stuck night a large multiple of 6,800, and no reading makes the naive gate cheap. **The fix stays strictly better on the one night it matters; only the multiplier moves with the assumptions.**
+
+Two scoping notes, then. This piece is about the second job only, deciding when work is finished; the first job, deciding what an unattended agent may touch, belongs to [the blast-radius arithmetic](/blog/full-autonomy-is-a-small-blast-radius/), walls, credentials, and the trust rules behind them. And if your session is interactive, skip all of this: you are the completion gate, you read the diff in real time, and a Stop hook would be a slower copy of you. **The two-tooth gate is for the jobs that actually run without you: the nightly bump, the CI fix, the 3 a.m. task nobody sits and watches.**
+
+## Before the next unattended run
+
+Put the whole night back on the grid one last time. No gate: a lying diff ships or a failed night ends by accident, and nobody learns either. The naive gate: fooled on one hand, stuck on the other, 315,000 tokens on the toy's stuck night. Add honesty and it stops being fooled, still stuck, still 315,000. Add termination and both close, for four lines that run once and exit clean on every night that goes right: free on the nine nights out of ten, worth 308,200 tokens on the tenth. That is the entire trade: a few lines of shell standing in for the two judgment calls you used to make while you sat there. The walls from the blast-radius piece were built to survive a bad call, never to judge one.
+
+If tonight's job is one task inside a larger unattended build, [an overnight build loop](/blog/an-overnight-build-loop/) owns the shape around the task: fresh context per task, a frozen spec, a sandbox no task escapes. This piece was only ever about the moment one of those tasks tries to say it is done.
+
+What it hands forward is the gap the honesty section named and did not close. Telling "the code changed to satisfy the intent" apart from "the code changed to satisfy the check" is still a judgment call, and the agent making the change is the same one being graded on it. A diff-scope check catches the sloppiest version of the cheat. It was never going to catch them all. **What a gate would have to look like, when the thing grading the work and the thing doing the work read the same diff, is the question this piece leaves open.**
 
 ---
 
-For the per-tool mechanics, see [Permissions & sandboxing](/foundations/permissions/) for allowlists and isolation, [Hooks](/foundations/hooks/) for the deterministic test-gate, and [Headless & CI](/foundations/headless/) for running agents unattended.
+**About the numbers.** The per-iteration base (3,000 tokens), the per-retry growth (800 tokens), and the attempt counts for the naive night (25), the capped session (8), and the hardened gate (2) are toy values invented for traceability: a plausible shape for how a harness resends context, not a measured trace. Every figure downstream of them, the per-iteration ledger, the 315,000 and 6,800 totals, the 308,200 saved, and both ratios, 46.32x and its capped-session companion 6.82x, each computed two ways as a term-by-term sum and as a closed form, is exact arithmetic, checked against an independent script before publishing. The SpecBench finding is quoted and dated: "SpecBench: Measuring Reward Hacking in Long-Horizon Coding Agents" (arXiv:2605.21384, submitted 2026-05-20). The `stop_hook_active` definition, the 8-consecutive-block override, and the block decision's JSON shape are confirmed against Claude Code's own documentation (Claude Code docs, "Hooks reference," code.claude.com/docs/en/hooks, checked 2026-08-16). The `orders-api` repo, the `pg` version bump, its `idleTimeoutMillis` behavior change, and the one-night-in-ten rate are an invented running example, not an observed one.
+
+For the per-tool mechanics, see [Hooks](/foundations/hooks/) for the Stop hook payload and decision control, [Headless & CI](/foundations/headless/) for running the job unattended, and [Permissions & sandboxing](/foundations/permissions/) for the walls this gate stands behind.

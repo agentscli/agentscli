@@ -1,37 +1,177 @@
 ---
 title: "Cache the Explore"
-description: "The codebase is your strongest steering signal - stronger than your prompt or your rules. Pay the exploration cost once, freeze it, and feed it to every run."
+description: "Your agent spends about 38 tokens working out where to make a change for every 1 token it spends making it. Then it pays that bill again on the next run. Here's the math, and the throwaway file that ends it."
+seoTitle: "Cut AI Coding Agent Token Cost With a Throwaway Map"
+seoDescription: "An AI coding agent spends about 38 tokens finding where to edit for every 1 token editing. A 950-token scratch file ends the rediscovery. Here is the math."
 authors: sourabh
 date: 2026-05-29
 tags: [context-engineering, subagents, rules, workflow]
 draft: false
 ---
 
-You point an agent at a feature in a large repo and watch it turn into an archaeologist. The first ten minutes are pure digging - `grep` here, open three files there, trace the import, find the auth helper, figure out which of the four "service" folders is the real one. Only *then* does it start the work you actually asked for. And it learned almost nothing in those ten minutes that you didn't already know cold.
+Three things that probably happen in your repo. See how many you recognize.
 
-That digging is the agent reconstructing the single strongest signal it has. Rank the things that steer it, weakest to strongest. Your prompt is at the bottom - a paragraph it reads once and half-forgets. Your rules file is stronger - persistent, reloaded every session. But the input that actually decides what the agent writes is neither. It's the code already in the repo. The agent reads the surrounding files, infers the conventions, and copies what it sees. The codebase is the dominant steering input, louder than anything you type.
+You ask for a small change in a part of the codebase you know well, and the agent spends its first minute opening files: the router, two services, a helper you could have named from memory. Only then does it touch anything.
 
-So here's what should bother you: if the codebase is the strongest signal, why does every single run rediscover it from scratch? Run that feature five times, spin up three parallel agents, and you pay the archaeology tax over and over - for a map that hasn't changed since the first dig.
+You come back the next day, fresh session, same area. It opens the same files again.
 
-The instinct is to make the agent explore *better* - smarter search, more tool calls, a bigger window to hold what it found. That's the wrong lever. The higher-leverage move is to make it explore *less*. Pay the exploration cost once, capture it as a committed artifact, and feed that artifact into every later run. This is a recipe for doing exactly that, combining three primitives: [subagents](/foundations/subagents/), [rules](/foundations/rules/), and [headless mode](/foundations/headless/).
+You fan out three agents on one feature. All three go looking for the auth helper. All three find it.
 
-## The smart zone is the first few thousand tokens
+None of that's broken behavior. It's how an agent works out where it is. The catch is that it works it out from scratch every single time, and nearly everything it turns up is stuff you already knew.
 
-An agent is sharpest at the start of its context window, before the window fills with tool output, half-read files, and dead-end greps. Call it the smart zone - the early budget where reasoning is cleanest. Spend it on discovery and you've spent your best tokens re-learning what you already know. The actual work - the design judgment, the careful edit - happens later, in the noisier part of the window, after the agent has already tired itself out orienting.
+That's the villain of this post, and it has a name: **rediscovery**. Everything below is aimed at it.
 
-This is the gap this whole site is about, playing out inside a single run. The agent is **broad and contextless**: it knows the language, the framework, a million repos that aren't yours. You are **narrow and deep**: you know that current-user resolution lives in `lib/session.ts`, that the old payments path is a deprecated shim, that the "utils" folder under `legacy/` is a trap. Every run, the broad agent burns its smartest tokens trying to reconstruct your depth by hand. Context engineering is handing it that depth directly so it can skip the reconstruction.
+## First, check whether you actually have this
 
-The cache is how you hand it over. Pay the explore once, freeze the result, and every future run starts already oriented - its smart zone free for actual work instead of re-discovery.
+Don't take the numbers below on trust. Thirty seconds on your own repo settles it:
+
+Open a fresh session and give the agent a real task in a part of the codebase you worked on recently. Before it makes its first edit, count two things. **How many files did it open, and how many of those could you have named yourself?**
+
+Nine files opened and seven you could have named means you have this problem, and the rest of this is worth reading. Straight to the right file means your repo is small enough, or your rules file is good enough, that you don't. Close the tab.
+
+Everything below is one worked example of what that gap costs and how to close it. The example is a small one, chosen so you can check every number in it with a pencil. The count you just did is the real evidence.
+
+Here's the tension the whole post turns on. Exploring is the reason the agent's code fits your repo instead of fitting some generic repo. Exploring is also the one thing every run throws away when it finishes.
+
+And here's where it ends up. Five runs over one slice of a repo cost either **114,000 tokens or 27,550**. Same repo, same agent, same five runs. The difference is one 950-token file.
+
+## What one explore actually costs
+
+Pick a single example and keep it for the rest of the post. One slice of one repo: **checkout and payments**. Eight files that matter, sitting in a codebase far too big to fit in a context window.
+
+Watch an agent get its bearings in that slice and count what it reads. These six numbers are the only inputs this post has:
+
+| What the agent does | Count | Tokens each | Subtotal |
+|---|---|---|---|
+| Searches (`grep`, ~40 lines of hits) | 6 | 300 | 1,800 |
+| File reads (~250 lines) | 9 | 2,000 | 18,000 |
+| Reasoning steps between calls | 15 | 200 | 3,000 |
+| **One explore pass** | | | **22,800** |
+
+Nine file reads, four of which turn out to be dead ends. That's not a badly behaved agent. That's a normal pass at getting oriented.
+
+**22,800 tokens. Before it changes a single line.**
+
+Now the part that should bother you. The thing that pass existed to enable, the actual change, is about forty lines of diff. Call it 600 tokens. That's the whole job.
+
+That is thirty-eight tokens spent working out where to make the change for every one token spent making it.
+
+Run three agents in parallel on that slice and you spend 68,400 tokens at once, on three identical answers to a question that was already settled.
+
+**The explore is the most expensive thing your agent does, and it's the only one you pay for more than once.**
+
+## Seven cents. That's why nobody fixes it
+
+Do the money math now, because you're going to do it anyway. At list input prices in August 2026, 22,800 tokens costs somewhere between seven and eleven cents depending on the model. Five runs is about thirty-five to sixty cents.
+
+So the invoice isn't the problem, and this post isn't going to claim your budget is quietly draining. That's exactly why nobody fixes it: too cheap to show up on a bill, too slow to be worth ignoring. The bill lands somewhere else, in three places.
+
+**On the clock.** Six searches and nine reads is fifteen tool calls, one after another, each a round trip to the model and back. That's the pause you sit through before the agent starts doing the thing you asked for, on every run, whether or not you're watching.
+
+**On the good part of the window.** An agent is sharpest early, before its context fills with tool output, half-read files and dead-end greps. Call that stretch the **smart zone**. On a 200k window, getting oriented eats 11.4% of everything the agent will ever hold, and it eats it right at the front. So the design thinking and the careful edit happen later, in the noisy part, after the agent has already tired itself out finding the place.
+
+**On your rate limit.** If you're on a plan with a usage cap rather than a per-token bill, rediscovery isn't cheap at all. It competes directly with your real work for the same budget, and it wins, because it runs first.
+
+**Per token this is nothing. Per cap, it's your morning.**
+
+## The agent is rebuilding the signal it trusts most
+
+Rank the things that steer an agent, weakest first.
+
+Your prompt is bottom of the list. It's a paragraph the agent reads once and half-forgets. Your rules file is stronger, because it's persistent and gets reloaded every session. But the input that really decides what the agent writes is neither of those. It's the code already in the repo. The agent reads the files around the change, picks up the conventions, and copies what it sees.
+
+That puts the 22,800 in a different light. The agent is paying full price to rebuild the strongest steering signal it has, and that signal hasn't changed since the last time it rebuilt it.
+
+Which is why "make the agent explore better" is aimed at the wrong thing. Smarter search, more tool calls, a better index: all of it still costs 22,800 a run. The lever is to make it explore **less**.
+
+Why not just wait for bigger context windows to solve it? Windows did get bigger. A 200k window was generous in 2024 and a million is ordinary by 2026, and rediscovery survived every bit of that. A bigger window doesn't stop the agent running the same six greps. It just gives the results somewhere roomier to sit. Exploring is work, not storage.
+
+**This isn't a search quality problem. It's a caching problem.**
+
+## The fix: a map you throw away
+
+At this point the move is fairly obvious, which is the sign it's the right one.
+
+Pay for the explore once, in a window you are happy to throw away. Write down what it found. Point every later run at that file. Then delete the file on a schedule.
+
+Call it **the disposable map**.
+
+Both halves of the name matter, and the second half is the one people skip. Treat it as a cache entry rather than as documentation: cheap to rebuild, meant to be thrown out, and dangerous the moment it outlives the work it was written for. More on how dangerous shortly.
+
+### "Isn't that just prompt caching?"
+
+Fair question, and the answer decides whether any of this is worth your time. Three things already claim to solve this, and none of them do.
+
+**Prompt caching** is the provider making it cheaper to send the *same tokens* again inside one run or one short window. It's real and you should use it. It does nothing here, because a fresh session next Tuesday does not re-send last week's exploration. There is nothing in the cache to hit. Prompt caching discounts text you send twice. The map removes work the agent would otherwise do twice.
+
+**Agent memory** is closer, and it's the direction the tools are heading. The difference today is who decides. Memory is the agent choosing what to keep, across everything, with no boundary you set. The map is you scoping one slice, capping it at 950 tokens, and deleting it on a date. When memory can be scoped and expired like that, this technique becomes a feature instead of a habit.
+
+**A repo index** (semantic search over the codebase) makes each search better. Look back at the table: searches are 1,800 of the 22,800. Nine file reads and fifteen reasoning steps are the other 21,000, and a better index still has the agent doing all of them.
+
+**All three make exploring cheaper. Only the map makes the agent explore less.**
+
+## What the map is worth
+
+Run the obvious version first, so there's something to compare against.
+
+**Option A, no cache.** Every run explores.
+
+```text
+5 runs x 22,800 = 114,000 tokens
+```
+
+**Option B, cached.** Pay for the explore once, write down what it found, and let every later run read the notes instead of the repo.
+
+What do the notes cost? Far less than the explore did, because the output of an explore is nothing like the size of the explore. Twenty-two thousand tokens of reading boils down to eight file paths, a sketch of the data flow, four helpers and a short list of traps. On this slice that's a `research.md` of roughly 950 tokens. Same eight files, same traps, none of the digging.
+
+Hold onto that ratio, because it's the entire mechanism:
+
+> The map is **24x smaller** than the explore that produced it. 22,800 in, 950 out. Remember 24x. It gets paid off exactly, a few lines below.
+
+Five runs, option B:
+
+```text
+1 explore   = 22,800
+5 map reads = 5 x 950 = 4,750
+              ------------------
+                         27,550 tokens
+```
+
+There's the claim from the top of the post: **114,000 against 27,550**, a saving of **86,450 tokens** over five runs of one slice.
+
+Check the payoff. Both columns come from the same six numbers in the first table. Nothing is rounded, nothing is estimated, and the only reason the second column is small is the 24x. Shrink the explore 24x, read it five times instead of running it five times, and 86,450 tokens come back. You can do this on paper in a minute.
+
+**Break-even** is where the two columns cross, and it lands at 1.04 runs. Not the fifth run. Not the third. The cache has paid for itself partway through the second one.
+
+Before that number goes to your head: on a single run this is a loss, and no amount of repo depth changes that. The saving starts at run two. The table below shows exactly where.
+
+**The explore is expensive because its output is 24x smaller than itself, and you throw that output away every time.**
+
+## The numbers, run out
+
+| Runs on the slice | No cache | Disposable map | Saved |
+|---:|---:|---:|---:|
+| 1 | 22,800 | 23,750 | **-950** |
+| 2 | 45,600 | 24,700 | +20,900 |
+| 3 | 68,400 | 25,650 | +42,750 |
+| 5 | 114,000 | 27,550 | +86,450 |
+| 10 | 228,000 | 32,300 | +195,700 |
+
+This table is the picture to keep. Every section from here on is a row of it.
+
+**Row 1 is negative.** On a single run the map is a straight loss. You paid the same 22,800 to explore, then 950 more to write and read a file nobody opens again. The trick isn't free and the table says so out loud.
+
+**Row 10 doesn't fit.** 228,000 tokens of pure rediscovery is more than a 200k window holds. Ten runs in one session and the digging alone overflows it before any work gets done.
 
 ## The recipe
 
-Three moving parts: a subagent that explores and writes the map, a rule that tells every run to read it, and a lifecycle discipline that kills the map before it lies to you.
+Three moving parts: a subagent that explores and writes the map, a rule that makes every run read it, and a habit of deleting the map before it starts lying to you.
 
-### 1. A subagent writes the map, in its own window
+### 1. A subagent digs in a window you throw away
 
-Run the exploration as a [subagent](/foundations/subagents/) - a separate agent with its own isolated context window. This matters for one specific reason: exploration is *messy*. It generates dozens of tool calls, opens files it discards, follows imports that lead nowhere. You do not want that exhaust in your main window. You want the *conclusion*, distilled. A subagent absorbs all the mess in its own context and hands back only the clean artifact. (If you'd rather steer the pass yourself, run it interactively in [plan mode](/foundations/plan-mode/) instead - the agent reads and reasons but can't touch the codebase, so the explore stays read-only while you shape it. Either way the output is the same: one clean `research.md`, the looking done once.)
+Run the exploration as a [subagent](/foundations/subagents/), a separate agent with its own context window. That's what keeps the 22,800 out of your main window. Exploring is messy: dozens of tool calls, files opened and discarded, imports that go nowhere. You don't want that mess sitting in the window where you're about to do careful work. You want the 950-token answer.
 
-Give it a focused brief and one job - write `research.md`:
+Give it a tight brief and one job:
 
 ```text
 You are exploring this repo to produce a reusable map for later coding runs.
@@ -49,13 +189,17 @@ Be terse. This file is read by future agents with a fixed token budget.
 Cite a file path for every claim. If you didn't verify it, don't write it.
 ```
 
-The output is the asset. A good `research.md` reads like the orientation a senior engineer gives a new hire on day one - not a wiki dump, but *"here's the eight files that matter, here's how a request flows, here's the helper you actually call, and here's the folder that will burn you."* That's the SME's map, serialized once instead of re-derived every run.
+"Be terse" is doing real work in that brief. It is the 24x. A `research.md` that sprawls to 5,000 tokens pushes break-even out and then eats 5,000 tokens of every future run's smart zone. Short is the trick, not a nice-to-have.
 
-One discipline that pays off: generate it **just-in-time**, right before a batch of work on that slice - not as a permanent repo-wide wiki you maintain forever. You're caching the explore for *this* push, not documenting the project for posterity. The narrower the scope, the more accurate the map and the longer it stays true.
+A good map reads like the handover a senior engineer gives a new starter on day one. Not a wiki dump: here are the eight files that matter, here's how a request moves through them, here's the helper you actually call, and here's the folder that will burn you.
+
+Write it just before a batch of work on that slice, not as a permanent doc you maintain forever. A narrow scope is what keeps the map both accurate and short. (If you would rather steer the pass yourself, run it in [plan mode](/foundations/plan-mode/) instead. The agent reads and reasons but can't touch the code. Same output, one clean file.)
+
+**The map is worth 950 tokens because it's 950 tokens. Let it grow and you've rebuilt the problem.**
 
 ### 2. A rule points every run at the map
 
-A cached map nobody reads is dead weight. So make reading it the default. This is a [rule](/foundations/rules/) - persistent, human-authored context that loads on every session. Put it in your `AGENTS.md` (or `CLAUDE.md`):
+A cached map nobody reads saves nothing. That's row 1, forever. So make reading it the default, with a [rule](/foundations/rules/): persistent context that loads every session. Put it in `AGENTS.md` (or `CLAUDE.md`):
 
 ```markdown
 ## Orientation - read the map before you explore
@@ -71,21 +215,21 @@ gotchas for that slice. Trust it as your starting picture.
   Do not silently work around a bad map.
 ```
 
-Now every run - interactive or automated - opens by `@`-referencing the map instead of re-running the archaeology. The agent starts from your curated picture, not from a blank repo. The smart zone goes to the work.
+That last clause decides which row of the table you land on. If the agent quietly doesn't trust the map and re-explores anyway, you're back to paying 22,800 and paying the 950 on top of it.
 
-That last clause is not decoration. A map the agent silently distrusts is worse than no map; a map it silently *trusts when it's wrong* is worse still. The rule makes staleness loud.
+**The rule is what turns a saved file into a saved 86,450.**
 
-### 3. Pair the map with a destination and a journey
+### 3. Map, destination, journey
 
-The map alone tells the agent *where things are*. For a long or looped run it needs two more files: a **destination** (what "done" looks like) and a **journey** (the ordered steps to get there). Three small files, three different jobs:
+This part is short because the idea is small. The map says *where things are*. A long or looped run needs two more little files: a **destination** (what done looks like) and a **journey** (the steps to get there).
 
 ```text
-research.md   →  the MAP        "where everything is and what to watch for"
-spec.md       →  the DESTINATION "what done looks like; acceptance criteria"
-plan.md       →  the JOURNEY     "the ordered steps from here to there"
+research.md   ->  the MAP         "where everything is and what to watch for"
+spec.md       ->  the DESTINATION "what done looks like; acceptance criteria"
+plan.md       ->  the JOURNEY     "the ordered steps from here to there"
 ```
 
-This trio is what makes the cache pay off in [headless mode](/foundations/headless/) - the non-interactive flag every serious CLI agent ships (Claude Code's `-p`, Codex's `exec`, opencode's `run`). An autonomous or AFK loop has nobody sitting beside it to answer "where's the auth helper?" If it has to rediscover the codebase on every pass, it spends its whole bounded budget orienting and never reaches the work. Hand it map + destination + journey up front and each pass starts already knowing the terrain, the goal, and its next step:
+Those three are what make the cache pay off in [headless mode](/foundations/headless/), the non-interactive flag every serious CLI agent ships (Claude Code's `-p`, Codex's `exec`, opencode's `run`). An unattended loop has nobody sitting next to it to answer "where's the auth helper?". Row 10 is that loop: without the map it burns 228,000 tokens of a fixed budget on rediscovery and may never reach the actual work.
 
 ```bash
 # Each headless pass opens already oriented - no re-exploration.
@@ -98,28 +242,45 @@ EOF
 claude -p "$PROMPT" --allowedTools "Edit,Bash(git:*),Bash(npm test:*)"
 ```
 
-The loop stops spending its smart zone on discovery it could have inherited. That budget goes to the edit, the test, the judgment - the part you actually wanted.
+**Every pass starts at row 1's cost and picks up row 10's saving.**
 
-## When the explore isn't worth caching
+## When this is a bad trade
 
-The cache pays off when exploration is *expensive* and *repeated*. Kill either leg and the math collapses. A small repo the agent can hold in one window? It re-orients in thirty seconds - capturing a map and policing its expiry costs more than it ever saves. A genuine one-shot, a task you'll run once and never return to? You'd amortize the explore over a single run, which is just doing the explore with extra steps. Caching is for the slice you're about to hammer five times, in parallel, across a headless loop - where the same archaeology would otherwise repeat on every pass. The deeper the repo and the more runs you'll spend inside it, the more the up-front looking earns back. One pass on a shallow repo: skip all of this and let the agent dig.
+Two cases, and the table names both of them.
 
-## The map is a liability, not documentation
+**One-shot work.** That's row 1, and row 1 is -950. You'll explore once either way, so the map is pure overhead plus a file to tidy up afterwards. Skip all of this and let the agent dig.
 
-Here's the catch, and it's the half of this people get wrong. A cached map is only an asset while it's accurate. The moment the architecture moves and the map doesn't, it flips polarity - it stops helping and starts *poisoning*. Now the strongest-after-the-code steering signal is actively pointing the broad agent at a helper that was renamed, a module that was split, a flow that was rerouted. A confidently wrong map is worse than no map, because the agent has no reason to doubt it. It'll write against the world as the map describes it, not the world as it is.
+**A shallow repo.** Run the same sums where getting oriented on the whole slice costs 2,000 tokens and the map is 400:
 
-So treat `research.md` the way you'd treat a cache anywhere else: with an eviction policy. Start by giving it an expiry, not a copyright - a stamp at the top of the file that tells the next run when it was captured and against what:
+```text
+no cache:  5 x 2,000        = 10,000
+cached:    2,000 + 5 x 400  =  4,000
+saved                          6,000
+```
+
+The ratio still looks great. Look at the actual number instead. 6,000 tokens is about three file reads, and that's the entire prize. In exchange you've taken on a committed file that outranks your rules file and can be wrong. One afternoon spent debugging a run that trusted a stale map costs far more than three file reads.
+
+So the test isn't "do the sums favor caching". They nearly always do. The test is whether the saving is bigger than the risk you just took on. Deep repo, lots of runs: clearly yes. Shallow repo, a couple of runs: clearly no, and the ratio won't tell you that.
+
+**The sums tell you whether caching pays. They can't tell you whether it's worth the risk.**
+
+## The catch: a stale map outranks your rules file
+
+Every fix creates the next problem, and here's this one's.
+
+The whole post rests on the codebase being the strongest signal an agent has. The disposable map stands in for that signal, so it picks up the same weight. While it's accurate, that's exactly what you want. The moment the architecture moves and the map does not, it stops helping and starts doing damage. Your strongest signal after the code itself is now confidently pointing the agent at a helper that got renamed, a module that got split, a flow that got rerouted.
+
+A confidently wrong map is worse than no map, because the agent has no reason to doubt it. It'll write against the repo the map describes rather than the repo you actually have. And it'll do that quickly and cheaply, which is the thing you were optimizing for.
+
+So give the file an expiry date rather than a copyright:
 
 ```markdown
 _Captured 2026-05-29. Slice: checkout/payments. Re-verify before reuse._
 ```
 
-That one line changes how the file gets treated. Documentation rots quietly and you keep trusting it; a cache entry is *supposed* to be invalidated, and stamping it that way means the first move on returning to the slice isn't "read research.md" - it's "is research.md still true?" If you can't answer that in thirty seconds, you delete and regenerate.
+One line, and it changes how the file gets treated. Documentation rots quietly and you keep trusting it. A cache entry is *supposed* to go stale, and labeling it that way means the first thing you do on coming back to the slice isn't "read research.md", it's "is research.md still true?". If you can't answer that in thirty seconds, delete it and regenerate. Regenerating costs 22,800, which is one row-1 run. The cheapest fix in this post.
 
-- **Regenerate it when the architecture moves.** Re-point the subagent at the slice and overwrite the file. Cheap - it's the same one-shot explore you already paid for once.
-- **Delete it aggressively once the feature ships.** People resist this, because deleting something that "might be useful later" feels wasteful. It isn't. The map was scoped to a push that's now done; keeping it around leaves a landmine for the next run. And `git` already has it - recovering a deleted file is one command, while detecting that a stale file silently corrupted a run is a debugging afternoon you'll never get back.
-
-Add the lifecycle to the rule so it's enforced, not remembered:
+Put the lifecycle in the rule so it's enforced rather than remembered:
 
 ```markdown
 ## research.md lifecycle
@@ -132,14 +293,22 @@ Add the lifecycle to the rule so it's enforced, not remembered:
   wrong. When in doubt, delete and regenerate rather than trust it.
 ```
 
-The contrarian shape, stated plainly: the win isn't a better explorer, and it isn't a wiki you lovingly maintain. It's a disposable cache you pay for once, trust briefly, and throw away on schedule.
+People resist the delete, because throwing away something that might be useful later feels wasteful. It isn't. The map was written for a push that's now finished, and `git` still has it. Getting a deleted file back is one command. Working out that a stale file quietly wrecked a run is an afternoon you won't get back.
 
-## Why this closes the gap
+**Shrinking the explore is what bought you 86,450 tokens. Deleting the map on time is what lets you keep them.**
 
-Look at the division of labor. The broad agent supplies capability - it can read any stack, write the diff, run the tests. You supply the one thing it lacks, *your repo's actual shape*, but you supply it as a **pre-paid artifact** instead of as a tax every run re-pays. The subagent does the expensive looking once and absorbs the mess. The rule makes every future run inherit the result. The headless loop runs against the cache instead of against a blank repo. And the eviction policy keeps the cache from rotting into a liability.
+## Back to the table
 
-The codebase is the strongest signal your agent has. The second strongest is an accurate map of it. Pay for that map once, point every run at it - and delete it the day it stops being true.
+The split of work here is simple enough. The agent is broad and has no context: it knows the language, the framework, a million repos that aren't yours. You're narrow and deep: you know current-user resolution lives in `lib/session.ts`, the old payments path is a deprecated shim, and the `legacy/utils` folder is a trap. Closing that gap is the job, and the disposable map is the cheapest way to do it, because what you know shrinks 24x and the agent's rediscovery of it doesn't shrink at all.
+
+Row 5, one more time: **114,000 or 27,550**. The difference is a 950-token file, a rule that points at it, and actually deleting it when it's done.
+
+Which leaves one loose end this post created rather than solved. The date at the top of `research.md` is a promise made by a human and checked by nobody. It'll be wrong before anyone notices, and the whole saving turns negative the first time an agent believes it. The obvious next step is to stop relying on memory and let the repo enforce it: a [hook that fails the run](/blog/make-a-hook-validate-the-agents-output/) when the map's capture date is older than the last commit that touched the slice it maps.
+
+Cache the explore. Then set the alarm that tells you when the cache has gone off.
 
 ---
+
+**About the numbers.** The six values in the first table are chosen, not measured: they are a plausible small example, sized so you can check every later figure with a pencil. Every other token figure in the post is derived from those six and was re-checked with a script before publishing. Nothing here is a measurement of your repo. Swap in your own file sizes and the shape of the table doesn't change: the explore shrinks, the shrinking is the mechanism, and row 1 is still negative. The cent figures use list input prices as of August 2026 and will drift. The point they make ("this is too cheap to notice") gets more true as prices fall, not less.
 
 For the per-tool mechanics, see [Subagents](/foundations/subagents/) for exploring in an isolated window, [Rules](/foundations/rules/) for pointing every run at the cached map, and [Headless & CI](/foundations/headless/) for running the loop against it unattended.

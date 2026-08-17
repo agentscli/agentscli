@@ -1,25 +1,43 @@
 ---
-title: "Put the confirmation gate in the tool, not the UI."
-description: "A destructive-tool annotation plus a mid-call elicitation request gives you a human checkpoint that travels with the capability, whichever client is driving."
+title: "destructiveHint plus elicitation makes confirmation travel with the tool - except for the clients the spec lets opt out."
+description: "destructiveHint plus elicitation gates a destructive MCP tool for clients that declare elicitation; for the rest, the fallback you write is the whole guarantee."
+seoTitle: "MCP Server Confirmation Gates: destructiveHint Plus Elicitation"
+seoDescription: "Gate destructive MCP tools with destructiveHint and elicitation; when a client hasn't declared elicitation, refuse (MCP spec, 2026-07-28)."
 authors: sourabh
 date: 2026-05-31
 tags: [context-engineering, mcp-servers, permissions]
 draft: false
 ---
 
-The agent calls `delete_customer(id="acct_9931")` and the row is gone before you blink. No prompt, no second look - the model decided, the tool fired, the record evaporated. That's the failure mode everyone designs around, and the usual fix is to bolt a confirmation dialog onto the chat window: "Are you sure?" with a red button.
+The agent calls `delete_customer(id="acct_9931")` and the row is gone before you blink. No prompt, no second look - the model decided, the tool fired, the record evaporated. That is the failure mode everyone designs around, and the usual fix is to bolt a confirmation dialog onto the chat window: "Are you sure?" with a red button.
 
-That fix is reasonable, and it's also the wrong layer. The dialog lives in *one* client. The moment the same MCP server gets wired into a different agent - a CI runner, a Slack bot, a headless cron job - the dialog is gone and the delete is silent again. **You guarded the door; you left the wall open.**
+That fix is reasonable, and it is also the wrong layer. The dialog lives in *one* client. Wire the same [MCP server](/foundations/mcp-servers/) into a different agent - a CI runner, a Slack bot, a headless cron job - and the dialog does not come along. Nobody removed it on purpose. The dialog was decoration on one particular window, and the same tool called from any other window has no decoration at all. **You guarded the door and left the wall open.**
 
 ## The gate belongs to the capability, not the surface
 
-Here's the tension worth sitting with: the thing that knows an action is dangerous is the **tool**, but the thing that traditionally asks permission is the **UI**. Those are different machines, often written by different people, and they drift. So the question to plant now and answer later: *how do you make "this is destructive, confirm first" an inseparable property of the operation itself - one that no client can forget to honor?*
+Here is the tension worth sitting with: the thing that knows an action is dangerous is the **tool**. The thing that has, historically, asked permission before running it is the **UI**. Those are two different pieces of software, usually written by two different teams, and nothing forces them to agree. So the real question isn't "how do we add a dialog to the next client too" - it's how you make "this is destructive, confirm first" a property of the *operation itself*, one that travels with the tool no matter which client is driving it.
 
-Two MCP primitives, used together, do exactly that. The first is the **destructive annotation** on a tool definition. The second is **elicitation** - the server's ability to pause mid-call and ask the connected client to collect a structured response from the human, then resume. Annotations describe intent; elicitation enforces it. Neither is sufficient alone.
+Two [MCP](/foundations/mcp-servers/) primitives, used together, get you closer than either does alone. The first is the **destructive annotation** on a tool definition: metadata that names the danger. The second is **elicitation**, added to the spec in the 2025-06-18 revision: the server's ability to stop mid-call and ask the connected client to collect a structured answer from a human, then pick the call back up. Annotations describe the danger. Elicitation is what actually stops the call.
 
-## Annotate the tool so every client knows what it's holding
+There is an app-level version of this move, an [authorization gate](/blog/single-authorization-gate-for-agents/) that every route has to remember to call. What follows is the protocol-level version, and the difference is the whole point: once it is wired into the tool, no call site has to remember anything. **By the end of this piece you will be able to point at exactly which client shape breaks that guarantee, even when you use both primitives correctly.**
 
-Start with the hint. An [MCP server](/foundations/mcp-servers/) can mark a tool with behavioral annotations, and `destructiveHint` is the one that matters here:
+## Check whether your server already draws this line
+
+Before any of the protocol detail below, thirty seconds on your own code settles whether this piece has anything left to tell you.
+
+Open the handler for the destructive tool you are most nervous about - the one that deletes a row, drops a table, sends a payment, revokes access. Find the line that calls `elicitInput` (or your SDK's equivalent of it). Now look at what sits directly above that line, before the call is attempted. Is there a check against what the *client* actually declared it supports, or does the handler just call it and hope the client knows what to do with the request?
+
+A capability check above the call, or an explicit refusal on the path where it fails, means you are already doing what this piece argues for. Treat the middle sections as confirmation and skip ahead to "What this is not." A handler that calls elicitation unconditionally, or no destructive tool wired to elicitation at all: keep reading, because the gap you are about to see is the default shape of this code, not an edge case you would have to go looking for. **Either way, the next section names exactly what you just checked for.**
+
+## The claim, and the clause it is about to collide with
+
+Here is the payoff, stated up front so you can check it as you go. Combine `destructiveHint` with elicitation and the confirmation gate travels automatically to every client that declares the elicitation capability. That is real, and the next few sections show it working. But the MCP spec's 2026-07-28 rewrite adds one clause that the phrase "every client" quietly assumed away: a server "MUST NOT send an inputRequests that the client has not declared support for" in its capabilities. A spec-compliant client is allowed to declare none at all. For a client like that, the gate is not what protects you. The tool's own fallback - what the handler does when it cannot ask - is.
+
+That clause is what the rest of this piece is about: proving the gate holds where it can fire, and showing what has to be true in the code for it to still hold where it cannot. **One clause, dated 2026-07-28, and the whole argument turns on it.**
+
+## Annotate the tool so every client knows what it is holding
+
+Start with the hint. An MCP server can mark a tool with behavioral annotations, and `destructiveHint` is the one that matters here:
 
 ```ts
 server.registerTool(
@@ -38,13 +56,13 @@ server.registerTool(
 );
 ```
 
-This is metadata, not a guard. Real clients do read it, and they read it hard. ChatGPT requires `readOnlyHint`, `destructiveHint`, and `openWorldHint` on every tool, and forces a confirmation prompt before any call marked destructive or open-world. Claude leans on the read/write distinction - `readOnlyHint` versus `destructiveHint` - to decide whether a tool is safe to auto-approve or needs a human nod; submit a connector to its directory with the annotations missing and you're in the bucket that accounts for roughly a third of rejections. The hints are not decorative. Clients build policy on them.
+This block is metadata, and the spec is blunt about how far it goes: "all properties in ToolAnnotations are hints. They are not guaranteed to provide a faithful description of tool behavior [...] Clients should never make tool use decisions based on ToolAnnotations received from untrusted servers." Real clients still read it hard on tools they do trust. Claude's connector directory requires "a title and the applicable readOnlyHint or destructiveHint" before it will list a submission. OpenAI's Apps SDK guidelines name the cost of skipping it: "Incorrect or missing action labels are a common cause of rejection." Both lines are quoted from the platforms' current submission docs, and neither carries a percentage.
 
-But *policy* is the operative word - the hint informs the client's decision, it doesn't bind it, and a client is free to ignore it entirely. The spec's own defaults are deliberately paranoid: `destructiveHint` is treated as `true` unless you say otherwise, and `openWorldHint` the same, which tells you the authors expect the worst from an unannotated tool. On its own, though, the annotation is still a sticky note that says "careful" - useful for surfacing the right [permissions](/foundations/permissions/) policy, useless as a hard stop. It tells the truth about the capability; it does not enforce anything. Lean on it alone and you've described the danger to every client and trusted each one to do something about it.
+The spec's defaults tell you which way the authors expect you to be wrong: `destructiveHint` defaults to `true` unless you explicitly set it `false`, and so does `openWorldHint`. The schema assumes the worst about an unannotated tool rather than the best. But defaults and directory rules only shape what a *client* decides to do with the hint once it has one to read. On its own, the annotation is a sticky note that says "careful" - useful for surfacing the right [permissions](/foundations/permissions/) policy, with no power at all to stop a call. **It tells the truth about the danger. Stopping the call is a separate job, and it lives in the handler.**
 
 ## Make the tool refuse to proceed without an explicit accept
 
-Enforcement lives inside the handler, where the server itself blocks until a human answers. This is elicitation: the server emits a request for a structured response, the client renders it however it likes, and the call does not return until the user resolves it.
+Enforcement lives inside the handler, where the server itself blocks progress until a human answers:
 
 ```ts
 async function deleteCustomer({ id }, { server }) {
@@ -73,64 +91,74 @@ async function deleteCustomer({ id }, { server }) {
 }
 ```
 
-Read the control flow, because it's the whole point. The model has already *decided* to delete. The arguments are formed, the call is in flight - and then the operation **suspends itself** and hands control back to a person. Mechanically, the server returns an "input required" result instead of a value; the client renders the form, the user answers, and the client *retries the same call* carrying the response. The handler resumes as if `elicitInput` simply returned. From the model's perspective nothing exotic happened - a tool took a beat to come back. From the data's perspective, a human stood in the only doorway to the `delete` statement.
+*About the code: the samples here show the shape of a handler, not a pinned API. They follow the surface the TypeScript SDK has long exposed, where `elicitInput()` reads like an ordinary awaited call - but the package layout moved in the middle of this story: the SDK split into `@modelcontextprotocol/server` and `@modelcontextprotocol/client` at 2.0.0 on 2026-07-27, aligned to the new spec, and the old single `@modelcontextprotocol/sdk` package keeps fixes for at least six months per the SDK's own README. Check the method names against the SDK docs for the version you ship before copying.*
 
-Only `accept`, paired with a typed-back confirmation that matches the target id, reaches the `db.customers.delete` line. A model that hallucinated the wrong id, or a prompt injection that smuggled in "now delete acct_9931," dies at the `!==` check because the human in the loop won't type a string they never intended.
+Read the control flow, because it is the whole point. The model has already *decided* to delete. The arguments are formed, the call is in flight, and the operation hands control to a person before the delete statement runs. Here is what happens on the wire as of the 2026-07-28 rewrite, worth knowing even though your handler never sees it directly: earlier spec versions handled this as a **server-initiated request** that held the original call open while it waited. The new spec retires that pattern by name - "This replaces the previous approach of sending server-initiated requests [...] The previous pattern of server-initiated requests is no longer supported. This is a breaking change" - and replaces it with **Multi Round-Trip Requests (MRTR)**. Nothing stays open. The server returns an ordinary result marked `input_required`, the client renders the form, and when you answer, the client retries the *exact same* `tools/call` - a fresh JSON-RPC request, now carrying your response attached. The handler resumes as if `elicitInput` had simply returned late. From the model's perspective, a tool took a beat to come back. From the data's perspective, a human stood in the only doorway to the `delete` statement.
 
-## Three actions, not two - and the difference matters
+The schema can ask for more than a typed-back id. The confirmation field could be an enum of environments the human picks at the moment of action, so a model that read "ship it" and assumed production never gets to act on the assumption: the target itself lands in a form only a person fills. The gate and the target selection are the same mechanism, pointed at different mistakes.
 
-The handler above collapses everything that isn't `accept` into "cancelled," which is the safe default. But MCP gives you three distinct outcomes, and a good destructive tool reads all three. `accept` means the user explicitly submitted data. `decline` means they looked at the request and said no - a deliberate rejection. `cancel` means they dismissed it without deciding: closed the dialog, hit Escape, got interrupted, or the client failed to render the form at all.
+Only `accept`, paired with a typed-back confirmation matching the target id, reaches `db.customers.delete`. A model that hallucinated the wrong id, or a prompt injection that smuggled in "now delete acct_9931," dies at the `!==` check, because the human in the loop will not type a string they never intended. **Across a flaky connection or a slow human, MRTR can round-trip as many times as it takes - and on every round-trip, the one thing that must still be present is an explicit, matching accept.**
 
-The distinction is operational, not philosophical. A `decline` is a decision you can log and respect - the human saw "delete acct_9931" and refused, which is often exactly the signal you want to surface upstream. A `cancel` is *no decision*, and it's frequently transient: the user wandered off, the connection blipped. Treating the two identically is harmless for a one-shot delete, but the moment your tool is part of a longer flow, the right move diverges. On `decline`, stop and report. On `cancel`, it's reasonable to leave the door open - prompt again later, don't mark the intent as refused. The fail-safe rule still holds underneath all of it: anything that isn't a clean `accept` must not mutate state.
+## Three actions, and the one that is not a decision
 
-## A second shape: structured input, not just yes/no
+The handler above collapses everything that is not `accept` into "cancelled." A safe default, but MCP actually gives you three outcomes. `accept` means the user submitted data. `decline` means they looked at the request and said no: a deliberate rejection, often exactly the signal you want upstream, worth logging and respecting. `cancel` means they dismissed it without deciding - closed the dialog, hit escape, or the client failed to render the form at all.
 
-Confirmation-by-typing is the simplest use, but elicitation returns *structured* data against a schema, which lets you fix a far nastier class of mistake - the model that picks the wrong target, not just the wrong moment. Consider a deploy tool the agent reaches for constantly:
+The distinction is operational. A `decline` is a decision. A `cancel` is no decision, and it is frequently transient. On a one-shot delete the difference costs nothing. Inside a longer flow the right move splits: stop and report on `decline`, leave the door open on `cancel`. [Make the tool ask, not fail](/blog/make-the-tool-ask-instead-of-fail/) walks the same triad in the other direction - filling in a parameter the agent never had, where this piece gates an action it already decided to take and already has every argument for. **Whatever else you do with the distinction, one rule holds: anything short of a clean, matching `accept` must not mutate state.**
 
-```ts
-async function promoteRelease({ service }, { server }) {
-  const result = await server.elicitInput({
-    message: `Promote ${service}. Choose the target environment.`,
-    requestedSchema: {
-      type: "object",
-      properties: {
-        environment: {
-          type: "string",
-          title: "Target environment",
-          enum: ["staging", "production"],
-        },
-        confirm: { type: "boolean", title: "I understand this ships live traffic" },
-      },
-      required: ["environment", "confirm"],
-    },
-  });
+## Which clients can even hear the request
 
-  if (result.action !== "accept" || !result.content.confirm) {
-    return { content: [{ type: "text", text: "Promotion cancelled." }] };
-  }
-  await deploy(service, result.content.environment);
-  return { content: [{ type: "text", text: `Promoted ${service} to ${result.content.environment}.` }] };
-}
-```
+Everything above works exactly as described, on a client that declares it can hear the request. That is the clause from earlier, now due. A client tells a server what it supports in its **capabilities** object, and elicitation is one of the things it is allowed to leave out. The spec's server requirements say plainly what that means for you: "Servers MUST NOT send an inputRequests that the client has not declared support for in its capabilities. For example, if a client does not declare support for elicitation, the server MUST NOT include any elicitation/create requests in the inputRequests field." That is a hard "must not" the server has to obey; it does not get to weigh the situation and try anyway. **On a client like that, the gate cannot even be sent.**
 
-Notice what moved. The *environment is not a tool argument* - the model never names it. The human picks it from a constrained enum at the moment of action. So a model that read "ship it" and assumed production can't quietly assume production; the choice is wrested back to the person every time, and the schema guarantees the answer is one of two valid values, not a free-text guess. This is the underrated half of elicitation: it doesn't just gate the dangerous call, it lets you *relocate the dangerous decision* out of the model's hands and into a typed form the human fills.
+For this piece's running example, three shapes of client cover the space: one that declares both the plain form and the newer URL flavor of elicitation, one that declares the form only, and one that declares nothing about elicitation at all - no key for it in its capabilities, period. The first two can be asked. The third cannot be asked, ever, no matter how carefully the handler is written. "Every compliant client" was never true. **"Every client that opted in" is - and the whole question left standing is what the handler does for the ones that did not.**
 
-## Why this beats a UI dialog: it travels
+## The toy trace: same delete, three clients, two handlers
 
-The dialog approach guards a single client. This approach guards the *operation*. Wire the same server into a terminal agent, a web playground, a [headless](/foundations/headless/) automation - each one inherits the gate, because the pause originates server-side and every compliant client must surface elicitation to fulfill the call. The confirmation is now a property of `delete_customer`, not of whatever happened to be on screen.
+Run the same `delete_customer(id="acct_9931")` against all three client shapes, twice: once through the naive handler from earlier (no capability check, an unconditional `elicitInput`) and once through a closed-door version that checks the capability first and refuses outright when it is missing. Fix the human's answer the same way throughout - accept, correct id typed back - so the only thing varying across the table is what the *client* declared, never what the person decided.
 
-That's the context-engineering move underneath the mechanic. The agent is fast and broad and will happily execute any well-formed call; what it lacks is your knowledge that *this specific operation is irreversible and worth a heartbeat of human attention.* You can't keep that knowledge in the chat UI, because the chat UI is one of many ways the agent reaches the capability. You encode it once, at the capability, and it becomes context that no client can lose in translation.
+Compute the naive handler's outcome first, the obvious way. For a client that declared the capability, the server sends the request, the human answers, the delete happens as designed: confirmed. For the client that declared nothing, the server is forbidden from sending the request, so there is no human answer to read. And because the naive handler has no separate branch for that case, nothing tells it to stop. The code falls through past the elicitation call and reaches `db.customers.delete` anyway. **Unconfirmed.** That is what "no capability check" means in code: no path exists to catch it.
+
+| Client declares | Server may send elicitation? | Naive handler: customer deleted? | Closed-door handler: customer deleted? | Same outcome? |
+|---|---|---|---|---|
+| form + url | Yes | True (confirmed) | True (confirmed) | Yes |
+| form only | Yes | True (confirmed) | True (confirmed) | Yes |
+| nothing | No (spec forbids sending it) | True (unconfirmed - the bug) | False (refused - the fix) | No |
+
+Two of three rows never needed a fix: the human's real answer governed, because the client could be asked and was. The third row is where the naive handler quietly deletes an unconfirmed customer record, and where the closed-door handler - the capability check from the self-test above, now written down - refuses instead. **The fix touches exactly one row of a three-row table: the row where asking was never on the table.**
+
+## Name the trick: refuse over run
+
+Look at what is missing from that table: `destructiveHint`. Its value never enters the outcome anywhere, and that is by construction: the capability check reads only what the client declared, never an annotation. The annotation tells a client how careful to be with a tool it is *able* to ask about. The capability check governs what happens when asking is off the table entirely. Two separate axes, and this trace holds the annotation fixed on purpose.
+
+Call the fix **refuse over run**. It isn't a new protocol feature - MRTR and the capability clause, both dated 2026-07-28, were already load-bearing. It is the recognition that annotations plus elicitation do not erase this exposure; they narrow it to exactly one binary decision a handler author has to make on purpose. When the capability is absent, does the code refuse, or does it run? Left unwritten, the decision still gets made, and it gets made for run, because running is what happens when nobody wrote the branch for the alternative. **The trick costs one `if` statement. What it buys is turning an accidental fallthrough into a decision somebody actually made.**
 
 ## What this is not
 
-This is not a substitute for real authorization. Elicitation asks a human *who is already trusted*; it does not verify identity, scope a token, or replace [permissions](/foundations/permissions/) boundaries on the server. A headless runner with no human attached can only ever receive `cancel` - which is the correct, safe default, but it means destructive paths simply won't complete unattended. Decide deliberately whether that's a feature (no silent deletes in CI) or a blocker (you need a service path that bypasses the gate with audited credentials).
+**Elicitation asks a human who is already trusted.** It does not verify identity, scope a token, or replace [permissions](/foundations/permissions/) boundaries on the server. A headless runner with no human attached can only ever receive `cancel` - the safe default, but it means destructive paths will not complete unattended. Decide deliberately whether that is a feature (no silent deletes in CI) or a blocker (you need an audited service path around the gate).
 
-It's also not a secret collector - and this is the one boundary the spec draws as a hard line, not a suggestion. Form-mode elicitation **MUST NOT** request passwords, API keys, access tokens, or payment credentials. The form data passes through the client and the model's context, so anything you collect that way is exposed to logging and to the LLM itself. The right tool for credentials is the newer **URL-mode** elicitation, where the server hands the client a URL, the user enters the secret on a trusted page out of band, and nothing sensitive ever crosses the model's path. The confirm-by-typing pattern is fine because an account id is not a credential - but the instinct to "just ask the user for the token mid-call" is exactly the misuse the spec forbids. If your gate needs a secret to proceed, it's an auth flow, not an elicitation.
+**Form mode is the wrong place for a secret, by rule.** It must not request passwords, API keys, tokens, or payment credentials, because form data passes through the client and the model's own context. The tool for a credential is **URL mode**, introduced 2025-11-25: the server hands the client a URL, the person enters the secret on a trusted page out of band, and nothing sensitive crosses the model's path. That flow carries its own documented risk, handed forward at the end rather than solved here: the spec's own security section describes a phishing vector where an attacker tricks a second person into completing someone else's authorization.
 
-It's also not a deterministic [hook](/foundations/hooks/) in the harness sense - a hook fires on the *client's* tool lifecycle and can hard-block before a call ever leaves the agent. Elicitation is the server's complement: when you don't control every client's hooks, you push the checkpoint inward so it can't be skipped. Use both when you can. Use elicitation when you can't trust the client to bring its own.
+**A hook fires earlier and harder than elicitation ever can.** A [hook](/foundations/hooks/) runs on the *client's* tool lifecycle and can hard-block before a call ever leaves the agent. Elicitation is the server's complement, for the clients you do not control: it pushes the checkpoint inward so it cannot be skipped from the outside. Use both when you can. Use elicitation when you cannot trust the client to bring its own.
 
-The cheapest delete is the one that never asked. Make your tools ask - from the inside, where no client can talk them out of it.
+**The client list moves; the clause is the thing to check.** As of this piece's fact check, 2026-08-16: Claude's connector directory and OpenAI's Apps SDK read the annotations; Cursor's own MCP documentation lists elicitation as supported; GitHub's engineering blog names Copilot in Visual Studio Code while warning, in its own words, that "Elicitation is not supported by all AI application hosts." That list will date, the way every client list dates. The way to know about *your* client is to look at what it declares in its capabilities object, because that is the object the spec's clause reads.
+
+**One line from the top needed a correction, and it deserves restating plainly.** The gate travels automatically to every client that declares the elicitation capability. For the rest, nothing travels until the refuse-over-run branch is written on purpose; without it, they inherit whatever the naive handler does by accident.
+
+**One number got cut rather than repeated.** An earlier version of this argument carried a rejection-rate percentage for missing annotations. It could not be verified against the source it was attributed to, so it is gone. What is verifiable stands above: Claude's directory requires the annotation, and OpenAI names its absence a common cause of rejection. **Six notes, and only one of them is new - the capability clause. The rest were true before this piece existed.**
+
+## The table, closed
+
+| Client declares | Server may send elicitation? | Naive handler: customer deleted? | Closed-door handler: customer deleted? | Same outcome? |
+|---|---|---|---|---|
+| form + url | Yes | True (confirmed) | True (confirmed) | Yes |
+| form only | Yes | True (confirmed) | True (confirmed) | Yes |
+| nothing | No (spec forbids sending it) | False, once the fix is in | False (refused) | Yes, with the fix |
+
+Row by row. The first two rows are the argument working: annotate, elicit, confirm, delete. The human's answer governs and the two handler policies agree, exactly as they should. The third row is the argument earning its keep: same annotation, same schema, same handler author, and the only difference is one `if` statement that refuses on purpose. With that row closed, the gate holds for every client shape in the table - and the dialog you started with, the one back in the chat window, turns out to have never had a third row at all. It only ever knew about the one client it was written for.
+
+What this piece did not build is a defense for the flow credentials actually travel through. URL mode moves the secret out of band precisely so it never crosses the model's path, and the spec's own security notes flag a real attack on that out-of-band step, not a hypothetical one. **This piece gated one destructive call with a typed-back id. It did not defend the door the secrets go through, and that door is still open.**
 
 ---
 
-For the per-tool mechanics, see [MCP servers](/foundations/mcp-servers/); for how confirmation fits the broader guardrail model, [Permissions](/foundations/permissions/); and for client-side deterministic gates, [Hooks](/foundations/hooks/).
+**About the numbers.** This piece has no arithmetic to check; its spine is a protocol clause, so every dated claim above is quoted and sourced rather than computed. The 2025-06-18 introduction of elicitation, the 2025-11-25 introduction of URL mode, and the 2026-07-28 MRTR rewrite with its capability-declaration clause are quoted verbatim from the live MCP specification, fetched and checked 2026-08-16. The `destructiveHint` defaults and the "hints are untrusted" note come from the spec's own schema, same date. The SDK's split into two 2.0.0 packages is dated 2026-07-27 from the npm registry and the SDK's README. Claude's and OpenAI's directory requirements are quoted from their current submission pages, and Cursor's and GitHub's client-support statements from their own documentation; those pages are undated, fetched 2026-08-16. The toy trace's outcome table is a truth table computed from the spec's stated rule and a fixed human answer (accept, correct id), checked against an independent script before publishing. One number this piece deliberately does not use: a rejection-rate percentage an earlier draft carried, dropped after it could not be verified against its cited source.
+
+Where the neighbors sit: [Type your tool boundaries](/blog/type-your-tool-boundaries/) checks what a call returns, the stage after the one gated here; [The server is the trust boundary](/blog/the-server-is-the-trust-boundary/) keeps credentials server-side, a secrecy concern where this is a consent concern; [The confused deputy server](/blog/the-confused-deputy-server/) asks which system a server may act for, where this asks whether a human signs the call. For the primitives, see [MCP servers](/foundations/mcp-servers/), [Permissions](/foundations/permissions/), and [Hooks](/foundations/hooks/).

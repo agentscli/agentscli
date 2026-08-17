@@ -1,169 +1,147 @@
 ---
-title: "A Skill That Writes Your Skills"
-description: "Your debugging ability isn't intelligence, it's a procedure - and procedures are exactly what you write down once and hand to an agent. Start with a meta-skill."
+title: "A 5-skill library already has 2 confusable pairs. At 100 skills, that's 990."
+description: "Progressive disclosure keeps a skill library's index cost linear. The number of skill pairs an agent can confuse grows with the square of the library size - and nothing about a growing index tells you that's happening."
+seoTitle: "Claude Code Skills: Why a Growing Library Gets Harder to Pick From"
+seoDescription: "A skill library's token cost grows in a straight line. The number of skill pairs an agent can confuse grows quadratically. Here's the arithmetic."
 authors: sanjay
 date: 2026-05-29
 tags: [context-engineering, skills, slash-commands, workflow]
 draft: false
 ---
 
-Watch a senior engineer crack a gnarly bug and you'll swear you're watching talent. The flaky integration test, green nine times, red the tenth. She doesn't flail. She bisects the suite to isolate the offender, checks whether it shares a fixture with its neighbor, greps for shared mutable state, pins the system clock, runs it a hundred times in a loop, and inside ten minutes she's holding the root cause: a test that leaks a global and only fails when the scheduler interleaves it with another.
+You already know the moves. Write a procedure down as a [skill](/foundations/skills/) instead of re-deriving it every time. Build one **meta-skill** - a skill whose only job is writing other skills - that interviews you the moment you solve something hard and generates the next skill for you, so the library grows without thirty afternoons of manual writing. And trust **progressive disclosure** to keep the whole thing cheap: only the name and a one-line description sit in context all the time, the full procedure loads when a skill actually fires.
 
-That looked like intuition. It wasn't. It was a **procedure** - a specific, ordered sequence of moves she's run a hundred times until it went subconscious. And here's the part that should bother you: next week a teammate hits the same class of flake and starts from zero. The fix got committed. The method walked out of the room in her head.
+That third piece is why nobody worries about library size. Add a skill, the index grows by one line. Add the thirty-first, the thirty-second, doesn't matter - the always-on cost is flat per skill, forever. That reassurance is correct as far as it goes. It just doesn't go as far as choosing correctly does.
 
-That's the real loss. Not the bug - the **method**. The fix is worth nothing the second time; the method is worth everything every time. And almost nobody writes methods down.
+Here's what that reassurance quietly skips. **Cheap to hold in context is not the same claim as easy to pick correctly.** A library that looks equally disciplined at 5 skills and at 100 skills is not equally easy to choose from at those two sizes, and the gap between "looks fine" and "is fine" grows faster than the library does. Grow a skill library 20x - 5 skills to 100 - and its index cost grows **20x** right along with it, exactly as advertised. The number of skill *pairs* whose triggers could be confused for each other grows **495x** over that same jump. Token cost and confusion cost are not the same curve, and progressive disclosure only ever promised to flatten the first one.
 
-## Senior judgment is mostly procedure wearing a disguise
+## Check whether your library already has this
 
-The consensus says expert judgment is ineffable - you either have the instinct or you don't, and the only way to transfer it is years of osmosis. That's half true. Taste is hard to transfer. But most of what we call senior judgment isn't taste. It's a **decision procedure**: when you see X, check Y before Z, and never skip the assumption-check at the start. That part is fully externalizable. You can write it down. You can hand it to a junior. And you can hand it to an agent.
+Pull up your skills directory - `.claude/skills/`, or wherever your team keeps it. List every `description` line, side by side, no bodies. Now ask, for each pair you can see doing similar-sounding work: **could one real prompt from a real user plausibly fire either one?** Judge each pair against a prompt that carries none of your own intent behind it - just the words a tired teammate would actually type.
 
-This is the exact shape of the gap this whole site is about. An AI coding agent is **broad and contextless** - it knows a thousand debugging tactics in the abstract and has no idea which three your team reaches for, in what order, with what tripwires. You are **narrow and deep** - you know the order, the tripwires, the one fixture that leaks. The agent has the breadth; you have the procedure. [Skills](/foundations/skills/) are how you give the agent your procedure.
+**Under five skills, or every description reads as obviously distinct even side by side: close the tab.** You don't have this yet. The arithmetic below is real, but at that size it's a rounding error, not a risk.
 
-A skill is a named, invokable bundle of instructions - a procedure the agent loads on demand. Not a paragraph buried in a config file it half-remembers. A discrete unit it reaches for when the trigger fires. The flaky-test hunt above is a perfect candidate. So is "cut a release," "review this for our security rules," "triage a prod incident." Each is an afternoon of hard-won sequence you currently re-derive every time.
+Five or more skills, and you can already name a pair that gave you pause: keep reading. **The rest of this post puts a number on exactly how fast that pause turns into a real cost, and why it keeps getting worse even as your team gets more disciplined about writing descriptions.**
 
-## Write one skill by hand, so you know the shape
+## The gap progressive disclosure never promised to close
 
-Before automating anything, encode the procedure once manually. Here's the flaky-test hunt as a skill, in the house format:
+Anthropic's engineering post on the format, [Equipping agents for the real world with Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) (2025-10), establishes the mechanism: a skill's metadata - its name and `description` - is always loaded into the system prompt, while the body loads only when the skill fires. Their [skills documentation](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) puts the number on it: metadata costs **about 100 tokens per skill, every time, no matter the library size**, and their authoring guidance keeps the body under 500 lines. That's the whole progressive-disclosure pitch in one fact. A library of 5 skills costs 500 tokens to hold in the index. A library of 100 costs 10,000. Twenty times the library, twenty times the index. Flat, linear, exactly as promised.
 
-```markdown
----
-name: hunt-flaky-test
-description: >
-  Isolate and root-cause a non-deterministic test failure.
-  Use when a test passes locally but fails in CI, or fails
-  intermittently with no code change. Do NOT use for a test
-  that fails every run - that's a normal bug.
----
+But "always loaded" and "correctly chosen from" are different claims about the same 100 tokens. The description is cheap, and it's also the *only* signal the agent gets at the moment it decides which skill to reach for - every other qualifying detail a human author put in the body, the steps, the tripwires, sits invisible until after the pick is already made. So the question a growing library actually raises has nothing to do with affording more descriptions. It's whether any two of those descriptions, read side by side with no body to fall back on, could plausibly describe the same incoming request. That question has nothing to do with token cost, and everything to do with how many *pairs* of skills exist - a different kind of arithmetic than a per-skill count, and one the 100-token figure never touches.
 
-# Hunting a flaky test
+**A library's cost to hold is linear in the number of skills. Its cost to choose from correctly is a question about pairs, and pairs is a different shape of number entirely.**
 
-## Step 0 - interrogate the assumption
-Before touching anything, confirm the test is actually flaky:
-re-run it 20x in a loop. If it fails every time, STOP - this
-is a deterministic bug, not a flake. Say so and exit.
+## The toy: five skills, ten pairs, two collisions
 
-## Steps
-1. Bisect the suite to find if the flake only appears when run
-   alongside a neighbor (shared fixture or global state).
-2. Grep the test and its fixtures for shared mutable state:
-   module-level vars, singletons, env writes, temp files.
-3. Pin all non-determinism: clock, RNG seed, timezone, locale.
-4. Run the isolated test 100x. Reproduce the failure in
-   isolation before proposing any fix.
-5. Only once reproduced: propose the minimal fix and re-run 100x
-   to confirm green.
+Take a real-looking small library - one platform team's, five skills, real trigger descriptions:
 
-## Inputs needed
-- The failing test's path
-- CI logs showing the intermittent failures (if available)
-```
+| Skill | Description |
+|---|---|
+| `hunt-flaky-test` | A test passes locally but fails in CI, or fails intermittently with no code change. |
+| `cut-release` | Cutting a new version: tagging, changelog, publish. |
+| `security-review` | Reviewing a diff or PR against our security rules before merge. |
+| `triage-incident` | Prod is down or degraded; need the diagnostic order and rollback steps. |
+| `rotate-secrets` | A credential or API key leaked or is expiring and needs rotation. |
 
-Two things make this load-bearing, and most hand-written procedures skip both.
+Five skills. List every unordered pair of them and you get ten: `hunt-flaky-test`/`cut-release`, `hunt-flaky-test`/`security-review`, and so on through all five names taken two at a time. Ten is small enough to check by hand, so do it the obvious way: read each pair of descriptions and ask whether one real prompt could plausibly fire either.
 
-**Step 0 is an assumption-interrogation gate.** The agent's first instinct is to start fixing. A senior's first move is to verify the problem is the problem you think it is. Encoding "before you touch anything, prove this is actually a flake" is the single highest-leverage line in the file - it stops the broad-but-eager agent from confidently solving the wrong problem.
+Eight of the ten pairs are clearly distinct - nobody confuses "rotate a leaked credential" with "review this diff." But two aren't. `hunt-flaky-test` and `triage-incident` both lean on "intermittent" failure language; a prompt like "tests are randomly red in CI, is this an incident?" reads as either one. And `cut-release` and `rotate-secrets` overlap in practice, not just in wording: rotating a leaked key commonly ships as a step inside a release, so "rotate the key and cut a release" plausibly triggers either description first.
 
-**The `description` is the trigger, written for a reader who hasn't loaded the body.** It says exactly when to reach for this - and, just as important, when *not* to. That precision is what makes the skill fire at the right moment instead of never.
+**Exactness stamp: this is a plain-English judgment made against the actual text of the five descriptions above, not a model's guess and not an estimate.** Anyone can re-run it in under a minute - read the same ten pairs, ask the same question, get the same two answers.
 
-## Now the move that scales it: a skill that writes skills
+Remember that number: every later row in this post runs it out to a bigger library, at the same rate, with no new assumption added. **2 of this 5-skill library's 10 pairs already blur into each other - a 20% pairwise collision rate, from a library that looks fine skill by skill.**
 
-Writing one skill is fine. Writing thirty by hand is how a good idea dies on contact with a busy week. So don't. Build one **meta-skill** - a skill-authoring skill - and let it manufacture the rest.
+## The birthday tax
 
-The skill-authoring skill does one thing: it interviews you about a procedure you just ran the hard way, then emits a correctly-formatted skill file. You invoke it the moment you finish solving something nasty, while the sequence is still hot in your head.
+There's a name for what just happened, and it's the same math behind a fact you've probably heard before: put 23 people in a room and there's better than even odds two of them share a birthday, despite 365 days to pick from. Nobody's birthday got more likely. There are just more pairs of people than there are people.
 
-Get the obvious objection out of the way first, because Anthropic's own skill best-practices doc says it in as many words: you do *not* need a "writing skills" skill to teach the agent the file format. The model already understands the `SKILL.md` shape natively - ask it to write one and it will produce well-structured YAML and a sensible body without help. So if format were the point, the meta-skill would be redundant. Format isn't the point. The meta-skill earns its keep on the two things the model *doesn't* know: your **house conventions** - the Step 0 assumption-gate, the trigger / anti-trigger discipline, kebab-case verb naming, routing the file into the right directory - and your **timing**, capturing the procedure at the one moment it's cheapest to extract, right after you solved something the hard way. That's the gap exactly: the agent has the format; you have the conventions and the moment. The meta-skill is how you hand it both.
+Call this the **birthday tax**: the cost, in confusable pairs, of adding one more skill to a library where every existing skill can now be paired with it. Quality has nothing to do with it - the toy library above has five perfectly reasonable descriptions, written by someone who clearly thought about triggers, and it still produced two collisions. The tax runs purely on the count of pairs among *N* things, which is *N* × (*N* − 1) ÷ 2, a number that grows with the square of *N*, not with *N* itself.
 
-This isn't a novel trick, either. Anthropic ships a real meta-skill, `skill-creator`, that creates, improves, and measures skills - and its process mirrors the example below almost step for step: capture intent, write the `SKILL.md`, spin up two or three eval cases, run the skill against a baseline in parallel, iterate, and tune the description until it triggers reliably. We're claiming the lineage, not inventing it.
+That's the whole mechanism. A 5-skill library has 10 pairs. Double the library to 10 skills and you don't get 20 pairs, you get 45 - because every one of the 5 new skills can now collide with every one of the 5 old ones, not just with each other. The index cost of that same jump doubles, exactly as expected. **The pair count more than quadruples.**
 
-```markdown
----
-name: author-skill
-description: >
-  Capture a procedure you just performed as a new reusable skill.
-  Use right after solving a non-trivial task you'll face again.
-  Interviews for trigger, steps, and inputs, then writes a new
-  skill file in the house format.
----
+**Nobody's description got worse. There are just more pairs, and the tax is charged on pairs, not on skills.**
 
-# Authoring a new skill
+## The table that runs the rate out to a hundred skills
 
-Interview the user, one question at a time. Do not write the
-file until all five are answered.
+Hold the 20% rate from the five-skill toy fixed - the same rate the hand check above found, applied at every size, no new assumption - and run it out:
 
-1. **Trigger** - what situation should make an agent reach for
-   this? Get the negative case too: when should it NOT fire?
-2. **Assumption to interrogate** - what does a novice wrongly
-   assume here that wastes an afternoon? This becomes Step 0.
-3. **Steps** - the ordered sequence. Push for the *order* and
-   the tripwires, not just the actions.
-4. **Inputs** - what must the agent be handed to start?
-5. **Name** - a short kebab-case verb phrase.
+| N | Index tokens | Pairs C(N,2) | Expected collisions | Avg confusable partners/skill |
+|---:|---:|---:|---:|---:|
+| 5 | 500 | 10 | 2.0 | 0.80 |
+| 10 | 1,000 | 45 | 9.0 | 1.80 |
+| 15 | 1,500 | 105 | 21.0 | 2.80 |
+| 17 (anthropics/skills, real) | 1,700 | 136 | 27.2 | 3.20 |
+| 20 | 2,000 | 190 | 38.0 | 3.80 |
+| 30 | 3,000 | 435 | 87.0 | 5.80 |
+| 50 | 5,000 | 1,225 | 245.0 | 9.80 |
+| 100 | 10,000 | 4,950 | 990.0 | 19.80 |
 
-Then write the skill file - `.<agent>/skills/<name>/SKILL.md`,
-which in Claude Code resolves to `.claude/skills/<name>/SKILL.md`
-for a project or `~/.claude/skills/` for one you want everywhere -
-with:
-- YAML frontmatter: `name`, and a `description` that states
-  both when to use AND when not to use it.
-- A `## Step 0` assumption-interrogation gate.
-- Numbered steps preserving order and tripwires.
-- An `## Inputs needed` section.
+Read the first and fourth columns as the whole argument. Index tokens climb in a dead straight line - 500, 1,000, 1,500, 2,000, doubling only when the library doubles. Expected collisions climb away from it: 2, 9, 21, 38, 87, 245, 990. By the time the library hits 30 skills - six times the toy's size - the hand-checked rate predicts 87.0 expected colliding pairs, an exact arithmetic match to the 20% found by hand at 5, not a new number invented for the jump. At 100 skills the index still costs a trivial 10,000 tokens, while the last column climbs to **just under 20 confusable partners per skill** - meaning a typical skill in that library shares a plausible trigger with roughly one in five of its neighbors.
 
-Keep the frontmatter description tight - house rule, ~40 words.
-(The platform's hard cap is 1024 characters; the name is
-lowercase/numbers/hyphens, max 64. ~40 words is *our* discipline,
-well under the ceiling.) Push detail DOWN into the body. The
-body is read only when the skill runs.
-```
+Anthropic's own public skills repository is a real anchor, not a hypothetical one: as of this writing it ships 17 top-level skill categories. Run this toy's rate at that real size and the table's formula gives 136 pairs and **27.2 expected collisions** - a double-digit number, at a library size plenty of teams already have or will hit within a year, and one no amount of staring at any single description would surface.
 
-Notice what just happened. The tacit knowledge in a senior's head - the order, the tripwires, the "check this first" - gets pulled out by an interview and frozen into a file, in one command, at the one moment it's easiest to extract: right after the win. The afternoon you spent root-causing becomes a capability anyone on the team - or any agent - invokes by name.
+**The index tokens column and the expected-collisions column are not the same curve, and nothing about the first one warns you when the second one has quietly outgrown it.**
 
-## Progressive disclosure is what keeps a fat library cheap
+## Tightening the descriptions, and what it costs
 
-Here's the objection, and it's a good one: if you encode thirty procedures, don't you bloat the agent's context window with thirty walls of text on every turn? If skills cost context, a growing library taxes every interaction - the cure becomes the disease.
-
-This is exactly why the format discloses itself in layers, and why the meta-skill enforces the discipline. The mechanic is **progressive disclosure**, and it's officially *three* levels, not two:
-
-- The **metadata** - name plus `description`, around a hundred tokens - is *always loaded*. It's the index entry. The agent reads thirty one-line descriptions to know what's available. Cheap.
-- The **body** - the full procedure, the steps, the tripwires - is *loaded only when the skill is invoked*. Anthropic's own guidance is to keep the body under 500 lines - call it 5k tokens. Until the trigger fires, it costs nothing.
-- **Bundled scripts and resources** - a validator, a reference file, a generator - sit alongside the skill and load or *execute* on demand. A 200-line linting script costs zero context until the procedure calls it, and even then only its output lands in the window, not its source.
-
-So adding the thirty-first skill grows the always-on index by one line and the on-demand cost by zero. The library scales without taxing every turn. That's the whole trick, and it's why the meta-skill's instruction "keep the description short, push detail down into the body" isn't style - it's the load-bearing economics. A skill with a 300-word description that should've been a 30-word index entry quietly poisons the budget the library was supposed to protect.
-
-That third level is the sharpest form of the thesis: a skill can ship a 200-line validator and still cost nothing to *index*, because the agent reads the script's result, never the script. Breadth in the index, depth on demand, and the heaviest depth pushed all the way out to a file that only runs when the moment arrives.
-
-This is also where the agent's contextless breadth stops being a liability. The agent doesn't need to *hold* your thirty procedures in working memory. It needs a cheap index it can always see, and the deep procedure delivered exactly when the matching situation arrives.
-
-## The cost progressive disclosure doesn't pay
-
-Cheap to index is not the same as easy to choose. Progressive disclosure solves the *token* cost of a fat library; it does nothing for the *selection* cost. Thirty one-line descriptions load cheaply, but they're also thirty things the agent has to discriminate between on every turn - and that description is the *only* signal it gets at the moment it chooses. The body, the steps, the tripwires sit on disk, invisible until after the pick is made. So the real failure mode of a growing library isn't a blown context budget. It's the agent firing `hunt-flaky-test` on a test that fails every single run, or reaching for `cut-release` when you asked it to tag a hotfix, because two descriptions blurred into one in the index.
-
-This is why the meta-skill spends a whole interview question on the trigger *and* its negative case. A description that says only what a skill does, never when to skip it, is the one that mis-fires once the library gets crowded. The forty words that keep a skill cheap to index are the same forty words that keep it accurate to pick - one line of text doing double duty, and the reason "tighten the description" is the highest-leverage edit in the file.
-
-## The rules pointer: telling the agent which skill to reach for
-
-The descriptions get you most of the way there. You can make selection deterministic with one line in your [rules file](/foundations/rules/) - the `AGENTS.md` or `CLAUDE.md` that's always in context - mapping problem classes to skills:
+The fix follows straight from the toy: go back to the two colliding pairs and narrow what makes them collide. Take `hunt-flaky-test` and `triage-incident`, before and after:
 
 ```markdown
-## Reaching for skills
-- Intermittent / CI-only test failure → use the `hunt-flaky-test` skill.
-- Cutting a release → use the `cut-release` skill.
-- Reviewing for security → use the `security-review` skill.
-- Just solved something non-trivial you'll hit again →
-  use the `author-skill` skill to capture it.
+# before - the pair the toy flagged as ambiguous
+hunt-flaky-test:  "A test passes locally but fails in CI, or fails
+                    intermittently with no code change."
+triage-incident:  "Prod is down or degraded; need the diagnostic
+                    order and rollback steps."
+
+# after - an explicit anti-trigger added to each side
+hunt-flaky-test:  "A test passes locally but fails in CI, or fails
+                    intermittently with no code change. Do NOT use
+                    for a live production incident - that's
+                    triage-incident."
+triage-incident:  "Prod is down or degraded and needs the diagnostic
+                    order and rollback steps. Do NOT use for a
+                    single failing test with no production impact -
+                    that's hunt-flaky-test."
 ```
 
-That last line is the flywheel made explicit. The rules file doesn't just route to existing skills - it routes to the skill that *creates* skills. The library is instructed to grow itself.
+**An anti-trigger is the explicit "do NOT use for X" clause a description adds to name a neighbor's territory and rule itself out of it.** Read the revised pair side by side and the collision the hand check found is gone; the prompt that used to plausibly match either one now has exactly one reading. `cut-release` and `rotate-secrets` take the same treatment: `cut-release` adds "does NOT include rotating credentials, even during a release," `rotate-secrets` adds "does NOT include the rest of the release process." One line added per skill, four lines total, and the toy's 10-pair, 2-collision library becomes a **10-pair, 0-collision** one.
 
-If you'd rather pull than have the agent push, wire the same procedures as [slash commands](/foundations/slash-commands/) - `/hunt-flaky-test`, `/author-skill` - so a human invokes them by name on demand. Skills are what the agent autonomously reaches for; slash commands are the same procedures with a human finger on the trigger. Most teams want both: the agent self-serves from the library when it recognizes the situation, and you fire a command directly when you already know which procedure you need.
+This is also where the meta-skill from the opening earns its keep, and it is worth being plain about where it comes from: Anthropic ships one themselves (`skill-creator`, in their public `anthropics/skills` repo), community-maintained skill-writing skills are common, and this piece claims the lineage rather than the invention. What they all share is an interview that asks for a trigger *and* its negative case: what should make an agent reach for this, and just as important, when should it NOT fire. Point that same question at an existing library after the fact, one colliding pair at a time, and the edit stays targeted: a patch to the handful of descriptions the pair check actually flagged, not a rewrite of the whole library. If your problem runs the other way - nobody on the team knows the procedure yet, and the agent has to go find out - that is a different job, and it belongs to [Commission the skill, don't write it](/blog/commission-the-skill-dont-write-it/).
 
-## The next time you solve something the hard way
+**The fix isn't a new tool. It's the same trigger-and-negative-case discipline the meta-skill already asks for, aimed at the pairs the count just told you to check.**
 
-Stop treating your debugging sessions as one-offs. The fix you commit is the cheap half of the work. The method you used - the order, the assumption you checked first, the tripwire you knew to avoid - is the asset, and right now it evaporates the moment you close the terminal.
+## The rate is a toy, and it's supposed to be pessimistic
 
-The discipline is small and it compounds. Encode procedures as skills. Let progressive disclosure keep the library free to grow - index always on, bodies on demand. Bootstrap the whole thing with one skill that writes the others by interviewing you while the win is still warm. Point your rules file at the library so the agent reaches for the right procedure, and at the meta-skill so the library keeps filling itself.
+Be honest about what the 20% figure actually is: **a rate hand-checked against one invented five-skill library**, held flat at every later size in the table above. It is not a measurement of any real team's library, and a sharp reader should ask the obvious question - wouldn't the rate fall as a team gets *more* disciplined about writing descriptions while the library grows, rather than staying fixed?
 
-The gap between your broad, contextless agent and your deep, narrow team closes one procedure at a time. So the next time you crack something hard, don't just fix it. Capture it. Turn your afternoon into a command - and never solve it from zero again.
+Yes, and that's the point of holding it fixed. The 20% is a deliberately pessimistic baseline, chosen to isolate what the combinatorics alone contribute once authoring discipline is held constant. A team that tightens every description as it adds skills can genuinely push the *rate* down below 20% - a careful team's real number could easily be 10%, or 5%. What discipline can't do is push down the *exponent*. The pair count still grows as *N* × (*N* − 1) ÷ 2 no matter how careful anyone is, because that shape comes from counting pairs, not from anyone's writing quality. A lower rate buys a smaller multiplier on the same climbing curve; at 100 skills, even a 5% rate still predicts **247.5 expected collisions** against an index that costs 10,000 flat tokens either way.
+
+It's also worth naming what tightening trigger descriptions does *not* cover: the sibling discipline of keeping each skill to exactly one job, so scope creep inside a single skill can't recreate the same blur from the inside. That is a different lever from the pairwise-collision fix argued here, and this piece doesn't cover it.
+
+**Discipline can shrink the multiplier on the curve. It can't change the curve's shape.**
+
+## The fix fights the platform's own advice
+
+There's a sharper objection than the one above, and this one doesn't fully resolve. Anthropic's own `skill-creator` guidance warns that Claude has a tendency to **under-trigger** skills - to not use them when they'd be useful. That failure mode - the agent *not* reaching for a skill that applies, rather than reaching for two at once - is the one their guidance is written to fight. Their stated fix is to write descriptions that are, in their own words, **a little bit "pushy"**: broader, more assertive about when a skill applies, so it fires when it should.
+
+That recommendation pulls directly against the fix this piece just argued for. Narrowing a description to kill a birthday-tax collision - adding the anti-trigger, tightening the boundary - is exactly the move that risks pushing a skill back toward under-firing on the legitimate cases it should still catch. This piece doesn't get to claim both wins. Tightening `hunt-flaky-test`'s trigger to exclude `triage-incident`'s territory is a real fix for the collision the toy found; it's also a real risk that the same skill now under-fires on some flaky-test prompt that used to trigger it correctly. That's a genuine **two-knob problem** - narrow enough not to collide, pushy enough not to under-fire - and this piece names it rather than resolves it.
+
+Keep the size of the problem honest too. Most teams will hit "the agent reached for the wrong skill" long before they hit a double-digit collision count from pure combinatorics - from plain under-specification, a vague trigger nobody sharpened, not from the birthday tax. The tax is the failure mode that shows up once the easy 80% is already right: the descriptions are individually reasonable, the library just has more pairs of them than it used to.
+
+**Tightening a description to stop a collision is the same move that risks making it under-fire. Nothing in this piece settles which side of that trade a given skill should land on.**
+
+## The line worth keeping
+
+Anthropic's own public skills repository sits at 17 top-level categories today. Run this toy's rate at that size and the table above already says **27.2 expected colliding pairs** - a library this common, today, already carrying a double-digit count of pairs an agent could mix up.
+
+The fix this piece argued for - tighten descriptions, enforce anti-triggers through the meta-skill's interview - runs straight into the honesty section above: Anthropic's own guidance says to write descriptions a little pushy, and pushy is the opposite direction from tight. So the reader who takes this post's fix seriously is left owning a genuine tuning problem with two knobs, not one: narrow enough that two skills stop colliding, pushy enough that neither one quietly stops firing. No single description setting solves that once a library crosses the size where collisions accumulate faster than skills do.
+
+There's a second kind of fix this piece never walked through, because rewording a description only ever buys back a multiplier, not the shape of the curve: **mechanically splitting a library** instead of relying on wording alone. Two tools already ship real versions of this today - subagent-scoped skill visibility, where a `skills:` field preloads only the subset a given subagent can see, and `permission.skill` rules that gate which skills are even visible to a given agent. Both cut the number of pairs a single agent has to choose among, which is the only lever that changes the exponent itself instead of the rate riding on top of it.
+
+**Hold the two curves in your head from here on: the index cost your library pays is linear, the pair count it has to keep distinct is quadratic, and progressive disclosure was built to solve only one of them.**
 
 ---
 
-For the per-tool mechanics, see [Skills](/foundations/skills/) for the file format and progressive disclosure, [Rules](/foundations/rules/) for routing the agent to the right procedure, and [Slash commands](/foundations/slash-commands/) for invoking procedures by hand.
+**About the numbers.** The 20% pairwise collision rate is a toy constant: hand-checked against one invented five-skill library built for this piece, declared as a deliberately pessimistic baseline, and held flat at every later library size in the master table - it is not a measurement of any real team's skill library. Every other number in the master table (index tokens, pair counts, expected collisions, average confusable partners per skill), plus the hypothetical 5% comparison in the honesty section, is arithmetic that follows directly from that rate plus the combinatorics of choosing 2 items from *N*, re-derived by an independent script before publishing. Progressive disclosure itself (metadata always in the system prompt, body loaded only on trigger) is documented in Anthropic's engineering post [Equipping agents for the real world with Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) (2025-10), checked 2026-08-16. The ~100-token metadata figure is from Anthropic's [Agent Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview), and the under-500-lines body guidance from their [skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices), both checked 2026-08-16. The finding that Claude tends to under-trigger skills, and the recommendation to make descriptions a little bit "pushy," come from Anthropic's own `skill-creator` skill in the `anthropics/skills` repository, checked 2026-08-16. The 17-category count for `anthropics/skills` is a live count of that repository's top-level skill directories, taken the same day.
+
+The general "write it down once" thesis behind skills at all belongs to [write-it-down-once](/blog/write-it-down-once/), applied there to the always-loaded rules file instead of an on-demand skill - the birthday tax only exists in the first place because skills are chosen, not injected. For the file format, the metadata/body split, and the per-tool skill-visibility mechanics mentioned above, see [Skills](/foundations/skills/); for routing the meta-skill by hand, see [Slash commands](/foundations/slash-commands/).

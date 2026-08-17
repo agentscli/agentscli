@@ -1,6 +1,8 @@
 ---
-title: "The Relay, Not the Window"
-description: "A million-token window won't fix a long build. Externalize state to a plan file and relay across fresh sessions - quality dies long before the window fills."
+title: "Leave auto-compact on through a 3-phase build and your Phase 1 decisions have a 1-in-4 chance of surviving it"
+description: "Auto-compact looks like memory because the session keeps running. Each pass is a lossy summary, and the loss compounds: two passes leave a Phase 1 decision a 25% chance of still being known. A plan-file relay holds 100% at any phase count."
+seoTitle: "Long AI Coding Builds: Plan File Relay Instead of One Session"
+seoDescription: "Two auto-compact passes leave a Phase 1 decision a 25% chance of surviving a 3-phase build. Write decisions to a plan file and the odds stay 100%."
 authors: sanjay
 date: 2026-05-29
 tags: [context-engineering, plan-mode, rules, workflow]
@@ -10,147 +12,177 @@ draft: false
 import SessionXray from '../../../components/interactive/SessionXray.tsx';
 import '../../../styles/widget-standalone.css';
 
-An hour into a big feature, your agent goes senile.
+An hour into a big feature, your agent starts contradicting itself. It re-adds a helper it deleted this morning. It annotates a function with `any` after a morning of being strict about types. You ask it to wire up the endpoint and it asks, politely, where the router lives. The router it edited three times. The session is still running. Nothing crashed, no limit was hit, and the model you trusted at 9am is guessing by 11.
 
-It re-adds a helper it deleted twenty minutes ago. It annotates a function with `any` after spending the morning being strict about types. You ask it to wire up the new endpoint and it asks, politely, where the router lives - the router it edited three times already. The window isn't full. The work isn't done. And the model you trusted at 9am is now guessing.
+Two instincts fire next, and both aim at the wrong thing. Blame the model. Or buy a bigger window. The thing that actually broke is quieter: somewhere between the first hour and the third, the agent lost track of what it had already decided, and the tool most agents reach for at that point, **auto-compact**, quietly makes the loss worse the longer the build runs.
 
-The instinct is to blame the model, or to reach for a bigger context window. Both are wrong. The thing that broke isn't intelligence. It's *position*.
+Here is the claim this piece derives, and you can check every step of it with a pencil. Take a build that runs three phases in one session with auto-compact left on. A decision you made in Phase 1 has, at best, a **25% chance of still being known** by the time Phase 3 ends. Nobody told the agent to forget it. Two rounds of "keep half, drop half" do that on their own, and "at best" is doing real work in that sentence, because the arithmetic below uses the friendliest possible numbers for compaction. Now write the same decision into a plan file and run each phase in a fresh session that reads the file. The odds never move off 100%, for any number of phases. **The gap between those two numbers is the whole post.**
 
-## Capability is highest early, and you're spending it on nothing
+## Check whether you already have this
 
-Here's the part the spec sheets don't advertise. A model's ability to reason over its context isn't flat across the window. It's sharpest in the first stretch - when the context is short, clean, and every token is signal. As the window fills, attention spreads thinner, earlier facts get crowded by later noise, and the model starts pattern-matching instead of reasoning. By the time you're deep into a long session, you're running the same model at a fraction of the quality it had when you started.
+Before any arithmetic, one minute on your own session settles whether the rest of this is worth your time.
 
-The exact shape of that curve is model-specific and not something to quote as a benchmark. But the direction is not in dispute, and you can feel it: the back half of a long session is where the dumb mistakes cluster. The `any` types. The forgotten file. The confident reintroduction of dead code.
+Open the longest session you ran this week, the one still sitting in a tab. Find a decision from its first hour, one with a "why" attached. Every build has one: the cache layer you decided to skip, the library you rejected, the field you chose not to migrate. Now ask the agent, mid-task, to state that decision and its reason without scrolling back.
 
-This isn't folklore. When researchers stress-tested eighteen frontier models - the current Claude, GPT, and Gemini families among them - on tasks deliberately kept trivial, *every one* got measurably worse as the input grew, often well before the advertised window was anywhere near full. A model sold with a 200k-token window can start slipping at 50k. And the decline is continuous, not a cliff you can see coming - there's no alarm at the moment the answers start getting worse.
+If it answers crisply, from its own working state, you either got lucky or your sessions are shorter than you think. You can close the tab; this piece prices a problem you do not currently have. If it hedges, re-derives the answer from the code, or quietly contradicts the decision, keep reading. You have this problem, and everything below is the bill for it.
 
-The mechanism is in the architecture. Attention isn't uniform across a long context; it's roughly U-shaped, biased toward the very start and the very end, with the middle systematically underweighted - the "lost in the middle" effect. The position embeddings most models use decay the link between distant tokens, so a fact you established forty minutes and thirty thousand tokens ago is exactly the kind of thing that fades into the underweighted middle. The model didn't forget your decision. It just can't attend to it as strongly as the noise that arrived after it.
+**A session that keeps running is not evidence that it still knows what it decided.**
 
-A bigger window does not fix this. A million-token window just means you can degrade for longer before you hit the wall. You'll fill it with two hours of half-relevant tool output and stale reasoning, and the model will be just as lost at token 600k as it was at 150k - only now it's lost *expensively*.
+## The villain, named: context rot
 
-This is a context-engineering problem in its purest form. The agent is broad and capable but has no durable memory of what *this* build has done so far. You, the engineer, are the one holding the thread - what's done, what's next, why the last attempt failed. The gap between the agent's general competence and your specific, accumulated state is exactly the gap this site is about closing. The usual answer is to write context down. For a long build, you write down the *plan*.
+The degradation itself has a settled name by now, and you should know it because the whole industry uses it: **context rot**, the finding that a model's reliability on a task falls as the input around it grows. This is not folklore. Chroma Research tested eighteen frontier models in "Context Rot: How Increasing Input Tokens Impacts LLM Performance" (Kelly Hong, Anton Troynikov, and Jeff Huber, published 2025-07-14) and found the drop on every one of them, well before any model reached its documented context limit.
 
-## Compaction is the wrong fix
+The mechanism sits in the architecture. Attention across a long context is roughly U-shaped, biased toward the very start and the very end, with the middle systematically underweighted. That is the long-standing "lost in the middle" result: a fact you established forty minutes and thirty thousand tokens ago is exactly the kind of thing that fades into the underweighted middle while later noise crowds it. The model did not delete your decision. It attends to it more weakly than to everything that arrived after it.
 
-Before the recipe, kill the thing most people reach for first.
+So a bigger window solves nothing here. A million-token window is a million tokens of room to degrade in. You will fill it with two hours of half-relevant tool output and stale reasoning, and the model will be just as lost deep into it, only now each wrong turn costs more. Degradation tracks position and crowding, and both get worse the longer a session survives.
 
-When the window gets tight, most agents offer to compact: summarize the conversation so far and continue with the summary in place of the raw history. Auto-compact does this for you, silently, mid-task. It sounds like memory. It isn't.
+The instinct to reach for compaction at this point is reasonable, and it is exactly wrong for the thing you are actually losing.
 
-Each compaction pass is lossy. The agent decides what mattered and throws the rest away - and it does not have your judgment about what mattered. The decision you made forty minutes ago about why you're *not* using the cache layer gets summarized to nothing, and ten minutes later the agent helpfully adds the cache layer. Worse, compaction compounds. Summarize a summary a few times and you get fuzz: a vague, confidently-worded gist of your build that drifts further from reality each pass. Repeated auto-compaction is how a strong model goes haywire on a task it could have nailed.
+**The window rots as it fills, and a bigger window just gives the rot more room.**
 
-You can watch that failure happen. Let the session below fill to 75%, then pick **keep going** - that's auto-compact arriving mid-task, with nobody steering what survives. Then replay the `/compact` branch: steering genuinely helps, and for a single-task session it's enough. But hold onto how much still evaporates in the good branch - that residue is why a multi-hour build needs the relay, not a better summary.
+## What a compaction pass actually is
+
+When the window gets tight, most agents offer to compact: summarize the conversation so far and continue with the summary standing in for the raw history. Auto-compact does this for you, silently, mid-task, on the tool's own schedule. It looks like memory, because after it fires the session keeps running and the agent keeps working. It is worth being precise about what it is instead: a **compaction pass**, one lossy summarization of everything the agent had in context at the moment it fired.
+
+Lossy is the load-bearing word. The summarizer decides what mattered, and it does not have your judgment about what mattered. The decision from an hour ago about why you are not using the cache layer gets one line if it is lucky and zero lines if it is not, and ten minutes later the agent helpfully adds the cache layer. And the passes stack: the second pass summarizes a window that already contains the first pass's summary, so your build's history becomes a gist of a gist, drifting further from what actually happened with every round. The [context window management](/foundations/context-management/) chapter covers the mechanics per tool; the argument here is about the price.
+
+You can watch the price get paid. Let the session below fill to 75%, then pick **keep going**. That is auto-compact arriving mid-task with nobody steering what survives. Replay the **/compact** branch too: steering genuinely helps, and hold onto how much still evaporates even in the good branch.
 
 <div class="ac-widget-standalone">
   <SessionXray client:visible />
 </div>
 
-Durable memory does not belong in a summary the agent regenerates lossily on its own schedule. It belongs in a file *you* control. So take the agent out of the compaction business - see [configuration](/foundations/configuration/) for where this toggle lives in each tool. In Claude Code, the reliable switch is in-session: run `/config` and flip **Auto-compact** off. That hands you the full window with nothing held in reserve for a summary you never asked for.
+The widget's numbers make the point concretely. Its keep-going branch shows 186k of context compacted down to a 30k summary, roughly a sixth of what was there. Its steered branch keeps a little more, 150k down to 35k. Those are illustrative figures baked into the demo, but they point the right direction: if a summary is a fraction of the size of what it replaced, the odds that any one specific old decision made it through are a fraction too, and smaller than half. Keep that in mind for the arithmetic below, which deliberately assumes the generous version.
 
-```text
-/config        → toggle "Auto-compact" off
-```
+One objection belongs here rather than later, because it ends the read if it lands: why not just steer every compaction, the way the widget's good branch does? Because steering is a rescue, and this piece is about not needing the rescue. A hand-steered `/compact` at a clean boundary is a real technique, it is the right move for a single-task session that ran long, and its full treatment, including the case study of Amp shipping a handoff command and then reversing it, already lives in [The Handoff File](/blog/the-handoff-file/). What a steered pass still cannot do is make the loss stop compounding. Steering decides which half survives, and the halving goes ahead anyway.
 
-There's also a global flag - `claude config set -g autoCompactEnabled false` - but treat it as best-effort rather than a guarantee; the in-session toggle is the one that behaves predictably across versions. Either way, the goal is the same: nothing rewrites your history but you.
+**A compaction pass is a summarization pass, and a summary of your decisions is not your decisions.**
 
-Now when the window fills, nothing happens automatically. That's the point. *You* decide when to reset, and you carry the state across yourself - in a file.
+## One build, twelve decisions
 
-## The recipe: a plan file as external memory, run as a relay
+Fix one concrete case and carry it through everything that follows. The build: add org-scoped API keys to a service, in three phases. Phase 1 is schema and migration, touching `db/schema.ts` and `db/migrations/`. Phase 2 is the issuance endpoint, touching `src/routes/keys.ts` and `src/lib/keys.ts`. Phase 3 is the auth middleware, touching `src/middleware/apiKey.ts`.
 
-The move is to stop treating one conversation as the unit of work and start treating one *phase* as the unit. State lives in a file. Each phase runs in a fresh session that reads the file, does one chunk, checks it off, and commits. Then you clear and hand the baton to the next fresh session. A relay, not a marathon.
-
-It combines three primitives: [plan mode](/foundations/plan-mode/) to produce the plan without touching code, [rules](/foundations/rules/) to make every fresh session start with your conventions already loaded, and [configuration](/foundations/configuration/) to disable the compaction that would otherwise corrupt the relay.
-
-### Step 1 - Plan first, in plan mode, into a file
-
-Don't let the agent start editing. Put it in plan mode (the read-only, propose-don't-touch mode covered in [plan mode](/foundations/plan-mode/)) and have it produce a phased plan as a real file in the repo. Phases, checkboxes, file paths. Concrete enough that a session with zero memory of this conversation could pick up any single phase and execute it.
+Each phase makes real decisions, and they get written to a **decisions log**, a section of the plan file that records what was chosen and why, one line per decision:
 
 ```markdown
-# PLAN.md - Add org-scoped API keys
+## Decisions
 
-## Phase 1 - Schema & migration
-- [ ] Add `api_keys` table (id, org_id, hash, last_used_at) - db/schema.ts
-- [ ] Generate migration - db/migrations/
-- [ ] Add `ApiKey` type - src/types/auth.ts
+Phase 1 - schema & migration
+- Hash keys with argon2id; never store the raw key.
+- One key per org, not per user.
+- Key ids are uuidv7, sortable, never sequential.
+- Store a clear-text key prefix so support can identify a leaked key.
 
-## Phase 2 - Issuance endpoint
-- [ ] POST /orgs/:id/keys, returns key once - src/routes/keys.ts
-- [ ] Store only the hash; never log the raw key - src/lib/keys.ts
-- [ ] Unit tests for hashing + uniqueness - src/lib/keys.test.ts
+Phase 2 - issuance endpoint
+- Return the raw key exactly once, on creation, never again.
+- Log key-creation events; never log the raw key.
+- Rate-limit issuance at 10 keys per org per hour.
+- Key format is prefix + "." + secret, so the prefix parses without the secret.
 
-## Phase 3 - Auth middleware
-- [ ] Resolve key -> org on each request - src/middleware/apiKey.ts
-- [ ] 401 on revoked/unknown - src/middleware/apiKey.ts
-- [ ] Update `last_used_at` async - src/middleware/apiKey.ts
+Phase 3 - auth middleware
+- Revoked keys return 401, not 404.
+- Unknown keys also return 401; never reveal whether the org exists.
+- Verify argon2id against the stored hash; there is nothing to decrypt.
+- Update last_used_at async, off the request path.
 ```
 
-The file paths matter. They are how a fresh session orients in seconds instead of re-deriving your layout from scratch. The checkboxes matter too - they are the relay's batons. An unchecked box is unambiguous: not done yet.
+Four decisions per phase, twelve in all. A real phase makes dozens; four is a count chosen so you can trace every number below by hand.
 
-### Step 2 - Make every fresh session start smart
+Now mark one decision and follow it for the rest of the post, because it is the one the build cannot afford to lose: **"hash keys with argon2id, never store the raw key,"** made in Phase 1. Phase 3's middleware has to verify incoming keys against a stored hash. If that decision is gone from context by then, the agent writing the middleware does not re-derive it. It guesses, and the likeliest guess for "store a key" is storing the key. The decision most at risk of being dropped is load-bearing for the last phase.
 
-A relay only works if each runner starts at full speed. That's what [rules](/foundations/rules/) are for. Your `AGENTS.md` (or `CLAUDE.md`) loads automatically on every new session, so a fresh context isn't a blank one - it already knows your stack, your conventions, and the relay protocol itself:
+Note what this build does deliberately: three phases that share state. Phase 3 depends on Phase 1's hashing decision and Phase 2's key format. That distinguishes it from [An Overnight Build Loop](/blog/an-overnight-build-loop/), which decomposes a spec into fully independent single-task agents that share nothing; here the phases are coupled through the decisions log by design, and that coupling is exactly what compaction threatens.
 
-```markdown
-# AGENTS.md
+**The decisions most likely to be dropped are the ones later phases still depend on.**
 
-## Stack
-- pnpm, not npm. Strict TypeScript - never use `any`.
-- Tests live next to the file they test.
+## Walk the two passes, count what survives
 
-## Long builds
-- For multi-phase work, the plan of record is PLAN.md.
-- Execute ONE phase per session. Check off each item as you finish it.
-- Commit at the end of each phase. Do not start the next phase.
-```
+Time for the arithmetic. Three declared assumptions, all toy, all generous to compaction on purpose:
 
-Now "fresh session" doesn't mean "amnesiac contractor." It means a runner who's read the playbook before stepping onto the track.
+1. Each phase puts exactly its 4 decisions in context, nothing else we track.
+2. Each compaction pass keeps exactly half of what was in context when it fires, with no bias toward which half. Call that retention rate **r**, set to r = 1/2.
+3. A pass fires at each phase boundary, so the 3-phase build sees two passes. A 3-phase build is long enough to force this and short enough to count.
 
-### Step 3 - Run one phase per session, then clear and commit
+The third assumption's generosity matters. The context rot section above says attention is U-shaped and recency-biased, so a real summarizer favors recent material and an old decision's true odds are worse than a coin flip. The widget's own replay agrees, showing a window squeezed to about a sixth. The toy hands compaction a coin flip anyway, so the result cannot be dismissed as a worst-case pick.
 
-The execution loop is dull on purpose. Open a fresh session and give it exactly one instruction:
+Walk it the obvious way, pass by pass, dividing survivors by what was in context right before each pass fires.
 
-```text
-Complete Phase 1 of @PLAN.md and check off each item as you go.
-```
+**End of Phase 1.** Four decisions in context, nothing fired yet. The marked hashing decision is known with certainty. Probability it survives so far: 4/4 = 1.
 
-The agent reads the plan, does Phase 1 in its sharp early-context zone, ticks the boxes, and stops. You review the diff. Then the ritual at every phase boundary:
+**Pass 1, at the boundary into Phase 2.** Four decisions in context, and the summary has room for two of them. The chance the marked decision is one of the two: 2/4 = 1/2.
 
-```bash
-git add -A && git commit -m "feat(auth): api key schema + migration (Phase 1)"
-# then: clear the session entirely. New context. Reload the plan.
-```
+**During Phase 2.** Two survivors carry over, and Phase 2 adds four new decisions of its own. Six decisions are now in context.
 
-Clear means clear - not compact, not continue. The next phase starts from a clean window with the plan re-attached and the rules auto-loaded. The committed state is your checkpoint; if Phase 3 goes sideways, you reset to a green tree, not to a tangled half-conversation.
+**Pass 2, at the boundary into Phase 3.** Six decisions in context, the summary keeps three. Given the marked decision survived the first pass, its chance of surviving this one: 3/6 = 1/2. Combined: 1/2 x 1/2 = 1/4.
 
-### Step 4 - Restart *before* the wall, not at it
+**Phase 3 runs, the build ends.** No third pass fires. Final tally:
 
-The trigger for clearing isn't "the window is full." It's a context gauge passing somewhere around 40–50% - finish the item you're on, tick it, clear, reload. Treat that number as a heuristic to tune, not a benchmark; the right line depends on the model and the messiness of the task. The principle is fixed even if the number isn't: stay in the sharp early zone, and never let a session drift into its degraded tail.
+| Phase | In context before the pass | Kept after the pass | P(a Phase 1 decision survives) |
+|---|---:|---:|---:|
+| 1 | 4 | 2 | 50% (1/2) |
+| 2 | 6 | 3 | 25% (1/4) |
+| 3 | (build ends, no pass fires) | - | 25% (1/4) |
 
-## Same tokens, opposite outcome
+There is the number this piece owes you, planted on its claim: **a Phase 1 decision has a 25% chance of still being known by the end of Phase 3, under auto-compact.** One in four. Nobody chose to forget it; two passes of "keep half" multiply on their own.
 
-Picture two ways to spend the identical token budget on the same feature.
+Now the fast way to the same place, the one that makes longer builds answerable without re-walking anything. Survival after N passes is r to the power N, and nothing else: each pass independently halves the standing odds, so the odds after N passes are (1/2) x (1/2) x ..., N times. For this build, (1/2)^2 = 1/4. The row-by-row trace above and the formula land on the identical fraction, no rounding, no approximation.
 
-**Path A - the marathon.** One session. You push through all three phases. By Phase 3 the window is around 150k tokens deep, thick with tool output, retries, and a compacted summary or two. The agent is in its degraded tail. It reintroduces a helper, slips an `any` into the middleware, and you spend the last hour cleaning up after the thing meant to be cleaning up after you.
+That exact match is the moment the pattern deserves its name. Call it **the half-life of a decision**. The name is literal rather than decorative: r was set to exactly 1/2, so every compaction pass is a half-life in the physics sense, halving the odds that a given decision is still standing. And the decay is exponential in the number of passes, not linear, which is the part intuition misses. One pass costs you half. Two passes cost you three quarters. Stretch the same build to five phases, four passes, and the formula hands you the answer with no new counting: (1/2)^4 = 1/16, or **6.25%, about 1-in-16**. A build barely longer than the running example, and the Phase 1 decisions are effectively gone.
 
-**Path B - the relay.** Three fresh sessions, same total tokens spread across them. Every phase runs in clean early context. The edits are tighter because nothing is competing for the model's attention but the current phase and the plan. Each commit is a safe checkpoint. The hard debugging in Phase 3 gets the model's *best* reasoning instead of its worst.
+**Every compaction pass halves an old decision's odds of being known, and the halving compounds across the whole build.**
 
-Same model, same budget, same task. The only variable is whether each unit of work ran early in a window or late in one. That single variable is doing most of the work in how good the output is - and it's a variable you control completely, for free.
+## Why the relay's odds never move
 
-## Where the relay breaks - and where it's overkill
+The alternative this post's title names is the **relay**: one phase per session, state in a file, a fresh session per phase. The mechanics of running it, including the full recipe, the 340-file migration it was proven on, and the second-model audit that catches an agent lying about which checklist items are done, already have their own treatment in [Treat the Plan File as External Memory](/blog/treat-the-plan-file-as-external-memory/). What belongs here is the one arithmetic question that piece never asks: what are the relay's survival odds?
 
-The relay isn't free, and pretending it is would be its own kind of dishonesty. Two failure modes are worth naming.
+They are **1.0, at every phase count, by construction**. Nothing is summarized in a relay because nothing sits in the window between phases. When you clear the session at the Phase 1 boundary, the window empties completely. The next session opens, reads the plan file and the decisions log off disk, verbatim, and Phase 1's hashing decision is in front of the model word for word, with its reason attached. No pass fires because there is nothing in context to pass over. The 100% holds because the mechanism that destroys the odds is never invoked.
 
-The first is a **stale plan**. The file is only external memory if it stays true. If Phase 1 reveals that the schema needs a column the plan never anticipated, and you don't update `PLAN.md` before clearing, the next runner inherits a confident, wrong map - and a fresh session trusts the file precisely *because* it has no memory to contradict it. The discipline is: amend the plan as part of finishing a phase, not as an afterthought. The checkbox and the correction land in the same commit.
+The relay's reset trigger is also a number you can actually read rather than feel. In Claude Code, `/context` shows the window broken down by category: system, tools, memory files, messages, free space. That replaces the vague "restart somewhere around half full" advice with a gauge. When the conversational block has crowded out the working room, finish the current item, check the box, commit, clear, reload. Same clock the widget's `/clear` branch shows: the rules file survives every reset because it lives on disk, and the decisions log survives the same way.
 
-The second is **phases that are too big**. The whole point is that each phase fits comfortably inside the sharp early zone. A "phase" that's really half the feature will itself drift into the degraded tail before its boxes are ticked, and you're back to running a marathon - just one with a fancier name. If a phase consistently blows past your reset line before it's done, that's not a signal to push through. It's a signal the plan needs splitting.
+One neighbor draws a nearby boundary worth a clause: [The Loop That Rereads Its Diary](/blog/the-loop-that-rereads-its-diary/) owns the unattended case, where nobody is present between passes and the git commit log carries the rationale instead. The relay here is the interactive version, a person reviewing the diff at every boundary, which is why its memory channel is a reviewed file rather than the commit history.
 
-And sometimes the relay is simply the wrong tool. For a tight bug fix, a single exploratory spike, or any task that lives and dies inside one sharp session, the ceremony of plan-file-and-handoff is pure overhead - you'll spend more tokens scaffolding the relay than the work itself costs. The relay earns its keep when the work is genuinely *longer than one good session*: multi-phase features, migrations, anything where you can already feel the second hour coming. Below that threshold, just do the work and clear when you're done. Reach for the relay when the alternative is watching a strong model slowly lose the plot.
+**A decision written down verbatim has no half-life, because the next session re-reads it instead of remembering it.**
 
-## Land the plane
+## The table to keep
 
-The next time you're an hour into something big and the context gauge slides past 40%, don't push on and don't let it auto-compact. Finish the current item. Check the box. Commit. Clear the session. Reload the plan into a fresh window and keep going.
+Every number above, on one coordinate system: the probability that a Phase 1 decision is still known.
 
-You're not making the model smarter - you can't. You're refusing to spend its smartest tokens on stale context. The window is not your memory. The plan file is. Hand off the baton before the runner tires, and the relay will beat the marathon every time.
+| Compaction passes so far | Build point | Auto-compact | Relay |
+|---:|---|---:|---:|
+| 0 | End of Phase 1 (no pass yet) | 100% | 100% |
+| 1 | End of Phase 2 (1 pass fired) | 50% | 100% |
+| 2 | End of Phase 3 (2 passes fired) | 25% | 100% |
+| 4 | A 5-phase build (4 passes fired) | 6.25% | 100% |
+
+Row 0 is the two designs tied, and it is the only row where they are. Every later auto-compact cell is just r^N from the named trick, and every relay cell is flat, which is the argument in its most compressed form: the relay is not sometimes lucky, it is structurally guaranteed, because the lossy step never runs.
+
+Row 2 is the running example: 25%, the planted number, sitting where the whole derivation said it would. Row 4 is the same formula one phase-pair further out, 6.25%, about 1-in-16.
+
+**The auto-compact column is a decaying curve, the relay column is a flat line, and no amount of summarizer improvement moves one into the other.**
+
+## What this does not solve
+
+Three things this piece is not claiming, named before you find them yourself.
+
+**The claim here is narrower than it sounds.** The field has converged on a tiered view: compaction for salvage, structured external memory for decisions, subagent delegation for keeping noise out of the main window in the first place, used together rather than as rivals. This piece argues for one lever, used deliberately, on the tier where the stakes are your decisions. The delegation tier has its own arithmetic in [Cache the Explore](/blog/cache-the-explore/), which prices what rediscovery costs you; read the two back to back as what rediscovery costs and what forgetting costs.
+
+**Native successors exist, and the difference is who decides.** Anthropic's API now ships compaction as a first-class feature, the `compact_20260112` context management strategy, which summarizes the conversation automatically as it approaches a trigger threshold. It also ships a file-system memory tool, `memory_20250818`, through which the model itself reads and writes a persistent `/memories` directory across sessions. These are real successors to hand-rolled compaction discipline, and a reader arriving in 2026 should know them. Here is what they do not change: in both, the model still decides what to keep and for how long, pass by pass and write by write. A plan file inverts that. Its scope and its expiry are decisions the engineer made on purpose, in advance, and the agent inherits them rather than substituting its own judgment. If later phases depend on what earlier phases decided, that inversion is the point.
+
+**The relay is the wrong tool below a threshold.** A tight bug fix, a single exploratory spike, any task that lives and dies inside one sharp session: the ceremony of plan file, decisions log, and phase boundaries costs more than the work. Compaction, steered, is a legitimate recovery tool inside one session, and the [context window management](/foundations/context-management/) chapter covers when to compact and when to clear. The relay earns its keep only when the work is genuinely longer than one good session, which is precisely when the table above starts to hurt.
+
+Two adjacent pieces draw nearby boundaries with different failure modes. [Deterministic Context](/blog/deterministic-context/) owns the wrong-files-at-the-start problem, loading the files you already know a task touches; this piece owns decisions forgotten across a mid-build reset. [Hierarchical Context](/blog/hierarchical-context/) leans on the same finite-attention mechanism, but applies it to standing rules diluting attention, not to session history lost across a clear.
+
+**Use compaction for salvage, files for decisions, and the relay only when the build outlives one good session.**
+
+## The cost the relay hands you
+
+Row 4 of the table, one last time: a build stretched by two phases, and the odds a Phase 1 decision survives auto-compact fall to 6.25%, about 1-in-16, while the relay column reads 100% the whole way down. That flat line is earned, though, and the earning is the open question this piece leaves you with.
+
+A compactor's summary is wrong for free; you never chose what it dropped. A plan file is wrong only if you were careless writing the decisions log, which is a better trade but still a trade. So the thing worth watching yourself do, mid-phase, is this: are the entries you actually write as concrete as "hash keys with argon2id, never store the raw key," with a reason attached, or do they quietly degrade into "decided on the key hashing approach"? A log full of gist has the same failure mode as a compactor's summary, with the difference that you wrote it yourself. The relay survives on the concreteness of what you put in it, and nothing in the mechanism can fix that for you.
+
+**The relay removes the half-life; the discipline of the log is the price, and only you pay it.**
 
 ---
 
-For the per-tool mechanics, see [Configuration & profiles](/foundations/configuration/) for disabling auto-compact in each tool, [Plan mode / read-only agent](/foundations/plan-mode/) for producing the phased plan without touching code, and [Rules](/foundations/rules/) for loading your conventions into every fresh session.
+**About the numbers.** The retention rate r = 1/2, the four decisions per phase, and the pass-per-boundary timing are toy values, invented for traceability and deliberately generous to compaction: the piece's own context-rot and recency argument says real retention for old decisions is worse, and the embedded widget's replay (186k compacted to 30k, 150k to 35k) uses illustrative orders of magnitude, not measurements. Every other figure here, the 50%, the planted 25%, the 6.25%, the 1/4 and 1/16 fractions, and every cell of both tables, is exact arithmetic on those declared inputs and was re-checked against an independent script before publishing. Quoted and dated: the context rot finding and the eighteen-model count are from Chroma Research's "Context Rot: How Increasing Input Tokens Impacts LLM Performance" (Hong, Troynikov, and Huber, published 2025-07-14). The Anthropic compaction strategy (`compact_20260112`), the memory tool (`memory_20250818`), and Claude Code's `/context` command are named as documented in the vendor references as of August 2026.
+
+For the per-tool mechanics, see [Context window management](/foundations/context-management/) for compaction versus clearing in each tool, [Plan mode](/foundations/plan-mode/) for producing the phased plan without touching code, and [Rules](/foundations/rules/) for loading your conventions into every fresh session.

@@ -1,39 +1,93 @@
 ---
-title: "By the time you review the diff, the destructive call already ran."
-description: "Reviewing irreversible actions after the fact is too late. Split tools by reversibility, force a plan, and gate the destructive step behind a human interrupt."
+title: "A reversibility split cuts one migration session from 12 interrupts to 3, and still catches the one call that matters."
+description: "Permission systems that gate on scariness ask about everything and protect nothing. Gate on reversibility instead, and the same 12-call session drops to 3 interrupts without losing the one that counts."
+seoTitle: "AI Agent Permissions: Gate Irreversible Actions, Not Diffs"
+seoDescription: "Split agent tools by reversibility, not scariness. One 12-call session goes from 12 interrupts to 3, and the one irreversible call stays caught."
 authors: sanjay
 date: 2026-05-29
 tags: [context-engineering, plan-mode, permissions, hooks]
 draft: false
 ---
 
-The agent sends the email while you're still scrolling up to read what it planned to do.
+You set up permissions so the agent would ask before doing anything risky. Weeks in, you're clearing a stream of yes/no prompts without reading most of them, because most of them are `ls` and `git diff` and a dry run against a replica that isn't serving anyone. Then, on an ordinary Tuesday, the migration applies to production two calls after a prompt you already waved through, and you realize what you'd actually been approving: noise, with one real prompt buried somewhere in it, and no way to tell which one it was.
 
-Or it drops the table. Or it issues the refund. Or it force-pushes over the branch your teammate spent the afternoon on. You were reading the transcript - diligently, in good faith - and the destructive call landed two lines above where your eyes were. The diff review you were doing arrived one tool call too late, because the thing you needed to approve wasn't a diff. It was an *action*, and the action had already happened.
+That's the actual failure, and it isn't that the agent acted without review. It's that review keeps landing on the wrong things, because most permission setups gate on how a command *looks* instead of on what it *does*. A command that looks scary and a command you can't undo are not the same list, and the gap between them is exactly where a migration hits prod on a Friday.
 
-This is the failure mode nobody markets. The pitch is "fully autonomous agent." The reality is that full autonomy is the wrong goal - not because autonomy is bad, but because **the right amount of autonomy is task-dependent**. Reading files, grepping, running a dry-run, querying a read replica: let it rip, full speed, no prompts. Dropping a production table: that should never happen without a human saying yes first, in that exact moment, before the call goes out.
+## Check whether you already have this
 
-The line between those two worlds is not "important" versus "trivial." It's **reversible** versus **irreversible**.
+Before any of the numbers below, run a thirty-second check on your own setup.
 
-## Reversibility is the only line that matters
+Recall your last real session, or open the permission log if you keep one. Count how many times you got asked to approve something. **Then count how many of those approvals guarded an action you couldn't undo** - gone for good, where undo means a dropped table stays dropped, a sent email stays sent, a charged card stays charged.
 
-Most permission setups draw the line in the wrong place. They gate on *scariness* - "ask before running shell commands" - which trains you to rubber-stamp, because the overwhelming majority of shell commands are `ls` and `cat` and you learn to hit `y` without reading. A prompt that fires on everything is a prompt that protects nothing.
+If most of your prompts fired on things you could undo in five minutes and one or zero fired on something you couldn't, you have this problem, and the rest of this post is worth reading. If every prompt already guards something irreversible, your setup draws the line correctly. Close the tab.
 
-Draw the line at reversibility instead. The question for any tool the agent can call is simple: **if it does this and it's wrong, can I undo it?**
+**The ratio between those two counts is the entire problem, and you just measured it yourself.**
 
-- Reading a file, listing a directory, running tests, querying a read replica, a dry-run migration - reversible. Worst case, the agent wasted some tokens. Let it run unattended.
-- `git commit` on a feature branch, writing a new file, editing source - reversible enough. A bad commit is a `git reset`. Let it run, review later.
-- `DROP TABLE`, `DELETE FROM` without a `WHERE`, sending an email, charging a card, `terraform apply` against prod, `git push --force` - **irreversible**. There is no undo. These get a hard human gate.
+## The math on one session
 
-The corporate version of this is sharper still. If you live in Copilot or Cursor today and you've started letting an agent run terminal commands, you already have a tool that can reach production. The agent is broad - it has read more `terraform` and more raw SQL than you have. But it doesn't know that `payments_ledger` is append-only by policy, or that the staging database alias points at prod on Fridays during the migration window. That's the gap: the agent's competence is general, your knowledge is specific and load-bearing, and the place that gap hurts most is the one call you can't take back.
+Pick one concrete session and keep it for the rest of this post: a migration that renames and backfills `users.full_name`, then applies it to production. Twelve shell calls, in order, is a normal pass through that work.
 
-Closing it takes three primitives, layered. None of them is enough alone.
+1. `ls migrations/`
+2. `grep -r full_name .`
+3. `grep -r users db/`
+4. `grep -r backfill scripts/`
+5. `git status`
+6. `git diff`
+7. `npm test` (before writing the new migration)
+8. `psql -f migrate.sql --host=staging` (apply to staging, the dry run)
+9. `npm test` (after writing the new migration)
+10. `git commit -m 'add users.full_name backfill'`
+11. `git push origin feature/backfill-full-name`
+12. `psql -f migrate.sql --host=prod` (apply to prod)
+
+One note before the arithmetic: the log is a toy, invented for this post and sized so you can check every count by hand. It is not a transcript.
+
+Now apply the setup a lot of teams actually ship: ask before every shell command. Every one of those twelve calls fires a prompt. You skim twelve yes/no questions to get one migration out the door.
+
+Of the twelve, exactly one call can hurt you if you approve it wrong: **call 12, the apply against prod**. Everything before it is a read, a test, or a dry run against a replica that isn't serving traffic. Calls 10 and 11 write to a branch and a remote you don't deploy from - a bad commit is a `git reset`, a bad push is a force-push over the same branch.
+
+So the naive policy fires 12 prompts to guard 1 action that matters. Call that fraction the **signal ratio**: how many of your interrupts actually guard something you can't undo, out of all the interrupts you get. Here it's **1 in 12. 8.3% signal.** The other 91.7% of your attention goes to calls that were never going to hurt you.
+
+This is the same shape as security alert fatigue, or a CI suite where four flaky tests fail on every run alongside the one real regression. The mechanism is the ratio: when only one prompt in twelve guards anything real, attention gives out, you learn the rhythm of twelve `y`s, and your thumb moves faster than your eyes. The prompt on call 12 then gets the same half-second as the prompt on call 1, and review arrives, technically, as noise.
+
+Here's where the fix ends up, so you can watch the piece earn it: the same twelve-call session drops to **3 interrupts** instead of 12, and the one call that matters is still one of them. **33.3% signal, a 4x cut in interrupts, and nothing you needed to catch slips through.**
+
+## The undo test
+
+Twelve prompts asked "is this scary." Only one of them needed to ask "can this be undone." That's the entire fix, reframed as a single question you can run against any tool call before it fires:
+
+**If it runs and it's wrong, can you undo it?**
+
+Call this **the undo test**. It has nothing to do with how a command looks. `git reset --hard` looks like destruction and is completely reversible - the reflog still has the commit you reset away from. `git push` looks routine and is exactly as reversible as that reset - you can force-push over it from your local branch. Neither needs a human in the loop. The apply against prod looks like the least dramatic line in the whole session, one `psql` call, no flags that scream danger, and it's the only one of the twelve where the answer to the undo test is no.
+
+Run the undo test against all twelve calls and you get three buckets, not two. Reversible-and-cheap calls need no gate at all. Reversible-but-consequential calls, a commit, a push, are worth a pause, because undoing them costs you something even if it's not permanent. Irreversible calls get a hard stop, always, no exceptions.
+
+**Scariness is a guess about a command's appearance. The undo test is a fact about a command's consequence, and it's the only one of the two you can encode into a rule.**
 
 ## Step 1 - Split the toolset by reversibility in permissions
 
-[Permissions](/foundations/permissions/) is where you encode the reversibility line so the agent obeys it without you watching. The shape is an allowlist with three buckets - `allow`, `ask`, `deny` - and the whole trick is putting each tool in the right one.
+[Permissions](/foundations/permissions/) is where you encode the undo test so the agent obeys it without you watching. The shape is an allowlist with three buckets, `allow` / `ask` / `deny`, and the trick from the last section is the rule that sorts each tool into one of them.
 
-Here is the split as a Claude Code `settings.json`. opencode keys the same three actions - `allow`, `ask`, `deny` - directly off each tool (`edit`, `bash`, `webfetch`), with per-command patterns underneath. Codex draws the line a layer down, through its sandbox mode plus an approval policy (`untrusted`, `on-request`, `never`, or a `granular` policy that keeps some prompt categories interactive while auto-rejecting others). The mechanisms differ; the reversibility logic you encode into them is identical.
+Run it against the twelve-call session:
+
+| Calls | What they do | Bucket |
+|---|---|---|
+| 1-6 | `ls`, three `grep`s, `git status`, `git diff` | allow |
+| 7, 9 | `npm test`, before and after the new migration | allow |
+| 8 | `psql -f migrate.sql --host=staging` | allow |
+| 10 | `git commit -m 'add users.full_name backfill'` | ask |
+| 11 | `git push origin feature/backfill-full-name` | ask |
+| 12 | `psql -f migrate.sql --host=prod` | deny |
+
+Nine calls need nobody; they run silently. Two are reversible but consequential enough to pause on. One never runs without a human saying yes. Collapse the `allow` bucket out of your prompt count, since it fires with no interruption, and the twelve prompts of the naive policy become three.
+
+Check it against the earlier count: same twelve calls, same one irreversible action. The only thing that changed is the sorting rule.
+
+**3 prompts instead of 12, and the one that matters is still one of them: 1 in 3, 33.3% signal, the number promised two sections ago.**
+
+Read the three buckets as a policy statement. **`allow`** is everything reversible - silent, full speed, no interruption. **`ask`** is the reversible-but-consequential middle - it pauses for a yes. **`deny`** is the irreversible class that never runs from inside the agent loop at all; a human does it by hand, or it runs through a path you gate separately.
+
+Here is the split as a Claude Code `settings.json`. opencode keys the same three actions, `allow` / `ask` / `deny`, directly off each tool (`edit`, `bash`, `webfetch`) with per-command patterns underneath. Codex draws the line a layer down, through its sandbox mode plus an approval policy (`untrusted`, `on-request`, `never`, or a `granular` policy that sets the level per category). The mechanisms differ; the reversibility logic you encode into them is identical.
 
 ```json
 {
@@ -43,59 +97,58 @@ Here is the split as a Claude Code `settings.json`. opencode keys the same three
       "Grep",
       "Glob",
       "Bash(ls:*)",
-      "Bash(cat:*)",
+      "Bash(grep:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(npm test:*)",
-      "Bash(psql --variable=default_transaction_read_only=on:*)"
+      "Bash(psql -f migrate.sql --host=staging:*)"
     ],
     "ask": [
       "Bash(git push:*)",
-      "Bash(npm run deploy:*)",
+      "Bash(git commit:*)",
       "Edit"
     ],
     "deny": [
       "Bash(rm -rf:*)",
       "Bash(git push --force:*)",
-      "Bash(terraform apply:*)"
+      "Bash(terraform apply:*)",
+      "Bash(psql -f migrate.sql --host=prod:*)"
     ]
   }
 }
 ```
 
-One thing the matcher won't do for you: catch a `DROP` buried in the middle of a `psql -c "..."` string. Claude Code's permission patterns match on the command *prefix*, not arbitrary substrings - `Bash(psql:*)` matches any `psql` invocation, but there's no pattern that reliably fires only when the SQL payload contains `DROP TABLE`. Don't fake it with a glob that looks like it works. Mid-string content matching is exactly the job for the hook in Step 3, where a real regex runs against the full command.
+One thing the matcher won't do for you: catch a `DROP` buried inside a `psql -c "..."` string. Claude Code's patterns match on the command prefix, not arbitrary substrings, so `Bash(psql:*)` matches any `psql` call with no way to fire only when the payload contains `DROP TABLE`. Don't fake it with a glob that looks like it works. Mid-string content is the hook's job, in Step 3.
 
-Read the buckets as a policy statement. **`allow`** is everything reversible - the agent does it silently, full autonomy, no interruption. **`ask`** is the reversible-but-consequential middle - it pauses for a yes. **`deny`** is the irreversible class that should never run from inside an agent loop at all; a human goes and does it by hand, or it runs through a gated path you control.
+But `deny` is blunt. It bans the tool outright, so the agent can't even propose call 12 as the last step of a plan - fine for `rm -rf`, too blunt for the one destructive action you actually want to happen, once, after you've seen it coming. **Permissions get you the count. Seeing the call coming and enforcing it are the next two layers' jobs.**
 
-This already buys you most of the safety. But `deny` is blunt - it bans the tool outright, which means the agent can't even *propose* a `terraform apply` as the obvious last step of a plan. That's fine for `rm -rf`. It's too blunt for the legitimate destructive action you actually do want to happen, *once*, *after* you've seen the plan. For that, you need the other two primitives.
+## Step 2 - Force a plan so the action is visible before it runs
 
-## Step 2 - Force a plan so the action is visible *before* it runs
+The diff-review problem is a timing problem: you review the consequence after the cause. [Plan mode](/foundations/plan-mode/) fixes the timing by making the agent produce its full intended action list before it touches anything, then stop.
 
-The diff-review problem is a *timing* problem. You're reviewing the consequence after the cause. [Plan mode](/foundations/plan-mode/) fixes the timing by making the agent produce its full intended action list **before it touches anything** - and wait.
-
-In plan mode the agent reads, reasons, and emits something like this, then stops:
+In plan mode the agent reads, reasons, and emits something like this for the same session, then stops:
 
 ```text
 PLAN
 1. Read migrations/ to find the column rename. (read-only)
-2. Write a new migration that backfills `users.full_name`. (reversible)
+2. Write a new migration that backfills users.full_name. (reversible)
 3. Run the migration against the staging replica as a dry-run. (reversible)
 4. Apply the migration to production. (IRREVERSIBLE - requires approval)
 
 Awaiting approval before step 4.
 ```
 
-Now the irreversible step is a line item you read *with your eyes, in advance*, not a tool call you catch mid-scroll. The plan is the artifact that makes the reversibility line **reviewable**. This is the move people miss: plan mode's value isn't that the agent "thinks first." It's that the agent's intent becomes a document a human SME can veto - the one document where your specific knowledge ("step 4 hits prod, and it's Friday, so don't") can intercept the agent's general competence before it acts.
+Line that plan up against the twelve-call session and it's the same three prompts as Step 1, just visible earlier. Step 4 in the plan is call 12, and now you're reading it as a line item before it runs instead of catching it mid-scroll after it already has. The count holds at 3; what plan mode buys with that same count is advance sight of the one that matters.
 
-One thing makes the difference between a gate you use and one you abandon: approving has to be cheap. If hitting "yes" means the agent restarts and re-derives the whole plan from scratch - re-running the forty searches it already did - the gate taxes you every time you use it, and you'll stop. Persist the planning state to a resumable checkpoint and have approval *resume from it*: `agent plan ... --checkpoint plan.json`, then `agent execute --resume plan.json`. The agent picks up holding everything it learned, minus the one decision you struck. The plan becomes the savepoint, not the starting gun.
+One thing decides whether you keep using this gate or start clicking through it: approving has to be cheap. If saying yes restarts the session and the agent re-derives the whole plan, re-running searches it already did, the gate taxes you every time and you'll stop reading it. The property that matters: approval resumes from the plan, everything the agent already learned still in place, so the only thing that changes is the decision you made.
 
-But a plan is just text. The agent can write "Awaiting approval before step 4" and then, in a long enough session or after a compaction, forget it said that and call the tool anyway. Plans are intentions, and intentions drift. You need something that *enforces* the gate deterministically. That's the third primitive.
+But a plan is text. In a long enough session, or after a compaction, the model can write "awaiting approval before step 4" and then forget it said that. **Plan mode makes the call visible. It doesn't make the call enforced, and that's the gap the next layer closes.**
 
 ## Step 3 - Gate the destructive step behind a hook that interrupts
 
-[Hooks](/foundations/hooks/) are deterministic code that runs at fixed points in the agent loop - including *before* a tool call executes. A hook doesn't ask the model nicely. It runs your script, and if your script says no, the tool call dies. That's the hard stop the plan only promised.
+[Hooks](/foundations/hooks/) are deterministic code that runs at fixed points in the agent loop, including before a tool call executes. A hook doesn't ask the model nicely. It runs your script, and if the script says no, the tool call dies. That's the hard stop the plan only promised.
 
-Here's a `PreToolUse` hook that intercepts the irreversible class and stops the call. The hook receives the tool call as JSON **on stdin** - there is no magic environment variable - so you pipe stdin into `jq` to pull the command out:
+Here's a `PreToolUse` hook that intercepts call 12 specifically, and anything shaped like it. The hook receives the tool call as JSON on stdin, not through an environment variable, so pipe stdin into `jq` to pull the command out:
 
 ```bash
 #!/usr/bin/env bash
@@ -105,7 +158,7 @@ Here's a `PreToolUse` hook that intercepts the irreversible class and stops the 
 
 cmd=$(jq -r '.tool_input.command')   # JSON arrives on stdin
 
-irreversible='(terraform apply|DROP TABLE|DELETE FROM[^;]*;|git push --force|send_email|charge_card)'
+irreversible='(terraform apply|DROP TABLE|DELETE FROM[^;]*;|git push --force|send_email|charge_card|payments_ledger)'
 
 if [[ "$cmd" =~ $irreversible ]]; then
   echo "BLOCKED: irreversible action detected:" >&2
@@ -117,9 +170,9 @@ fi
 exit 0
 ```
 
-The block mechanism is the contract the hooks chapter documents: **exit 2, with your message on stderr.** The non-zero exit kills the tool call before it runs; the stderr text is handed back into the agent's context, so the model sees *why* it was stopped and re-plans around it. Notice what the script does *not* do: it doesn't approve anything. Approval happens where it belongs - the harness's permission flow, a human deciding in that moment. Want the gate to *prompt* instead of hard-block? One change: exit 0 and print a `hookSpecificOutput` block with `permissionDecision: "ask"`, and the call routes straight into the approval prompt rather than dying. The same channel takes `"deny"` plus a `permissionDecisionReason` when you want a structured refusal. Either way the script blocks or defers - it never quietly waves an irreversible call through.
+The contract is the one the hooks chapter documents: **exit 2, with your message on stderr.** The non-zero exit kills the call before it runs; stderr goes back into the agent's context, so the model sees why it was stopped and re-plans around it. The script doesn't approve anything, on purpose - approval stays in the harness, a human deciding in that moment. Want it to prompt instead of hard-block? Exit 0 and print a `hookSpecificOutput` block with `permissionDecision: "ask"`, and the call routes into the approval prompt instead of dying.
 
-That last point matters because of where these hooks run. A `PreToolUse` hook fires inside the agent's process, which frequently has **no controlling terminal** - there is nothing to type into. If you reach for an interactive prompt (`read -r answer < /dev/tty`) you've built a gate that works only when a human is sitting at an attached TTY, and silently fails or hangs the moment the same agent runs headless in CI. Treat a TTY prompt as an interactive-only variant with that caveat attached; the portable, documented gate is exit 2 plus stderr, which behaves identically whether a human is watching or not.
+One thing to know about where this runs: a `PreToolUse` hook fires inside the agent's process, which often has no controlling terminal. An interactive prompt (`read -r answer < /dev/tty`) works at your desk and hangs the moment the same agent runs headless in CI. The portable gate is exit 2 plus stderr, identical whether a human is watching or not.
 
 Wire it into the loop:
 
@@ -138,26 +191,68 @@ Wire it into the loop:
 }
 ```
 
-Two things make this load-bearing. It is **deterministic** - it fires every time the pattern matches, regardless of what the model believes about its own plan. And it moves the decision to proceed out of the agent loop entirely: proceeding becomes a deliberate human act through the harness, in that moment - not a reflexive `y` the agent has trained you to autopilot through.
+This is deterministic: it fires every time the pattern matches, whatever the model believes about its own plan. opencode reaches the same place with a plugin that runs before each tool executes; wherever your harness puts the gate, the property to insist on is code the model cannot argue with.
 
-Codex and opencode expose the same pre-execution hook point under their own names; the contract is identical - your code runs before the call, and a non-zero exit kills it. The reversibility list in the regex is the part *you* own. The agent will never infer that `payments_ledger` is sacred. You write it down once, here, and the gate enforces it forever.
+The one way this turns on you is over-gating. Write the pattern too wide, a bare `DELETE FROM` with no qualifier, and you block a reversible `DELETE FROM scratch_tmp` inside a transaction you could roll back. The moment the gate fires on routine work, you start waving it through: the rubber-stamp reflex in a new hat. Unsure whether something belongs in the regex? Run the undo test on it.
 
-The one way this primitive turns on you is over-gating. A regex tuned too wide re-creates the exact disease it was meant to cure. Make the pattern `DELETE FROM` with no qualifier and you'll block the agent's perfectly reversible `DELETE FROM scratch_tmp` inside a transaction it can roll back - and once the gate fires on routine work, you start reflexively waving it through, which is the rubber-stamp reflex you built the gate to kill, now wearing a different hat. The fix is to keep the list narrow and *truly* irreversible: a `DELETE` without a `WHERE`, an `apply` against a prod workspace, a force-push to a shared branch - not the whole verb. When you're unsure whether something belongs in the regex, the honest test is the same one from the top: if it runs and it's wrong, can you undo it? If yes, it does not go in the hook. The gate earns its authority by firing rarely and being right every time.
+**The hook is the only one of the three layers that survives the model forgetting its own plan, because it never asked the model to remember anything.**
 
-## The three layers do different jobs - that's why you need all three
+## Five rows, and only two of them still change
 
-It's tempting to pick one. Don't.
+Stack all three layers and replay the same twelve-call session through each:
 
-- **Permissions** set the default posture per tool - silent on reversible, banned on the worst. They run with zero human attention, which is exactly what you want for the overwhelming majority of calls.
-- **Plan mode** makes the intended irreversible action *visible and reviewable in advance*, turning a diff you'd catch too late into a line item you approve on purpose.
-- **The hook** is the deterministic backstop that the model cannot forget, drift past, or talk itself out of. It's the only one of the three that can't be overridden by a sufficiently confident agent.
+| Layer | Prompts this session | Signal ratio | Caught before it runs? | Survives the model forgetting? |
+|---|---|---|---|---|
+| Nothing (full autonomy) | 0 | n/a | No | No |
+| Ask on every Bash call | 12 | 8.3% | No | No |
+| + Permissions (allow/ask/deny) | 3 | 33.3% | No | No |
+| + Plan mode | 3 | 33.3% | Yes | No |
+| + Hook (deterministic gate) | 3 | 33.3% | Yes | Yes |
 
-Permissions without the hook trust the model to respect a `deny` it can sometimes route around. Plan mode without the hook trusts the model to honor its own "awaiting approval" line. The hook without plan mode gives you a hard stop with no context for *why* the agent wanted to act. Stacked, they give you the thing the autonomy pitch never does: **full speed on everything reversible, and a wall on everything you can't take back.**
+Read the first two columns down and then stop. **Permissions do the entire 4x cut by themselves, 12 down to 3**, and nothing after that row touches the count or the ratio again. That's not an error. Once you've split the tools correctly, **3 prompts for a 12-call session is the floor**: exactly one action in this session nobody but a human can approve, so at least one prompt has to exist, and the two `ask`-bucket calls keep their pause.
 
-That's the actual goal. Not an autonomous agent, and not a human babysitting every keystroke. An agent that knows where your line is - because you drew it, in the one place that can't drift - and moves freely right up to it.
+So plan mode and the hook aren't there to shrink a number. They earn the last two columns instead: whether you see the irreversible call coming, and whether the gate holds up after the model has forgotten it ever mentioned step 4. A team that stops at permissions has already bought the 4x cut and is still gambling on the model's memory for the one call that matters.
 
-The diff was never the thing to approve. The plan was. Approve the plan, gate the call, and let the agent run.
+**Row 3 is where the count stops moving. Rows 4 and 5 are where the trust starts.**
+
+## What this doesn't solve
+
+Four things worth naming, so you don't assume they're covered here.
+
+**A keyword blocklist is the tempting middle option, and it's worse than either end.** "Ask if the command contains `push`, `prod`, or `deploy`" sounds like the undo test without the bucket work. It over-fires on `git push origin feature/backfill-full-name`, a reversible push to a branch you don't deploy from, and it under-fires the moment someone runs a bare `terraform apply` that your keyword list never named. It's still gating on how a command looks - just looking at the string instead of your gut.
+
+**Claude Code's Auto Mode, and any AI classifier playing the same role, has the same ceiling as the blocklist, just a smarter one.** Auto Mode, as Anthropic's 2026 documentation describes it, reads your permission rules in prose and decides allow-versus-ask per call from context, rather than by static pattern. That's real progress over a blocklist. But a classifier still can't know that `payments_ledger` is append-only by internal policy, or that your staging alias points at prod during the Friday migration window. Those facts aren't in the command text for anything to infer. The `allow`/`ask`/`deny` split is where a human writes those facts down as rules instead of leaving them to be inferred.
+
+**MCP tool annotations solve a version of this one layer down.** A server that marks a tool `destructiveHint` and pauses for confirmation puts the same kind of gate inside the tool itself, so it travels to any client that respects the annotation - see [Elicitation plus tool annotations](/blog/elicitation-plus-tool-annotations/). This piece's gate sits in the harness instead, which is the only place that reaches raw shell calls no MCP server ever got a chance to annotate.
+
+**Regulatory human-oversight requirements are a different job entirely.** The EU AI Act's Article 14 and the NIST AI RMF both ask for human oversight of consequential automated decisions, and a regulated org will want an audit trail on top of this, not instead of it. This piece is the mechanical gate. The paperwork a compliance team wants sits above it.
+
+One more axis, named rather than ignored: some guardrail frameworks also escalate on the model's own confidence, pausing when it reports low certainty or a call looks anomalous against its history. That isn't competing with the split in this piece. Reversibility asks whether a call can be undone; confidence asks whether the model seems sure. A setup can run both without either doing the other's job.
+
+**None of the five replace the reversibility split. Four are worse approximations or sit a layer over; the fifth answers a different question.**
+
+## The list you still have to maintain by hand
+
+Replay the table, because it is the thing you actually built:
+
+| Layer | Prompts this session | Signal ratio | Caught before it runs? | Survives the model forgetting? |
+|---|---|---|---|---|
+| Nothing (full autonomy) | 0 | n/a | No | No |
+| Ask on every Bash call | 12 | 8.3% | No | No |
+| + Permissions (allow/ask/deny) | 3 | 33.3% | No | No |
+| + Plan mode | 3 | 33.3% | Yes | No |
+| + Hook (deterministic gate) | 3 | 33.3% | Yes | Yes |
+
+Row 1, the migration runs whenever the model decides it should. Row 2 buys the illusion of review: twelve prompts, one real, a thumb that learns the rhythm. Row 3 is where the count stops: **3 is the floor**, one action that needed a human and two pauses that earned their keep. Rows 4 and 5 buy the only two things left: the one prompt that matters, read before anything runs, and a gate that still holds after the model has forgotten it wrote one. The count has nothing left to cut. What remained to fix, after row 3, was making sure the one interrupt that stays cannot be talked past, by a confident model or by your own habit of clearing prompts on autopilot.
+
+One job is still yours. The regex in Step 3 is a list a human wrote down once, `terraform apply`, `DROP TABLE`, `payments_ledger`, and it stays correct only as long as someone keeps editing it by hand. Rename the ledger table, stand up a new prod-only script, and the hook doesn't know to watch it until someone updates the pattern. A bigger prompt can't keep that list honest, and the model is the wrong keeper: it's the thing you didn't trust to remember the plan in the first place. The job needs something that diffs the hook's regex against the tables and commands that actually exist, and flags the gap before the list goes quietly out of date.
+
+**Three prompts, one of them the call that matters, and a gate that holds even when nobody's watching: that's what the split buys. Keeping the list behind it honest is the part still yours.**
 
 ---
+
+**About the numbers.** The twelve-call session and its allow/ask/deny classification are a toy, invented for traceability and sized so you can check every count by hand, not a transcript of a real run. Every ratio that follows it (8.3%, 33.3%, the 4x reduction, all five rows of the layer table) is arithmetic derived from those twelve calls and re-checked with a script before publishing - **none of it is a measurement of your own repo**. Swap in your own session and the shape holds: whatever your naive prompt count is, splitting by reversibility drops it to your ask-bucket calls plus your deny-bucket calls, and the one call that matters stays caught either way.
+
+This piece gates *when* a human sees an agent's action, by reversibility. Sibling posts that gate something adjacent are worth telling apart. [Full autonomy is a small blast radius](/blog/full-autonomy-is-a-small-blast-radius/) cuts what the agent can *reach* at all, not when a human reviews what it does inside that reach. [Build risky agent code behind a flag](/blog/build-risky-agent-code-behind-a-flag/) allocates code-review scrutiny by blast radius, for code you read at leisure, not a call that already ran. [A single authorization gate for agents](/blog/single-authorization-gate-for-agents/) is authorization logic inside the software the agent builds, not the harness gate on the agent itself. [Quiz me on the diff](/blog/quiz-me-on-the-diff/) grades whether an agent's summary is honest about what changed - a spin problem, not a timing problem, despite sharing the word "diff." And [The relay, not the window](/blog/the-relay-not-the-window/) and [Treat the plan file as external memory](/blog/treat-the-plan-file-as-external-memory/) use "the plan" for session continuity, a checklist a fresh session reads to resume, not the reviewable artifact this piece pauses on.
 
 For the per-tool mechanics, see [Permissions](/foundations/permissions/) for splitting tools by reversibility, [Plan mode](/foundations/plan-mode/) for making intent reviewable before action, and [Hooks](/foundations/hooks/) for the deterministic gate the model can't drift past.
