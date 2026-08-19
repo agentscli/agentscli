@@ -1,0 +1,391 @@
+---
+/**
+ * Command drill - the shared interactive surface for every cheatsheet page.
+ *
+ * While the Claude Code page carries a full simulated terminal, a faithful
+ * per-tool simulator for the other agents would mean inventing TUI behavior
+ * the docs do not describe - fabrication on a fact-bound site. The drill
+ * instead quizzes *only* what the verified data file already asserts: each
+ * round shows a "what it does" description from `src/data/cheatsheets/<tool>.ts`
+ * and you type the command. Wrong answers reveal the verified command.
+ *
+ * Static-first: the answer key renders server-side inside a <details> and is
+ * the complete no-JS experience. The drill panel is hidden until the
+ * enhancement script runs - never dead UI. Items are derived from the data
+ * file at build time (placeholder-free commands only), so drill and tables
+ * cannot drift.
+ */
+import { cheatsheets } from '../data/cheatsheets';
+
+interface Props {
+  tool: string;
+}
+const { tool } = Astro.props;
+
+const sheet = cheatsheets[tool];
+if (!sheet) {
+  throw new Error(`No cheatsheet registered for "${tool}".`);
+}
+
+const BIN: Record<string, string> = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  opencode: 'opencode',
+  cursor: 'cursor-agent',
+  copilot: 'copilot',
+  pi: 'pi',
+};
+const bin = BIN[tool] ?? tool;
+
+// Drill-able answers: fully typeable commands only. Placeholders, quoted
+// examples, and prose rows are excluded - they live in the tables below.
+const drillable = (cmd: string) => {
+  if (cmd.length > 48) return false;
+  if (/[<[|{"…]/.test(cmd) || cmd.includes('...')) return false;
+  if (cmd.includes('/path/to')) return false;
+  return cmd.startsWith('/') || cmd === bin || cmd.startsWith(`${bin} `);
+};
+
+const seen = new Set<string>();
+const items = sheet.categories
+  .flatMap((c) => c.entries)
+  .filter((e) => drillable(e.cmd))
+  .filter((e) => {
+    const k = e.cmd.replace(/\s+/g, ' ').toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  })
+  .slice(0, 16);
+---
+
+<section class="cdr" data-tool={tool} aria-label={`${sheet.label} command drill`}>
+  <h2 class="cdr-title">Command drill</h2>
+  <p class="cdr-sub">
+    {items.length} verified {sheet.label} commands. Read the task, type the
+    command, press <kbd>Enter</kbd>. Every answer is on this page's tables -
+    this drill only asks what the verified data already states.
+  </p>
+
+  <div class="cdr-drill" hidden>
+    <p class="cdr-prompt"></p>
+    <div class="cdr-row">
+      <input
+        type="text"
+        class="cdr-input"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        aria-label={`Type the ${sheet.label} command`}
+      />
+      <button type="button" class="cdr-go">Check</button>
+    </div>
+    <p class="cdr-feedback" aria-live="polite"></p>
+    <p class="cdr-progress" role="status"></p>
+    <div class="cdr-done" hidden>
+      <p class="cdr-score"></p>
+      <button type="button" class="cdr-restart">Restart</button>
+    </div>
+  </div>
+
+  <details class="cdr-key">
+    <summary>Answer key - all {items.length} commands</summary>
+    <ol class="cdr-key-list">
+      {items.map((it) => (
+        <li>
+          <span class="cdr-key-q">{it.desc}</span>
+          <code class="cdr-key-a">{it.cmd}</code>
+        </li>
+      ))}
+    </ol>
+  </details>
+</section>
+
+<style>
+  .cdr {
+    margin: 2rem 0 2.5rem;
+    padding: 1.1rem 1.25rem 1rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 12px;
+    background: var(--sl-color-bg);
+  }
+
+  .cdr-title {
+    font-size: 1.05rem;
+    margin: 0 0 0.3rem;
+    scroll-margin-top: 5.5rem;
+  }
+
+  .cdr-sub {
+    font-size: 0.84rem;
+    color: var(--sl-color-gray-3);
+    margin: 0 0 0.9rem;
+  }
+
+  .cdr-sub kbd {
+    font-family: var(--sl-font-mono);
+    font-size: 0.72rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+
+  .cdr-drill { border-top: 1px solid var(--sl-color-hairline); padding-top: 0.9rem; }
+
+  .cdr-prompt {
+    font-size: 0.92rem;
+    line-height: 1.45;
+    margin: 0 0 0.6rem;
+    min-height: 1.4em;
+  }
+
+  .cdr-row { display: flex; gap: 8px; }
+
+  .cdr-input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--sl-font-mono);
+    font-size: 0.82rem;
+    color: var(--sl-color-gray-2);
+    background: var(--sl-color-bg);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 8px;
+    padding: 7px 12px;
+    min-height: 38px;
+  }
+
+  .cdr-input:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 1px;
+    border-color: var(--sl-color-accent);
+  }
+
+  .cdr-go,
+  .cdr-restart {
+    font-family: var(--sl-font-mono);
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--sl-color-text-inverted);
+    background: var(--sl-color-accent);
+    border: none;
+    border-radius: 8px;
+    padding: 0 14px;
+    min-height: 38px;
+    cursor: pointer;
+  }
+
+  .cdr-go:focus-visible,
+  .cdr-restart:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
+  .cdr-feedback {
+    font-size: 0.8rem;
+    margin: 0.6rem 0 0.2rem;
+    min-height: 1.3em;
+  }
+
+  /* The code/ok/no elements below are injected at runtime by the drill
+     script, so they never carry this component's scoping attribute - target
+     them with :global() or the rules compile into matches nothing. */
+  .cdr-feedback :global(code) {
+    font-family: var(--sl-font-mono);
+    font-size: 0.76rem;
+    font-weight: 600;
+    /* Same AA fix as .chs-cmd in Cheatsheet.astro: the chip tint composites
+       with the site's inline-code background; darken in light, lighten in dark. */
+    color: color-mix(in srgb, var(--sl-color-text-accent) 85%, black);
+    background: var(--sl-color-accent-low);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+
+  :global([data-theme='dark']) .cdr-feedback :global(code) {
+    color: color-mix(in srgb, var(--sl-color-text-accent) 85%, white);
+  }
+
+  .cdr-feedback :global(.cdr-ok) {
+    color: var(--sl-color-text-accent);
+    font-weight: 600;
+  }
+
+  .cdr-feedback :global(.cdr-no) { color: var(--sl-color-gray-2); }
+
+  .cdr-progress {
+    font-family: var(--sl-font-mono);
+    font-size: 0.7rem;
+    color: var(--sl-color-gray-3);
+    margin: 0;
+  }
+
+  .cdr-done { border-top: 1px solid var(--sl-color-hairline); padding-top: 0.9rem; }
+
+  .cdr-score { font-size: 0.88rem; margin: 0 0 0.6rem; }
+
+  .cdr-key { margin-top: 1rem; }
+
+  .cdr-key summary {
+    font-family: var(--sl-font-mono);
+    font-size: 0.74rem;
+    color: var(--sl-color-gray-3);
+    cursor: pointer;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .cdr-key summary:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .cdr-key-list {
+    font-size: 0.8rem;
+    margin: 0.5rem 0 0.2rem;
+    padding-left: 1.2rem;
+  }
+
+  .cdr-key-list li { margin-bottom: 0.45rem; line-height: 1.45; }
+
+  .cdr-key-q { color: var(--sl-color-gray-2); }
+
+  .cdr-key-a {
+    display: block;
+    font-family: var(--sl-font-mono);
+    font-size: 0.74rem;
+    font-weight: 600;
+    /* Same AA fix as .chs-cmd in Cheatsheet.astro: the chip tint composites
+       with Starlight's inline-code background; darken in light, lighten in dark. */
+    color: color-mix(in srgb, var(--sl-color-text-accent) 85%, black);
+    background: var(--sl-color-accent-low);
+    border-radius: 4px;
+    padding: 1px 6px;
+    width: fit-content;
+    margin-top: 2px;
+  }
+
+  :global([data-theme='dark']) .cdr-key-a {
+    color: color-mix(in srgb, var(--sl-color-text-accent) 85%, white);
+  }
+
+  @media (max-width: 720px) {
+    .cdr { padding: 0.9rem 0.95rem 0.8rem; }
+    .cdr-row { flex-direction: column; }
+  }
+
+  @media print {
+    .cdr-drill { display: none; }
+  }
+</style>
+<script is:inline>
+  // Progressive enhancement: turn the static answer key into a typing drill.
+  // With JavaScript off, the <details> answer key below is the complete
+  // experience - nothing here is required to read or use the page.
+  // Note: do not locate the root via document.currentScript - Astro hoists
+  // component scripts out of the component when rendered through MDX. The
+  // data payload (a non-executing JSON script) stays inside the root, so the
+  // root is found by class instead. Works for one drill or several.
+  (function () {
+    var norm = function (s) { return String(s).trim().replace(/\s+/g, ' ').toLowerCase(); };
+
+    function wire(root) {
+    // Items are read from the server-rendered answer key - the one source
+    // of truth that is guaranteed to live inside this root (Astro hoists
+    // component <script> tags out of the component when rendered via MDX).
+    var items = Array.prototype.map.call(root.querySelectorAll('.cdr-key-list li'), function (li) {
+      var q = li.querySelector('.cdr-key-q');
+      var a = li.querySelector('.cdr-key-a');
+      return q && a ? { q: q.textContent, a: a.textContent } : null;
+    }).filter(Boolean);
+    if (!items.length) return;
+
+    var panel = root.querySelector('.cdr-drill');
+    var prompt = root.querySelector('.cdr-prompt');
+    var input = root.querySelector('.cdr-input');
+    var go = root.querySelector('.cdr-go');
+    var feedback = root.querySelector('.cdr-feedback');
+    var progress = root.querySelector('.cdr-progress');
+    var done = root.querySelector('.cdr-done');
+    var score = root.querySelector('.cdr-score');
+    var restart = root.querySelector('.cdr-restart');
+    if (!panel || !input || !go) return;
+
+    var i = 0, hit = 0, checked = false, over = false, booted = false;
+
+    function render() {
+      prompt.textContent = items[i].q;
+      input.value = '';
+      checked = false;
+      go.textContent = 'Check';
+      feedback.innerHTML = '';
+      progress.textContent = (i + 1) + ' / ' + items.length;
+      done.hidden = true;
+      input.disabled = false;
+      go.disabled = false;
+      // Only steal focus once the reader has interacted - never pop a mobile
+      // keyboard on page load.
+      if (booted) input.focus({ preventScroll: true });
+    }
+
+    function advance() {
+      i++;
+      if (i >= items.length) {
+        over = true;
+        panel.querySelectorAll('.cdr-row, .cdr-feedback, .cdr-progress').forEach(function (n) { n.hidden = true; });
+        prompt.textContent = '';
+        score.textContent = hit + ' / ' + items.length + ' first-try correct' +
+          (hit === items.length ? ' - clean sweep.' : '. The rest are in the answer key and the tables below.');
+        done.hidden = false;
+      } else {
+        render();
+      }
+    }
+
+    function check() {
+      if (over) return;
+      if (checked) { advance(); return; }
+      var a = norm(input.value);
+      if (!a) return;
+      checked = true;
+      go.textContent = i === items.length - 1 ? 'Finish' : 'Next';
+      if (a === norm(items[i].a)) {
+        hit++;
+        feedback.innerHTML = '<span class="cdr-ok">Correct.</span>';
+      } else {
+        feedback.innerHTML = '<span class="cdr-no">Expected:</span> <code></code>';
+        feedback.querySelector('code').textContent = items[i].a;
+      }
+      input.focus({ preventScroll: true });
+    }
+
+    go.addEventListener('click', check);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); check(); }
+      else if (e.key === 'Escape' && !checked && input.value === '') {
+        // Esc on an empty, unchecked round reveals the answer and moves on.
+        checked = true;
+        feedback.innerHTML = '<span class="cdr-no">Expected:</span> <code></code>';
+        feedback.querySelector('code').textContent = items[i].a;
+        go.textContent = i === items.length - 1 ? 'Finish' : 'Next';
+      }
+    });
+    go.addEventListener('click', function () { booted = true; });
+    input.addEventListener('focus', function () { booted = true; });
+    restart.addEventListener('click', function () {
+      i = 0; hit = 0; checked = false; over = false; booted = true;
+      panel.querySelectorAll('.cdr-row, .cdr-feedback, .cdr-progress').forEach(function (n) { n.hidden = false; });
+      done.hidden = true;
+      render();
+    });
+
+    panel.hidden = false;
+    render();
+    }
+
+    function boot() { document.querySelectorAll('.cdr').forEach(wire); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+  })();
+</script>

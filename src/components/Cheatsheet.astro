@@ -1,0 +1,354 @@
+---
+/**
+ * Static, build-time cheatsheet renderer. No framework, no hydration.
+ *
+ * Lookup-first structure: a meta line (what was verified, against what), an
+ * anchor index strip for wayfinding, then one table per workflow category.
+ * A small inline script adds fuzzy filtering as a progressive enhancement -
+ * press `/` anywhere on the page to jump to the search box - but the full
+ * reference renders and reads with JavaScript off, and the anchors work
+ * regardless. This replaces the checkbox-filter pattern used by the keymap
+ * cheatsheet: a single-tool cheatsheet's dominant lookup is by intent or
+ * command fragment, which is a search, not a filter.
+ *
+ * Facts live in `src/data/cheatsheets/<tool>.ts` - the same data drives the
+ * interactive sandbox's command palette, so the two surfaces cannot drift.
+ */
+import { cheatsheets } from '../data/cheatsheets';
+
+interface Props {
+  tool: string;
+}
+const { tool } = Astro.props;
+
+const sheet = cheatsheets[tool];
+if (!sheet) {
+  throw new Error(`No cheatsheet registered for "${tool}". Add src/data/cheatsheets/${tool}.ts and register it in index.ts.`);
+}
+
+const slug = (label: string) =>
+  label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+const totalEntries = sheet.categories.reduce((a, c) => a + c.entries.length, 0);
+---
+
+<aside class="chs" aria-label={`${sheet.label} quick reference`}>
+  <p class="chs-meta">
+    <strong>{totalEntries} commands</strong> · verified against the installed
+    binary <code>v{sheet.version}</code> and the official docs · checked {sheet.checkedAt}
+    <span class="chs-meta-links">
+      {sheet.sources.filter((s) => s.startsWith('https://')).map((s) => (
+        <a href={s} target="_blank" rel="noopener noreferrer">source</a>
+      ))}
+    </span>
+  </p>
+
+  <div class="chs-searchrow">
+    <input
+      type="search"
+      class="chs-search"
+      id={`chs-search-${sheet.tool}`}
+      placeholder={`Search ${totalEntries} commands - try "resume", "mcp", "json"`}
+      aria-label={`Search ${sheet.label} commands`}
+      autocomplete="off"
+    />
+    <p class="chs-count" id={`chs-count-${sheet.tool}`} role="status" aria-live="polite"></p>
+  </div>
+
+  <nav class="chs-index" aria-label="Jump to section">
+    {sheet.categories.map((c) => (
+      <a class="chs-index-link" href={`#${slug(c.label)}`}>{c.label}</a>
+    ))}
+  </nav>
+
+  {sheet.categories.map((c) => (
+    <section class="chs-section" data-section={c.id}>
+      <h2 id={slug(c.label)}>{c.label}</h2>
+      <p class="chs-blurb">{c.blurb}</p>
+      <div class="chs-scroll">
+        <table class="chs-table">
+          <thead>
+            <tr>
+              <th scope="col">Command</th>
+              <th scope="col">What it does</th>
+              <th scope="col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.entries.map((e) => (
+              <tr data-search={`${e.cmd} ${e.desc} ${e.note ?? ''} ${e.example ?? ''}`.toLowerCase()}>
+                <th scope="row" class="chs-cmd-cell">
+                  <code class="chs-cmd">{e.cmd}</code>
+                  {e.example && <code class="chs-example">{e.example}</code>}
+                  {e.conf === 'documented' && !e.cmd.startsWith('/') && (
+                    <span class="chs-conf" title="verified in the official docs, not present in `claude --help` output">docs</span>
+                  )}
+                </th>
+                <td>{e.desc}{e.site && (<a class="chs-chapter" href={e.site}>chapter →</a>)}</td>
+                <td class="chs-notes">{e.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  ))}
+
+  <p class="chs-noresults" hidden id={`chs-none-${sheet.tool}`}>
+    Nothing matches. Clear the search to see all {totalEntries} commands.
+  </p>
+</aside>
+
+<style>
+  .chs { margin: 1.5rem 0; }
+
+  .chs-meta {
+    font-family: var(--sl-font-mono);
+    font-size: 0.74rem;
+    color: var(--sl-color-gray-3);
+    margin: 0 0 0.75rem;
+  }
+
+  .chs-meta code {
+    background: none;
+    padding: 0;
+    color: var(--sl-color-text-accent);
+  }
+
+  .chs-meta-links { margin-left: 8px; }
+  .chs-meta-links a { margin-right: 6px; }
+
+  /* ---- search ---- */
+
+  .chs-searchrow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+
+  .chs-search {
+    flex: 1;
+    min-width: 220px;
+    max-width: 420px;
+    font-family: var(--sl-font-mono);
+    font-size: 0.8rem;
+    color: var(--sl-color-gray-2);
+    background: var(--sl-color-bg);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 8px;
+    padding: 7px 12px;
+    min-height: 36px;
+  }
+
+  .chs-search:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 1px;
+    border-color: var(--sl-color-accent);
+  }
+
+  .chs-count {
+    font-family: var(--sl-font-mono);
+    font-size: 0.7rem;
+    color: var(--sl-color-gray-3);
+    margin: 0;
+  }
+
+  /* ---- index strip ---- */
+
+  .chs-index {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 1.75rem;
+  }
+
+  .chs-index-link {
+    font-family: var(--sl-font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--sl-color-gray-2);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 999px;
+    padding: 4px 11px;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    transition: color 0.2s ease, border-color 0.2s ease;
+  }
+
+  .chs-index-link:hover {
+    color: var(--sl-color-text-accent);
+    border-color: var(--sl-color-accent);
+  }
+
+  .chs-index-link:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
+  /* ---- sections ---- */
+
+  .chs-section { margin-bottom: 2.25rem; }
+
+  .chs-section h2 { scroll-margin-top: 5.5rem; }
+
+  .chs-blurb {
+    font-size: 0.86rem;
+    color: var(--sl-color-gray-3);
+    margin: -0.4rem 0 0.9rem;
+  }
+
+  .chs-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+
+  .chs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  .chs-table th,
+  .chs-table td {
+    text-align: left;
+    vertical-align: top;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--sl-color-hairline);
+    line-height: 1.5;
+  }
+
+  .chs-table thead th {
+    font-family: var(--sl-font-mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--sl-color-gray-3);
+    font-weight: 600;
+    border-bottom-color: var(--sl-color-gray-5);
+    white-space: nowrap;
+  }
+
+  .chs-table tbody tr:hover { background: var(--ac-surface-hover); }
+
+  .chs-cmd-cell { white-space: nowrap; min-width: 11rem; }
+
+  .chs-cmd {
+    font-family: var(--sl-font-mono);
+    font-size: 0.76rem;
+    font-weight: 600;
+    /* Accent text on the accent-low chip composites with Starlight's inline-code
+       background underneath, so the raw token misses AA in both themes once you
+       account for the double tint: darken in light, lighten in dark. */
+    color: color-mix(in srgb, var(--sl-color-text-accent) 85%, black);
+    background: var(--sl-color-accent-low);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+
+  :global([data-theme='dark']) .chs-cmd {
+    color: color-mix(in srgb, var(--sl-color-text-accent) 85%, white);
+  }
+
+  .chs-example {
+    display: block;
+    margin-top: 3px;
+    font-family: var(--sl-font-mono);
+    font-size: 0.68rem;
+    color: var(--sl-color-gray-3);
+    background: none;
+    padding: 0;
+    max-width: 34ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chs-conf {
+    display: inline-block;
+    margin-left: 6px;
+    font-family: var(--sl-font-mono);
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sl-color-gray-3);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 3px;
+    padding: 0 4px;
+    vertical-align: 1px;
+  }
+
+  .chs-chapter {
+    display: inline-block;
+    margin-left: 8px;
+    font-family: var(--sl-font-mono);
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+
+  .chs-notes { color: var(--sl-color-gray-3); min-width: 10rem; }
+  .chs-notes code { background: none; padding: 0; font-size: 0.72rem; }
+
+  .chs-noresults {
+    font-family: var(--sl-font-mono);
+    font-size: 0.78rem;
+    color: var(--sl-color-gray-3);
+    text-align: center;
+    padding: 1.5rem 0;
+  }
+
+  @media (max-width: 720px) {
+    .chs-table { font-size: 0.76rem; }
+    .chs-table th, .chs-table td { padding: 5px 6px; }
+    .chs-cmd-cell { min-width: 8.5rem; }
+    .chs-notes { min-width: 7rem; }
+  }
+</style>
+
+<script is:inline>
+  // Progressive enhancement: fuzzy row filtering + `/` to focus. The tables
+  // are fully rendered and readable with this script absent.
+  (function () {
+    var root = document.currentScript && document.currentScript.previousElementSibling;
+    while (root && !root.classList.contains('chs')) root = root.previousElementSibling;
+    if (!root) return;
+    var input = root.querySelector('.chs-search');
+    var count = root.querySelector('.chs-count');
+    var none = root.querySelector('.chs-noresults');
+    if (!input) return;
+    var sections = Array.prototype.slice.call(root.querySelectorAll('.chs-section'));
+    var total = root.querySelectorAll('.chs-table tbody tr').length;
+
+    function apply() {
+      var q = input.value.trim().toLowerCase();
+      var shown = 0;
+      sections.forEach(function (sec) {
+        var secShown = 0;
+        sec.querySelectorAll('tbody tr').forEach(function (row) {
+          var hit = !q || (row.getAttribute('data-search') || '').indexOf(q) !== -1;
+          row.hidden = !hit;
+          if (hit) { secShown++; shown++; }
+        });
+        sec.hidden = secShown === 0;
+      });
+      if (none) none.hidden = shown !== 0;
+      if (count) count.textContent = q ? shown + ' / ' + total + ' commands' : '';
+    }
+
+    var t;
+    input.addEventListener('input', function () {
+      clearTimeout(t);
+      t = setTimeout(apply, 90);
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      var a = document.activeElement;
+      var typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+      if (typing) return;
+      e.preventDefault();
+      input.focus();
+      input.select();
+    });
+  })();
+</script>
