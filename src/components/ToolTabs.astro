@@ -21,24 +21,80 @@ const loaded = await Promise.all(
     return { tool, Content };
   })
 );
+
+// Tab selection persists across pages, so a reader can land on a chapter with
+// a tool already chosen for them and not notice which one. The strip above the
+// card names it. Server-rendered with the first tool, which is the tab
+// Starlight selects by default, so the line is correct before any script runs.
+const defaultLabel = tools[0]?.label ?? '';
 ---
 
-<Tabs syncKey="tool">
-  {loaded.map(({ tool, Content }) => (
-    <TabItem label={tool.label}>
-      <Content />
-    </TabItem>
-  ))}
-</Tabs>
+<div class="tool-tabs">
+  <p class="tool-tabs-showing">
+    Showing: <span class="tool-tabs-showing-tool" data-tool-showing>{defaultLabel}</span>
+    <span class="tool-tabs-showing-hint">pick a tab to change</span>
+  </p>
+
+  <Tabs syncKey="tool">
+    {loaded.map(({ tool, Content }) => (
+      <TabItem label={tool.label}>
+        <Content />
+      </TabItem>
+    ))}
+  </Tabs>
+</div>
+
+<style>
+  .tool-tabs {
+    margin-block: 1.75rem;
+  }
+
+  /* The card owns the block rhythm now, so the tabs sit tight under the strip
+     they describe instead of floating a full paragraph away from it. */
+  .tool-tabs :global(starlight-tabs) {
+    margin-block: 0.4rem 0;
+  }
+
+  .tool-tabs-showing {
+    margin: 0;
+    color: var(--sl-color-gray-3);
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+
+  .tool-tabs-showing-tool {
+    color: var(--sl-color-gray-2);
+    font-family: var(--sl-font-mono);
+    font-weight: 500;
+  }
+
+  .tool-tabs-showing-hint::before {
+    content: ' · ';
+  }
+</style>
 
 <script>
   // Starlight syncs its own tab groups. Extend that contract to the React
-  // comparators above each chapter without reaching into their implementation.
+  // comparators above each chapter without reaching into their implementation,
+  // and keep the "Showing:" strip on every ToolTabs block in step with it.
+  const syncKeyed = 'starlight-tabs[data-sync-key="tool"]';
+
+  function paintShowingStrips() {
+    const selected = document.querySelector<HTMLElement>(
+      `${syncKeyed} [role="tab"][aria-selected="true"]`,
+    );
+    const label = selected?.textContent?.trim();
+    if (!label) return;
+    for (const strip of document.querySelectorAll<HTMLElement>('[data-tool-showing]')) {
+      strip.textContent = label;
+    }
+  }
+
   window.addEventListener('agentscli:tool-preference', (event) => {
     const label = (event as CustomEvent<{ label?: string }>).detail?.label;
     if (!label) return;
 
-    for (const element of document.querySelectorAll('starlight-tabs[data-sync-key="tool"]')) {
+    for (const element of document.querySelectorAll(syncKeyed)) {
       const tabs = [...element.querySelectorAll<HTMLAnchorElement>('[role="tab"]')];
       const index = tabs.findIndex((tab) => tab.textContent?.trim() === label);
       const selected = tabs[index];
@@ -49,5 +105,20 @@ const loaded = await Promise.all(
       };
       controller.switchTab?.(selected, index, false);
     }
+
+    paintShowingStrips();
   });
+
+  // A plain tab click never fires the event above, and Starlight restores the
+  // stored tab after this script runs. Watching aria-selected covers both.
+  const observer = new MutationObserver(paintShowingStrips);
+  for (const element of document.querySelectorAll(syncKeyed)) {
+    observer.observe(element, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-selected'],
+    });
+  }
+
+  paintShowingStrips();
 </script>

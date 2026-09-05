@@ -1,5 +1,9 @@
 # Blog Article Authoring Guide
 
+Authoring entry point: [shared core and local adapter](AUTHORING.md). This guide owns components and presentation, not general craft or critique.
+
+Current content location is `src/content/docs/blog/<slug>.mdx`, registered in `src/content.config.ts` and rendered by custom blog routes. Older manual-page examples below are component references, not the default path for new posts. Do not create duplicate routes for an MDX post.
+
 > **For AI Agents & Developers**: This guide explains how to create blog articles for the agents.cli documentation site using the established templates and components.
 
 ## Table of Contents

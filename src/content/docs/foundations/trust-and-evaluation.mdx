@@ -10,11 +10,13 @@ An agent can be useful and still be unsafe. A repository can contain prompt inje
 
 The practical question is not “is this agent trusted?” It is: **which inputs can influence it, which actions can it take, and which layer can still stop a bad action?**
 
-The test: if you cannot name the input boundary, action gate, execution boundary, and deterministic postcondition for a workflow, it is not ready for unattended use.
+:::caution[The test]
+If you cannot name the input boundary, the action gate, the execution boundary, and the deterministic postcondition for a workflow, it is not ready for unattended use.
+:::
 
 ## The guarantee ladder
 
-Treat these as progressively stronger controls. A lower layer can guide behavior; a higher layer can prevent or contain it.
+Every control lives at a layer, and the layer decides what the control can promise. Anything made of text - prompts, rules, skill bodies - can only ask the model to behave. Controls placed in the action path can refuse an action regardless of what the model decided. Controls around the process can contain damage even when both the model and the gate are fooled. That is the whole logic of the ladder: the further a control sits from the model's output, the less it depends on the model's cooperation.
 
 | Layer | What it does | What it cannot promise |
 |---|---|---|
@@ -25,28 +27,36 @@ Treat these as progressively stronger controls. A lower layer can guide behavior
 | OS sandbox | Limits filesystem, process, and network reach | The task result is correct or secrets are available safely |
 | Repository or server-side enforcement | Protects branches, deploys, credentials, and external systems | Local work before the request reaches the boundary |
 
-This is why “plan mode,” “auto,” and “deny” need qualification. They are product labels, not universal security guarantees. See [Permissions & sandboxing](/foundations/permissions/), [Hooks](/foundations/hooks/), and [Plan mode](/foundations/plan-mode/) for the tool-specific boundaries.
+This is why “plan mode,” “auto,” and “deny” need qualification. They are product labels, not universal security guarantees. **The label is not the boundary; the layer is.** See [Permissions & sandboxing](/foundations/permissions/), [Hooks](/foundations/hooks/), and [Plan mode](/foundations/plan-mode/) for the tool-specific boundaries.
 
 ## Threat-model the input path
 
 Before enabling a new capability, ask what can arrive through each channel:
 
-- **Repository content:** source files, issues, fixtures, generated files, and comments can contain instructions aimed at the model rather than the developer.
+- **Repository content:** source files, issues, fixtures, generated files, and comments can contain instructions aimed at the model rather than the developer - a fixture comment reading "ignore the failing assertion" is an attack on the reader of the file, not on the test runner.
 - **Tool output:** search results, logs, webpages, and MCP resources can carry untrusted text. Treat tool descriptions and annotations as data, not policy.
 - **Installed components:** skills, plugins, extensions, and MCP servers are executable supply-chain dependencies. Review their source, pin versions where possible, and remove unused access.
 - **Credentials and reach:** give a workflow only the tokens, directories, network access, and worktree it needs. A read-only task should not inherit deployment credentials.
 - **Unattended execution:** headless and background runs need preconfigured approval, sandbox, hook, timeout, output-validation, and rollback policies because no person may be present at the moment of action.
 
+**The model's context is the attack surface: every channel that can write into it is an input path.**
+
 The [MCP security principles](https://modelcontextprotocol.io/specification/2025-06-18/index) and [authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) are useful reference points: servers can perform arbitrary actions on connected systems, and consent must remain explicit and under host control.
 
 ## Evaluate the workflow, not just the prompt
 
-An agent configuration is a small software system. Give it a regression loop:
+An agent configuration is a small software system, and "the model says it succeeded" is not a test result. Watch one toy run at real scale: a nightly job that drafts release notes from the merged PRs.
+
+The obvious check is to read the output. It reads well, every sentence is plausible, the run ends green, and the summary explains exactly what it did and why. **Plant that verdict: reads well, ship it.**
+
+Now grade artifacts instead. The postconditions are dumb on purpose: every PR number since the last tag appears in the file, no entry survives a revert, exit code zero. PR #4821 was squash-merged with a rewritten title, so the draft misses it; #4799 was reverted an hour after merging, but its entry is still there. Both misses are invisible in prose that reads well and fatal in a diff against `git log`. **Deterministic checks catch what a readable summary hides.**
+
+That toy is the loop, generalized:
 
 1. Define a task with a fixture, an acceptance test, and explicit forbidden outcomes.
 2. Run it in a disposable worktree with the smallest useful tool and credential set.
 3. Capture the trace: model, rules, skills, tool calls, approvals, files changed, duration, and cost.
-4. Grade the result against deterministic postconditions before reading the model's explanation.
+4. **Grade the result against deterministic postconditions before reading the model's explanation.**
 5. Repeat on representative failures and adversarial inputs, then compare against the previous configuration.
 
 Track at least:
@@ -62,6 +72,8 @@ Track at least:
 
 Keep the task set small and versioned. A five-case regression suite that runs on every rules, skill, hook, model, or plugin change is more useful than a large benchmark nobody reruns.
 
+The postcondition is the ladder again: a check that sits at a layer text cannot argue with. Everything else in the loop exists so that check has something deterministic to grade.
+
 ## A preflight for new capabilities
 
 Before installing or enabling a component:
@@ -73,7 +85,7 @@ Before installing or enabling a component:
 - What deterministic check catches a bad result?
 - Can the run be stopped, inspected, reverted, and attributed?
 
-If the answers are unclear, keep the component out of unattended workflows until they are documented and tested.
+If the answers are unclear, **keep the component out of unattended workflows until they are documented and tested.**
 
 ## How it works in each tool
 
@@ -93,6 +105,8 @@ If the answers are unclear, keep the component out of unattended workflows until
 - **Trust** is not a single toggle. A trusted repository, a trusted tool, and a trusted action are different decisions.
 - **Evaluation** is not “the model says it succeeded.” It is a testable postcondition plus evidence from the run.
 - **Sandboxing** limits impact; it does not prove correctness. Pair it with acceptance tests and output validation.
+
+The ladder runs both directions. Climbing it costs setup and maintenance: a sandbox to configure, hooks to write, approvals that slow the loop down, a regression suite to keep versioned. That cost is the sequel, and it is paid per workflow, not once. Start with the smallest unattended run you actually have - a [headless](/foundations/headless/) job, a scheduled sweep - and give it one input boundary, one action gate, and one deterministic postcondition. That trio is the preflight at the lowest layer; everything above is the same trio, stronger.
 
 <UpstreamRefs checkedAt="2026-08-07"
   links={[
