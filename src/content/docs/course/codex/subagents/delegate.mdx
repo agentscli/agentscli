@@ -5,25 +5,27 @@ sidebar:
   label: "Delegate · isolated context"
 ---
 
-The recategorisation is exactly the kind of task that should never run in your main thread. It's high-volume - thousands of rows, the same classification judgement applied over and over, pages of output you'll skim once and never reference again - and self-contained: you don't need the journey through every row, only the destination, the set of recategorised transactions and a summary of what changed. That shape, *verbose work whose output you'll never look at again*, is the textbook case for delegating to a subagent.
+The recategorisation is exactly the kind of task that should never run in your main thread: high-volume, thousands of rows, the same classification judgement applied over and over, pages of output you'll skim once and never reference again. You don't need the journey through every row, only the destination - the set of recategorised transactions and a summary of what changed. That shape, *verbose work whose output you'll never look at again*, is the textbook case for delegating to a subagent. Here's the tension underneath that textbook case, though: the isolation that makes the delegation worth doing is the same isolation that erases the reasoning behind the answer the moment the task finishes. You get the finding. You lose the ability to interrogate it.
 
-## Why isolation is the point
+## Price the reading before you delegate anything
 
-A subagent runs as a **separate session with its own context window**. It doesn't inherit your full conversation transcript or the files you've already opened - it gets a scoped delegation message describing the task, and works from there. That separation is the whole value, and it's worth seeing the cost you avoid.
+Before you weigh whether to hand this off, weigh what it costs to do it at all - inline or delegated, the reading has to happen somewhere. A careful pass at the recategorisation needs three things to work from: the importer that shapes every row it's about to classify (`src/budgetcli/importers/csv.py`, 210 lines, about 2,100 estimated tokens), the rules it's checking each row against (`src/budgetcli/categorise/rules.py`, 512 lines, about 5,120 tokens), and the test suite that already pins down what "correctly categorised" means for this repo, so it doesn't invent a rule the tests forbid (1,240 lines across the suite, about 12,400 tokens). Add it up: 19,620 tokens of reading, just to get oriented, before a single row gets reclassified.
 
-Run the recategorisation inline and your window fills with the raw material:
+**Remember that number - 19,620. It's about to turn into the whole case for isolation.**
+
+Run that reading inline and it sits in your window next to everything else you're doing:
 
 ```text
 in your main thread (inline)         in your main thread (delegated)
 ─────────────────────────────        ───────────────────────────────
-3,000 rows read + reasoned over       "recategorise history against the
-the taxonomy reloaded per batch        corrected taxonomy"
+19,620 tokens of orientation read     "recategorise history against the
+3,000 rows read + reasoned over        corrected taxonomy"
 every reclassification logged          a summary: 412 rows changed
 the review you came here to do…        the review you came here to do…
    ↑ buried under row dumps              ↑ still right there, in reach
 ```
 
-Same answer, wildly different footprint. The work you actually came to do - reviewing the changes, signing off - stays the most recent, most prominent thing in your context, instead of being pushed three thousand rows into the past where the agent half-forgets it. The parent pays only for the **aggregated summary**, never the full transcript of the worker. That's the cleanest tie to the thesis this whole course is built on: you close the gap - get the categorisation done against your real history - without bloating the window you're reasoning in.
+Same answer, wildly different footprint. The work you actually came to do - reviewing the changes, signing off - stays the most recent, most prominent thing in your context, instead of being pushed thousands of tokens into the past where the agent half-forgets it.
 
 ## Scope it before you hand it over
 
@@ -42,7 +44,17 @@ A subagent is only as good as the brief, because it starts without your context.
   rows you couldn't classify confidently.
 ```
 
-Notice what the brief asks back for: *a summary, not the rows*. "Return a summary table," not "show me every reclassification." A subagent that hands back three paragraphs protects your context; one that hands back three thousand rows has just relocated the flood into your thread instead of keeping it out. The terseness of the return is something you design, not something you hope for.
+Notice what the brief asks back for: *a summary, not the rows*. Written out, a table like that runs a little over a paragraph - call it 1,200 characters, which the prose estimator puts at about 300 tokens. Set the two numbers next to each other: 19,620 tokens read, 300 tokens returned. The subagent paid about 65 times its own answer in reading you never see, in a window that isn't yours.
+
+**Call that trick pay once, keep the finding.** It's the whole reason isolation is worth its cost, and you'll reach for the same move in every later lesson that touches a subagent.
+
+## What "keep the finding" actually throws away
+
+The finding is real, and 65-to-1 is a good trade in tokens. But the cost of delegating was never the reading - that reading happens whether or not you delegate it, and paying it in a window you never open is strictly better than paying it in the one you're working in. The real cost shows up the moment the subagent's window closes: the 19,620 tokens of reasoning that produced the 300-token finding are gone with it. Not archived, not searchable in a transcript - gone. If tomorrow you want to know why row 412 changed category and the summary table didn't say, there is no "it" left to ask. You spawn a fresh subagent, hand it the same brief, and pay the 19,620 tokens again, hoping it reasons its way to the same answer twice.
+
+**Isolation doesn't erase the cost of the search. It just moves it somewhere you can't go back to.**
+
+That's the honest version of "the parent pays only for the aggregated summary": true about tokens, and silent about the fact that the parent also can't ask a follow-up. Keep that trade-off in view every time a subagent's answer looks a little too clean.
 
 ## Give the worker only the trust it needs
 
@@ -52,8 +64,8 @@ Codex exposes a concurrency cap through `agents.max_concurrent_threads_per_sessi
 
 ## When to keep it in the main thread instead
 
-Delegation isn't free. Keep the work in your main conversation when it needs frequent back-and-forth, when several phases share real context - planning into implementation into testing - or when it's a quick, targeted change where spinning up a fresh worker that has to re-gather context just adds latency. For a tiny clarifying detour ("does this bank export use `DD/MM` or `MM/DD`?"), a lightweight in-session side conversation is cheaper than a full subagent spawn; isolation is a cost you opt into, not a default.
+Delegation isn't free, and now you know exactly what it isn't free in: not tokens, which it saves, but the reasoning trail, which it destroys. Keep the work in your main conversation when it needs frequent back-and-forth, when several phases share real context - planning into implementation into testing - or when it's a quick, targeted change where spinning up a fresh worker that has to re-gather context just adds latency and a follow-up you can no longer ask. For a tiny clarifying detour ("does this bank export use `DD/MM` or `MM/DD`?"), a lightweight in-session side conversation is cheaper than a full subagent spawn; isolation is a cost you opt into, not a default.
 
-The test is the same one as delegating to a person: *would I hand this off, get back a paragraph, and be happy?* The recategorisation, yes - you want the result and the summary, not the reading. A delicate money refactor you'll be steering line by line, no - the context the worker throws away is exactly the context you need.
+The test is the same one as delegating to a person: *would I hand this off, get back a paragraph, and be happy never asking a follow-up?* The recategorisation, yes - you want the result and the summary, not the reasoning. A delicate money refactor you'll be steering line by line, no - the context the worker throws away is exactly the context you'd need to steer it.
 
-One subagent could grind through the whole history in sequence. But notice the history splits cleanly - by account, by year, by import batch - into slices that don't depend on each other. When a problem decomposes like that, one worker working serially is leaving speed on the table. [Next we fan the work out](/course/codex/subagents/fan-out/).
+One subagent could grind through the whole history in sequence, paying that 65-to-1 trade once. But notice the history splits cleanly - by account, by year, by import batch - into slices that don't depend on each other. When a problem decomposes like that, one worker working serially is leaving speed on the table, and the same isolation cost you just paid once is about to get paid several times at once. [Next we fan the work out](/course/codex/subagents/fan-out/) and find out what that multiplication actually buys you.

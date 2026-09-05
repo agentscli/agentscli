@@ -1,31 +1,27 @@
 ---
 title: "Package the harness and hand it to a teammate"
-description: "Your harness is six files across three directories. A Pi package bundles them and ships over npm or git, so a teammate installs the whole thing in one command."
+description: "Your harness is seven files across three directories. A Pi package bundles them and ships over npm or git, so a teammate installs the whole thing in one command."
 sidebar:
   label: "Packages"
 ---
 
 import PluginPacker from '../../../../../components/interactive/PluginPacker.tsx';
 
-Everything you've built for `stash` so far - the damage-control extension, the `/stash` command and re-extract tool, the task gate, the onboarding Skill, the triage-fetch template - lives as files scattered across `.pi/extensions/`, `.pi/skills/`, `.pi/prompts/`. That's fine as long as it's just you working the codebase. It stops being fine the moment a teammate clones `stash` and asks how to get the same setup: right now the honest answer is "copy these six files from these three directories," which is the kind of instruction that gets followed once and then quietly drifts.
+Everything you've built for `stash` across the last two modules lives as separate files: `damage-control.ts`, `tilldone.ts`, `plan-injector.ts`, and `statusline.ts` from the rebuilt-defaults module, `stash-tools.ts` from your first extension, and now `onboard-content-source/SKILL.md` and `triage-fetch.md` from this one. Count them - that's **seven files**, spread across **three directories**: five in `.pi/extensions/`, one in `.pi/skills/`, one in `.pi/prompts/`. That's fine as long as it's just you working the codebase. It stops being fine the moment a teammate clones `stash` and asks how to get the same setup: right now the honest answer is "copy these seven files from these three directories," which is the kind of instruction that gets followed once and then quietly drifts.
 
-A **Pi package** is the fix: the distribution unit that bundles Extensions, Skills, Prompt Templates, and Themes together and ships them as one installable thing, over infrastructure that already exists - npm or git. There's no bespoke Pi registry to stand up; a package is just an npm package (or a git repo) that happens to carry a `pi` key in its `package.json`.
+A **Pi package** is the fix: the distribution unit that bundles Extensions, Skills, Prompt Templates, and Themes together and ships them as one installable thing, over infrastructure that already exists - npm or git. There's no bespoke Pi registry to stand up; a package is just an npm package (or a git repo) that happens to carry a `pi` key in its `package.json`. It doesn't even need to, as it turns out - watch what Pi finds with no manifest at all before you reach for one.
 
-## Installing one
+## What convention finds, before you write a manifest
 
-```bash
-pi install npm:@foo/bar@1.0.0
-pi install git:github.com/user/repo@v1
-pi install https://github.com/user/repo
-pi install ./relative/path/to/package
-pi install /absolute/path/to/package
-```
+Predict this before reading on: publish those seven files with no `pi` key anywhere in `package.json`, just the files sitting in directories named `extensions/`, `skills/`, and `prompts/`. How many does Pi actually pick up on install?
 
-Companion commands round out the lifecycle: `pi remove`, `pi list`, `pi update` (with `--all`, `--extensions`, `--self` flags for narrowing what gets refreshed). None of this is `stash`-specific machinery - it's the same install surface for anything in the ecosystem, which is exactly why packaging your own `stash` harness this way means a teammate's onboarding step becomes one command instead of a conversation.
+All seven. This is **convention-based auto-discovery**, and it runs whenever a package skips the `pi` key entirely: Pi looks for an `extensions/` directory and takes every `.ts`/`.js` file inside it - your five extensions, matched. It looks for a `skills/` directory and takes every folder inside it that contains a `SKILL.md` - your one Skill, matched, sitting in its own `onboard-content-source/` folder exactly as the last lesson built it. It looks for a `prompts/` directory and takes every `.md` file inside it - `triage-fetch.md`, matched. There's also a `themes/` directory convention, scanned for `.json` files, and it would pick up `stash-dark.json` too - if you chose to bundle it. This harness doesn't: a theme buys nothing the model needs, so there's no reason to force your color choices on a teammate who installs the rest.
 
-## The manifest: a `pi` key in `package.json`
+**Name the directories the way Pi expects, and the bundle needs no manifest at all.**
 
-Turning your `.pi/` directory into a package that others can install is a matter of publishing it with a manifest pointing at the right folders:
+## The manifest: a `pi` key in `package.json`, when you need precision
+
+Convention works because this package happens to be single-purpose - every file in `extensions/` belongs to the `stash` harness, nothing else is mixed in. The moment that stops being true - say `extensions/` also holds an unrelated script, or your skills live somewhere convention won't find - you need to say so explicitly:
 
 ```json
 // package.json
@@ -41,21 +37,41 @@ Turning your `.pi/` directory into a package that others can install is a matter
 }
 ```
 
-The `pi` key is opt-in - its paths (which support globs and exclusions) tell Pi exactly where to find each resource type inside the package. If you skip the `pi` key entirely, Pi falls back to **convention-based auto-discovery**: an `extensions/` directory for `.ts`/`.js` files, a `skills/` directory for folders containing a `SKILL.md`, a `prompts/` directory for `.md` files, a `themes/` directory for `.json` files. For a package built around one coherent purpose - like a `stash` harness - the convention layout is usually enough; you'd reach for the explicit `pi` key mainly to be precise about paths or to exclude something from a directory that also holds unrelated files.
+The `pi` key is opt-in - its paths (which support globs and exclusions) tell Pi exactly where to find each resource type inside the package, overriding whatever convention would have guessed. For a package built around one coherent purpose, like this harness, convention already gets the right answer; you'd reach for the explicit `pi` key mainly to be precise about paths or to exclude something a bare directory scan would wrongly sweep in.
 
-`keywords: ["pi-package"]` is the one line that matters if you ever want this discoverable beyond your own team - it makes the package findable through [npm's `pi-package` keyword search](https://www.npmjs.com/search?q=keywords%3Api-package). You don't need it for a private team package installed straight from git; it only matters if you're publishing for strangers to find.
+**The manifest buys precision; convention buys not needing one. Most single-purpose bundles, including this one, don't need the manifest at all.**
 
-Once it's published (or just pushed to a git remote your teammate can reach), the whole `stash` harness installs in one line:
+A separate detail, worth knowing but not part of that tradeoff: `keywords: ["pi-package"]` is the one line that matters if you ever want this discoverable beyond your own team - it's what makes a package findable through [npm's `pi-package` keyword search](https://www.npmjs.com/search?q=keywords%3Api-package). You don't need it for a private team package installed straight from git; it only matters once you're publishing for strangers to find.
+
+## Installing one
 
 ```bash
-pi install git:github.com/your-org/stash-harness
+pi install npm:@foo/bar@1.0.0
+pi install git:github.com/user/repo@v1
+pi install https://github.com/user/repo
+pi install ./relative/path/to/package
+pi install /absolute/path/to/package
 ```
+
+Companion commands round out the lifecycle: `pi remove`, `pi list`, `pi update` (with `--all`, `--extensions`, `--self` flags for narrowing what gets refreshed). None of this is `stash`-specific machinery - it's the same install surface for anything in the ecosystem, which is exactly why packaging your own `stash` harness this way means a teammate's onboarding step becomes one command instead of a conversation.
+
+Once your harness is pushed to a git remote your teammate can reach, the whole thing installs in one line:
+
+```bash
+pi install git:github.com/your-org/stash-harness@v1
+```
+
+That `@v1` isn't decorative. Drop it - `pi install git:github.com/your-org/stash-harness` with no ref - and you get whatever commit happens to sit at the tip of the default branch the moment the command runs. That's also whatever commit is there the next time a teammate installs, or the next time someone runs `pi update`. Those can be two different commits, and this package's extensions run with full system access - the damage-control gate alone can read and write anything `stash` can touch. Pinning to a tag freezes the exact code you reviewed; an unpinned install is a standing bet that whoever controls that repo never ships something worse between now and the next install. Review what you're pinning to, not just that you remembered to pin it.
+
+**What installing doesn't give you: sync.** `pi install` copies a package's files onto your machine at that moment - it's not a live link back to the source. Push a fix to `stash-harness` tomorrow and every already-installed copy is silently behind, yours included, until someone runs `pi update` - which isn't automatic either. Two teammates who installed the same `git:` URL a week apart can be running two different versions of your own damage-control rules without either of them realizing it. For a harness carrying rules that gate writes to a real database and a real `.env` file, that's worth saying out loud in your own onboarding doc: pin the version, and write down that `pi update` is a step someone has to remember, because Pi won't remember it for you.
 
 And because packages support per-resource filtering, a teammate who wants your Skill and templates but not your particular damage-control rules can install the package and disable just the extensions piece - the pieces don't have to be all-or-nothing once they're bundled.
 
-Here's how that bundling maps across tools that ship a similar idea - pick a tool to see what travels together and what ships on its own:
+Here's how that bundling maps across five tools that ship a similar idea. Pi bundles all four resource types by design - that's this whole lesson. The others reach the same goal by different roads, and not all of them get there at all. Before you click through: guess which one of the five bundles nothing whatsoever - no plugin format, every piece a loose file a team copies by hand, the exact "seven scattered files" problem this lesson just solved for Pi.
 
 <PluginPacker client:visible />
+
+Cursor's the outlier: skill, subagent, hook, MCP config, and command all ship loose, because there's no plugin format to bundle them into yet. If your team is coordinating a shared setup there, you're doing by hand - copy these files, tell people where they go - exactly what a `pi install` does in one line here.
 
 ## What's actually out there
 
@@ -63,6 +79,17 @@ Pi has no bespoke registry. Discover packages through [npm's `pi-package` keywor
 
 ## The same caution, one more time
 
-The docs put this plainly, and it applies to a package exactly as much as it applied to a single Skill a lesson ago: **a Pi package runs with full system access, and its extensions execute arbitrary code.** Installing someone's `pi-package` is installing their code onto your machine with the same reach Pi itself has - no sandboxing layer specific to packages. Review before you install, especially anything pulled straight from a git URL rather than a name-checked npm publish. The convenience of `pi install git:github.com/whoever/whatever` is real; so is the fact that it will run whatever's in that repo.
+The docs put this plainly, and it applies to a package exactly as much as it applied to a single Skill a lesson ago: **a Pi package runs with full system access, and its extensions execute arbitrary code.** Installing someone's `pi-package` is installing their code onto your machine with the same reach Pi itself has - no sandboxing layer specific to packages, and no version pin means no guarantee the code you reviewed is the code that runs next time. Review before you install, especially anything pulled straight from a git URL rather than a name-checked npm publish. The convenience of `pi install git:github.com/whoever/whatever` is real; so is the fact that it will run whatever's in that repo, today and every time it's reinstalled after.
 
-You've now got a `stash` harness that isn't just yours anymore - it's one `pi install` away for anyone on the project. But everything you've built up through this module still assumes one agent doing one thing at a time. `stash` has a job that doesn't fit that shape: hundreds of saved URLs need re-extracting against the fixed adapter you shipped in the onboarding Skill, and that's too much for a single context window to chew through, and too repetitive to babysit turn by turn. [Next: build subagents from first principles](/course/pi/subagents/).
+## Which layer for which job
+
+| Layer | What it costs | What it buys | Who decided |
+|---|---|---|---|
+| Skill | Frontmatter only (62 words here) at startup; the body (186 words) loads only if a request matches | Removes re-typing a five-step procedure by hand every time a new source shows up | You wrote the description; the model decides when it matches |
+| Template | Nothing until typed - no startup listing at all | Removes retyping a recurring one-off prompt verbatim | You, always - no model discretion |
+| Theme | Nothing in the window, ever - a rendering cost, not a token cost | Nothing the model needs; comfort for the person staring at the screen | You, entirely - the loop never touches it |
+| Package | Nothing at install time beyond what's already bundled inside - it inherits the three rows above | Removes the "copy seven files across three directories" tax for a teammate - one command instead | You pack it; your teammate decides whether to trust it and run it |
+
+Seven files, three directories, one command - the ratio promised at the start of this module holds. And the pattern across all four rows is the same one: nothing here costs you anything until the specific job calls for it, and every "who decided" cell has your name in it somewhere, even the one where the model does the actual firing.
+
+You've now got a `stash` harness that isn't just yours anymore - it's one `pi install` away for anyone on the project. But notice what didn't change across any of the four rows: everything still loads into one window. Yours. A Skill's body, a template's expansion, a whole package's bundle - wherever they come from, they all land in the same context you've been managing since Module 2. That's fine right up until the `stash` job itself stops fitting in one window: hundreds of saved URLs need re-extracting against the fixed adapter you shipped in the onboarding Skill, a date-parser bug needs fixing, and the search index needs reindexing - all at once, more than a single context window can chew through in one sitting, and too repetitive to babysit turn by turn. [Next: build subagents from first principles](/course/pi/subagents/).

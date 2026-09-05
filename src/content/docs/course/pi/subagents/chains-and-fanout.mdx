@@ -7,11 +7,27 @@ sidebar:
 
 import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
 
-One spawn call handles one article. The re-extraction backlog is a few hundred of them, saved before you fixed the readability pipeline, all sitting in `stash`'s database with mangled text and stale search entries. You're not going to write that spawn call by hand a few hundred times - but you also shouldn't reach for one shape of multi-agent work without asking which shape the job actually has. There are two, and the difference between them is the same independence test you'd apply to any parallel work: *if two pieces finished in a different order, would the answer change?*
+One spawn call handles one article. The backlog waiting behind it is not one job - call it what it is: **312 saved URLs**, a declared toy count for this lesson (see the note below), each one sitting in `stash`'s database with mangled text and a stale search entry from before you fixed the readability pipeline. That's the slice of this module's villain this lesson takes on: the same handoff-tax primitive from the last lesson, run enough times that the shape of the control flow around it stops being obvious.
+
+:::note[About the numbers in this module]
+The backlog count, the audit results on the three sample URLs below, the per-article timing, and the batch arithmetic are all declared toy figures - invented to make each walkthrough checkable by hand, not measurements of a real `stash` run or of Pi's actual speed. Anywhere a number comes from your own machine instead (the docstring guess in the last lesson, the verifier's split in the next one), it says so there.
+:::
+
+You're not going to write that spawn call by hand 312 times - but before you reach for any shape of multi-agent work, ask the one question that actually decides which shape fits: *if two pieces finished in a different order, would the answer change?*
 
 ## When the answer is yes: chain them
 
 Some jobs are only expressible as a sequence. Before you touch the backlog at all, you actually want to know which articles need re-extraction - and that's naturally three steps where each one needs what the last one found: **audit** which saved URLs still read wrong, **re-extract** exactly that list, **verify** the search index picked up the changes. Step two can't run until step one hands it a list; step three can't run until step two hands it a result.
+
+Trace it on three real URLs instead of an abstract 312, so you can check every step by hand:
+
+- `https://slow-blog.example/post-142` (the one you spawned against in the last lesson)
+- `https://slow-blog.example/post-089`
+- `https://slow-blog.example/post-201`
+
+Predict before you run the audit step. Guess: **2 of 3 flagged.** The audit child comes back with exactly that - `post-142` and `post-201` still read wrong, `post-089` turns out to have been saved *after* the extractor fix landed, not before, so it's already clean. The audit didn't just save you two re-extractions worth of work; it caught a bad assumption about the backlog itself. Step two re-extracts only the two flagged URLs. Step three verifies both against the real stored text and the real search index. Three steps, one `$INPUT` handoff between each, and the chain never touches `post-089` at all - because step one told step two not to.
+
+**A chain exists because step two's prompt needs step one's real answer - not because the job is naturally slower.**
 
 Pi has no built-in "pipeline" primitive either - you get there with the same spawn call as before, just looped sequentially instead of fired once, with each step's prompt built from the previous step's raw output. The YAML below is a design sketch for a driver you write; Pi does not load this file automatically:
 
@@ -38,22 +54,30 @@ Error handling: if a step fails, the chain stops. Use `Promise.allSettled` in fa
 
 ## When the answer is no: fan it out
 
-The re-extraction itself doesn't have that shape at all. Whether `post-032` gets fixed before or after `post-140` changes nothing - each article's fix depends only on that article, never on another one's outcome. Running a few hundred of those sequentially, one after another in a chain, would be correct and slow for no reason. This is the other shape: **independent slices, run at once.**
+The re-extraction itself doesn't have that shape at all. Whether `post-032` gets fixed before or after `post-140` changes nothing - each article's fix depends only on that article, never on another one's outcome. Running 312 of those sequentially, one after another in a chain, would be correct and slow for no reason. This is the other shape: **independent slices, run at once.**
 
-Split the backlog into batches - by domain, by save date, by whatever keeps each batch a reasonable size - and spawn one child per batch, all at once. Name the pattern before you build it: **fan-out** is running the same child-agent prompt over N inputs concurrently, batched to respect your rate limit, and collected with `Promise.allSettled` rather than `Promise.all` - deliberately, so one batch crashing or timing out doesn't cost you the other nineteen batches that finished fine. Partial failure in a fan-out is data you triage, not a crash that discards everything.
+Do the arithmetic on toy figures, so you can check it yourself. 312 URLs, batched at 12 per child, is exactly 26 batches (312 / 12 = 26 - pick a batch size that divides your real backlog evenly and this stops being approximate). Give each child roughly 15 seconds per article - a toy figure, invented for this trace, not a measured Pi speed - to audit, re-extract, and verify one URL.
+
+Run all 312 sequentially, one after another in your own window: 312 × 15s = 4,680 seconds. Seventy-eight minutes, sitting in the one window you also need for the feature you actually came here to think about.
+
+Fan the 26 batches out five at a time - the concurrency cap this lesson settles on below - and each wave takes as long as its one slowest batch: 12 articles × 15s = 180 seconds, three minutes, per wave. Twenty-six batches at five per wave is six waves (⌈26 / 5⌉ = 6). Six waves × three minutes = eighteen minutes, wall-clock, for the same 312 articles - about four times faster on this toy arithmetic, and every one of those seconds spent in windows you never had to sit inside.
+
+Split the backlog into batches - by domain, by save date, by whatever keeps each batch a reasonable size - and spawn one child per batch, all at once. Name the pattern before you build it: **fan-out** is running the same child-agent prompt over N inputs concurrently, batched to respect your rate limit, and collected with `Promise.allSettled` rather than `Promise.all` - deliberately, so one batch crashing or timing out doesn't cost you the other batches that finished fine. Partial failure in a fan-out is data you triage, not a crash that discards everything.
 
 This is exactly the kind of glue worth having Pi write instead of typing it by hand. You already have the one primitive from the last lesson - the `spawn("pi", [...])` child runner, with its JSONL parsing loop wired to `agent_end`. Hand Pi a prompt roughly like this: *"Take the child-runner function from `subagents/spawn.mdx` and wrap it in a fan-out helper: split an array of URLs into batches of a given size, spawn one child per batch concurrently, and return each batch's result - success or failure - without letting one crashed batch cancel the others. Use `Promise.allSettled`, not `Promise.all`. Cap concurrency so we're not spawning more than a handful of `pi` processes at once."* Read the generated `.ts` before `/reload`ing it - check that it's actually built on the child runner you already have rather than reinventing spawn logic, that it batches instead of firing every URL as its own process, and that it really does use `allSettled`. See [Spawn a child Pi and read its JSONL](/course/pi/subagents/spawn/) for the child-runner primitive this builds on, and the [extension anatomy lesson](/course/pi/first-extension/anatomy/) for the shape any generated `.ts` file should take.
 
-Toggle the same job between running inline in your own window and fanning it out across children, and watch what actually changes:
+Before you toggle anything: predict whether the total token count changes when you flip from running the job inline to fanning it out. It doesn't - that matches the arithmetic above exactly, because fan-out changes *where* the tokens are spent, never *how many*. Toggle the same job between running inline in your own window and fanning it out across children, and watch the toggle confirm it:
 
 <SubagentFanout client:visible />
 
-Notice what the toggle *doesn't* do: the total tokens burned don't go down. Delegating doesn't make the work cheaper - it makes it happen off to the side, in windows you never have to sit inside, while your own context stays free for the feature you actually came here to think about. That's the trade fan-out is for. It's not a speed trick first; it's a context-hygiene trick that happens to run faster too, because independent batches genuinely can run at once.
+That's the reconciliation: eighteen toy minutes instead of seventy-eight, and zero tokens saved anywhere. Delegating doesn't make the work cheaper - it makes it happen off to the side, in windows you never have to sit inside, while your own context stays free for the feature you actually came here to think about. **Fan-out buys you wall-clock time and window space. It never buys you fewer tokens.**
 
 ## The one control knob that matters here
 
-Concurrency isn't free. Every child is its own model call, its own token spend, its own slice of your rate limit. Fan out four or five batches and you'll feel the parallelism; fan out fifty at once against a small backlog and you're paying spin-up cost on children barely bigger than the request that dispatched them, with no bulk win left to earn back. Start narrow - a handful of batches - and only widen if the batch size itself, not the concurrency ceiling, is what's slowing you down.
+Concurrency isn't free, and the wave arithmetic above shows exactly what it costs. Cap it at five concurrent children, the way this lesson's trace does, and you pay six waves of three minutes each to clear the toy backlog. Push it to twenty-six - one child per batch, all at once - and every batch finishes in the same three minutes, but you've traded five simultaneous model calls for twenty-six, and you'll hit your provider's rate limit long before you hit anything Pi enforces itself. Past that ceiling, children don't run slower - they start failing outright, one 429 at a time, and the naked spawn has no backoff built in for that. Your driver either retries with a delay, or the batch is just gone.
+
+The other risk narrowing concurrency doesn't fix is a child that hangs: a `bash` command that never returns, a page that never finishes loading. Raw spawn hands you a process, not a supervisor, and nothing kills it for you. A stuck child in wave three of six holds up every wave after it, because your driver is still waiting on an `agent_end` event that's never coming. Start narrow - a handful of batches, five like this lesson's trace - and put a timeout in your own driver before you add more concurrency, not after.
 
 The same instinct applies to which shape you reach for at all. A chain when a later step's *prompt* has to be built from an earlier step's real output; a fan-out when the work is genuinely embarrassingly parallel. Reach for fan-out on a chain-shaped job and you're guessing at what a later step needs before an earlier step has told you. Reach for a chain on fan-out-shaped work and you're waiting in line for no reason. Both patterns are the exact same spawn call from the last lesson - the only thing that changed is the control flow wrapped around it.
 
-The backlog's cleared, fast, and off your plate. But look at what you actually did: you accepted every child's own "done, re-extracted, index updated" at face value. Nothing checked whether that was true. [Next: build a second agent whose entire job is to not believe the first one](/course/pi/subagents/the-verifier/).
+The backlog's cleared - eighteen toy minutes instead of seventy-eight, the same `SubagentFanout` toggle you just drove proving the token count never moved. But look at what you actually did: you accepted every child's own "done, re-extracted, index updated" at face value. Nothing checked whether that was true. That's the handoff tax landing exactly where you'd expect - on the one thing isolation can never verify for you by itself: the report. [Next: build a second agent whose entire job is to not believe the first one](/course/pi/subagents/the-verifier/).

@@ -1,43 +1,45 @@
 ---
 title: Reach for the Codex SDK when exec runs out of room
-description: "codex exec is one prompt, one result, one exit code. Once a job needs several stages with real logic between them, you have outgrown it - move to the SDK."
+description: "codex exec is one prompt, one result, one exit code. Learn the test for when a job has outgrown that shape - and this chapter's worst blast-radius reading."
 sidebar:
   label: "Codex SDK · when to leave exec"
 ---
 
-Everything in this chapter has run through `codex exec`: one prompt in, one result out, one exit code the calling script reads. That shape carries an enormous amount - the monthly report, the transaction check, both reproducible in CI. For most automation it's all you'll ever need. This last lesson is about the cases where it isn't, and about not reaching for heavier machinery before you have to.
+Everything so far - the report, the transaction check, both of them reproducible - ran through the same shape: one prompt in, one result out, one exit code a calling script reads. That shape has carried this entire chapter, and for most automation it's all you'll ever need. Here's the tension this last lesson turns on: the fence and the brief this chapter spent three lessons pinning down both assume the run is one call with one verdict. The moment a job needs real branching logic between stages, that trust model doesn't shrink gracefully to fit shell glue, and it doesn't scale up on its own either - something has to replace the shell.
 
-## The line where a shell script buckles
+## The one-call test
 
-`codex exec` is stateless per call and composes through the shell: you chain runs with `&&`, branch on exit codes, pipe output between them. That works beautifully right up to the point where the *logic between the stages* gets real. Picture budgetcli's check growing up: recategorise the new transactions, then *if* anything crossed a budget, draft an alert; *if* a test failed, open a fix and re-run only the affected suite; gate each stage on the previous one actually producing the artefact it promised. Express that in shell and you're soon writing fragile glue - parsing prose to decide what happens next, hoping a stage finished before the next one starts, with no record of why the run took the path it did.
+`codex exec` is stateless per call and composes through the shell: chain runs with `&&`, branch on exit codes, pipe output between them. That works cleanly right up to the point where the logic *between* the stages gets real. Picture `budgetcli`'s check growing up: recategorise the new transactions, then *if* anything crossed a budget, draft an alert; *if* a test failed, open a fix and re-run only the affected suite; gate each stage on the previous one actually producing the artefact it promised, not just exiting zero. Chain three stages like that with plain `&&` and you already have three places where the whole job dies silently in the wrong way, because a stage can fail shut on its *own* terms - exit zero - while producing an artefact the next stage trusts blindly. Fail shut, the trick from two lessons back, only protects the boundary of a single call. It has nothing to say about what happens *inside* a chain of them.
 
-The heuristic to carry: **if the job fits in a shell script, keep it in `codex exec`.** Once you're writing more than a few stages with real conditional logic between them - typed validation at the boundaries, structured handoffs, a trace you can read after the fact - you've outgrown the CLI, and that's when the SDK earns its setup cost.
+The heuristic: **if the job fits in a shell script, keep it in `codex exec`.** The moment you're writing more than a few stages with real conditional logic between them - typed handoffs, a trace you can read after the fact for *why* the run took the path it did - you've outgrown the CLI, and that's when the SDK earns its setup cost.
 
-## What the SDK buys you beyond `exec`
+## What the SDK buys, and doesn't
 
-The **Codex SDK** is the programmatic interface for controlling coding-focused Codex threads - the thing you move to when your application needs more control than a one-shot shell command. It starts, continues, and resumes Codex work from server-side TypeScript or Python:
+The **Codex SDK** is the programmatic interface for controlling coding-focused Codex threads from server-side TypeScript or Python - the thing you reach for when an application needs more control than a one-shot shell command:
 
-- **Programmatic lifecycle control.** Start a thread, run a prompt, continue it, or resume it later without parsing terminal output.
-- **Application integration.** Put Codex inside a server-side CI service, internal tool, or engineering workflow while keeping the coding task in Codex.
-- **A real thread boundary.** Keep related turns together when they need shared context, and create a new thread when the task should start clean.
+- **Programmatic lifecycle control.** Start a thread, run a prompt, continue it, or resume it later, without parsing terminal output.
+- **Application integration.** Put Codex inside a server-side CI service, an internal tool, or a larger engineering workflow, while keeping the coding task itself inside Codex.
+- **A real thread boundary.** Keep related turns together when they need shared context; start a new thread when the task should begin clean.
 
-The SDK is not a replacement for a general workflow engine, and it does not automatically provide typed handoffs, quality gates, or traces. Put those controls in your surrounding application and validate them with ordinary program logic. For broader multi-agent orchestration where Codex is one specialist, the official guidance is to run Codex CLI as an MCP server and orchestrate it with the Agents SDK. Keep the [Approvals & sandboxing](/course/codex/approvals-sandbox/) posture explicit for every process you launch.
+It is not a workflow engine, and it doesn't hand you typed handoffs, quality gates, or a trace for free - those still belong in your surrounding application, validated with ordinary program logic. For broader multi-agent orchestration, where Codex is one specialist among several, the official guidance is to run Codex CLI as an MCP server and orchestrate it with the Agents SDK - and every process you launch that way still owes you the same explicit [approvals-and-sandbox](/course/codex/approvals-sandbox/) posture this chapter has been building.
 
 :::note
-The current SDK docs list the TypeScript package [`@openai/codex-sdk`](https://learn.chatgpt.com/docs/codex-sdk) for Node 18+ and the Python package `openai-codex` for Python 3.10+. Method signatures and options remain versioned API surface, so check the [official SDK documentation](https://learn.chatgpt.com/docs/codex-sdk) before pinning symbols. This lesson deliberately teaches the *decision* - when to cross over - not a code listing that will drift.
+The current docs list the TypeScript package [`@openai/codex-sdk`](https://learn.chatgpt.com/docs/codex-sdk) for Node 18+ and the Python package `openai-codex` for Python 3.10+. Method signatures are versioned API surface - check the [official SDK docs](https://learn.chatgpt.com/docs/codex-sdk) before pinning symbols. This lesson teaches the decision to cross over, not a listing that will drift out from under it.
 :::
 
-## When *not* to reach for it
+Two cheaper tools usually win before the SDK does. If the workflow is a linear sequence the agent just follows - no branching, do this then this then this - that's a [Skill](/course/codex/skills/), not a pipeline; you already have that pattern from the CSV-onboarding skill. And if it's a single self-contained task, however involved, it's still a `codex exec` call - the report and the transaction check both live here, and most of your automation will too. **Reach for the SDK for programmatic thread control or embedding Codex in another service. Reach for the Agents SDK only when you're orchestrating Codex as one specialist inside something bigger. Keep the deterministic checking in your own application either way - no SDK turns a model's reply into a verdict on its own.**
 
-The SDK is more setup than a shell script: a language runtime, the framework wired in, the pipeline expressed in code. Don't pay that cost early. Two cheaper tools usually win first:
+## The chapter's row
 
-- **If the workflow is a linear sequence the agent just follows** - do this, then this, then this, no branching - that's a [Skill](/course/codex/skills/), a markdown procedure, not a pipeline. You already have that pattern in your toolkit from the CSV-import skill.
-- **If it's a single self-contained task**, however involved, it's still a `codex exec` call. One prompt, one result. The report and the transaction check both live here, and most of your automation will too.
+Every chapter keeps score on the same four questions from [the loop](/course/codex/getting-started/the-loop/): tokens, turns, blast radius, recurrence. Picking the ledger back up from where chapter one left it, abbreviated:
 
-Reach for the Codex SDK when you need programmatic control of Codex threads or need to embed Codex in another service. Reach for the Agents SDK only when you are building a broader orchestrated workflow and Codex is one specialist inside it. Keep deterministic validation in your application rather than assuming either SDK turns a model response into a reliable test verdict.
+| Move | Tokens | Turns | Blast radius | Recurs? |
+|---|---|---|---|---|
+| Read-only question ("what does this do") | ~3,900 est. | 1 | None - nothing written | No |
+| Fix the CSV date bug | ~2,100 est. (csv.py alone; real total runs higher) | 4 | Money-adjacent - meant to touch only the date field, briefly drifted into the amount field | Partly |
+| *(chapters two through eight each add a row here, not reproduced in this lesson)* | | | | |
+| Automate the report and the transaction check (`codex exec`, sandboxed, unattended) | ~5,120 est. (rules.py alone, read fresh every run; real total runs higher) | 1, from outside - the only count a calling script can even see | Everything the sandbox and approval flags allow, for as long as nobody reads what came out - the widest reading this course gives that column | Yes - and now the recurrence itself is automatic, which is the entire win and the entire risk, in one word |
 
-## The week, made reflex
+Read that blast-radius cell twice. Every earlier row in this course had a human somewhere close enough to catch a wrong turn before it went far - a diff read, a pause you answered. This row doesn't. The fence and the brief and the exit code narrow *what* can go wrong and *how loud* it fails; none of them put a person back between apply and the consequence, because that person is the exact thing this chapter removed. That's not a flaw to patch out - it's the honest price of the win in the row above it. Automation doesn't lower the stakes. It just moves who's watching.
 
-That closes the automation chapter - and very nearly the week. You started with an inherited `budgetcli` you didn't trust, and you've now got it producing its own monthly report and checking its own transactions, unattended, reproducibly, with the sandbox and approval discipline carrying the full weight that used to sit on you watching the screen. The headless command, the CI posture, the determinism flags, and the line where you'd graduate to the SDK - those are the whole automation toolkit.
-
-What's left is to make all of it *second-nature* - to stop assembling these pieces from scratch each time and turn them into the handful of habits you reach for without thinking: the daily profiles, the prompting reflexes, the editing ergonomics that make Codex feel like part of how you work rather than a thing you operate. That's [the final chapter](/course/codex/daily-workflow/).
+That closes automation, and very nearly the week. `budgetcli` now produces its own report and checks its own transactions, unattended, reproducibly, with the sandbox and approval discipline carrying the weight that used to sit on you watching a screen. What's left is to make the whole rest of this week's toolkit - the profiles, the prompting reflexes, the editing habits - into something you reach for without assembling it from scratch each time. That's [the final chapter](/course/codex/daily-workflow/).

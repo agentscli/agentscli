@@ -5,63 +5,129 @@ sidebar:
   label: "the effort dial · think as hard as the task earns"
 ---
 
-The first job of the afternoon is the smallest design decision you'll make all week, because it isn't one: `budgetcli` needs a plain accounts endpoint - list, create, read, delete - and the codebase already has two other resources built exactly this way. There's no architecture to invent, no fork to weigh, nothing to reason about. Running the agent at deep reasoning to copy an established pattern is paying for thinking the task doesn't contain. The right move is to drop the effort *before* you start, and the dial for that is `model_reasoning_effort`.
+The first task of the day is `src/budgetcli/routes/accounts.py` - list, create, read, delete - and the codebase already has this shape twice, in `src/budgetcli/routes/transactions.py` and the resource next to it. There's no architecture to invent here, no fork to weigh: read the existing pattern, mirror it. That's exactly why it's the right task to run through every effort level Codex has - if the code ever changes shape as you turn the dial, the dial bought you nothing the pattern hadn't already answered.
 
 ## What the effort dial controls
 
-Reasoning effort is how much the agent works a problem out *before* it answers - considering approaches, ruling things out, planning the change - as opposed to answering straight from the prompt. Codex exposes that as a single setting, `model_reasoning_effort`, with five levels:
+Reasoning effort is how hard the agent works a problem out *before* it answers - weighing approaches, ruling things out, planning the change - instead of answering straight off the prompt. Codex exposes it as one setting, `model_reasoning_effort`, with five levels:
 
 ```text
 minimal → low → medium → high → xhigh        # default: medium
 ```
 
-Lower means the agent answers faster and spends fewer tokens deliberating; higher means it spends more of its budget thinking on the steps that actually benefit from it. The default sits at `medium` - a sensible middle gear - and the skill is knowing when to move off it. (`xhigh` is the deepest level and is model-dependent; not every model exposes it. The allowed values and that caveat live in the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference) - read it rather than trusting a remembered list.)
+Lower means it answers faster and deliberates less; higher means it spends more of the turn thinking before it writes anything. The default sits at `medium`. (`xhigh` is the deepest level and is model-dependent - not every model exposes it. The full list of values and that caveat live in the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference); read it rather than trusting a remembered one.)
 
-## Dialing down for the boilerplate
-
-For the accounts endpoint you want a low gear. The cleanest way to set it for a stretch of work is in `config.toml`:
+Set it for a stretch of work in `config.toml`:
 
 ```toml
 model_reasoning_effort = "low"
 ```
 
-Or, if you only want it for this one launch and not as a standing default, override it per invocation with `-c`:
+or override a single launch without touching your standing default, using `-c`:
 
 ```bash
 codex -c 'model_reasoning_effort="low"' "add a CRUD accounts endpoint \
   following the pattern in transactions.py - list, create, read, delete"
 ```
 
-The `-c key=value` flag overrides any config value for that run only. Its values use Codex's TOML-style configuration syntax, so quote string values explicitly when needed. Pointed at the endpoint with effort low, the agent does the obvious thing quickly - it reads the existing pattern, mirrors it, and writes the four routes without a long deliberation it didn't need:
+`-c key=value` overrides any config value for that run only. Its values use Codex's TOML-style configuration syntax, so quote string values explicitly when needed.
+
+## The obvious answer, planted first
+
+Before you run a single level, fix what the right answer looks like - the way you'd want a teammate to check their own work against it. Four routes: list, create, read, delete. Same shape as `src/budgetcli/routes/transactions.py`. Every amount field stays an integer number of cents, never a float. **Hold onto that.** Every level below should land there exactly, and the moment one doesn't, that's the level failing, not the endpoint being hard.
 
 ```text
 > add a CRUD accounts endpoint following the pattern in transactions.py
+  (model_reasoning_effort = minimal)
+
+  ✎ accounts.py   - list / create / read / delete, same shape
+  Done.
+```
+
+**Matched.** No deliberation shown, because none was needed - the pattern did the reasoning before the prompt did.
+
+```text
+> add a CRUD accounts endpoint following the pattern in transactions.py
+  (model_reasoning_effort = low)
 
   read transactions.py - router, Pydantic models, the cents-as-int convention
   ✎ accounts.py        - list / create / read / delete, same shape
   Done. Four routes, mirrors the transactions router. Money stays integer cents.
 ```
 
-Same code you'd have gotten at deep reasoning, a fraction of the tokens and the wait - because there was nothing here the deeper gear would have improved.
-
-## Dialing up for the rules engine
-
-Now the other end of the day. The categorisation rules engine is the opposite kind of problem: how should a rule match a transaction - substring, regex, merchant code? What happens when two rules both claim the same transaction? Does order matter, and if so, who decides it? This is a real design fork with several defensible answers, and the wrong one costs you a rewrite later. This is exactly where you want the agent to *think before it acts*:
-
-```bash
-codex -c model_reasoning_effort="high" "design the categorisation rules \
-  engine for budgetcli - how rules match transactions, how conflicts \
-  resolve, how a user orders them. propose the model before writing code."
-```
-
-At `high`, the agent earns the cost - it weighs the matching strategies, surfaces the conflict-resolution question you'd have hit in week three, and proposes a design instead of guessing at one:
+**Matched.** One extra line - it read the pattern instead of guessing it - and the same four routes come back.
 
 ```text
+> add a CRUD accounts endpoint following the pattern in transactions.py
+  (model_reasoning_effort = medium, the default)
+
+  read transactions.py, models.py - confirming the resource shape and the
+  cents convention
+  considering: soft-delete or hard-delete? transactions.py hard-deletes,
+  so accounts should match it
+  ✎ accounts.py - list / create / read / delete, same shape
+  Done.
+```
+
+**Still matched, barely.** That "considering" line answers a question the pattern had already answered. Harmless on a file this small - but it's the first sign of the dial spending on a decision that didn't need making.
+
+```text
+> add a CRUD accounts endpoint following the pattern in transactions.py
+  (model_reasoning_effort = high)
+
   Thinking…
-    Matching: substring is too blunt (it'll tag "AMAZON PRIME" as groceries
-    if a grocer's name contains "ama"). Merchant-code-first, regex fallback.
+    Should accounts support soft-delete for audit purposes? transactions.py
+    doesn't, but financial resources sometimes want the trail. Weighing
+    consistency-with-the-codebase against audit-safety before committing…
+  read transactions.py, models.py
+  ✎ accounts.py - list / create / read / delete, same shape
+  Done. (Kept hard-delete for consistency with transactions.py.)
+```
+
+**Overkill.** Same four routes, now with a paragraph of deliberation over a question the task never actually raised - the codebase had already closed it.
+
+```text
+> add a CRUD accounts endpoint following the pattern in transactions.py
+  (model_reasoning_effort = xhigh)
+
+  Thinking…
+    [revisits soft-delete; revisits whether the route path should be
+    "accounts" or "account"; revisits whether the response model needs a
+    computed balance field transactions.py doesn't expose]
+  read transactions.py, models.py
+  ✎ accounts.py - list / create / read / delete, same shape
+  Done.
+```
+
+**Overkill, worse.** Every question it raised, the codebase had already closed. `xhigh` exists for a turn that's genuinely gnarly; this isn't one, and the four routes prove it - identical to `minimal`'s, five levels and one long "Thinking…" block later.
+
+**Five levels, one answer: on a task with no fork, effort past `low` buys deliberation over questions the codebase already closed - not a better answer, just a slower and pricier route to the same one.**
+
+## The fork task asks the opposite question
+
+`src/budgetcli/categorise/rules.py` is the other kind of Monday. Years of imported transactions need tagging - groceries, rent, subscriptions - and *how* a rule matches a transaction, and what happens when two rules both claim it, has no existing pattern to copy. Substring match or merchant code? First-match-wins or most-specific-wins? Several answers are defensible, and the wrong one costs you a rewrite once other rules get built on top of it. Ground truth here isn't "does it match the file next door" - there is no file next door. It's simpler, and just as checkable: **does the level surface the conflict question at all, unprompted, before it writes any code?**
+
+```text
+> design the categorisation rules engine for budgetcli - how rules match
+  transactions, how conflicts resolve, how a user orders them
+  (model_reasoning_effort = low)
+
+  ✎ rules.py - substring match against merchant description, first rule
+    in the list wins
+  Done.
+```
+
+**Underpowered.** It shipped the first workable-looking design - substring match tags "AMAZON PRIME" as groceries the moment a grocer's name happens to contain "ama" - and never surfaced that a decision was being made at all. You'd catch this in review, but only if you're reading a file you have no ground truth to check it against.
+
+```text
+> design the categorisation rules engine for budgetcli - how rules match
+  transactions, how conflicts resolve, how a user orders them
+  (model_reasoning_effort = high)
+
+  Thinking…
+    Matching: substring is too blunt - merchant-code first, regex fallback.
     Conflicts: two rules can match one transaction. Need a deterministic
-    tiebreak - explicit priority, first-match-wins, or most-specific-wins.
+    tiebreak: explicit priority, first-match-wins, or most-specific-wins.
     First-match-wins is simplest and lets the user control order directly…
 
   Here's the design I propose, before I write any of it:
@@ -70,14 +136,14 @@ At `high`, the agent earns the cost - it weighs the matching strategies, surface
   ## Why        deterministic, debuggable, no hidden ranking the user can't see
 ```
 
-That deliberation block is the dial paying off. At `low` the agent would have shipped a plausible substring matcher and the conflict problem would have surfaced as a bug in production, against your own money.
+**Matched.** The deliberation this lesson called overkill on the accounts endpoint is the entire value here - it found the conflict question on its own and proposed an answer instead of guessing one. One honest caveat before you relax: matched means it bothered to weigh alternatives, not that the design is correct. A proposed design is still a proposal - you review it the same way you'd review the code, not less.
 
-For a single unusually hard turn inside an otherwise normal session, you don't have to commit to a setting - `xhigh` on one `-c` override gives that one prompt the deepest gear and leaves your default alone. Reach for it on the genuinely gnarly turn, not as a habit.
+Call this **earned depth**: the amount of reasoning you pay for should equal the ambiguity the task actually contains, and nothing past that. `low` on the accounts endpoint wasn't lucky - the task had no ambiguity to find, so there was nothing extra depth could earn. `low` on the rules engine wasn't unlucky either - the ambiguity was there whether or not the level went looking for it, and `low` didn't look. Same dial, same direction of travel, opposite verdict, because the two tasks aren't the same shape.
+
+For a single unusually hard turn inside an otherwise normal session, you don't have to commit to a setting - `xhigh` on one `-c` override gives that one prompt the deepest gear and leaves your default alone. Reach for it on the turn that's genuinely gnarlier than the rules engine above; `high` already found this one.
 
 ## Effort is not the same dial as the model
 
-One thing to keep straight, because it's the most common confusion: **reasoning effort and model choice are independent.** Effort is *how hard a given model thinks*; the model is *which brain is doing the thinking*. You can run a capable model at low effort for mechanical work, or a lighter model at high effort - they're separate knobs and you set them separately. This lesson moved only the effort dial; the [next one moves the model](/course/codex/models-effort/switch-models/), and the two of them together are the gearbox.
+One thing to keep straight: **reasoning effort and model choice are independent.** Effort is *how hard* a given model thinks; the model is *which brain* is doing the thinking. Every trace above held the model fixed and only moved effort. The next lesson holds effort fixed at the level each task just earned - `low` for the endpoint, `high` for the rules engine - and moves only the model, on the same two tasks, to prove the two knobs really don't move together.
 
-The asymmetry underneath the whole afternoon is one line: **deeper reasoning pays off in proportion to how ambiguous the problem is.** A CRUD endpoint with an existing pattern has one answer - dial down, you're buying thinking it doesn't have. A rules-engine design has several - dial up, the reasoning is what finds the right answer instead of a confident wrong one.
-
-You've moved the effort dial both ways on the same model. Now the other knob - [picking which model answers in the first place](/course/codex/models-effort/switch-models/).
+You've now run the accounts endpoint and the rules engine through all five effort levels on one model. [The next stop is the other knob - which model answers at all.](/course/codex/models-effort/switch-models/)

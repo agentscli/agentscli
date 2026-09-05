@@ -1,23 +1,42 @@
 ---
 title: Housekeeping
-description: "Keep the harness healthy: prune sessions, update extensions, review rules."
+description: "The harness drifts on its own. The routine that keeps it worth trusting, what it costs to skip, and what to do before you hand it to a teammate."
 sidebar:
   label: "Housekeeping · prune and review"
 ---
 
-The harness you built for `stash` isn't a set-it-and-forget-it artifact. It drifts - sessions accumulate, extensions break against new APIs, rules go stale, and skills stop matching the way you actually phrase things. A few minutes of periodic maintenance keeps it sharp instead of letting it rot into something you stop trusting.
+The tree you just walked doesn't stay accurate on its own. Sessions accumulate, extensions break against a new API, rules go stale, skills stop matching how you actually phrase things - the same way a default spends your context window without asking, an unmaintained harness spends your trust without asking. Staying sharp costs turns too. Here's where.
+
+## Review cadence, by file
+
+Not every file in `.pi/` needs the same attention. Some are write-once; some rot if you don't look at them monthly.
+
+| File | What can go wrong | Review it |
+|---|---|---|
+| `APPEND_SYSTEM.md` | A rule stops matching how `stash` actually works | Monthly |
+| `settings.json` / `models.json` | Routing still points at a model that got deprecated or repriced | Monthly, or whenever a provider changes pricing |
+| `damage-control-rules.yaml` | A path or table gets renamed and the rule silently stops matching it | Whenever `stash`'s schema or layout changes |
+| `PLAN.md` | Stale once the unit of work ships | Every time a plan closes |
+| `extensions/*.ts` | Pi's event API shifts a hook's signature | After every `pi update` |
+| `prompts/*.md`, `skills/*/SKILL.md` | Description drifts from how you actually phrase the task | Whenever a skill or prompt goes quiet for a month |
+| `themes/*.json` | Cosmetic only - review never required | Never, unless you want to |
+| `agents/*.md`, `agents/*.yaml` | Persona or driver assumptions go stale as the codebase moves | Whenever the domain it covers changes |
 
 ## Session cleanup
 
-Every Pi session writes a JSONL transcript to `~/.pi/agent/sessions/`, organized by working directory. Over weeks of daily use those files pile up into conversation history you may never reread. Review old sessions with `pi -r` (or `/resume`) and delete them from Pi's session picker with Ctrl+D; that keeps branch and active-session state visible and uses the trash CLI when available. Avoid a blanket `find ... -delete`: age alone does not prove that a session is disposable.
+Every Pi session writes a JSONL transcript to `~/.pi/agent/sessions/`, organized by working directory. Over weeks of daily use those files pile up into history you'll probably never reread. Run this yourself right now: `ls ~/.pi/agent/sessions/<your-stash-checkout-path-with-slashes-as-dashes>/ | wc -l`. That count is your actual backlog, not a guess - if it's in the dozens, review with `pi -r` (or `/resume`) and delete from Pi's session picker with Ctrl+D, which keeps branch and active-session state visible and uses the trash CLI when available. Avoid a blanket `find ... -delete`: age alone doesn't prove a session is disposable, and the verifier pattern from [module 8](/course/pi/subagents/) depends on exactly the session file you'd be deleting.
 
-## Extension updates
+## Extension updates - and vetting what you didn't write
 
-When Pi itself updates, re-test your extensions. The event API can shift between releases - a hook signature that worked last month may gain a parameter, rename a field, or change when it fires. After `pi update` (which updates Pi itself), run through your extensions once: fire the `/stash` command, trigger the damage-control hook, exercise the re-extract tool. Five minutes of manual testing now saves an afternoon of "why did my gate stop working" later.
+When Pi itself updates, re-test your own extensions first: fire `/stash`, trigger the damage-control hook, exercise the re-extract tool. The event API can shift between releases - a hook signature that worked last month may gain a parameter, rename a field, or change when it fires. Five minutes of manual testing now saves an afternoon of "why did my gate stop working" later.
 
-## Rule review
+That's for code you wrote. Anything you didn't - a third-party extension package someone else published - needs a different pass before you install it, not after: it runs with the same `bash` and `write` access as `damage-control.ts`, and nothing in Pi checks whether it deserves that access. Read the package's source before installing it, specifically the parts that register a `tool_call` hook or call `bash` - that's where a malicious or just-careless package does damage. Check who publishes it and whether it's still maintained. None of this is optional the way it might be for a read-only dependency; an extension package is a standing grant of exactly the access `damage-control.ts` exists to gate.
 
-Every month, read SYSTEM.md and AGENTS.md top to bottom. Delete rules that no longer apply - the "always run `pytest -x` before committing" rule is dead weight once you've moved the project to `uv run pytest`. Add rules for mistakes you keep correcting by hand; if you've told Pi three times not to touch the migration files, that's a rule, not a conversation. Rules that pay no rent are noise that dilutes the ones that do.
+## Rule review, and catching config drift
+
+Every month, read `APPEND_SYSTEM.md` top to bottom. Delete rules that no longer apply - the "always run `pytest -x` before committing" rule is dead weight once you've moved the project to `uv run pytest`. Add rules for mistakes you keep correcting by hand; if you've told Pi three times not to touch the migration files, that's a rule, not a conversation. Rules that pay no rent are noise that dilutes the ones that do.
+
+The same review should cross-check `.pi/settings.json` against `~/.pi/agent/settings.json`. [Module 4](/course/pi/models-config/) showed you the two deep-merge, key by key - project wins on anything it declares, global fills in the rest - which means a key you meant to override at the project level can quietly stop overriding anything if you rename it in one file and not the other. That's config drift, and it's silent by construction: nothing errors, the merge just resolves differently than you assumed. Diff the two files by hand periodically, the same way you'd diff `APPEND_SYSTEM.md` against what `stash` actually needs.
 
 ## Skill pruning
 
@@ -26,5 +45,11 @@ If a skill hasn't fired in a month, its description probably doesn't match how y
 ## Package updates
 
 Run `pi update --extensions` periodically to pull the latest versions of installed packages, or `pi update --all` to update Pi and packages together. Check changelogs for breaking changes before updating anything that carries extensions - a package that registers tools or hooks can change their signatures between versions. Pin versions in your team's install command (`pi install npm:@foo/bar@1.2.3`) so a surprise upstream break doesn't land on everyone's machine at once.
+
+## Sharing the harness
+
+This module opened with a promise: a `.pi/` directory you could actually hand a teammate. That only works if it's in git, and not all of it should be. Commit `APPEND_SYSTEM.md`, `settings.json`, `damage-control-rules.yaml`, `PLAN.md`, everything under `extensions/`, `prompts/`, `skills/`, `themes/`, and `agents/` - all of it is either plain text or code, and none of it is secret. Do not commit anything holding a raw API key or token; keep that in whatever file your provider credentials live in, gitignored, exactly the way `stash`'s own `.env` is already gitignored for the same reason `damage-control.ts` guards it.
+
+One more use this same directory quietly supports: none of it requires the interactive TUI. `pi --mode json -p "..."` or `pi --mode rpc` - the same flags [module 8](/course/pi/subagents/) used to spawn a child - work identically from a CI job or a cron script, reading the same `.pi/` a teammate would. If part of your `stash` maintenance (a nightly re-extraction sweep, say) should run unattended instead of from your own terminal, that's a scripted, headless Pi run against this exact harness, not a different tool. The site's [Headless & CI](/foundations/headless/) chapter is the spec-level version of that pattern.
 
 [Next: when to reach for Pi](/course/pi/daily-workflow/when-pi/).

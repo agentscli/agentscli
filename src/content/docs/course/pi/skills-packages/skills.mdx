@@ -13,7 +13,9 @@ Every time a teammate wants `stash` to save from a source it doesn't handle yet,
 
 An extension - what you built in the last two modules - is a TypeScript module that registers a tool, a command, or a hook through the `ExtensionAPI`. It's code: it can enforce, block, compute, reach out to the fetch worker directly. A Skill is the layer below that. It's markdown with a bit of YAML on top, and it can't do anything an extension couldn't already do more directly - a Skill has no execution semantics of its own beyond "here are the instructions, go follow them" (though its body can absolutely tell the agent to run a script that ships alongside it). What a Skill buys you instead is that *you* can write one without touching TypeScript, and that it stays nearly free in context until the moment it's actually relevant.
 
-That second part is the mechanism worth understanding before you write one: **progressive disclosure**. At startup, Pi scans every Skill it can find and pulls only two fields - `name` and `description` - into the system prompt. The rest of the file, and anything else in the Skill's directory, stays on disk. Only when your request matches a Skill's description does Pi reach for its `read` tool and pull in the full body. You can keep a dozen Skills around for a dozen `stash` chores and pay for the one that fires, not the other eleven.
+**An extension enforces; a Skill only informs.** Reach for a Skill when the job is a procedure worth naming, not a rule that has to hold on every tool call.
+
+That second part is worth planting a number against before you see the file. Once you do, count two things in it: the words between the two `---` frontmatter markers, and the words below the second one. Here they are: **62 words of frontmatter, 186 words of body - exactly three times as long.** At startup, Pi only ever pays for the first number. Whether it pays for the second depends entirely on whether your request matches the description. That's the mechanism worth understanding before you write one: **progressive disclosure**. At startup, Pi scans every Skill it can find and pulls only two fields - `name` and `description` - into the system prompt. The rest of the file, and anything else in the Skill's directory, stays on disk. Only when your request matches a Skill's description does Pi reach for its `read` tool and pull in the full body.
 
 ## The file structure
 
@@ -38,7 +40,7 @@ Pi looks for Skill directories in several places, checked in order:
 5. a path passed with `--skill <path>`
 6. a `skills` array in `settings.json`
 
-Since this procedure is `stash`-specific - it references the fetch worker and the readability extractor by name - it belongs in the repo, in `.pi/skills/` or `.agents/skills/`, committed so anyone who clones `stash` gets it too.
+Since this procedure is `stash`-specific - it references the fetch worker and the readability extractor by name - it belongs in the repo, in `.pi/skills/` or `.agents/skills/`, committed so anyone who clones `stash` gets it too. **A dozen Skills sitting in that directory cost you the price of one - whichever one actually fires.**
 
 ## Frontmatter: the label Pi reads before it opens the box
 
@@ -77,12 +79,16 @@ do not guess at a site's markup.
    can eyeball the extraction before it goes live for everyone.
 ```
 
+Count it yourself if you want to check the number planted above: 62 words above the second `---`, 186 in the six numbered steps below it, 248 total. Three-quarters of this file's words never reach the system prompt unless a real request matches the description first.
+
 Only two fields are required, and they're the only two doing any work at Skill-selection time:
 
 - **`name`** - 1 to 64 characters, lowercase letters, numbers, and hyphens only. Unlike the plain Agent Skills standard, Pi doesn't require this to match the directory name - a deliberate deviation, so a shared skills repo can be reused across several tools without renaming folders to suit each one.
 - **`description`** - up to 1024 characters, and it's the entire trigger surface. Pi's system prompt carries this string for every Skill it knows about; when your request semantically matches it, the Skill fires. Notice the description above names the *situation* ("a URL from an unfamiliar site isn't extracting cleanly") rather than just an action - that's what lets it match "hey can we add support for this newsletter site" without you ever typing the Skill's name.
 
 A handful of optional fields round out the spec: `license`, `compatibility` (environment requirements), `metadata` (arbitrary key/value), `allowed-tools` (a pre-approved tool list for this Skill), and `disable-model-invocation` - set that last one and the Skill drops out of the system prompt entirely, invocable only by hand. None of them change whether the Skill can fire; they change how much you trust it to fire on its own.
+
+**Two fields decide whether the Skill fires at all; everything else just narrows how much you trust that decision.**
 
 ## Invoking it
 
@@ -102,9 +108,15 @@ or just describe the problem and let the description do the matching:
 
 Either way Pi's `read` tool is what actually loads the body - you can watch that happen in whatever context view you built two modules back. The `/skill:` slash-command surface itself is a toggle: `enableSkillCommands` in `settings.json` controls whether the explicit `/skill:name` form exists at all, separate from whether the model can invoke a Skill on its own recognition.
 
-Here's the shape of a `SKILL.md`, and where it sits relative to how other agents handle the same idea - click through the parts:
+Here's the shape of a `SKILL.md`, and where it sits relative to how other agents handle the same idea. `name` and `description` are required everywhere - no surprise there, that's the trigger. Before you click through: guess which field only three of the five tools support - the one that lets you say "never fire this on your own," full stop.
 
 <SkillAnatomy client:visible />
+
+Three of five: Claude Code, Cursor, and Copilot all read `disable-model-invocation`. Codex reaches the same outcome through a sidecar file instead (`policy.allow_implicit_invocation: false`), and OpenCode has no documented equivalent at all - a Skill you write for OpenCode can't be told to sit fully manual.
+
+## What's actually out there
+
+Pi didn't invent this format. `SKILL.md` is the same Agent Skills standard Claude Code and Codex CLI read, and Pi's own maintainers publish a landing point for it: `badlogic/pi-skills` on GitHub, billed explicitly as compatible with Claude Code and Codex too. That's the same portability the name-doesn't-have-to-match-folder deviation exists for - one skills repo, reused across tools without renaming a single folder. Worth a look before you write one from scratch: someone may already have onboarded the exact content-source shape you're staring at.
 
 ## The security line, same as any code you didn't write
 
@@ -114,4 +126,12 @@ The docs are blunt about this, and it's worth taking at face value: a Skill's bo
 Write a SKILL.md for a repeatable procedure in stash - "add a new feed source" is a good one. Start a fresh session and describe the situation without naming the skill. If it fires, check that progressive disclosure worked: the body loaded only when your request matched the description, not at startup.
 :::
 
-You've now written a `stash` procedure down once, in a format Pi loads only when it's needed. Two lighter no-code layers are worth the same five minutes each - a shortcut for the prompt you type often, and a theme for the terminal you're staring at all week. [Next: templates and themes](/course/pi/skills-packages/templates-themes/).
+## What a Skill can't do
+
+Name the cost this format creates before you move past it: a Skill can't force anything. It fires when the model's read of your request matches the description, and that's a judgment call, not a guarantee - too broad a description and it fires on something adjacent but wrong; too narrow and it silently doesn't fire on the exact case you wrote it for. There's no way to tell a Skill "always run this check before touching the database," the way the damage-control gate two modules back holds on every single `tool_call` whether the model likes it or not. If a `stash` chore needs that kind of unconditional enforcement, a Skill is the wrong layer - you're back to a hook. What a Skill buys you is cheap, on-demand instructions for a procedure. What it can't buy you is certainty that the procedure runs at all.
+
+| Layer | What it costs | What it buys | Who decided |
+|---|---|---|---|
+| Skill | Frontmatter only (62 words here) at startup; the body (186 words) loads only if a request matches | Removes re-typing a five-step procedure by hand every time a new source shows up | You wrote the description; the model decides when it matches |
+
+Two lighter no-code layers are worth the same five minutes each - a shortcut for the prompt you type often, and a theme for the terminal you're staring at all week. Neither one tries to fire on its own the way this Skill does. [Next: templates and themes](/course/pi/skills-packages/templates-themes/).

@@ -1,0 +1,68 @@
+---
+// Starlight <PageTitle> override. It wraps the default title and adds one
+// thing above it on /course/ routes: an eyebrow that says where in the book
+// the reader is standing.
+//
+// A course chapter is read in sequence, and the course surface hides both the
+// left rail and the "On this page" column (see theme.css, data-surface="course").
+// That removes the two things that used to answer "where am I". The eyebrow
+// puts the answer back in one line, in the label register the rest of the
+// chrome uses: 11px mono, uppercase, wide tracking.
+//
+// The module name is read from the sidebar tree rather than from the route, so
+// it always matches the label the reader saw in the contents drawer.
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+
+const route = Astro.locals.starlightRoute;
+const id = route.id ?? route.slug ?? '';
+const isCourse = id === 'course' || id.startsWith('course/');
+
+// Mirrors the topic labels in astro.config.mjs. A short map beats reading the
+// topic list here: this component renders on every page, and the fallback
+// (title-case the path segment) covers a course added to the config but not
+// to this map.
+const COURSE_LABELS = {
+	'claude-code': 'Claude Code',
+	codex: 'Codex',
+	copilot: 'Copilot',
+	cursor: 'Cursor',
+	opencode: 'OpenCode',
+	pi: 'Pi',
+};
+
+/** Does this branch of the sidebar contain the page being rendered? */
+function holdsCurrent(entries) {
+	for (const entry of entries) {
+		if (entry.type === 'link') {
+			if (entry.isCurrent) return true;
+		} else if (holdsCurrent(entry.entries)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/** The label of the outermost group holding the current page, if any. */
+function moduleLabel(entries) {
+	for (const entry of entries) {
+		if (entry.type === 'group' && holdsCurrent(entry.entries)) return entry.label;
+	}
+	return undefined;
+}
+
+let eyebrow = '';
+
+if (isCourse) {
+	const segments = id.replace(/\.mdx?$/, '').split('/');
+	const key = segments[1];
+	const course = key
+		? (COURSE_LABELS[key] ??
+			key.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
+		: undefined;
+	const currentModule = Array.isArray(route.sidebar) ? moduleLabel(route.sidebar) : undefined;
+	eyebrow = ['Course', course, currentModule].filter(Boolean).join(' · ');
+}
+---
+
+{eyebrow && <p class="course-eyebrow">{eyebrow}</p>}
+<Default />

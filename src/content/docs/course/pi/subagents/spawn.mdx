@@ -5,9 +5,11 @@ sidebar:
   label: "Spawn · the one primitive"
 ---
 
+Here's the spoiler for this lesson, stated as a claim you can check yourself: spawn a child Pi to re-extract one article, and your own context - the one you're sitting in right now - doesn't grow by a single token. Every token the child spends, it spends in a process you never opened a window into. That's the whole trade this module is about, isolation bought for the price of a handoff, and this lesson is where you build the one primitive underneath every version of it.
+
 You already know Pi has four run surfaces - the interactive TUI you've been living in, `-p` for a single headless prompt, `--mode json` for machine-readable event output, and `--mode rpc` for driving Pi as a subprocess from any language. So far you've only used the first. The other three exist for exactly this module: they're what let one Pi process treat *another* Pi process as a tool.
 
-There's no `pi.registerSubagent()`. There's `child_process.spawn("pi", [...])`, pointed at a prompt instead of a person, with its output piped somewhere you can parse. That's the whole primitive. Everything you'll build for the rest of this module - chains, fan-out, a verifier that checks a builder's work - is this one call, wired up in different control-flow shapes.
+There's no `pi.registerSubagent()`. There's `child_process.spawn("pi", [...])`, pointed at a prompt instead of a person, with its output piped somewhere you can parse. Call this the **naked spawn**: no dispatcher, no registry, no roster of typed roles - a child process and a pipe, nothing else. That's the whole primitive. Everything you'll build for the rest of this module - chains, fan-out, a verifier that checks a builder's work - is this one call, wired up in different control-flow shapes.
 
 ## The call
 
@@ -27,9 +29,11 @@ Read that flag by flag, because each one is a deliberate choice, not boilerplate
 
 - **`--mode json`** - instead of TUI chrome, stdout becomes a stream of newline-delimited JSON events: text as the model writes it, every tool call, every result, and a final event when the turn ends. This is what makes a child process legible to a parent process instead of just a wall of terminal output.
 - **`-p "<prompt>"`** - print mode. One prompt in, the agent runs to completion, then exits. No follow-up turn, no chat - you'll come back to why that matters when you build the verifier.
-- **`--no-session`** - this child is ephemeral. It doesn't need to remember this one article tomorrow; when it exits, its context goes with it. (Give it `--session <file>` instead if you *do* want it resumable - that's how a dispatcher gives each specialist persistent memory across repeated calls.)
+- **`--no-session`** - this child is ephemeral. It doesn't need to remember this one article tomorrow; when it exits, its context goes with it. (Give it `--session <file>` instead if you *do* want it resumable - that's how a dispatcher gives each specialist persistent memory across repeated calls, and it's also what the verifier two lessons from now depends on.)
 - **`--tools read,bash`** - a narrower toolset than your own session gets. This child re-runs an existing CLI command and reads the result; it has no business with `write` or `edit`. Scoping a child's tools to exactly what its one job needs is the same instinct behind the damage-control gate you built in an earlier module - just applied per-process instead of per-rule.
 - **`--thinking off`** - this is a mechanical re-run, not a judgment call. No reasoning budget to spend.
+
+**Five flags, one deliberate choice each - nothing above is boilerplate you can skip reading.**
 
 ## Reading what comes back
 
@@ -73,12 +77,22 @@ lines.on("line", (raw) => {
 
 That's genuinely most of it. `message_update` carries the model's own words as they stream; `tool_execution_start`/`tool_execution_end` mark every `bash` call the child makes against your one allowed command; `agent_end` fires once, when the child's turn is fully done, carrying the whole `messages[]` array for the run - you pull `stopReason` (and `usage`, if you're tracking token spend) off the *last assistant message* in that array, not off the event itself. Nothing here is Pi-specific plumbing you have to reverse-engineer - it's the same event vocabulary your own interactive session is built on, just handed to you directly on a pipe instead of rendered into a terminal UI.
 
+**Three event types are enough to read any child's mind: what it's saying, what it's doing, and how it stopped.**
+
 :::note[Check the payload shapes against your installed version]
 The event names above - `message_update`, `tool_execution_start`, `tool_execution_end`, `agent_end` - are stable. The finer detail of what each payload carries is the part that moves between releases, and a parser that silently reads the wrong field is exactly the failure you won't notice in an unattended run. Log one raw event before you write the code that depends on its shape.
 :::
 
-:::tip[Try it]
-Spawn a child Pi with a read-only task: "list all functions in stash without docstrings." Watch the JSONL events stream by on stdout, then parse the output and extract just the final summary from the `agent_end` event. Notice how the child's context stays entirely separate from yours - nothing it read leaks back into your session.
+:::caution[What the naked spawn does not give you]
+The call above is a process and a pipe, nothing else. No retry if the child crashes mid-run. No timeout if it hangs on a bad `bash` command or a page that never finishes loading - you kill it yourself, or it runs until you do. No cost accounting beyond whatever you choose to read out of `usage` on the last assistant message. A dispatcher tool like Claude Code's `Task` bakes all three in for you. Raw spawn makes you decide whether you want them badly enough to build them - before you've built anything else in this module.
 :::
 
-One child, one article, one narrow toolset, output you can parse instead of a black box you have to trust. That's the unit. The re-extraction backlog isn't one article, though - it's every saved URL from before the extractor fix, and you're not going to write this spawn call by hand a few hundred times. [Next: chain a few of these in sequence, then fan a big batch of them out in parallel](/course/pi/subagents/chains-and-fanout/).
+:::tip[Try it - predict before you run]
+Before you spawn anything, guess: how many of `stash`'s public functions do you think are missing a docstring? Write the number down - five, fifteen, whatever your gut says looking at a codebase you already half know.
+
+Now spawn a child Pi with a read-only task: "list all functions in stash without docstrings," with `--tools read,bash` (no `write` - this child only looks). Watch the JSONL events stream by on stdout, then pull the count out of the `agent_end` event's final summary.
+
+Compare the two numbers. Whatever the real count turns out to be, notice what didn't happen: nothing the child read leaked back into your own context. You paid for its work entirely in its own window, and the only thing that crossed the handoff was a number.
+:::
+
+One child, one article, one narrow toolset, output you can parse instead of a black box you have to trust. That's the naked spawn - the whole primitive, spent on the smallest possible job. The re-extraction backlog isn't one article, though - it's every saved URL from before the extractor fix, and you're not going to write this call by hand for every single one of them. [Next: chain a few of these in sequence, then fan a big batch of them out in parallel](/course/pi/subagents/chains-and-fanout/).

@@ -5,17 +5,16 @@ sidebar:
   label: "profiles · one flag, a whole posture"
 ---
 
-By the end of the last lesson you were setting the model one way, the effort another, and - back in the approvals chapter - the approval policy and sandbox mode separately on top. That's four knobs, and across a week on `budgetcli` you keep reaching for the *same two or three combinations*. The boilerplate work always wants a light model, low effort, and loose-enough approvals to move fast. The design work always wants a heavy model, high effort, and a careful approval posture because it's touching real money logic. Setting all four by hand every time is exactly the kind of friction that makes you stop bothering. **Profiles** are how you name a combination once and select it with a single flag.
+By the end of the last lesson you were setting the model one way, the effort another, and - back in the approvals chapter - the approval policy and sandbox mode separately on top. That's four knobs, and across a week on `budgetcli` you keep reaching for the *same two combinations*: light model, low effort, loose-enough approvals for the accounts endpoint and anything shaped like it; capable model, high effort, careful approvals for the rules engine and anything shaped like it. Setting all four by hand every time is exactly the kind of friction that makes you stop bothering. **Profiles** are how you name a combination once and select it with a single flag - and, run against the same two tasks, they're also where a mismatch stops costing you four wrong choices and starts costing you exactly one.
 
 ## A profile is a named bundle
 
-A profile is a layer file sitting next to `config.toml` - `~/.codex/<name>.config.toml` - whose top-level keys override your base config's for the runs that use it. Model, reasoning effort, approval policy, sandbox mode all live there. Two postures for two kinds of day:
+A profile is a layer file sitting next to `config.toml` - `~/.codex/<name>.config.toml` - whose top-level keys override your base config's for the runs that use it. Model, reasoning effort, approval policy, sandbox mode all live there:
 
 ```toml
 # ~/.codex/budget-build.config.toml
 model_reasoning_effort = "low"
-approval_policy        = "on-request"
-sandbox_mode           = "workspace-write"
+# approval_policy and sandbox_mode already set in the approvals chapter - unchanged, not shown
 ```
 
 ```toml
@@ -25,23 +24,61 @@ approval_policy        = "untrusted"
 sandbox_mode           = "read-only"
 ```
 
-That `budget-build` is the same file you wrote in [Approvals & sandboxing](/course/codex/approvals-sandbox/profiles-for-trust/), not a second one - the block above shows only the keys this lesson is adding, so its `[sandbox_workspace_write]` section is still sitting there underneath. Any key you set inside the file replaces the base-config value when that profile is active; anything you leave out falls back to your defaults. (I've left the `model` line out of these examples on purpose - that's the key you'd set to your chosen model, and which models you can name there depends on your auth tier, exactly as the [last lesson covered](/course/codex/models-effort/switch-models/).)
+That `budget-build` is the same file you wrote in [Approvals & sandboxing](/course/codex/approvals-sandbox/profiles-for-trust/), not a second one - the block above shows only the keys this lesson is adding, so its `[sandbox_workspace_write]` section is still sitting there underneath. Any key you set inside the file replaces the base-config value when that profile is active; anything you leave out falls back to your defaults. (The `model` line is left out of these examples on purpose - that's the key you'd set to your chosen model, and which models you can name there depends on your auth tier, exactly as the [last lesson covered](/course/codex/models-effort/switch-models/).)
 
-## Selecting one
-
-Activate a profile at launch with `--profile` (short `-p`):
+## Matched: one flag instead of four
 
 ```bash
-codex -p budget-build  "add the accounts CRUD endpoint"
-codex -p budget-design "design the categorisation rules engine"
+codex -p budget-build  "add the accounts CRUD endpoint following the pattern in transactions.py"
 ```
 
-One flag now carries the whole posture. `budget-build` drops the effort and lets the agent move through mechanical work with a working sandbox; `budget-design` raises the effort and tightens approvals and the sandbox down to read-only so the agent reasons and proposes before it can touch anything. You stopped setting four knobs and started naming an *intent*.
+```text
+  read transactions.py
+  ✎ accounts.py - list / create / read / delete, same shape
+  Done.
+```
 
-If you find yourself always launching with the same one, wrap the `-p` in a shell alias so it comes for free, and type the explicit flag on the days the work changes. The full profile mechanics - where the layer files live, which keys are eligible - are in the [advanced config reference](https://learn.chatgpt.com/docs/config-file/config-advanced).
+**Matched.** The same trace, and the same verdict, as `light/low` two lessons ago - `-p budget-build` just carries the light model and low effort in one name instead of two flags.
+
+```bash
+codex -p budget-design "design the categorisation rules engine for budgetcli"
+```
+
+```text
+  Thinking…
+    Matching: substring is too blunt - merchant-code first, regex fallback.
+    Conflicts: two rules can match one transaction. Need a deterministic
+    tiebreak - first-match-wins lets the user control order directly…
+
+  Here's the design I propose, before I write any of it:
+  ## Matching   merchant code first, then a user-ordered list of regex rules
+  ## Conflicts  first match wins; the user's ordering *is* the priority
+```
+
+**Matched.** Same pairing, same design, and now the read-only sandbox means nothing gets written until you've reviewed the proposal - the trust posture from the approvals chapter riding along with the model-and-effort posture from this one, in the same name.
+
+## Mismatched: one flag, still wrong
+
+Bundling doesn't remove the choice - it just makes the wrong choice one keystroke away instead of four. The failure mode that actually happens is habit: you finish the design session in `budget-design` and, without switching, launch straight into the next small ticket.
+
+```bash
+codex -p budget-design "add the accounts CRUD endpoint following the pattern in transactions.py"
+```
+
+```text
+  Thinking…
+    Should accounts support soft-delete? transactions.py doesn't, but…
+  read transactions.py, models.py
+  ✎ accounts.py - list / create / read / delete, same shape
+  Done. (Kept hard-delete for consistency with transactions.py.)
+```
+
+**Overkill** - the exact `capable/high` verdict from two lessons back, now arrived at by forgetting to type `-p budget-build` instead of forgetting to set two flags by hand. Run it the other way - `budget-build` left on for the rules engine - and you get the opposite failure, the `light/low` design that never asks the conflict question. A profile doesn't fix a mismatch. It makes the mismatch cheaper to *notice*, because there's exactly one name to check instead of four settings to re-derive.
 
 ## This is the same bundle you met under approvals
 
-If `approval_policy` and `sandbox_mode` in those files look familiar, they should - profiles are not a models-chapter feature that happens to also carry trust settings. They're the **one** mechanism for bundling a posture, and the approvals chapter builds the trust side of exactly the same idea: a read-only, ask-first profile for code you don't trust yet, a looser one for work you do. The full treatment of designing profiles around *trust* - how the two-axis approval-and-sandbox model maps onto named bundles - lives there, at [Profiles for trust](/course/codex/approvals-sandbox/profiles-for-trust/). This lesson just adds the two model knobs to the same files. One profile, the whole posture: which brain, how hard it thinks, what it's allowed to do, and how much it asks first.
+If `approval_policy` and `sandbox_mode` in those files look familiar, they should - profiles are not a models-chapter feature that happens to also carry trust settings. They're the **one** mechanism for bundling a posture, and the approvals chapter builds the trust half of exactly the same idea: a read-only, ask-first profile for code you don't trust yet, a looser one for work you do. This lesson adds the two model knobs to the same files, and doesn't touch what the trust half decides - `budget-build`'s `workspace-write` sandbox is the approvals chapter's call, not this chapter's. The full profile mechanics - where the layer files live, which keys are eligible - are in the [advanced config reference](https://learn.chatgpt.com/docs/config-file/config-advanced).
 
-You can now express a complete working stance in a single flag. The last piece is the judgment underneath all of it - [reasoning about what each gear actually costs you](/course/codex/models-effort/cost-aware/), so you reach for the right profile on purpose rather than by reflex.
+You'll drill exactly this pairing as a daily habit a few chapters from now, in [the two-profile workflow](/course/codex/daily-workflow/profiles-habit/) - that lesson names the profiles for what they're *for* (exploring versus building), which composes with the model-and-effort naming here without either chapter redefining the other's file.
+
+**One flag now carries a whole posture, and the posture is only as good as the name you remembered to type.** The last lesson is the judgment underneath it all - [reasoning about what each gear actually costs you](/course/codex/models-effort/cost-aware/), so you reach for the right name on purpose rather than by whatever you happened to run last.

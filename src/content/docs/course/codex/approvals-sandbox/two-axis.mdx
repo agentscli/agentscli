@@ -1,5 +1,5 @@
 ---
-title: The two-axis model - approval policy is orthogonal to the sandbox
+title: The two-axis model - approval policy is independent of the sandbox
 description: "Codex has no single trust slider, but two independent dials: how much the agent does without asking, and how far it can reach. Conflating them costs you."
 sidebar:
   label: "Approvals × sandbox · the two axes"
@@ -7,7 +7,7 @@ sidebar:
 
 import AutonomyDial from '../../../../../components/interactive/AutonomyDial.tsx';
 
-You're about to start a refactor on `budgetcli`'s money handling - the original author stored some amounts as floats, and you want them converted to integer cents across half a dozen files. It's the kind of job where stopping to approve every single edit is friction you'll resent by the third file. So your instinct is to reach for some "let it run" setting. Before you do, you need to know what you're actually turning up, because in Codex that instinct splits into two separate questions - and conflating them is how people end up either babysitting work that's safe or walking away from work that isn't.
+You're about to start a refactor on `budgetcli`'s money handling - the original author stored some amounts as floats, and you want them converted to integer cents across six files: the importer, the model layer, the accounts route, the FX conversion, the app entrypoint, and the test that already pins the importer's behaviour. One edit each. Six files, six edits - by construction of this refactor, not a measurement of anything Codex has done yet. It's the kind of job where stopping to approve every single edit is friction you'll feel six separate times before you're done. So your instinct is to reach for some "let it run" setting. Before you do, you need to know what you're actually turning up, because in Codex that instinct splits into two separate questions - and conflating them is how people end up either babysitting work that's safe or walking away from work that isn't.
 
 ## One slider is the wrong shape
 
@@ -16,11 +16,13 @@ Think about what could go wrong when an agent works on your financial data, and 
 - It could **do something you didn't expect** - delete a file, run a destructive command, rewrite something it shouldn't have. The defence against that is *making it ask you first*.
 - It could **reach somewhere it shouldn't** - read your `.env`, write outside the project, phone home to some endpoint with your data. The defence against that is *fencing where it can go*, independent of whether it asks.
 
-A single trust slider can't separate these. "More autonomous" on a one-dial tool means *both* more-without-asking *and* more-reach, bolted together - so to stop being interrupted on a safe refactor, you'd also have to widen the blast radius. That's a bad trade, and it's the trade Codex refuses to make you. It gives you two dials.
+A single trust slider can't separate these. "More autonomous" on a one-dial tool means *both* more-without-asking *and* more-reach, bolted together - so to stop being interrupted on a safe refactor, you'd also have to widen the blast radius. That's a bad trade, and it's the trade Codex refuses to make you. **It gives you two dials.**
 
 Before the flags, feel the judgment itself. Here are the same two questions stripped of any tool's vocabulary - set them for the cents refactor, then toggle each one on its own. Notice they move *independently*: exactly the property a single slider can't encode, and the reason Codex ships two axes instead of one:
 
 <AutonomyDial client:visible />
+
+Whichever rung you landed on, notice what the dial never asked: it never asked how autonomous you'd like Codex to be, in general, forever. It asked two narrower questions about the task in front of you - how bad the worst single mistake would be, and how far it could reach - and only then told you how much leash that combination earns. Codex's own two axes ask exactly those two questions, in its own vocabulary. Learn that vocabulary next, then come back and count what it actually costs you on the six-file refactor.
 
 ## Axis one - how much it can do without asking
 
@@ -32,7 +34,7 @@ The **approval policy** controls when Codex pauses to get your `y/n` before it a
 -a never         never pause - run end to end without interrupting you
 ```
 
-That's the whole first axis: from "check with me constantly" to "don't interrupt me at all." Notice what it does *not* say anything about - where the agent is allowed to read, write, or connect. Approval is purely about the interruptions.
+The whole first axis runs from "check with me constantly" to "don't interrupt me at all." Notice what it does *not* say anything about - where the agent is allowed to read, write, or connect. **Approval is purely about the interruptions.**
 
 ## Axis two - how far it can reach
 
@@ -44,11 +46,35 @@ The **sandbox** sets the agent's default reach: what the execution environment l
 -s danger-full-access   no fence at all - whole filesystem, full network
 ```
 
-The sandbox is enforced by the execution environment, not by the agent's good behaviour, but it is not automatically an absolute wall: an interactive approval can allow an operation beyond the default boundary. That's why the two axes are still useful: the sandbox defines the default capability boundary, while approval decides whether an exceptional request is allowed. If you need a non-mutating unattended audit, pair `read-only` with `approval_policy = "never"` so no escalation can be approved.
+The sandbox is enforced by the execution environment, not by the agent's good behaviour, but it is not automatically an absolute wall: an interactive approval can allow an operation beyond the default boundary. That's why the two axes are still useful: the sandbox defines the default capability boundary, while approval decides whether an exceptional request is allowed. If you need a non-mutating unattended audit, pair `read-only` with `approval_policy = "never"` so no escalation can be approved. **The sandbox draws the fence; approval decides who gets to open a gate in it.**
+
+## Count the six stops
+
+Now put a number on the trade from the top of this lesson, instead of just feeling it. The six-edit refactor - `csv.py`, `models.py`, `routes/accounts.py`, `fx.py`, `main.py`, `tests/test_csv_import.py` - is fixed. Read the two definitions above against that fixed shape, and the approval count for each policy falls straight out of them, no run required.
+
+`untrusted` pauses for anything not on a known-safe list, and an edit is never on that list. **Six edits, six stops. Remember that number - it's about to get checked twice.** `never` pauses for nothing, so the same six edits cost zero stops: the whole refactor goes through in one uninterrupted pass. This toy can honestly promise a range, by construction: 6 stops at one end, 0 at the other, nothing invented about how Codex actually behaves in between.
+
+Trace the six files one at a time to confirm the six lands where the definition says it should:
+
+| File | Edit | On the known-safe list? | Stops at `untrusted` |
+|---|---|---|---|
+| `csv.py` | float parse → `to_cents()` | No | 1 |
+| `models.py` | float field → integer cents | No | 1 |
+| `routes/accounts.py` | float total → integer cents | No | 1 |
+| `fx.py` | float rate math → integer cents | No | 1 |
+| `main.py` | float default → integer cents | No | 1 |
+| `tests/test_csv_import.py` | assert float → assert cents | No | 1 |
+| **Total** | | | **6** |
+
+Same number, arrived at twice - once by reading the rule, once by walking the files. **That match is the whole point of doing the arithmetic: when the rule's prediction and the file-by-file count agree, you can trust the count instead of just the feeling.**
+
+Where does `on-request` land? Nowhere fixed, and that's not a gap in this arithmetic - it's the honest answer. `on-request` doesn't pause on a list and it doesn't never pause; it pauses on what *it* judges risky, and for six mechanical one-line edits that could land anywhere from 0 stops to 6. You're not buying a specific number at that setting. You're buying the agent's judgment about which of the six, if any, deserves a second look - which is exactly the trust this whole chapter is teaching you to place deliberately instead of by accident.
+
+Call this the **two-axis model**: interruption counted separately from reach, on purpose. A single fused dial could never have kept those two counts apart - loosen the one slider enough to skip babysitting six mechanical edits, and you've loosened the thing bolted to it too, the reach the sandbox is supposed to be guarding. The six stops and the zero stops above are the proof this needed to be two dials, not one.
 
 ## They combine
 
-Because the two are orthogonal, you pick one value from each, and the pair defines the session. The whole model in one grid - approval policy down the left, sandbox across the top, each cell the session that pairing gives you:
+Because the two are **orthogonal** - each axis moves independently of the other - you pick one value from each, and the pair defines the session. The whole model in one grid - approval policy down the left, sandbox across the top, each cell the session that pairing gives you:
 
 ```text
  ┌─────────────┬─────────────────────────┬─────────────────────────┬─────────────────────────┐
@@ -62,13 +88,17 @@ Because the two are orthogonal, you pick one value from each, and the pair defin
  └─────────────┴─────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
-Read that grid as two questions answered separately. The cell that fits today's money refactor is **`on-request` × `workspace-write`**: let the agent edit freely inside the project and stop for genuinely risky moves, including requests to go beyond the default boundary. You get a productive default *and* a checkpoint for exceptions. If the work must never escalate, use `never` with the tightest sandbox that still permits the task.
+The grid answers two questions separately. The cell that fits today's money refactor is **`on-request` × `workspace-write`**: let the agent edit freely inside the project and stop for genuinely risky moves, including requests to go beyond the default boundary. That's the cell where the six edits from a moment ago flow without any of the six stops - not because the risk disappeared, but because the wall around it is doing the work the interruptions would otherwise have to do. You get a productive default *and* a checkpoint for exceptions. If the work must never escalate, use `never` with the tightest sandbox that still permits the task.
 
-A couple of things worth nailing down now, because they trip people up:
+## What the two dials don't promise
+
+Two things worth nailing down now, before you start reaching for these flags on real work - both are objections that would otherwise catch you mid-task:
 
 - **The flags are not the whole UX.** The CLI exposes the `--ask-for-approval` × `--sandbox` axes, and current Codex surfaces can also expose named or custom permission profiles. You may see references to `suggest`, `auto-edit`, or `full-auto` presets; treat those as surface/version-specific. The deprecated `--full-auto` flag should not be the basis of a new workflow.
 - **The default is deliberately cautious.** Launch Codex with neither flag and it picks a safe pairing for you - closer to the top-left of that grid than the bottom-right. You loosen on purpose, per task, not by accident.
 
-You'll often set both dials persistently rather than typing flags every time - the config keys are `approval_policy` and `sandbox_mode` in `config.toml`, and they take the same values. We'll bundle them into a named profile in the [last lesson](/course/codex/approvals-sandbox/profiles-for-trust/). The authoritative list of values and their precise behaviour lives in the [Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference); pin to that rather than trusting a fixed memory, since the granular options grow over time.
+Neither of those is the same claim as "the default is safe *because Codex understands `budgetcli`*." It isn't, and it doesn't. **Two well-set dials only decide how much damage a wrong guess can do while Codex is still guessing - they don't stop it from guessing wrong in the first place.** That gap is the villain of this whole course, still fully intact underneath a properly fenced session; the next chapters close it, this one just makes sure a wrong guess is cheap while it's still there.
+
+You'll often set both dials persistently rather than typing flags every time - the config keys are `approval_policy` and `sandbox_mode` in `config.toml`, and they take the same values. We'll bundle them into a named profile in the [last lesson](/course/codex/approvals-sandbox/profiles-for-trust/). The authoritative list of values and their precise behaviour lives in the [Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference); pin to that rather than trusting a fixed memory, since the granular options grow over time. (Every stop count in this lesson follows the same two estimators and the "toy, estimated, or quoted" rule set out in [Getting started](/course/codex/getting-started/).)
 
 Now take each axis one at a time. Start with the wall, because it's the one protecting your money - [the three sandbox levels in depth](/course/codex/approvals-sandbox/sandbox-modes/).

@@ -5,7 +5,7 @@ sidebar:
   label: "Statusline · ctx.ui footer"
 ---
 
-Everything you've built this module runs invisibly - a blocked tool call, a `ctx.abort()`, a `PLAN.md` reread, none of it shows up anywhere unless you go looking for it in the transcript. `stash` sessions run long: a re-extraction batch, a schema migration, an afternoon of search-index debugging. You want to glance down and see, without asking, which model is answering right now and how much of the context window it's already spent - the same way Module 2 taught you to inspect that live, just always visible instead of one command away.
+Everything you've built this module runs invisibly - a blocked tool call, a `ctx.abort()`, a `PLAN.md` reread, none of it shows up anywhere unless you go looking for it in the transcript. `stash` sessions run long: a re-extraction batch, a schema migration, an afternoon of search-index debugging. You want to glance down and see, without asking, which model is answering right now and how much of the context window it's already spent - the same way Module 2 taught you to inspect that live, just always visible instead of one command away. This is the fourth and last gate this module builds, and it's the only one of the four with a turn cost of exactly zero, every time, no exceptions - worth knowing before you build it, not just after.
 
 Pi's default footer already covers the basics - cwd, session name, token usage (↑ input / ↓ output / R cache-read / W cache-write), cost, context-window percentage, and the active model. What you're building here isn't a footer from nothing - it's a *replacement*, swapped in with the same `ctx.ui.setFooter()` call the default uses internally, so you can track something the stock version doesn't: a running tool tally, say, or a `stash`-specific number. Building one is the smallest extension surface in this whole module - and worth starting there before you reach for anything fancier.
 
@@ -37,13 +37,37 @@ export default function (pi: ExtensionAPI) {
 
 That's the entire pattern: `render(width)` returns an array of rows (plain strings here - one row, in this case), `invalidate()` tells Pi to redraw, `dispose()` cleans up if the extension unloads. Calling `setFooter` at all replaces the default footer for the rest of the session - there's no "extend, don't replace" mode, so anything from the stock footer you still want (cwd, cost, context %) has to be reproduced in your own `render`. Want the chrome gone entirely for a distraction-free run? Return `[]` from `render` - an empty array is a footer that takes up no space at all. Same contract, zero rows.
 
+Trace `render` once by hand so you know exactly what it does before you extend it. Say you're mid-way through a `stash` re-extraction sweep on `claude-sonnet-4-5` (the same model Module 2's footer showed) and, for this toy trace, context usage sits at a declared 42 percent - not a live measurement, just a number small enough to hand-compute with. `pct` rounds to `42`. `filled` is `Math.round(42 / 10)`, which rounds `4.2` down to `4`. The bar is four `#` characters followed by six `-` characters: `"####------"`. The whole line reads `claude-sonnet-4-5  [####------] 42%`. That's the entire render function, worked by hand - nothing in it is hidden.
+
 ## A richer version: tool tally and cost, without a running counter
 
-The stock footer already gives you model, tokens, cost, and context percentage. What it doesn't give you is a per-tool tally for this session - how many times `bash` ran versus `edit`, say. That's a reasonable thing to add, and it's also where the two gotchas in this whole extension surface live.
+The stock footer already gives you model, tokens, cost, and context percentage. What it doesn't give you is a per-tool tally for this session - how many times `bash` ran versus `edit`, say. That's a reasonable thing to add, and it's also where the sharpest trap in this whole extension surface lives.
 
-**Gotcha one: don't accumulate cost and tokens, recompute them.** The tempting move is a running total that increments as events fire. Don't - an incremental counter drifts the moment you `/fork` a session, because the fork inherits history the counter never saw. The pattern `tilldone` used for task state applies here too: on every `render`, walk `ctx.sessionManager.getBranch()` fresh and sum each assistant message's `usage.input` / `usage.output` / `usage.cost.total` from scratch. Slightly more work per render; correct after every fork, branch, or resume with no extra bookkeeping. `footerData.onBranchChange()` gives you a subscription to redraw the moment the active branch changes - say, the instant you `/fork` mid-session - and returns the unsubscribe function your `dispose()` should call.
+**The trap: an incremental counter drifts the moment you `/fork`.** Predict this before you see why: a session runs three tool calls, each with a small cost, for a running total of four cents. You `/fork` back to right after the second call - undoing the third - and continue in the fork with a new fourth call. Two different footers are watching this happen: one keeps a single running total it adds to every time a cost comes in; the other recomputes the total from scratch, from the active branch's history, on every single render. After the fork, do they show the same number?
 
-**Gotcha two: tally tool calls on the right event.** You want `tool_execution_end`, not `tool_call` - `tool_call` fires *before* a call runs (and could still get blocked by your damage-control gate), while `tool_execution_end` fires once the result is actually in:
+Trace it. Toy costs, declared invented for this trace, not measured: call 1 (`bash`) costs $0.01, call 2 (`read`) costs $0.01, call 3 (`edit`, before the fork) costs $0.02. Running total after all three: $0.04. Now `/fork` back to right after call 2, undoing call 3, and run a new call 4 (`write`) in the fork, costing $0.02.
+
+The naive footer keeps one plain variable and adds to it every time a `tool_execution_end` event fires, in real time, forever. It already added call 3's $0.02 before the fork happened - the variable sat at $0.04. Call 4 fires in the fork, and the naive footer adds its $0.02 on top of what it already had: $0.04 + $0.02 = **$0.06**. But call 3 isn't part of this branch's history anymore - the fork undid it. The branch you're actually on ran calls 1, 2, and 4: $0.01 + $0.01 + $0.02 = **$0.04**. The naive footer is showing six cents for a branch that cost four - it's still charging you for a call that doesn't exist on this branch anymore, in effect paying for call 3 twice: once as a ghost still sitting in the accumulator, once when call 4 replaced it.
+
+Here's the recompute version, which is exactly what the real pattern does - `tilldone`'s task-state trick from two lessons ago, applied to cost:
+
+```typescript
+// on every render:
+let totalCost = 0;
+for (const entry of ctx.sessionManager.getBranch()) {
+  if (entry.type === "message" && entry.message.role === "assistant") {
+    totalCost += entry.message.usage.cost.total;
+  }
+}
+```
+
+Trace this against the same fork. `ctx.sessionManager.getBranch()` walks only the entries actually on the current branch - calls 1, 2, and 4, because call 3 was undone by the fork and was never on this branch's history to begin with. Sum: $0.01 + $0.01 + $0.02 = **$0.04**. Confirmed: recompute-from-branch reads the correct four cents; the naive accumulator reads a wrong six. The same pattern applies to token counts, not just cost - sum `usage.input` and `usage.output` the same way, from the same loop.
+
+`footerData.onBranchChange()` gives you a subscription to redraw the moment the active branch changes - say, the instant you `/fork` mid-session - and returns the unsubscribe function your `dispose()` should call, so the footer catches the fork immediately instead of waiting for the next unrelated render.
+
+**Honesty note: recompute-from-branch doesn't scale forever either.** It's correct at any session length, but it isn't free - walking the full branch history on every single render is fine for a session with a few dozen turns and starts to show up as real work on a session with thousands, the kind you get from a multi-day `stash` migration you never restarted. There's no middle ground built into this pattern between "wrong but cheap" (the naive accumulator) and "right but re-walks everything on every keystroke" (recompute-from-branch). For `stash`-sized sessions this is the correct trade to make. It's worth knowing it's a trade, not a free lunch, before you reach for the same pattern on something much longer-running.
+
+**Gotcha two: tally tool calls on the right event.** You want `tool_execution_end`, not `tool_call` - `tool_call` fires *before* a call runs (and could still get blocked by the damage-control gate from three lessons ago), while `tool_execution_end` fires once the result is actually in:
 
 ```typescript
 // .pi/extensions/statusline-rich.ts (excerpt)
@@ -54,12 +78,34 @@ pi.on("tool_execution_end", async (event) => {
 });
 ```
 
-Describe the combined version to Pi rather than assembling it by hand: *"Extend my statusline extension to also show total cost, total tokens, and a per-tool call count for this session - recompute cost and tokens from `ctx.sessionManager.getBranch()` on every render instead of accumulating them, and tally tool counts on `tool_execution_end`."* When it comes back, verify the two gotchas held: fork the session and confirm cost/tokens don't double or reset oddly, and check the tool tally actually updates as calls complete rather than as they're issued.
+Here's the part worth being honest about rather than glossing over: the reference footer applies the recompute-from-branch fix to cost and tokens, but leaves the tool tally exactly like this - a plain counter that never resets and never re-derives from `getBranch()`. That means the same fork-drift problem you just traced for cost also applies to `toolCounts`, just quieter, because a tool tally reading one call too high is a lot less noticeable than a cost figure reading two cents too high. If you want the tally to be fork-correct too, the fix is the one you already know: walk `ctx.sessionManager.getBranch()` on every render, count `toolResult` entries fresh instead of accumulating them in a closure variable, and redraw on the same `onBranchChange()` signal. Whether that's worth doing depends on how often you actually fork mid-session on `stash` - for a tally you're glancing at, not billing against, the plain counter may be a trade you're happy to leave as-is.
+
+Describe the combined version to Pi rather than assembling it by hand: *"Extend my statusline extension to also show total cost, total tokens, and a per-tool call count for this session - recompute cost and tokens from `ctx.sessionManager.getBranch()` on every render instead of accumulating them, and tally tool counts on `tool_execution_end`."* When it comes back, verify the trace held: fork the session and confirm cost/tokens read the branch's real total, not the sum you'd get from a naive accumulator, and decide for yourself whether the tool tally's fork-drift is worth fixing the same way.
 
 ## Two ways to build the widget, and when either matters
 
 The raw-string-row style above is the whole footer contract laid bare - good for a first extension, and genuinely all you need for something this simple. The alternative, once a footer gets more visually involved (multiple lines, colored segments, a progress bar that isn't just `#`/`-`), is component composition: instantiate a `Text` component from `@earendil-works/pi-tui` once, outside `render()`, and mutate it with `.setText()` on each call instead of rebuilding a string from scratch. Neither is more "correct" - the string-row style is faster to write and read; the component style pays off once you're managing enough visual state that plain string concatenation gets unwieldy. Start with strings; reach for components when the strings start fighting you.
 
-You now have four pieces built on hooks you already knew how to use before this module started: a `tool_call` gate for safety, another for task sequencing, a `before_agent_start` injection for planning, and a `setFooter` for visibility - three of them filling gaps Pi left open on purpose, the fourth replacing a default Pi already ships with one that tracks what you actually care about on `stash`. That's the whole trade Pi is making explicit - nothing is missing by accident, and nothing you add back or swap out is hidden from you either.
+## Four gates, one ledger
 
-TypeScript got you this far, but not every problem in this module needed code - the plan-mode lesson was a markdown file and a habit, not an API. That's worth taking further: some of what you build for `stash` should be a procedure, not a program. [Next: skills & packages](/course/pi/skills-packages/).
+You now have four pieces built on hooks you already knew how to use before this module started: a `tool_call` gate for safety, another for task sequencing, a `before_agent_start` injection for planning, and a `setFooter` for visibility - three of them filling gaps Pi left open on purpose, the fourth replacing a default Pi already ships with one that tracks what you actually care about on `stash`. Add their rows to the ledger you've been building since Module 2 - this time the cost column is measured in turns, not tokens, because that's what a gate actually spends:
+
+| Layer | What it costs | What it buys | Who decided |
+|---|---|---|---|
+| damage-control gate (`tool_call` + rule file) | 0 turns idle; 1 full turn on a hard `ctx.abort()`; one UI confirm, 0 extra turns, on a soft `ask` rule | Removes: a confident `rm -rf` or `DROP TABLE` reaching `stash.db` or `.env` with nothing between the call and the filesystem | You (the rule file) and Pi (the hook) |
+| tilldone gate (task tool + `tool_call`) | 0 turns idle; 1 blocked-and-retried tool call, same turn, no round trip to you | Removes: three tasks touched shallowly and reported done when only one actually finished | You (the gate's three checks) |
+| `PLAN.md` + `before_agent_start` injection | 0 turns, ever; every token in the file re-sent on every turn for as long as it exists | Removes: a plan that quietly stops being consulted once it scrolls out of context | You (what's in the file, hand-edited) |
+| statusline replacement (`ctx.ui.setFooter`) | 0 turns, ever; a render-time cost that grows with session length if you recompute from full branch history | Removes: not knowing which model is answering or how much context is left without stopping to ask | You (which numbers you choose to show) |
+
+## Which of these four to actually build
+
+Not every `stash` session needs all four. Here's the honest read on each, given what you just measured:
+
+| Gate | Fires often? | Worst miss if you skip it | Verdict |
+|---|---|---|---|
+| Permissions (damage control) | Rarely - only on a real mistake | Losing `stash.db` or leaking `.env`, with no undo | **Build it.** The turn cost is real but rare; the miss it prevents isn't recoverable. |
+| Task discipline (tilldone) | Every multi-part job, if the model tends to multitask | Three things touched shallowly, reported as done | **Build it if you've actually watched this happen.** If your jobs are mostly one-task-at-a-time already, the gate has nothing to catch. |
+| Plan mode (`PLAN.md`) | Every turn, silently, once the file exists | A plan that scrolls out of context and quietly stops being followed | **Build it, but trim the file back down when the job's done.** The zero-turn cost hides a real per-turn token bill this ledger's cost column doesn't capture. |
+| Statusline | Every render | Not knowing what's happening without asking | **Build it.** It's the only one of the four with no turn cost at all, ever - the cheapest gate in the module, by construction. |
+
+TypeScript got you this far, but not every problem in this module needed code - the plan-mode lesson was a markdown file and a habit, not an API. The gates hold, and each one costs turns - except the one that never does. Some of what you build for `stash` should stop being code entirely. [Next: skills & packages](/course/pi/skills-packages/).

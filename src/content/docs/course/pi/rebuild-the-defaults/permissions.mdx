@@ -7,15 +7,21 @@ sidebar:
 
 import AutonomyDial from '../../../../../components/interactive/AutonomyDial.tsx';
 
+Module 5 left you able to add capability to `stash` with nothing stopping what got added. This module's slice of that problem: every gate you bolt back on to stop it is free while it's idle and costs you a real turn the moment it fires. Call that the **turn tax** - you'll pay it four times this module, once per gate, and the bill is the whole point of building it yourself instead of trusting a default.
+
 :::caution[YOLO by default]
 Out of the box, Pi has **no permission-prompt gate**. No sandbox, no allow/ask/deny list, no confirmation dialog before a `bash` call or a `write`. If the model decides to run `rm -rf` or overwrite `.env`, it runs - nothing between the tool call and your filesystem. This is a deliberate stance, not a gap someone forgot to close: the design view is that most permission-prompting amounts to security theater, and that allow-listing individual commands doesn't scale to real work. Whether or not you buy that argument in general, you should at least *know* you're accepting it every time you point Pi at a repo - and decide for `stash`, specifically, whether that's the leash you want.
 :::
 
 For a repo you're still exploring, YOLO is arguably fine - worst case, `git checkout` undoes it. `stash` isn't that repo anymore. It has a SQLite database holding every article you've ever saved, and a `.env` with the tokens the fetch worker and search index depend on. Neither is in version control, and neither comes back from `git checkout`. You don't need Pi's entire permission model rebuilt from scratch - you need exactly the handful of things that would actually hurt, gated, and everything else left alone.
 
+Here's the claim to hold onto while you build it: the gate below turns on a hair trigger for anything touching `.env` or `stash.db`, but it's supposed to leave near-miss filenames alone - a hand-made backup called `stash.db_backup` shouldn't get caught by a rule that only ever named `stash.db`. Spoiler: it doesn't, and by the end of this lesson you'll have traced exactly why, character by character, instead of taking that on faith.
+
 ## The shape of the gate: a rule file plus one hook
 
-The community pattern for this is called damage control, and it's built entirely from primitives you already know: `pi.on("tool_call", ...)` and `pi.on("session_start", ...)`. On `session_start`, the extension loads a small rule file - typically `.pi/damage-control-rules.yaml`, falling back to `~/.pi/damage-control-rules.yaml` if the project doesn't have its own - into four buckets:
+This pattern is called damage control, and it's built entirely from primitives you already know: `pi.on("tool_call", ...)` and `pi.on("session_start", ...)`. It isn't a community standard - it comes from one place: a single-author demo repo (`pi-vs-claude-code`, built by IndyDevDan, aka disler, to show off what Pi's extension system can do) rather than any wider convention. Search for it and you'll mostly find that one repo and forks of it. None of that makes the pattern worse - it's a solid piece of engineering either way - it just means you're adopting one well-built example, not a norm the ecosystem has settled on.
+
+On `session_start`, the extension loads a small rule file - typically `.pi/damage-control-rules.yaml`, falling back to `~/.pi/damage-control-rules.yaml` if the project doesn't have its own - into four buckets:
 
 ```yaml
 # .pi/damage-control-rules.yaml
@@ -39,7 +45,21 @@ bashToolPatterns:
     reason: "Direct SQL against stash.db bypasses the app entirely."
 ```
 
-Then a `tool_call` handler inspects every attempted call against those buckets before it runs. The bookkeeping around it - resolving tilde paths, walking every read/write/grep/bash tool type, loading the YAML from project or home directory - is exactly the kind of thing worth having Pi write rather than typing by hand. The part worth seeing directly is the non-obvious bit: matching a call against the right rule bucket, then routing the response through `ctx.ui.confirm` or straight to `ctx.abort()`:
+## Trace the matcher before you trust it
+
+**About the numbers in this module:** most numbers here are small toy scenarios invented to make a trade hand-traceable - turn counts, dollar costs - and are labeled as toy where they appear. A few, like the character positions in the trace just below, are exactly what you'd get counting the string yourself. The one number that isn't invented for teaching is the `30_000` millisecond confirm-dialog timeout later in this lesson, pulled directly from the extension's own code.
+
+A `noDeletePaths` rule naming `stash.db` has to stop `rm stash.db` cold. It should *not* also stop you from deleting a hand-made backup you named `stash.db_backup` before a risky migration - a rule that blocks your backups along with your database is worse than no rule at all. Predict it before you look at the mechanism: does the command below get blocked?
+
+```text
+rm stash.db_backup
+```
+
+The naive answer - the one you'd get from a plain substring check - is yes: `"rm stash.db_backup".includes("stash.db")` is true, so a dumb matcher blocks it. The actual matcher does one more thing before it decides. It finds where `stash.db` starts in the command - count it yourself if you want: `r`(0) `m`(1) ` `(2) `s`(3) `t`(4) `a`(5) `s`(6) `h`(7) `.`(8) `d`(9) `b`(10) - so the match starts at index 3 and runs 8 characters, ending at index 10. Then it looks at exactly one character: the one right after the match, at index 11. That character is `_`. The matcher only counts a hit if the next character *isn't* one that could still be part of the same filename - letters, digits, underscore, or hyphen. `_` is on that list, so this isn't a real hit: the matcher decides `stash.db_backup` is a different file that happens to start the same way, not `stash.db` with something appended, and keeps looking for another occurrence. It doesn't find one. **Not blocked** - exactly the prediction.
+
+Now run the same trace against `stash.db.bak` instead - a version of the backup with a dot instead of an underscore. Same lookup, same index 11, but this time the character there is `.`. A period is *not* on the safe list (only letters, digits, `_`, and `-` are), so the matcher counts it as a real hit and blocks the delete. That's worth sitting with for a second: the guard protects you from `_backup`- and `-copy`-style near-misses, but not from `.bak`-style ones, on the same rule, against the same file. It's not a bug you need to fix before you trust this - over-blocking a backup costs you one confirmation dialog; under-blocking costs you the file `stash.db` exists to protect. Given that choice, this is the failure mode you want the matcher biased toward. But know it, rather than assume the guard is symmetric when it isn't.
+
+That's the non-obvious part. The bookkeeping around it - resolving tilde paths, walking every read/write/grep/bash tool type, loading the YAML from project or home directory - is exactly the kind of thing worth having Pi write rather than typing by hand:
 
 ```typescript
 // .pi/extensions/damage-control.ts (excerpt)
@@ -71,19 +91,18 @@ pi.on("tool_call", async (event, ctx) => {
 });
 ```
 
-A few things worth noticing, because they're what make this a *gate* rather than a suggestion:
+A few more things worth noticing, because they're what make this a *gate* rather than a suggestion:
 
-- Path matching is deliberately loose - directory-prefix match, glob turned into regex, substring fallback against both the absolute path and the cwd-relative one - but guarded against near-miss false positives. A rule targeting `stash.db` shouldn't quietly also block `stash.db.bak`, so the matcher checks that the character right after the match isn't itself part of a path or file name.
 - Every decision - allowed, asked, blocked - gets written to a durable log via `pi.appendEntry("damage-control-log", {...})`. That's not bookkeeping for its own sake: it's a replayable audit trail of every close call the agent had with your data, for free, because the session's own append-only log is where it lives.
-- An `ask: true` rule routes through `ctx.ui.confirm(title, message, { timeout: 30_000 })` - a real blocking dialog, not a fire-and-forget notification.
+- An `ask: true` rule routes through `ctx.ui.confirm(title, message, { timeout: 30_000 })` - a real blocking dialog, not a fire-and-forget notification. Thirty seconds is the actual default in the reference implementation, not a number this course picked.
 
-You don't need to write the surrounding path-matching and YAML-loading code yourself. Describe the gate to Pi in terms of the rule file above: *"Write a Pi extension at `.pi/extensions/damage-control.ts` that loads `.pi/damage-control-rules.yaml` (falling back to `~/.pi/damage-control-rules.yaml`) on `session_start`, then on every `tool_call` blocks writes/edits to `zeroAccessPaths`, blocks or asks-then-blocks on `bashToolPatterns` matches, and calls `ctx.abort()` on any hard block."* Review what comes back against the real shape above - specifically, that it calls `ctx.abort()` on the unconditional-block path (not just `ask`-then-deny), and that path matching doesn't false-positive on near-miss filenames like `stash.db.bak`.
+You don't need to write the surrounding path-matching and YAML-loading code yourself. Describe the gate to Pi in terms of the rule file above: *"Write a Pi extension at `.pi/extensions/damage-control.ts` that loads `.pi/damage-control-rules.yaml` (falling back to `~/.pi/damage-control-rules.yaml`) on `session_start`, then on every `tool_call` blocks writes/edits to `zeroAccessPaths`, blocks or asks-then-blocks on `bashToolPatterns` matches, and calls `ctx.abort()` on any hard block."* Review what comes back against the trace above - specifically, that it calls `ctx.abort()` on the unconditional-block path (not just `ask`-then-deny), and that it leans the same direction on near-misses: better to over-block a `.bak` file than under-block one with an underscore in it.
 
-## The pair: hard-stop vs. let-adapt
+## The pair: hard-stop vs. let-adapt, and what each costs in turns
 
-Here's the part that separates this from a blunt on/off switch. An unconditional rule violation does two things: it returns `{ block: true, reason }`, *and* the handler calls `ctx.abort()` - which kills the entire in-flight turn, not just the one tool call. That's the right response to "the model is about to `DROP TABLE`": stop everything, don't let it try to route around the block.
+Here's the part that separates this from a blunt on/off switch, and where the turn tax actually gets paid. An unconditional rule violation does two things: it returns `{ block: true, reason }`, *and* the handler calls `ctx.abort()` - which kills the entire in-flight turn, not just the one tool call. The cost of that: **one full turn**. The model's current turn ends the moment it tries the dangerous call; nothing it was doing survives, and you have to send a fresh message telling it what you actually meant. That's the right price for "the model is about to `DROP TABLE`" - stop everything, don't let it try to route around the block.
 
-But not every violation deserves that much force. Suppose the agent tries to read a file inside `migrations/` to check the schema before writing a new one - technically a read-only-path hit, but not remotely dangerous. Killing the whole turn over that is just friction. So the same rule engine ships a second variant, byte-for-byte identical except for one change: it never calls `ctx.abort()`, and the static `reason` string is replaced by a small decision procedure that tells the model *how* to keep going -
+But not every violation deserves that much force. Suppose the agent tries to read a file inside `migrations/` to check the schema before writing a new one - technically a read-only-path hit, but not remotely dangerous. Killing the whole turn over that is just friction for a turn that was never going to hurt you. So the same rule engine ships a second variant, byte-for-byte identical except for one change: it never calls `ctx.abort()`, and the static `reason` string is replaced by a small decision procedure that tells the model *how* to keep going -
 
 ```typescript
 function continueFeedback(toolName: string, reason: string, destructive: boolean): string {
@@ -94,18 +113,24 @@ function continueFeedback(toolName: string, reason: string, destructive: boolean
 }
 ```
 
-Same hook, same rule file, same return channel - just tuned from a kill switch into steerable in-band guidance the model reasons over. In practice you want both files sitting next to each other: `damage-control.ts` guarding `stash.db` and `.env` with a hard `ctx.abort()`, and `damage-control-continue.ts` guarding the lower-stakes paths where you'd rather the agent adapt and keep working than stop and wait on you.
+Same hook, same rule file, same return channel - just tuned from a kill switch into steerable in-band guidance the model reasons over. The turn cost here is **zero**: the blocked tool call comes back as a result the model can read and act on, in the same turn, with no round trip back to you. In practice you want both files sitting next to each other: `damage-control.ts` guarding `stash.db` and `.env` with a hard `ctx.abort()`, and `damage-control-continue.ts` guarding the lower-stakes paths where you'd rather the agent adapt and keep working than stop and wait on you.
 
 Deciding which bucket a given path or command belongs in is exactly the judgment this dial makes explicit - ask it the same two questions for anything you're tempted to add to your own rule file:
 
 <AutonomyDial client:visible />
 
-Map that back onto `stash`: `.env` and `stash.db` are irreversible with consequences that reach beyond your machine (they're what makes the service work for whoever else is using it) - that's the hard-stop bucket, no ask, no adapt. A stray read inside `migrations/` is undoable and stays local - that's exactly the shape `damage-control-continue.ts` was built for.
+Map that back onto `stash`: `.env` and `stash.db` are irreversible with consequences that reach beyond your machine (they're what makes the service work for whoever else is using it) - that's the hard-stop bucket, pay the one-turn price every time, no ask, no adapt. A stray read inside `migrations/` is undoable and stays local - that's exactly the shape `damage-control-continue.ts` was built for, and it should never cost you a turn.
 
-MCP is worth a one-line note here too: Pi has no MCP support in its core, and adding a server (even a well-behaved one) is itself something to weigh against this gate - every tool it registers spends context on every single turn, whether you use it or not. Damage control doesn't police that trade-off, but it's the same instinct: add capability deliberately, not because a hidden default let it through.
+## What this gate doesn't do: process isolation
+
+Everything above operates at the level of a single tool call - it inspects what the model is about to run and decides, per call, whether to let it through. That's a real gate, but a narrower one than it might feel like. It has no idea what the process behind a `bash` call could still reach once it's running: environment variables outside your rule file, network access, anything readable on the machine you didn't think to list as a path. Pi's own stated position on this is blunt: sandboxing that isn't full process isolation is theater, because once a process can read data and execute code, exfiltration doesn't need a dangerous-looking command to happen - and the fix for that isn't a smarter rule file, it's a container or a VM around the whole session. Codex takes the opposite bet by default: OS-level sandboxing (Seatbelt, on macOS) wraps every command it runs, a real safety property that `bash`-level rule matching can't replicate no matter how carefully you write the YAML.
+
+Damage control is still worth building for `stash` - it stops the specific, likely, keyboard-adjacent mistake of the model doing exactly what it says it's doing, just to the wrong file. It was never going to stop a determined or compromised process from doing something else entirely. If that's the threat you're actually worried about, the answer lives one layer down from anything in this module, and you'll build it with a container, not a `tool_call` hook.
+
+The other gate you'll write this module, `tilldone` in the next lesson, registers its own `tool_call` handler on top of this one - which raises a question this lesson's gate alone can't answer: what happens when two hooks are both watching the same event? That's the first thing the next lesson deals with.
 
 :::tip[Try it]
-Write a damage-control extension that blocks `rm -rf` and `DROP TABLE`. Test it by asking Pi to delete a directory and watch the hard-stop fire. Then ask it to delete a single file and verify the softer rule lets it through with a confirmation dialog instead of killing the turn.
+Write a damage-control extension that blocks `rm -rf` and `DROP TABLE`. Test it by asking Pi to delete a directory and watch the hard-stop fire. Then ask it to delete `stash.db_backup` and confirm the softer near-miss case actually goes through, before you try `stash.db.bak` and watch the same rule catch it.
 :::
 
-You've now got the sharpest guardrail stash needed. Next, a gate of a different kind - not what the agent's allowed to touch, but how many things it's allowed to be doing at once. [Next: task discipline](/course/pi/rebuild-the-defaults/task-discipline/).
+You've now got the sharpest guardrail `stash` needed, and you know both what it costs when it fires and what it can't see. One turn to stop a `DROP TABLE`. Zero turns, and a near-miss backup left alone, for everything else. [Next: task discipline](/course/pi/rebuild-the-defaults/task-discipline/).

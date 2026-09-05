@@ -5,11 +5,11 @@ sidebar:
   label: "A tool · re-extract"
 ---
 
-`/stash` finds the broken entries, but it stops at finding - you still have to fix each one by hand, and "fix" here means feeding the URL back through the same fetch-and-extract pipeline `stash`'s background worker already runs, in the hope the extractor does better on a second try (or does better once you've patched it). That's a job worth handing to the model directly: point it at a failed entry and let it decide whether re-extracting is the right move, run it, and tell you what happened. For that, the model needs a tool of its own - not a command only you can type.
+`/stash` found three broken entries last lesson - `#142`, `#187`, `#201` - but it stops at finding. You still have to fix each one by hand, and "fix" here means feeding the URL back through the same fetch-and-extract pipeline `stash`'s background worker already runs, in the hope the extractor does better on a second try (or does better once you've patched it). That's a job worth handing to the model directly: point it at `#142`, let it decide whether re-extracting is the right move, run it, and tell you what happened. For that, the model needs a tool of its own - not a command only you can type.
 
 ## Why a tool and not just "ask it to run a script"
 
-You could tell the agent "run `stash reextract <url>` via bash whenever I ask you to fix an entry," and it would probably work, most of the time. A registered tool buys you three things that instruction-following over `bash` doesn't: a **typed, validated schema** the model fills in instead of guessing shell-quoting right; a **description and usage guidance** that shows up in the model's own "available tools" list, so it reaches for this instead of reinventing the wheel with a raw curl; and a **structured return value** - separate from anything printed to a terminal - that the model can reason over precisely. Small, well-scoped tools like this one are also the case Pi's own docs point to as the alternative to reaching for an MCP server: you don't need a whole protocol and a running process for something this contained. More on that trade-off in the next lesson.
+You could tell the agent "run `stash reextract <url>` via bash whenever I ask you to fix an entry," and it would probably work, most of the time. "Most of the time" is doing real work in that sentence: `#142`'s URL alone is `https://example.com/paywalled-article?utm_source=twitter&ref=feed`, and an agent composing that as a raw shell command has to get the quoting right on every special character in it. Miss the quotes around it and the shell reads the `&` as "run this in the background, then start a new command called `ref=feed`" - your fix silently doesn't run, and the agent has no structured way to notice. A registered tool buys you three things that instruction-following over `bash` doesn't: a **typed, validated schema** the model fills in instead of guessing shell-quoting right; a **description and usage guidance** that shows up in the model's own "available tools" list, so it reaches for this instead of reinventing the wheel with a raw curl; and a **structured return value** - separate from anything printed to a terminal - that the model can reason over precisely. Small, well-scoped tools like this one are also the case Pi's own docs point to as the alternative to reaching for an MCP server: you don't need a whole protocol and a running process for something this contained. More on that trade-off in the next lesson.
 
 ## Registering it
 
@@ -73,7 +73,7 @@ export default function (pi: ExtensionAPI) {
 Reload, and the model can reach for it the moment a re-extract makes sense:
 
 ```text
-> the paywalled-article entry has an empty body, can you fix it?
+> entry #142 has an empty body, can you fix it?
 
   ● reextract_url  { url: "https://example.com/paywalled-article", mode: "readability" }
     Fetching https://example.com/paywalled-article…
@@ -93,5 +93,9 @@ Reload, and the model can reach for it the moment a re-extract makes sense:
 - **Throwing inside `execute` marks the result `isError: true`.** You don't need to catch the error and hand-format a failure response - the `throw new Error(...)` above is the whole error path. The model sees it failed and reasons from there, the same way it would after a failed `bash` command.
 - **`details` is a second, separate payload from `content`.** `content` is what the model reads as the tool's result and can quote back to you in prose; `details` is structured data attached alongside it - useful for a custom `renderResult` to draw on, or for another part of your extension to read later without re-parsing text.
 - **We didn't set `terminate: true`.** That flag skips the follow-up LLM turn entirely when every tool call in a batch sets it - the right call for a tool whose result needs no interpretation (a fire-and-forget log write, say). Here you *want* the model to look at the result and tell you whether the fix actually worked, so the default (no `terminate`) is correct.
+
+Before you let the model reach for this against an entry you actually care about, run it against one you don't. Try `#201` in a throwaway session first - ask the model to re-extract it and read what comes back - so the first time `reextract_url` runs for real isn't also the first time you've seen what it does.
+
+**A typed schema in, a structured result out, and a `throw` that does all the error handling you need.**
 
 You now have both halves of the chore automated - a command you run, a tool the model runs - and they're both live the moment you save the file and hit `/reload`. What you haven't touched yet is the machinery underneath both of them: the lifecycle events that let an extension see, and change, what's happening on every single turn, not just when a command or tool is explicitly invoked. [Next: hook into the loop](/course/pi/first-extension/hooks/).
