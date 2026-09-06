@@ -894,12 +894,11 @@ export default defineConfig({
 							link: '/foundations/',
 							icon: 'add-document',
 							items: [
-								// The five-phase arc decided in 43bf71b: substrate, author context,
-								// extend reach, control the run, operate. Overview stays a top-level
-								// link; the cheatsheets are reference, so they sit collapsed at the end.
+								// Group foundations by subject with descriptive navigation labels.
+								// Overview stays a top-level link; cheatsheets sit collapsed at the end.
 								{ label: 'Overview', slug: 'foundations' },
 								{
-									label: 'Substrate',
+									label: 'Agent basics',
 									collapsed: false,
 									items: [
 										{ label: 'How agents work', slug: 'foundations/how-agents-work' },
@@ -907,7 +906,7 @@ export default defineConfig({
 									],
 								},
 								{
-									label: 'Author',
+									label: 'Instructions & models',
 									collapsed: false,
 									items: [
 										{ label: 'Rules', slug: 'foundations/rules' },
@@ -917,7 +916,7 @@ export default defineConfig({
 									],
 								},
 								{
-									label: 'Extend',
+									label: 'Tools & orchestration',
 									collapsed: false,
 									items: [
 										{ label: 'MCP servers', slug: 'foundations/mcp-servers' },
@@ -926,7 +925,7 @@ export default defineConfig({
 									],
 								},
 								{
-									label: 'Control',
+									label: 'Planning & permissions',
 									collapsed: false,
 									items: [
 										{ label: 'Permissions & sandboxing', slug: 'foundations/permissions' },
@@ -934,7 +933,7 @@ export default defineConfig({
 									],
 								},
 								{
-									label: 'Operate',
+									label: 'Setup & operations',
 									collapsed: false,
 									items: [
 										{ label: 'Configuration', slug: 'foundations/configuration' },
