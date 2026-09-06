@@ -5,15 +5,25 @@ sidebar:
   label: "SYSTEM.md · write it down once"
 ---
 
-You've resumed sessions, forked a design decision, and watched a long refactor get compacted mid-stream - and in every one of those, you've been typing some version of the same three sentences. Don't touch `.env` directly; it holds live API keys. Use `stash migrate`, never raw SQL, when the schema changes. The extractor's tests live in `tests/extractor/`, and the heuristics are fragile enough that you read `heuristics.py` before touching it, every time.
+You've resumed sessions, forked a design decision, and watched a long refactor get compacted mid-stream. In every one of those, resuming and compacting protected the conversation - the *transient* record of what you and Pi worked out together. Neither one protects the things about `stash` that were true before the conversation started and stay true after it ends. You've been typing some version of the same three sentences into every session anyway: don't touch `.env` directly, it holds live API keys. Use `stash migrate`, never raw SQL, when the schema changes. The extractor's tests live in `tests/extractor/`, and the heuristics are fragile enough that you read `heuristics.py` before touching it, every time.
 
-Every fresh session forgets that. Every fork inherits it only if the fork happens to start after you already said it out loud. Compaction might even summarize it *away* eventually, because to a summarizer it can look like incidental chatter instead of a standing rule. You've been re-explaining `stash` to Pi for a week. There's a simpler move: write it down once, in a file Pi loads before it processes your first message - and never explain it again.
+Count them: three rules, one sentence each, something like forty words total. Now count how many separate sessions this week you've retyped some version of them into - every fresh one, because `pi --continue` and `/fork` restore a conversation, they don't hand a brand-new session a standing rule it hasn't been told yet. Compaction might even summarize a rule *away* eventually, because to a summarizer optimizing for "Goal" and "Key Decisions," a passing mention of `.env` can look like incidental chatter instead of a standing constraint. You've been re-explaining `stash` to Pi for a week. There's a simpler move: write it down once, in a file Pi loads before it processes your first message - and never explain it again.
+
+Here's the claim that move earns you, worth stating before you see it happen: tomorrow morning, on a session about something that has nothing to do with today's work, Pi will already refuse to run raw SQL against `stash` - not because you say a word about it, but because of a file you're about to write once, right now.
 
 ## Where the default prompt already reads project context
 
-Recall from last chapter that Pi's default system prompt is a template assembled fresh every run, not a static string - and one of the steps in that assembly is a `<project_context>` block, filled in from context files Pi discovers by walking the directory tree: the global `~/.pi/agent/AGENTS.md`, then each parent directory from your project root down to the current directory. All matching files are concatenated in that order; a closer file appears later, but it does not automatically replace or override the earlier file like a `.gitignore` rule. Drop an `AGENTS.md` in `stash`'s root and it's injected into every session automatically, on top of whatever else the default prompt already does. That's already a form of writing it down once, and it's worth knowing it exists (it's what the site's [Rules chapter](/foundations/rules/) covers in general, spec-level terms).
+Recall from last chapter that Pi's default system prompt is a template assembled fresh every run, not a static string - and one of the steps in that assembly is a `<project_context>` block, filled in from context files Pi discovers by walking the directory tree: the global `~/.pi/agent/AGENTS.md`, then each parent directory from your project root down to the current directory. All matching files are concatenated in that order, and where two files say different things, the closer one wins - the same layering logic as a `.gitignore` file near the code overriding a broader rule further up the tree. Drop an `AGENTS.md` in `stash`'s root and it's injected into every session automatically, on top of whatever else the default prompt already does. That's already a form of writing it down once, and it's worth knowing it exists (it's what the site's [Rules chapter](/foundations/rules/) covers in general, spec-level terms).
 
-But `AGENTS.md` is *one voice among several* in the assembled prompt - helpful context, not necessarily something the model treats as non-negotiable. For rules you want stated with more force - the kind you'd be genuinely unhappy to see quietly ignored - Pi gives you a sharper tool: the system prompt itself.
+But `AGENTS.md` is *one voice among several* in the assembled prompt - helpful context, not necessarily something the model treats as non-negotiable. For rules you want stated with more force - the kind you'd be genuinely unhappy to see quietly ignored - Pi gives you a sharper tool: the system prompt itself. Five layers exist between "a file on disk" and "the exact prompt sent this turn," and they don't all do the same job:
+
+| Layer | Scope | Effect on the default prompt |
+|---|---|---|
+| Context-file walk | Global, then every parent directory down to the current one | Discovers files; doesn't touch the template itself |
+| `AGENTS.md` (what the walk finds) | Global or any directory on the path | Injected into `<project_context>` - additive, one voice among several |
+| `APPEND_SYSTEM.md` | Project (`.pi/`) or global (`~/.pi/agent/`) | Appends to the default template - additive, stronger voice |
+| `SYSTEM.md` | Project or global | Replaces the default template wholesale |
+| CLI flags (`--system-prompt`, `--append-system-prompt`) | Single invocation | Same two behaviors as above, no file needed |
 
 ## APPEND_SYSTEM.md: add to the default, don't replace it
 
@@ -33,6 +43,8 @@ Drop a file at `.pi/APPEND_SYSTEM.md` in the project root (or `~/.pi/agent/APPEN
 
 This is the append option precisely because it's additive and low-risk: you keep everything Pi's default prompt already does well - the tool guidelines, the pointer to its own docs, the lazy-loaded skills metadata - and you're only ever adding to it, never silently losing default behavior you didn't mean to touch.
 
+Notice what you just did to your own budget, though. Every line in that file is now permanent rent, not a one-time toll. Run `wc -w .pi/APPEND_SYSTEM.md` on the block above and that's roughly the tax on every single session from here on, stacked on top of the tools and the default template you already can't shrink. Four rules today is cheap. **The fix that stops you re-explaining `stash` is also a new, permanent line in every session's bill - you just moved the cost from your typing to the window.** Keep it lean the same way you'd keep any other always-loaded file lean: worth its rent, or it doesn't belong there.
+
 Start a brand-new session tomorrow, on a task that has nothing to do with today's, and watch it already know:
 
 ```text
@@ -43,7 +55,7 @@ $ pi -c
   index stays in sync. Want me to run that instead?
 ```
 
-Nobody said a word about migrations in this session. The rule was already there when the session started.
+Nobody said a word about migrations in this session. The rule was already there when the session started - exactly the claim from the top of this lesson, and now you've watched it hold.
 
 ## SYSTEM.md: when you want a different agent, not an addition
 
@@ -53,8 +65,20 @@ That's the right tool when you want a fundamentally different agent, not a stric
 
 Both are also available as one-off CLI flags - `--system-prompt <text>` and `--append-system-prompt <text>` - for a single invocation without touching a file at all, which is exactly how a scripted or child `pi` process gets shaped later in this course.
 
+## What this chapter didn't give you
+
+Everything in this chapter is context *you* wrote: `AGENTS.md`, `APPEND_SYSTEM.md`, `SYSTEM.md`, all loaded the same way on session one and session four hundred, never updated by Pi itself. That's a real, working answer to "stop re-explaining yourself" - and it's a different primitive from agent-managed memory, where the model decides on its own, mid-session, that something is worth keeping for next time. Core Pi doesn't ship that second kind. What exists is a community-extension pattern - a `/memory` command some Pi users have built that toggles a project `memory.md` file the agent can update - not something built into the harness. If you want Pi to notice a fact worth keeping without you deciding to write it down, that's outside what `APPEND_SYSTEM.md` does, and outside this chapter.
+
 ## What you've actually built
 
-Three files deep into `stash`, you no longer re-explain anything that matters. Sessions resume the conversation; `AGENTS.md` and `APPEND_SYSTEM.md` carry the rules that have to survive *every* conversation, resumed, forked, or brand new. That's the whole thesis of this chapter in one sentence: the context window is a resource you spend and reclaim turn to turn, but the handful of things that are always true about `stash` don't belong in that spend at all - they belong on disk, read once at the start of every session, for free.
+Three files deep into `stash`, you no longer re-explain anything that matters. Sessions resume the conversation; `AGENTS.md` and `APPEND_SYSTEM.md` carry the rules that have to survive *every* conversation, resumed, forked, or brand new. **The context window is a resource you spend and reclaim turn to turn, but the handful of things that are always true about `stash` don't belong in that spend at all - they belong on disk, read once at the start of every session, for free.** Free the first time you write them. After that, as you just measured, they're a fixed cost like every other layer this chapter has been counting.
 
-Your rules are captured. The next problem is what to spend them *on* - because right now every one of these sessions, cheap grunt work included, is running through the same expensive model. [Next: route the right model to the right job](/course/pi/models-config/).
+Which makes this the moment to look at the running total. Two rows opened this course's ledger of what a session costs and who's spending it: the four tools' schemas, and the default system prompt itself, both fixed, both Pi's call. This chapter adds three more:
+
+| Layer | What it costs | What it buys | Who decided |
+|---|---|---|---|
+| The session file (JSONL on disk) | Nothing in the window until you resume or fork it - then whatever's inside the slice you bring back | Removes re-explaining a decision you already made | You |
+| Compaction's reserve + protected tail (16,384 + 20,000 tokens) | 36,384 tokens spoken for on most sessions before a turn runs - check yours against `model.contextWindow - 16384` | Removes a turn getting cut off mid-answer for lack of room | Pi by default; you, if you edit `reserveTokens` / `keepRecentTokens` in `settings.json` |
+| `APPEND_SYSTEM.md` | Every line you add is retaxed on every session, forever - `wc -w` your own file to see the toll | Removes retyping `stash`'s standing rules by hand, every single time | You |
+
+Five rows now, and look at the last column: two say Pi, three say you. That split is about to matter more than it has so far. Everything in this ledger has run through the same model, at the same depth, whether the task was rewriting a tricky heuristic or fetching a URL and saving it. You wrote `stash`'s conventions down once - and now you pay for them, and for the reserve, and for the tools, every single session, on the same expensive model regardless of what the session actually needs. [Next: route the right model, at the right depth, to the right job](/course/pi/models-config/).

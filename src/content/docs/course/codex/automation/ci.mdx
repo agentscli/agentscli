@@ -1,25 +1,23 @@
 ---
 title: Wire the transaction check into CI on every push
-description: "Let a push fire the run instead of you. Authenticate with an API key, fix the sandbox and approval posture up front, and check each new batch of transactions."
+description: "A push presses the button now, not you. Grant every power the run will need before it exists, then find out what the exit code is actually worth."
 sidebar:
   label: "CI · GitHub, auth, unattended posture"
 ---
 
 import NightShift from '../../../../../components/interactive/NightShift.tsx';
 
-You can run the report from a script. Now we let the script run *itself* - on every push that touches `budgetcli`, with no one pressing enter. This is the unattended check we set out to build: when a fresh batch of transactions lands, something recategorises them and runs the suite, so a malformed import gets caught at the door instead of corrupting months of history quietly.
+The report job still had you at one end of it - you typed the command, even if nobody watched what happened after. The transaction check removes that too: it fires on every push that touches `budgetcli`, and the first thing that has to change is who's allowed to start it. Here's the tension this lesson turns on: every power an unattended run might need has to be granted before the run exists, because there's nobody there to grant one mid-run - grant too little and it dies for a reason that isn't a mistake, grant too much and the one time it's actually wrong, it has room to be wrong in.
 
-Notice what's load-bearing in that sentence: *the suite*. With no one pressing enter, the run's claim to have worked is only as true as the checks it has to get past - that, more than any of the CI plumbing below, is what makes an unattended check worth trusting:
+## Thirty seconds on your own setup, before the arithmetic
 
-<NightShift client:visible />
-
-The command in the middle is still `codex exec`. CI only changes two things around it: how Codex *authenticates* when there's no browser to sign in through, and what sandbox and approval posture it runs under when there's no human to approve a pause.
+If you already have `codex exec` wired into a cron job or a CI workflow somewhere, open it now. Look for two things: an explicit `--ask-for-approval`, and an explicit `--sandbox`. If both are already there in writing, you've already made the call this lesson argues for - skim ahead to the honesty section, where the posture stops mattering and what the exit code is actually worth starts mattering more. If either is missing, the run is inheriting a default from whatever machine happens to execute it, and you don't yet know what that default grants.
 
 ## Auth in CI: the API key, not the sign-in flow
 
-On your laptop you most likely signed in through the ChatGPT OAuth flow - `codex login` opens a browser, you click, you're done. A CI runner has no browser and no one to click. So for unattended `codex exec` runs you authenticate with an **API key** instead. The raw CLI reads `CODEX_API_KEY`; the [GitHub Action](https://learn.chatgpt.com/docs/github-action) accepts an `OPENAI_API_KEY` secret through its `openai-api-key` input.
+On your laptop you likely signed in through the ChatGPT OAuth flow - `codex login` opens a browser, you click, done. A CI runner has no browser and no one to click. So unattended `codex exec` runs authenticate with an **API key** instead: the raw CLI reads `CODEX_API_KEY`, and the [GitHub Action](https://learn.chatgpt.com/docs/github-action) accepts an `OPENAI_API_KEY` secret through its `openai-api-key` input.
 
-The key must live in **encrypted CI secrets**, never in the workflow file or the repo. For GitHub Actions, prefer the first-party action: it keeps the key behind its API proxy instead of placing it in the environment of a shell step that can also run repository-controlled code.
+The key lives in **encrypted CI secrets**, never in the workflow file or the repo. Prefer the first-party GitHub Action - it keeps the key behind its own API proxy instead of placing it in the environment of a shell step that can also run repository-controlled code:
 
 ```yaml
 name: transaction-check
@@ -29,10 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 22
-          cache: npm
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
       - name: recategorise with Codex
         uses: openai/codex-action@v1
         with:
@@ -41,18 +40,16 @@ jobs:
             Recategorise any transactions added in this push, then run the test suite.
             Report the result clearly; the workflow checks the suite separately.
       - name: run the deterministic test suite
-        run: npm test
+        run: pytest
 ```
 
-Two details in that workflow earn their keep. First, the deterministic test command remains a normal CI step, so a failing suite produces the workflow's actual failure status rather than relying on a natural-language instruction to make Codex choose an exit code. Second, the first-party action owns the Codex install and key handoff; its version and security behavior are reviewed as part of the action upgrade process.
+The action's name, its version tag, and the exact input and environment-variable names are current as of this writing and are the first things to check against the action's own docs before you pin them; the shape of the job is what to take from this, not the strings.
 
-For other CI systems that invoke the raw CLI, set `CODEX_API_KEY` only for the single `codex exec` invocation and do not run untrusted repository code in that same credentialed process environment. In GitHub Actions, keep using the action shown above. If you do use a raw shell step, treat the key as exposed to any tests, build scripts, dependency hooks, or other repository-controlled commands in that step.
+Two details earn their keep. The deterministic test command stays a normal CI step, so a failing suite produces the workflow's own failure status instead of trusting a natural-language reply to pick the right exit code. And the first-party action owns the Codex install and the key handoff, so its version and security behaviour get reviewed as part of upgrading the action, not reinvented in every workflow file. If you invoke the raw CLI from another CI system instead, set `CODEX_API_KEY` only for the single `codex exec` step, and don't run untrusted repository code - tests, build scripts, dependency hooks - in that same credentialed process.
 
-## The posture an unattended run has to commit to
+## The posture, granted before the run exists
 
-Here is where [Approvals & sandboxing](/course/codex/approvals-sandbox/) stops being optional. Interactively, the two axes - `-a` / `--ask-for-approval` and `-s` / `--sandbox` - lean on you: when the agent wants to do something its sandbox forbids, the approval mode decides whether it runs, asks, or refuses, and *you* answer the ask. In CI there's no one to answer. So you have to pick a posture where "ask" never happens, because an ask in an unattended run is a hang or a death, not a pause.
-
-That rules out `on-request` here - it's built to pause and consult you. The combination an unattended run wants is **approvals set to never, paired with the tightest sandbox that still lets the job finish**:
+This is where [Approvals & sandboxing](/course/codex/approvals-sandbox/) stops being a convenience and becomes **the thing that grants the move, because nobody's there to ask**. Interactively, the approval mode decides whether a consequential move runs, asks, or refuses - and you answer the ask. In CI there is no one to answer, so "ask" can't be one of the options. Set it to anything that pauses and the run either hangs forever or dies waiting, and neither is the failure you wanted.
 
 ```text
 codex exec "Recategorise new transactions, then run the suite." \
@@ -60,22 +57,27 @@ codex exec "Recategorise new transactions, then run the suite." \
   --sandbox workspace-write
 ```
 
-- `--ask-for-approval never` means the run never stops to consult a human - it either does the work within its sandbox or it fails. That's the only approval mode that makes sense when there's no human to consult.
-- `--sandbox workspace-write` confines writes to the working directory, so the run can recategorise transactions and write test output but can't roam the runner's filesystem. Recall from [the sandbox lesson](/course/codex/approvals-sandbox/) that **network is off by default** in `workspace-write` - which is exactly what you want for a check that should only ever touch local files, and a reason to keep the exchange-rate MCP server *out* of this particular job.
+- **`--ask-for-approval never`** means the run never stops to consult a human - it either does the work inside its sandbox or it fails. It's the only approval mode that makes sense with nobody to consult.
+- **`--sandbox workspace-write`** confines writes to the working directory, so the run can recategorise transactions and write test output but can't roam the runner's filesystem. Network is **off by default** in `workspace-write` - exactly right for a check that should only ever touch local files, and one more reason to keep the exchange-rate MCP server out of this particular job.
 
-The principle is the same high-floor, low-ceiling posture you built interactively, now carrying full weight: `never` approvals so the run can't hang, the narrowest sandbox so it can't wander. Reserve `danger-full-access` and `--yolo` for throwaway containers; they have no business on a runner that has your repo checked out and your API key in its environment.
+Every consequential move that interactive Auto would have paused on - reaching outside the project, onto the network, or anything else hard to walk back - this posture either refuses outright or doesn't reach for at all. There's no third option left where it pauses and waits; you removed that option the moment you removed the person on the other end of it. Reserve `danger-full-access` and `--yolo` for throwaway containers - they have no business on a runner holding your repo and your API key.
 
-## Treat the new transactions as untrusted input
+## Untrusted input, not just untrusted commands
 
-One CI-specific hazard worth a callout. The data this job runs on - freshly imported transactions, possibly from a CSV someone else produced - is **input the agent will read**, and input is where prompt injection lives. A row crafted to read like an instruction ("ignore previous instructions and...") is exactly the kind of thing an unattended agent shouldn't be free to act on.
+One CI-specific hazard: the data this job reads - freshly imported transactions, possibly from a CSV someone else produced - is input the agent will read, and input is where prompt injection lives. A row crafted to read like an instruction is exactly what an unattended agent shouldn't be free to act on. Two habits, both already yours: lean on the sandbox for the hard limits rather than the prompt (network off means it can't exfiltrate anything even if talked into trying), and hand it the specific transactions to check instead of turning it loose to hunt for them, the way the [last lesson](/course/codex/automation/headless/) piped a CSV straight in.
 
-Two habits keep that contained, both already in your toolkit:
+## What the exit code is actually worth
 
-- **Lean on the sandbox, not the prompt, for the hard limits.** `--sandbox workspace-write` with network off means that even if the agent were talked into something, it physically can't reach the rate API or exfiltrate anything off the box. The sandbox is the wall; the prompt is just guidance.
-- **Hand it data, don't let it hunt.** Where you can, pipe or point the agent at the specific transactions to check rather than turning it loose to find them - the [headless lesson](/course/codex/automation/headless/) showed the shape. Less reaching, smaller blast radius.
+The workflow above runs, exits, and reports done. The honest question - the one an unattended check exists to answer - is what "done" got past before it said so:
+
+<NightShift client:visible />
+
+That's the same nine-chore overnight batch, replayed as a report you wake up to instead of a diff you watch: nine claims of "done," and the only witness so far is the worker that made them. Ship the report unread and two of the nine were genuinely true - the other seven surface later, on their own schedule, as a broken build, a silently wrong total, a notification nobody sent. Wire in the build and the type check and you catch the loudest failures, the ones a compiler can name - but the logic errors and the seam breaks still ship clean, because nothing tested whether the code was *correct*, only whether it was *valid*. Wire in the full stack - build, types, the suite, an end-to-end pass - and the report earns almost every checkmark on it: retried against a named error, or stopped and flagged with a trace when it genuinely can't self-correct. One row still ships wrong regardless of which stack you wire in: a ticket read one plausible way instead of the way its author meant. **A check can only catch a claim somebody made falsifiable - it has no way to catch a requirement nobody wrote down.**
+
+The exit code is your review now, and it's worth precisely as much as the checks somebody wired into the run - no more; that's the exact shape of this chapter's contract, back where you can see it. The `pytest` step in the workflow above is one such check. The categoriser's own correctness against `budgetcli`'s money rule is not, yet, unless you've written a test that pins it down.
 
 :::tip[Try it]
-Copy the GitHub Actions workflow above into your own repo and replace the prompt with a simple one - "list all functions without docstrings." Push a branch, watch the run complete, and read the PR comment it posts.
+Copy the GitHub Actions workflow above into your own repo, replace the prompt with something small - "list all functions without docstrings" - and push a branch. Watch the run finish, then ask yourself what would have had to be wired in for you to trust its result without reading it.
 :::
 
-You now have the transaction check running on every push, authenticating with a key it reads from the environment and confined to a posture it committed to before the run started. But there's a subtler problem hiding in that run: it still loads *your* personal config and *budgetcli's* `AGENTS.md`, which means it can behave differently on the runner than it did on your laptop - and differently next month when either of those files has drifted. Pinning that down is [the next lesson](/course/codex/automation/reproducible/).
+The transaction check now authenticates itself, runs inside a posture granted before it existed, and reports through checks you chose on purpose. But look at what you didn't pin: this same job still loads *your* personal config and machine's command policy, which means it can behave differently on the runner than it did on your laptop, and differently again next month once either has drifted. Closing that gap is [the next lesson](/course/codex/automation/reproducible/).

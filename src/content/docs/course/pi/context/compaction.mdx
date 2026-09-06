@@ -1,13 +1,21 @@
 ---
 title: "How Pi compacts a long session"
-description: "Your window fills mid-refactor and Pi condenses the thread on its own. What triggers it, what the summary keeps, and the one edge case worth knowing."
+description: "Two defaults already claim more than a quarter of your window before a line gets read. What triggers compaction, what survives, and what it doesn't solve."
 sidebar:
   label: "Compaction · the trigger and the summary"
 ---
 
 import ContextSimulator from '../../../../../components/interactive/ContextSimulator.tsx';
 
-With the accent-search fix landed, you turn to the bigger job: rewriting `stash`'s readability extractor so it stops mangling the two sites you found, without breaking the dozens of sites it already handles fine. That means reading the current extractor, the test fixtures for every site it's been tuned against, and a long back-and-forth trying candidate heuristics. An hour in, the window is dense with file dumps and test output, and - without you doing anything about it - Pi condenses the thread on its own. This is compaction, and unlike a black-box "hope it does the right thing," Pi's version is documented well enough to reason about.
+With the accent-search fix landed, you turn to the bigger job: rewriting `stash`'s readability extractor so it stops mangling the two sites you found, without breaking the dozens of sites it already handles fine. That means reading the current extractor, the test fixtures for every site it's been tuned against, and a long back-and-forth trying candidate heuristics - exactly the kind of long session the last lesson showed you can run headlong into a full window.
+
+Before you watch that happen, sit with two numbers Pi spends without asking, before a single line of the extractor gets read. **16,384 tokens** - reserved for the model's own reply. Off the table before it writes a word. **20,000 tokens** - the slice of conversation Pi refuses to summarize away, no matter how full the window gets. The floor nothing touches. Add them and you're at 36,384 tokens already spoken for. On a round 128K-token window (131,072 tokens - a common tier size, not a measured figure for `stash`'s actual model, which we haven't measured here), that's roughly 28% of the whole thing, gone before the rewrite even starts.
+
+:::note[About the numbers]
+Two numbers in this chapter are Pi's real defaults, not invented: `reserveTokens` (16,384) and `keepRecentTokens` (20,000). The 128K window above is a declared round stand-in used for the arithmetic, not a measured figure for any specific model. The eight-turn session further down is a small toy, built to hand-trace by adding up its stated per-turn costs, not a real `stash` session.
+:::
+
+An hour into the extractor rewrite, the window is dense with file dumps and test output, and - without you doing anything about it - Pi condenses the thread on its own. This is compaction, and unlike a black-box "hope it does the right thing," Pi's version is documented well enough to reason about.
 
 ## When it fires
 
@@ -17,7 +25,7 @@ Compaction isn't a vague "getting full" feeling - it's a formula. Pi compacts on
 contextTokens > model.contextWindow - reserveTokens
 ```
 
-`reserveTokens` defaults to **16,384** tokens - room deliberately held back for the model's own response - and is configurable in `~/.pi/agent/settings.json` or `.pi/settings.json`. Because the formula is relative to `model.contextWindow`, the actual trigger point moves with whatever model you're running; it isn't a fixed number baked into Pi itself.
+`reserveTokens` defaults to the 16,384 tokens from above, configurable in `~/.pi/agent/settings.json` or `.pi/settings.json`. Because the formula is relative to `model.contextWindow`, the actual trigger point moves with whatever model you're running; it isn't a fixed number baked into Pi itself.
 
 There are three reasons compaction can fire, and it's worth telling them apart:
 
@@ -27,7 +35,7 @@ There are three reasons compaction can fire, and it's worth telling them apart:
 
 ## What survives, and what gets summarized
 
-Compaction doesn't summarize everything - it protects the most recent slice of the conversation first. `keepRecentTokens` defaults to **20,000** tokens: Pi walks backward from the newest message, and everything within that budget of the end is left completely alone. Only what's older than that cut point gets condensed.
+Compaction doesn't summarize everything - it protects the most recent slice of the conversation first. That's the second number from the top: `keepRecentTokens`, defaulting to 20,000. Pi walks backward from the newest message, and everything within that budget of the end is left completely alone. Only what's older than that cut point gets condensed.
 
 That older portion is flattened into a plain-text form - lines prefixed `[User]:`, `[Assistant thinking]:`, `[Assistant]:`, `[Tool result]:` - deliberately *not* natural dialogue. The reason is specific: a summarizer model handed something that reads like a real conversation tends to keep talking instead of describing it. Flattening it into labeled, clipped lines (tool-result text is truncated to 2,000 characters with an explicit truncation marker) keeps the summarizer in "describe this" mode instead of "continue this" mode.
 
@@ -35,24 +43,49 @@ What comes back is a structured summary, not a paragraph - fixed sections every 
 
 That last point matters on a second compaction. Pi doesn't re-summarize from scratch and risk losing what the first summary already captured - it runs an "update" pass that preserves the existing sections, folds in new progress, and refreshes just the Progress block. Your extractor rewrite could get compacted twice in one long session without the Goal or Key Decisions sections drifting or disappearing.
 
-Watch the shape of this play out below - a long session filling up, the fixed overhead that never goes away, and what gets cut versus kept when the threshold hits:
+## Trace it by hand first
+
+Here's a small session, invented for this trace and not a real `stash` run: eight turns, each with a made-up token cost, small enough to add up yourself. Predict before you read the table: which turns survive compaction untouched, and which get flattened into a few lines of summary?
+
+Claim to check: **turns 1 through 3 get summarized; turns 4 through 8 survive verbatim.**
+
+The toy session runs on a 40,000-token window - also declared, not real. Reserve 16,384 tokens and the trigger line sits at 23,616. Total cost across all eight turns is 30,000, which crosses that line, so compaction is due. Now walk backward from the newest turn, accumulating toward the real 20,000-token `keepRecentTokens` budget:
+
+| Turn | Tokens (toy) | Running total from newest | Kept or summarized |
+|---|---|---|---|
+| 8 (newest) | 4,500 | 4,500 | kept |
+| 7 | 3,500 | 8,000 | kept |
+| 6 | 6,000 | 14,000 | kept |
+| 5 | 3,000 | 17,000 | kept |
+| 4 | 4,000 | 21,000 | kept - the turn that tips the budget is still the last one in |
+| 3 | 2,500 | - | summarized |
+| 2 | 3,500 | - | summarized |
+| 1 (oldest) | 3,000 | - | summarized |
+
+Turns 4 through 8 land inside the 20,000-token budget the moment turn 4 is counted, so all five stay. Turns 1 through 3 fall outside it and get flattened into the six-section summary above. The claim holds, exactly as stated - not because compaction is smart about which three turns mattered least, but because of where they happened to sit relative to the end.
+
+Watch the same shape play out at a bigger, moving scale below - a long session filling up, the fixed overhead that never goes away, and what gets cut versus kept once the threshold hits. Before you click through: predict which category of content survives untouched and which gets cut, using the rule you just traced by hand - fixed overhead (system prompt, tool schemas, the rules file) never counts against `keepRecentTokens` because it isn't conversation; the most recent turns do; everything older than the cut point doesn't.
 
 <ContextSimulator client:visible />
 
-The exact token thresholds in that simulator are illustrative, not Pi's literal numbers - the shape is the point: fixed costs persist, exploration spikes, and only the older material gets condensed once the line is crossed.
+Confirm it: step to the `/compact` segment and check what lands in "Structured summary" against what's gone. The window size (200k) and the compact line (around 80% full) drawn here are picked for a readable bar, not Pi's real formula - the table above used the real `reserveTokens` and `keepRecentTokens`; this one trades exactness for a shape you can watch move in real time. Same mechanism, two different scales.
 
-## What this doesn't touch
-
-The compacted view is only what gets *sent to the model* on the next turn. The full, uncompacted history - every turn, every tool call, before any summarization touched it - stays on disk in the session's JSONL file, permanently. If you need to see exactly what the extractor test output actually said three compactions ago, `/tree` still gets you there; compaction shrinks the window, not the record.
-
-One rough edge worth knowing rather than being surprised by: if auto-compaction triggers right after an assistant message that itself contains tool calls, the current behavior aborts immediately instead of waiting for those tool results to come back first. It's a known, open edge case in Pi's own tracker - not settled behavior, so don't build a mental model around it being fixed.
-
-If you ever want to shape the summary yourself instead of trusting the default, you can:
+If you ever want to shape the summary yourself instead of trusting the default cut, you can:
 
 ```text
 /compact focus on the extractor's heuristic changes, drop the test-fixture dumps
 ```
 
+## What compaction doesn't solve
+
+Be honest about what a "structured summary" actually is: a model's best guess at what mattered, sorted into six fixed sections. A best guess can be wrong. If the real turning point in your hour of extractor work was a small detail buried in test output rather than something that fits neatly under Goal or Key Decisions, a summarizer optimizing for those six sections can drop exactly that detail, with no error message telling you it happened. **Compaction is lossy by design, not by accident** - the simulator's own summary block flags this on its own. That's not a reason to avoid it; every alternative (letting the window overflow, or retyping your own notes from memory) loses more. It's a reason to write down anything you can't afford to lose - a diff, a decision, a test result - before you let a long stretch get summarized.
+
+One narrower, genuinely open edge case, worth knowing rather than being surprised by: if auto-compaction triggers right after an assistant message that itself contains tool calls, current behavior aborts immediately instead of waiting for those tool results to come back first. It's flagged in Pi's own issue tracker as unresolved - a live bug, not the general lossy-summarization risk above, and not something to build a mental model around being fixed.
+
+The full, uncompacted history - every turn, every tool call, before any summarization touched it - still stays on disk in the session's JSONL file, permanently. Compaction only changes what gets *sent to the model* on the next turn; `/tree` still gets you the rest of it, three compactions later, if you need to check exactly what the extractor test output actually said.
+
 ## The gap compaction can't close
 
-Compaction is genuinely good at what it does - but notice what it *doesn't* do. It preserves the goal, the decisions, the file list, the recent turns. It does **not** stop you from re-explaining, in every fresh session or every fork, the things about `stash` that never change: don't touch `.env`, use `stash migrate` instead of raw SQL against the database, the extractor's tests live in `tests/extractor/`. Compaction manages a session's *transient* memory. The durable rules - the ones true on session 1 and still true on session 40 - need a different home, one that's loaded before compaction, before forking, before any of it. [Next: write those down once, in the file Pi reads on every session](/course/pi/context/system-md/).
+Compaction is genuinely good at what it does - goal, decisions, file list, recent turns, all protected on purpose. It does **not** stop you from re-explaining, in every fresh session or every fork, the things about `stash` that never change: don't touch `.env`, use `stash migrate` instead of raw SQL, the extractor's tests live in `tests/extractor/`. Compaction manages a session's *transient* memory. The durable rules - true on session 1, still true on session 40 - need a different home, one that's loaded before compaction, before forking, before any of it.
+
+File that away as this chapter's addition to the running ledger: 16,384 and 20,000 tokens, claimed before you type a word, bought you a turn that never gets cut off mid-answer for lack of room. Pi decided both numbers; you only get a say if you go into `settings.json` and change them. [Next: write the durable rules down once, in the file Pi reads before Pi decides anything](/course/pi/context/system-md/).

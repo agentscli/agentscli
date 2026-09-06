@@ -1,25 +1,27 @@
 ---
 title: "Extending Codex"
-description: "budgetcli needs to reach an exchange-rate API, and deterministic checks that help when nobody is watching. Two extension points: MCP for reach, hooks for the gate."
+description: "budgetcli needs a live rate Codex can't reach and a write it must never make alone. Two extensions: MCP for reach, a hook for the gate."
 ---
 
-So far everything Codex has done to `budgetcli` lived inside the repo - read files, run the test suite, edit Python, import a CSV with a [skill](/course/codex/skills/). But the budget has a hole in it. A handful of your transactions are in euros and pounds: a hotel booking, a couple of foreign subscriptions. Right now they're stored at whatever rate you guessed when you typed them in, and the monthly report quietly lies about your real spend.
+Chapter 7 gave Codex a procedure it could reach for on its own - a skill, invoked without you pasting anything. This chapter gives it two things a skill can't: a door to a system that lives entirely outside `budgetcli`, and a wall around the one write inside it that must never happen by accident.
 
-Codex can't fix that on its own, because the truth lives somewhere it can't reach - an external exchange-rate API, out on the network, behind a wall the agent has no door through. Reading a file is one thing; calling a live HTTP service the model has never heard of is another. That's a **reach** problem.
+Both still answer to the fact that's run under every chapter so far: Codex starts a turn knowing only what's already in front of it. A skill widens what it remembers to *do*. The two extensions here widen something else - what it can *touch*, and what can *stop* it - and neither one lives in the model's head at all. That's the whole reason they're worth a chapter of their own.
 
-And there's a second, sharper problem waiting. Once Codex can touch external systems and edit your money-handling code freely, you want a deterministic check that rejects writes to your real ledger database and runs the tests after touching the money math. Not "ask it nicely in `AGENTS.md`" - a guardrail that does not depend on the model remembering the rule, backed by infrastructure controls for the hard boundary. That's a **gate** problem.
+Here's the concrete hole. A handful of your transactions are in euros and pounds - a hotel booking, a couple of foreign subscriptions - stored at whatever rate you guessed when you typed them in. `src/budgetcli/fx.py` already tries to fix that: back in [approvals & sandbox](/course/codex/approvals-sandbox/network-and-dirs/), Codex read that file and reached for the live exchange-rate API, and the sandbox refused the connection. The rate still isn't reachable. And once it is, you're about to let Codex touch code that edits real account balances - which means you also need a promise that survives no matter how confident the model sounds when it wants to break it.
 
-Two extension points, two distinct jobs, and it's worth fixing the distinction before we start because they're easy to blur:
+## Two arguments, not one
 
-- **Reach** - an *MCP server* is a bridge to a system Codex otherwise can't touch: an API, a database, a browser. It gives the model new tools.
-- **Gate** - a *hook* is a deterministic shell command wired to a supported moment in the agent's lifecycle. It does not depend on the model remembering the check, but it is defense-in-depth rather than a universal security boundary.
+This chapter is two separate arguments, and they don't share a mechanism, so don't read them as one long one:
+
+- **Reach.** [Connecting the rate API](/course/codex/extending/mcp-connect/) as an *MCP server* gives Codex a door to a system it currently can't touch at all - a new tool, at a real and recurring price.
+- **The gate.** [Wiring a hook](/course/codex/extending/hooks-gate/) on the ledger write takes a door *away*, on the one path where "the model probably won't" isn't good enough - and then [the last lesson](/course/codex/extending/hooks-vs/) works out exactly when a hook is the right tool instead of a rule or a permission.
+
+The only thing the two share is what they're *not*: neither one is a line in `AGENTS.md`. Reach isn't something you can write into a rule - the model can't call an API that isn't wired up, no matter how clearly you describe it. And "never write to the ledger" is exactly the kind of promise a rule keeps until the one session it doesn't.
 
 ## What you'll do this chapter
 
-- [Connect the exchange-rate API as an MCP server](/course/codex/extending/mcp-connect/) - a `[mcp_servers.<name>]` block, `codex mcp` to manage it, the network-off gotcha that bites everyone the first time, and the other direction: Codex itself standing in as a server another agent calls.
-- [Gate a risky move with a hook](/course/codex/extending/hooks-gate/) - block writes to the real ledger db, run the tests after the money math changes.
-- [When a hook beats the agent's judgment or a permission](/course/codex/extending/hooks-vs/) - the three kinds of guarantee, and how to pick.
-
-The lessons build in that order, because that's the order the need shows up in real work: first you widen what the agent can reach, then you put a wall around the part that must never go wrong. Each lesson ends where the next begins.
+- [Connect the exchange-rate API as an MCP server](/course/codex/extending/mcp-connect/) - register it, hit the network-off wall you've met before, then price what a connected tool actually costs you, turn after turn.
+- [Gate a risky move with a hook](/course/codex/extending/hooks-gate/) - block writes to the real ledger, and run the money tests every time the money math changes, not just when someone remembers to.
+- [When a hook beats a rule or a permission](/course/codex/extending/hooks-vs/) - three kinds of guarantee, and the one question that tells you which one a given constraint actually needs.
 
 Start by [connecting the rate API](/course/codex/extending/mcp-connect/).

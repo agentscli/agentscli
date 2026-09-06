@@ -1,13 +1,15 @@
 ---
 title: When a hook beats judgment or a permission
-description: "A rule asks the model. A permission asks it too. A hook asks no one. Knowing which guarantee you actually need is what makes an unattended run safe."
+description: "A rule asks the model. A permission asks it too. A hook asks no one. Which guarantee you need is what makes an unattended run safe."
 sidebar:
   label: "Hooks · vs judgment & permissions"
 ---
 
 import GuaranteeLadder from '../../../../../components/interactive/GuaranteeLadder.tsx';
 
-You've now governed Codex three different ways across this course, and the ledger gate you just built sits apart from the other two in a way worth making explicit - because reaching for the wrong one leaves you with a guarantee weaker than you think you have. Lay them side by side:
+The ledger hook held against two different tools reaching for the same forbidden write, and stayed honestly blind to a third. That's not a loose end - it's the fact this lesson exists to explain. You've now governed Codex three different ways across this course, and knowing which one a given constraint actually needs is what turns "I set up a guardrail" into a guardrail that's still there at 2am.
+
+Lay the three side by side:
 
 - A **rule** (a line in [`AGENTS.md`](/course/codex/rules/)) is *context*. It tells the model what's true and what you want, and the model weighs it when it decides. It lives in the context window, which means it can be compacted out, buried under a long session, or simply not weighted heavily enough on a given turn. You're trusting the model to remember and to care.
 - The **approvals and sandbox dials** are *model-mediated and environmental enforcement*. They're stronger than a rule - [the sandbox is a genuine wall](/course/codex/approvals-sandbox/), and the agent can't write outside its writable roots or hit the network when you've turned it off. But they govern *capability*: which tools the agent may invoke, where it may write, whether it may reach the network. They answer "may the agent do this *kind* of thing?" - not "is the content of this *specific* command acceptable?"
@@ -15,9 +17,15 @@ You've now governed Codex three different ways across this course, and the ledge
 
 The sharpest way to feel the difference: a rule routes through the model's judgment, and the sandbox routes through a capability check. **A hook routes through neither.** That's why the ledger guarantee had to be a hook. "Never write to `ledger_prod`" isn't a fact to remember (a rule), and it isn't a capability to revoke (running `psql` is a thing you obviously *do* let Codex do). It's a *condition on the content* of a specific command, checked deterministically at the instant that command is attempted. Only a hook expresses that.
 
-Stress-test the ladder yourself - here "permission" is Codex's approvals-and-sandbox dial, and the clock is the part to play with, because what holds while you watch isn't what holds in an unattended run:
+Here's a number worth sitting with. The `AGENTS.md` rule that already tells Codex "money is integer cents" costs you about 284 tokens - chapter 4 did that arithmetic on the 32-line file, and it's a price you pay every session, forever. The ledger hook you wired last lesson costs zero tokens, ever - it never enters the window at all, the same way the last lesson said. A rule buys judgment, and you pay for the window space whether or not the model uses it well that session. A hook buys a guarantee, for free, on the one condition it can actually express as code. Neither is strictly better. They're not the same kind of thing.
+
+## Stress-test it yourself
+
+Stress-test the ladder below - here "permission" is Codex's approvals-and-sandbox dial, and the clock is the part to play with, because what holds while you watch isn't what holds in an unattended run:
 
 <GuaranteeLadder client:visible />
+
+Everything defaults to the rules file, which is where most constraints start life in a real project too. Move the clock past "watching" and re-home each one. Notice which constraints hold no matter where you put them, and which only look protected because you're the one currently enforcing them by reading every diff.
 
 ## A decision rule
 
@@ -27,12 +35,25 @@ So which do you reach for? The test is about what kind of guarantee the situatio
 - **Constrain what the agent can do or where it can reach** - read-only on this run, no network, don't write outside the data dir. That's the [approvals and sandbox model](/course/codex/approvals-sandbox/). You want a wall around a *capability or a path*, with no per-command judgment involved.
 - **Check a condition at a supported lifecycle point** - no write to the production ledger, run the money tests after an edit, or flag a risky command before it runs. That's a **hook**. You want a deterministic guardrail that does not depend on the agent remembering the rule; pair it with sandbox, database, CI, or OS controls when the condition is security-critical.
 
-Put plainly: a rule shapes what the agent *knows*, the sandbox shapes what it *can do by default*, and a hook checks what happens at a supported lifecycle point. The first two still need a clear approval posture; the hook does not depend on the model remembering the check, but it is not a universal replacement for infrastructure-level enforcement. It can also do the positive version, firing a test suite or a format pass after a matching action, not just blocking.
+Put plainly: a rule shapes what the agent *knows*, the sandbox shapes what it *can do by default*, and a hook checks what happens at a supported lifecycle point. The first two still need a clear approval posture; the hook does not depend on the model remembering the check, but it is not a universal replacement for infrastructure-level enforcement. It can also do the positive version, firing a test suite or a format pass after a matching action, not just blocking - the money-tests hook from the last lesson is exactly that shape.
 
 ## Why this is the hinge of the whole chapter
 
-That last property - *a deterministic check at a supported hook point* - is why hooks help when you stop watching Codex work. Sitting at the TUI, you are still part of the approval boundary. The hook's real value shows up when you're *not* there - when the report regenerates on a schedule, when the categoriser runs against new transactions in CI, or when a turn finishes at 2am. In those runs, combine trusted hooks with sandboxing, least-privilege credentials, database permissions, and CI gates rather than treating one hook as the only wall.
+That last property - *a deterministic check at a supported hook point* - is why hooks help when you stop watching Codex work. Sitting at the TUI, you are still part of the approval boundary; a rule you'd forgotten, you'd probably still catch in the diff. The hook's real value shows up when you're *not* there - when the report regenerates on a schedule, when the categoriser runs against new transactions in CI, or when a turn finishes at 2am. In those runs, combine trusted hooks with sandboxing, least-privilege credentials, database permissions, and CI gates rather than treating one hook as the only wall.
+
+Put the ledger hook on the ladder above and it's the one that holds identically in all three situations - watching, three hours and a compaction later, unattended at 2am - because nothing about it lives anywhere a compaction or a tired model can reach. The `AGENTS.md` money rule sitting next to it doesn't get that guarantee, and never will, no matter how clearly it's worded.
 
 Which is the whole reason this chapter came before the next one. You've now given `budgetcli` both halves of what unattended work needs: **reach** (the rate API over MCP, so a headless run can actually do the conversion) and a **gate** (the ledger hook and the test-on-edit hook, so it can't quietly break the money math). With both in place, running Codex without a human watching stops being reckless and starts being the point.
 
-That's [Chapter 9](/course/codex/automation/): generate the monthly report with `codex exec`, wire the categoriser and the tests into CI, and let the whole loop run with nobody in the chair. Everything you built here is what makes that safe.
+## Two more rows in the ledger
+
+Both moves from this chapter earn a row, and it's worth seeing them side by side - they score almost nothing alike:
+
+| Move | Tokens | Turns | Blast radius | Recurs? |
+|---|---|---|---|---|
+| Connect the fx exchange-rate server (MCP) | ~127 est./turn for one tool - a standing charge for as long as it's registered, not a one-time read | 1 for the conversion itself; every later turn still pays the schema whether it's called or not | None on its own - a read-only lookup; the real risk is what you connect next and stop paying attention to | Yes, and that's the cost - it recurs whether used or not, until you disconnect it |
+| Gate ledger writes with a `PreToolUse` hook | 0 - the check runs outside the model's context and never rides the window | 0 added - it resolves inside the turn already in progress, by rerouting instead of stalling it | Shrinks to nothing on the one pattern it matches; anything the command string doesn't literally contain still gets through | Yes, and it holds - a fresh session, a long one, three hours past a compaction, none of it changes what the script does |
+
+Read those two rows against each other and the chapter's whole argument is right there. Reach costs you every turn, forever, whether you use it. A gate costs you nothing, forever, but only on the exact thing you told it to watch for. Neither one is free in the way that matters - one spends window, the other spends your foresight in writing the matcher correctly the first time.
+
+That's the entire villain of this course from a new angle: Codex still starts every turn knowing only what's in front of it, and what's in front of it now includes a live rate API it didn't have and a wall it can't argue with - both put there on purpose, both charging a price you can now name. Chapter 9 is where nobody's sitting at the TUI to notice if either assumption quietly stops holding. Everything you built here is what makes that safe to try.

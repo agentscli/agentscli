@@ -1,13 +1,13 @@
 ---
 title: The three sandbox levels - read-only, workspace-write, danger-full-access
-description: "The sandbox sets the agent's default reach. Pick read-only, workspace-write, or full access by what a wrong move would cost, then choose whether approvals may authorize exceptions."
+description: "The sandbox sets the agent's default reach - read-only, workspace-write, or full access - and approvals decide whether an exception may cross it."
 sidebar:
   label: "Sandbox levels · the wall"
 ---
 
 The last lesson set up two dials; this one zooms in on the one that sets the default protection around your money - the **sandbox**, the `-s` axis. It is enforced by the execution environment rather than the agent's judgment. An approval prompt is a request the agent makes; the sandbox is the default boundary the request may need to cross. On a repo holding your financial data, combine a tight sandbox with an approval policy that matches whether escalation is acceptable.
 
-Worth seeing *why* that wall holds, because "enforced by the operating system" is doing real work in that sentence. On macOS the sandbox is **Seatbelt** - the same `sandbox-exec` mechanism that confines system apps - applied to the agent's process tree. On Linux it's **namespaces and seccomp**, the kernel primitives containers are built on. In both cases the enforcement lives in the kernel, not in Codex's own code. That's the distinction that makes it a real boundary: a process-level check can be reasoned around by a bug or an exploit in the process itself, but an OS-level policy is enforced *on* the process from outside it. The agent can't disable it, can't forget it, can't talk its way past - the syscall simply fails. That's a categorically stronger guarantee than any instruction you could write in `AGENTS.md`.
+Worth seeing *why* that wall holds, because "enforced by the operating system" is doing real work in that sentence. On macOS the sandbox is **Seatbelt** - the same `sandbox-exec` mechanism that confines system apps - applied to the agent's process tree. On Linux it's **namespaces and seccomp**, the kernel primitives containers are built on. In both cases the enforcement lives in the kernel, not in Codex's own code. Those are the two platforms whose mechanism is worth naming here; if you run Codex somewhere else, the thing to check before you trust the wall is which OS primitive is doing the enforcing on that platform, because the guarantee below is only as strong as that answer. That's the distinction that makes it a real boundary: a process-level check can be reasoned around by a bug or an exploit in the process itself, but an OS-level policy is enforced *on* the process from outside it. The agent can't disable it, can't forget it, can't talk its way past - the syscall simply fails. That's a categorically stronger guarantee than any instruction you could write in `AGENTS.md`.
 
 There are three levels. Walk up them from tightest to loosest.
 
@@ -19,7 +19,7 @@ codex -s read-only
 
 The agent can read files and reason about them. Edits and commands that the sandbox blocks require approval when the active policy permits approval-mediated escalation. For a truly non-mutating unattended audit, use `read-only` with approvals set to `never`; with interactive approvals, read-only is a cautious default rather than an unconditional promise that no write can ever be authorized.
 
-This is the right level whenever you want analysis without consequences. On `budgetcli`, that's: "audit the codebase and tell me everywhere money is stored as a float" - you want the findings, you don't want a single byte changed while it looks. It's also the safest way to point Codex at unfamiliar code for the first time. Reads can't damage a repo, so a read-only session is free to be as autonomous as you like on the approval axis without any reach worth fencing.
+This is the right level whenever you want analysis without consequences. On `budgetcli`, that's: "audit the codebase and tell me everywhere money is stored as a float" - you want the findings, you don't want a single byte changed while it looks. It's also the safest way to point Codex at unfamiliar code for the first time. Reads can't damage a repo, so a read-only session is free to be as autonomous as you like on the approval axis without any reach worth fencing. **Nothing to write means nothing to fence - loosen the approval axis freely here, it costs you nothing.**
 
 ## workspace-write - it can edit the project, but not escape it
 
@@ -29,9 +29,9 @@ codex -s workspace-write
 
 This is the level you'll spend most of your week in. The agent can now read *and write* inside the workspace by default. Requests to step outside that boundary or use network access can require approval, depending on the active approval policy and configuration. **Outbound network is off by default here too.** Writing inside the project does not imply reaching the internet.
 
-For the money-handling refactor, this is the right default fence when you are present to review escalation requests. The agent rewrites float amounts to integer cents across `budgetcli`'s source and tests, runs the test suite, and fixes what breaks inside the project. If the job is unattended, pair it with `approval_policy = "never"` so a blocked request fails instead of waiting or escalating.
+For the money-handling refactor, this is the right default fence when you are present to review escalation requests. The agent rewrites float amounts to integer cents across `budgetcli`'s source and tests - the same six files from the last lesson - runs the test suite, and fixes what breaks inside the project. Every one of those six edits is inside the fence by definition, so the wall isn't what decides whether any of them stops for a `y/n`; that call belongs entirely to the approval axis, next lesson. If the job is unattended, pair it with `approval_policy = "never"` so a blocked request fails instead of waiting or escalating.
 
-Two boundaries of `workspace-write` are configurable, and you'll meet both next lesson: which directories beyond the project count as writable (`writable_roots` / `--add-dir`), and whether network is allowed (`network_access`). Out of the box, neither is widened - the fence is the project, and only the project.
+Two boundaries of `workspace-write` are configurable, and you'll meet both next lesson: which directories beyond the project count as writable (`writable_roots` / `--add-dir`), and whether network is allowed (`network_access`). Out of the box, neither is widened - the fence is the project, and only the project. **`workspace-write` decides where the six edits are allowed to land, never how many of them get to land without asking first.**
 
 ## danger-full-access - no fence at all
 
@@ -41,7 +41,7 @@ codex -s danger-full-access
 
 The name is the documentation. There is no sandbox: the agent can read and write anywhere on the filesystem your user account can, and the network is wide open. Nothing is enforced, so nothing protects you but the agent's behaviour and whatever the approval dial is set to.
 
-There are legitimate uses - a throwaway container, a CI runner that's already isolated, a genuinely-needs-the-whole-machine operation you're supervising closely. But on `budgetcli`, on your actual laptop, with your actual financial data sitting in the repo, this is the wrong answer almost by definition. The whole reason you reached for Codex on a finance project is that the stakes are real; `danger-full-access` is precisely the setting that throws away the protection those stakes demand. When you think you need it, the right move is usually to *narrow the ask* instead - add the one extra directory the agent needs rather than unlocking the whole disk. That narrowing is the next lesson's job.
+There are legitimate uses - a throwaway container, a CI runner that's already isolated, a genuinely-needs-the-whole-machine operation you're supervising closely. But on `budgetcli`, on your actual laptop, with your actual financial data sitting in the repo, this is the wrong answer almost by definition. The whole reason you reached for Codex on a finance project is that the stakes are real; `danger-full-access` is precisely the setting that throws away the protection those stakes demand. When you think you need it, the right move is usually to *narrow the ask* instead - add the one extra directory the agent needs rather than unlocking the whole disk. That narrowing is the next lesson's job. **If the fence is in your way, cut a door - don't take the fence down.**
 
 ## The wall vs. the checkpoint
 

@@ -22,17 +22,39 @@ export default defineConfig({
 				dark: './src/assets/logo-dark.svg',
 				replacesTitle: true,
 			},
-			// Apply custom dark/purple theme globally to all pages
-			customCss: ['./src/styles/theme.css'],
+			// Apply custom dark/purple theme globally to all pages.
+			// fonts.css self-hosts the webfonts (Fontsource) and must come first so
+			// the @font-face declarations win over any later fallbacks.
+			customCss: ['./src/styles/fonts.css', './src/styles/theme.css'],
 			components: {
 				ThemeSelect: './src/components/ThemeSelect.astro',
+				// Wraps Starlight's own Head and marks course routes with
+				// data-surface="course" so theme.css can give the course its
+				// book register without touching Foundations.
+				Head: './src/components/StarlightHead.astro',
 				// Custom Sidebar override. It wins over starlight-sidebar-topics'
 				// own Sidebar override (the plugin merges user components last) and
 				// swaps the flat topic switcher for one that nests the course
 				// topics (Claude Code, Codex) under the "Courses" parent.
 				Sidebar: './src/components/Sidebar.astro',
+				// Adds the "Contents" button that opens the course sidebar as a
+				// drawer. Renders on /course/ routes only; every other page gets
+				// Starlight's header untouched.
+				// Adds the "Course · <course> · <module>" eyebrow above the h1 on
+				// /course/ routes, which replaces the two navigation surfaces the
+				// book register hides.
+				PageTitle: './src/components/StarlightPageTitle.astro',
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/agentscli' }],
+			// Freshness and contribution signals:
+			// - "Last updated" per page, read from the file's git history at build time.
+			// - "Edit this page" links into the site source on GitHub. The repo root
+			//   is this directory, so Starlight joins the content filePath directly
+			//   onto the baseUrl (…/edit/main/src/content/docs/<slug>.mdx).
+			lastUpdated: true,
+			editLink: {
+				baseUrl: 'https://github.com/agentscli/agentscli/edit/main/',
+			},
 			head: [
 				{
 					tag: 'link',
@@ -66,28 +88,9 @@ export default defineConfig({
 						content: 'https://www.agentscli.com/og-default.png',
 					},
 				},
-				{
-					tag: 'link',
-					attrs: {
-						rel: 'preconnect',
-						href: 'https://fonts.googleapis.com',
-					},
-				},
-				{
-					tag: 'link',
-					attrs: {
-						rel: 'preconnect',
-						href: 'https://fonts.gstatic.com',
-						crossorigin: 'anonymous',
-					},
-				},
-				{
-					tag: 'link',
-					attrs: {
-						rel: 'stylesheet',
-						href: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap',
-					},
-				},
+				// Webfonts are self-hosted via @fontsource packages, imported from
+				// src/styles/fonts.css (first customCss entry) - no Google Fonts
+				// preconnects or stylesheet requests remain.
 				// Cloudflare Web Analytics - privacy-friendly, cookieless. Only emitted
 				// when CF_BEACON_TOKEN is set, so local dev and untokened builds stay clean.
 				...(CF_BEACON_TOKEN
@@ -124,7 +127,7 @@ export default defineConfig({
 							items: [
 								{ label: 'Claude Code', link: '/course/claude-code/' },
 								{ label: 'Codex', link: '/course/codex/' },
-								{ label: 'GitHub Copilot', link: '/course/copilot/' },
+								{ label: 'Copilot', link: '/course/copilot/' },
 								{ label: 'Cursor', link: '/course/cursor/' },
 								{ label: 'OpenCode', link: '/course/opencode/' },
 								{ label: 'Pi', link: '/course/pi/' },
@@ -138,6 +141,7 @@ export default defineConfig({
 								{ label: 'Claude Code overview', slug: 'course/claude-code' },
 								{
 									label: 'Getting started',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/getting-started' },
 										{ label: 'Install · launch in your repo', slug: 'course/claude-code/getting-started/install' },
@@ -149,6 +153,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Sessions & context',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/sessions-context' },
 										{ label: 'Resume · --continue / --resume', slug: 'course/claude-code/sessions-context/resume' },
@@ -161,6 +166,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Permissions & modes',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/permissions-modes' },
 										{ label: 'Default · reads free, asks to act', slug: 'course/claude-code/permissions-modes/default' },
@@ -172,6 +178,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Planning',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/planning' },
 										{ label: 'Enter · Shift+Tab / /plan', slug: 'course/claude-code/planning/enter' },
@@ -182,6 +189,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Rules & memory',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/rules-memory' },
 										{ label: 'Init · /init drafts CLAUDE.md', slug: 'course/claude-code/rules-memory/init' },
@@ -192,6 +200,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Models & thinking',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/models-thinking' },
 										{ label: '/model · pick the right brain', slug: 'course/claude-code/models-thinking/switch' },
@@ -201,6 +210,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Subagents',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/subagents' },
 										{ label: 'Delegate · isolated context', slug: 'course/claude-code/subagents/delegate' },
@@ -211,6 +221,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Skills',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/skills' },
 										{ label: 'Create · SKILL.md', slug: 'course/claude-code/skills/create' },
@@ -220,6 +231,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Extending Claude Code',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/extending' },
 										{ label: 'MCP · claude mcp add', slug: 'course/claude-code/extending/mcp-connect' },
@@ -232,6 +244,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Automation',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/automation' },
 										{ label: 'Headless · -p, output formats', slug: 'course/claude-code/automation/headless' },
@@ -242,6 +255,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Daily workflow',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/daily-workflow' },
 										{ label: 'Inline · ! @ paste', slug: 'course/claude-code/daily-workflow/inline-input' },
@@ -261,6 +275,7 @@ export default defineConfig({
 								{ label: 'Codex overview', slug: 'course/codex' },
 								{
 									label: 'Getting started',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/getting-started' },
 										{ label: 'Install · the CLI & surfaces', slug: 'course/codex/getting-started/install' },
@@ -272,6 +287,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Sessions & context',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/sessions-context' },
 										{ label: 'Resume · codex resume / --last', slug: 'course/codex/sessions-context/resume' },
@@ -284,6 +300,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Approvals & sandbox',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/approvals-sandbox' },
 										{ label: 'Two axes · -a × -s', slug: 'course/codex/approvals-sandbox/two-axis' },
@@ -295,6 +312,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Rules (AGENTS.md)',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/rules' },
 										{ label: 'First AGENTS.md · capture facts', slug: 'course/codex/rules/first-agents-md' },
@@ -305,6 +323,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Models & effort',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/models-effort' },
 										{ label: 'The effort dial · think as hard as needed', slug: 'course/codex/models-effort/the-effort-dial' },
@@ -315,6 +334,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Subagents',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/subagents' },
 										{ label: 'Delegate · isolated context', slug: 'course/codex/subagents/delegate' },
@@ -325,6 +345,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Skills',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/skills' },
 										{ label: 'Create · SKILL.md', slug: 'course/codex/skills/create' },
@@ -334,6 +355,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Extending Codex',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/extending' },
 										{ label: 'MCP · connect a server', slug: 'course/codex/extending/mcp-connect' },
@@ -343,6 +365,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Automation',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/automation' },
 										{ label: 'Headless · codex exec', slug: 'course/codex/automation/headless' },
@@ -353,6 +376,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Daily workflow',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/codex/daily-workflow' },
 										{ label: 'Profiles · the two-profile habit', slug: 'course/codex/daily-workflow/profiles-habit' },
@@ -364,13 +388,14 @@ export default defineConfig({
 							],
 						},
 						{
-							label: 'GitHub Copilot',
+							label: 'Copilot',
 							link: '/course/copilot/',
 							icon: 'open-book',
 							items: [
 								{ label: 'GitHub Copilot overview', slug: 'course/copilot' },
 								{
 									label: 'Getting started',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/getting-started' },
 										{ label: 'Setup · install & sign in', slug: 'course/copilot/getting-started/setup' },
@@ -380,6 +405,7 @@ export default defineConfig({
 								},
 								{
 									label: 'The modes',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/modes' },
 										{ label: 'Ask · understand before you touch', slug: 'course/copilot/modes/ask' },
@@ -391,6 +417,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Rules (custom instructions)',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/rules' },
 										{ label: 'Repo-wide · copilot-instructions.md', slug: 'course/copilot/rules/copilot-instructions' },
@@ -402,6 +429,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Prompt files & slash commands',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/prompt-files' },
 										{ label: 'Create · .prompt.md & /create-prompt', slug: 'course/copilot/prompt-files/create' },
@@ -411,6 +439,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Custom agents & subagents',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/custom-agents' },
 										{ label: 'Create · .agent.md & /create-agent', slug: 'course/copilot/custom-agents/create' },
@@ -421,6 +450,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Skills',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/skills' },
 										{ label: 'Create · SKILL.md', slug: 'course/copilot/skills/create' },
@@ -430,6 +460,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Extending: MCP',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/extending' },
 										{ label: 'Connect · .vscode/mcp.json', slug: 'course/copilot/extending/connect' },
@@ -439,6 +470,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Permissions & autonomy',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/permissions' },
 										{ label: 'Levels · default, bypass, autopilot', slug: 'course/copilot/permissions/levels' },
@@ -448,6 +480,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Models & credits',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/models' },
 										{ label: 'Picker · choose per request', slug: 'course/copilot/models/picker' },
@@ -456,6 +489,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Automation: cloud coding agent',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/automation' },
 										{ label: 'Assign · hand an issue to Copilot', slug: 'course/copilot/automation/assign' },
@@ -465,6 +499,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Beyond VS Code',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/beyond-vscode' },
 										{ label: 'JetBrains · near-parity, called out', slug: 'course/copilot/beyond-vscode/jetbrains' },
@@ -473,6 +508,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Daily workflow',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/daily-workflow' },
 										{ label: 'A day · careful lib, fast app', slug: 'course/copilot/daily-workflow/a-day' },
@@ -489,6 +525,7 @@ export default defineConfig({
 								{ label: 'Cursor overview', slug: 'course/cursor' },
 								{
 									label: 'Getting started',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/cursor/getting-started' },
 										{ label: 'Install · migrate your VS Code setup', slug: 'course/cursor/getting-started/install' },
@@ -500,6 +537,7 @@ export default defineConfig({
 								},
 								{
 									label: 'The daily edit loop',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/cursor/daily-edit-loop' },
 										{ label: 'Tab · Predict and jump', slug: 'course/cursor/daily-edit-loop/tab' },
@@ -511,6 +549,7 @@ export default defineConfig({
 								},
 							{
 								label: 'Modes · Ask, Plan, Agent, Debug',
+								collapsed: true,
 								items: [
 									{ label: 'Module intro', slug: 'course/cursor/modes' },
 									{ label: 'Ask & Agent · Q&A then execution', slug: 'course/cursor/modes/ask-and-agent' },
@@ -520,6 +559,7 @@ export default defineConfig({
 							},
 							{
 								label: 'Context · @-tag & self-gathering',
+								collapsed: true,
 								items: [
 									{ label: 'Module intro', slug: 'course/cursor/context' },
 									{ label: '@-mentions · The attach menu', slug: 'course/cursor/context/at-mentions' },
@@ -528,6 +568,7 @@ export default defineConfig({
 							},
 							{
 								label: 'Models · Auto, Composer, MAX',
+								collapsed: true,
 								items: [
 									{ label: 'Module intro', slug: 'course/cursor/models' },
 									{ label: 'Picker · Auto routing', slug: 'course/cursor/models/picker-and-auto' },
@@ -537,6 +578,7 @@ export default defineConfig({
 							},
 								{
 									label: 'Rules · .mdc & AGENTS.md',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/cursor/rules' },
 										{ label: 'Layers · Four sources', slug: 'course/cursor/rules/layers' },
@@ -547,6 +589,7 @@ export default defineConfig({
 								},
 							{
 								label: 'Permissions · auto-run & sandbox',
+								collapsed: true,
 								items: [
 									{ label: 'Module intro', slug: 'course/cursor/permissions' },
 									{ label: 'Auto-run & sandbox', slug: 'course/cursor/permissions/auto-run' },
@@ -556,6 +599,7 @@ export default defineConfig({
 							},
 								{
 									label: 'Parallel & remote agents',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/cursor/composer-multi-agent' },
 										{ label: 'Fan-out · Parallel worktrees', slug: 'course/cursor/composer-multi-agent/local-fan-out' },
@@ -566,6 +610,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Extending · MCP, skills, commands, hooks',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/cursor/extending' },
 										{ label: 'MCP · Reach', slug: 'course/cursor/extending/mcp' },
@@ -576,6 +621,7 @@ export default defineConfig({
 								},
 							{
 								label: 'The CLI, headless & CI',
+								collapsed: true,
 								items: [
 									{ label: 'Module intro', slug: 'course/cursor/cli-headless-ci' },
 									{ label: 'Install & headless · command, key, config', slug: 'course/cursor/cli-headless-ci/headless' },
@@ -586,6 +632,7 @@ export default defineConfig({
 							},
 								{
 									label: 'Daily workflow',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/cursor/daily-workflow' },
 										{ label: 'Reflexes · Posture, model, spend', slug: 'course/cursor/daily-workflow/reflexes' },
@@ -605,6 +652,7 @@ export default defineConfig({
 								{ label: 'OpenCode overview', slug: 'course/opencode' },
 								{
 									label: 'Getting started',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/getting-started' },
 										{ label: 'Install · meet the TUI', slug: 'course/opencode/getting-started/install' },
@@ -616,6 +664,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Providers & models',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/providers-models' },
 										{ label: 'Wire up multiple providers', slug: 'course/opencode/providers-models/multi-provider-setup' },
@@ -627,6 +676,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Living in the TUI',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/the-tui' },
 										{ label: 'Leader key & command palette', slug: 'course/opencode/the-tui/leader-and-palette' },
@@ -638,6 +688,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Rules (AGENTS.md)',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/rules-agents-md' },
 										{ label: 'Write your first AGENTS.md', slug: 'course/opencode/rules-agents-md/first-agents-md' },
@@ -647,6 +698,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Skills',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/skills' },
 										{ label: 'Package your first skill', slug: 'course/opencode/skills/first-skill' },
@@ -656,6 +708,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Subagents',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/subagents' },
 										{ label: 'The three built-in subagents', slug: 'course/opencode/subagents/built-in-subagents' },
@@ -665,6 +718,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Permissions & isolation',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/permissions' },
 										{ label: 'Per-tool, per-agent', slug: 'course/opencode/permissions/per-tool-per-agent' },
@@ -674,6 +728,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Extending opencode',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/extending' },
 										{ label: 'MCP servers', slug: 'course/opencode/extending/mcp-servers' },
@@ -684,6 +739,7 @@ export default defineConfig({
 							},
 							{
 								label: 'Sharing & headless',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/share-and-headless' },
 										{ label: 'Share a session', slug: 'course/opencode/share-and-headless/share-links' },
@@ -693,6 +749,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Daily workflow',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/daily-workflow' },
 										{ label: 'Codify the chore', slug: 'course/opencode/daily-workflow/custom-commands' },
@@ -712,6 +769,7 @@ export default defineConfig({
 								{ label: 'Pi overview', slug: 'course/pi' },
 								{
 									label: 'Getting started',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/getting-started' },
 										{ label: 'Install · the CLI & surfaces', slug: 'course/pi/getting-started/install' },
@@ -722,6 +780,7 @@ export default defineConfig({
 								},
 								{
 									label: 'The core',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/the-core' },
 										{ label: 'Four tools · read/write/edit/bash', slug: 'course/pi/the-core/four-tools' },
@@ -732,6 +791,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Context',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/context' },
 										{ label: 'Sessions · resume, fork, tree', slug: 'course/pi/context/sessions' },
@@ -741,6 +801,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Models & config',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/models-config' },
 										{ label: 'Config files · global vs project', slug: 'course/pi/models-config/config-files' },
@@ -750,6 +811,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Your first extension',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/first-extension' },
 										{ label: 'Anatomy · factory & reload', slug: 'course/pi/first-extension/anatomy' },
@@ -760,6 +822,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Rebuild the defaults',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/rebuild-the-defaults' },
 										{ label: 'Permissions · damage-control', slug: 'course/pi/rebuild-the-defaults/permissions' },
@@ -770,6 +833,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Skills & packages',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/skills-packages' },
 										{ label: 'Skills · SKILL.md', slug: 'course/pi/skills-packages/skills' },
@@ -779,6 +843,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Subagents',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/subagents' },
 										{ label: 'Spawn · child pi --mode json', slug: 'course/pi/subagents/spawn' },
@@ -788,6 +853,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Teams',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/teams' },
 										{ label: 'Orchestration · lead → worker', slug: 'course/pi/teams/orchestration' },
@@ -797,6 +863,7 @@ export default defineConfig({
 								},
 								{
 									label: 'Daily workflow',
+									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/daily-workflow' },
 									{ label: 'Assemble · one harness', slug: 'course/pi/daily-workflow/assemble' },
@@ -827,20 +894,56 @@ export default defineConfig({
 							link: '/foundations/',
 							icon: 'add-document',
 							items: [
+								// The five-phase arc decided in 43bf71b: substrate, author context,
+								// extend reach, control the run, operate. Overview stays a top-level
+								// link; the cheatsheets are reference, so they sit collapsed at the end.
 								{ label: 'Overview', slug: 'foundations' },
-								{ label: 'How agents work', slug: 'foundations/how-agents-work' },
-								{ label: 'Context window management', slug: 'foundations/context-management' },
-								{ label: 'Rules', slug: 'foundations/rules' },
-								{ label: 'Model selection', slug: 'foundations/model-selection' },
-								{ label: 'Slash commands', slug: 'foundations/slash-commands' },
-								{ label: 'Skills', slug: 'foundations/skills' },
-								{ label: 'MCP servers', slug: 'foundations/mcp-servers' },
-								{ label: 'Hooks', slug: 'foundations/hooks' },
-								{ label: 'Subagents', slug: 'foundations/subagents' },
-								{ label: 'Permissions & sandboxing', slug: 'foundations/permissions' },
-								{ label: 'Plan mode', slug: 'foundations/plan-mode' },
-								{ label: 'Configuration', slug: 'foundations/configuration' },
-								{ label: 'Keyboard shortcuts', slug: 'foundations/keyboard-shortcuts' },
+								{
+									label: 'Substrate',
+									collapsed: false,
+									items: [
+										{ label: 'How agents work', slug: 'foundations/how-agents-work' },
+										{ label: 'Context window management', slug: 'foundations/context-management' },
+									],
+								},
+								{
+									label: 'Author',
+									collapsed: false,
+									items: [
+										{ label: 'Rules', slug: 'foundations/rules' },
+										{ label: 'Model selection', slug: 'foundations/model-selection' },
+										{ label: 'Slash commands', slug: 'foundations/slash-commands' },
+										{ label: 'Skills', slug: 'foundations/skills' },
+									],
+								},
+								{
+									label: 'Extend',
+									collapsed: false,
+									items: [
+										{ label: 'MCP servers', slug: 'foundations/mcp-servers' },
+										{ label: 'Hooks', slug: 'foundations/hooks' },
+										{ label: 'Subagents', slug: 'foundations/subagents' },
+									],
+								},
+								{
+									label: 'Control',
+									collapsed: false,
+									items: [
+										{ label: 'Permissions & sandboxing', slug: 'foundations/permissions' },
+										{ label: 'Plan mode', slug: 'foundations/plan-mode' },
+									],
+								},
+								{
+									label: 'Operate',
+									collapsed: false,
+									items: [
+										{ label: 'Configuration', slug: 'foundations/configuration' },
+										{ label: 'Keyboard shortcuts', slug: 'foundations/keyboard-shortcuts' },
+										{ label: 'Headless & CI', slug: 'foundations/headless' },
+										{ label: 'Plugins & marketplaces', slug: 'foundations/plugins' },
+										{ label: 'Trust, security & evaluation', slug: 'foundations/trust-and-evaluation' },
+									],
+								},
 								{
 									label: 'Cheatsheets',
 									collapsed: true,
@@ -850,13 +953,10 @@ export default defineConfig({
 										{ label: 'Codex', slug: 'foundations/cheatsheets/codex' },
 										{ label: 'OpenCode', slug: 'foundations/cheatsheets/opencode' },
 										{ label: 'Cursor', slug: 'foundations/cheatsheets/cursor' },
-										{ label: 'GitHub Copilot', slug: 'foundations/cheatsheets/copilot' },
+										{ label: 'Copilot', slug: 'foundations/cheatsheets/copilot' },
 										{ label: 'Pi', slug: 'foundations/cheatsheets/pi' },
 									],
 								},
-								{ label: 'Headless & CI', slug: 'foundations/headless' },
-								{ label: 'Plugins & marketplaces', slug: 'foundations/plugins' },
-								{ label: 'Trust, security & evaluation', slug: 'foundations/trust-and-evaluation' },
 							],
 						},
 					],

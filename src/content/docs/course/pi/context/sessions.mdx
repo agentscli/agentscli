@@ -9,6 +9,16 @@ import SessionXray from '../../../../../components/interactive/SessionXray.tsx';
 
 Yesterday you were three files deep into `stash`'s readability extractor, chasing why it mangles certain sites, when you had to stop. Pi didn't lose any of that - every session is a plain JSONL file on disk under `~/.pi/agent/sessions/`, organized by project, one entry per turn, tool call, and model switch. Nothing about it is hidden from you; you're just not looking at it yet. Reopening yesterday is a matter of pointing Pi at the right file instead of re-explaining what you already worked out.
 
+## What re-explaining actually costs
+
+Before you touch `pi --continue`, run this on a real session of your own - any bug you chased for more than a few minutes recently:
+
+```bash
+wc -l ~/.pi/agent/sessions/<project>/<the-session-file>.jsonl
+```
+
+That's not a token count, just a line count - one entry per turn, tool call, and model switch, the same units the session format already uses. Now picture retyping that from memory: every hypothesis you ruled out, every file you already read, every dead end you already walked into and backed out of. If the number is small, fair enough, this lesson may not be buying you much. Most real debugging sessions aren't small, and that gap between "the file already holds it" and "you'd have to rebuild it by talking" is the whole reason `pi --continue` exists. **A session you can't reopen isn't gone, it's just a retyping tax you haven't paid yet.**
+
 ## Picking up where you left off
 
 From the shell, the fast path is `pi --continue` - continue the most recent session for the directory you're standing in:
@@ -42,7 +52,9 @@ Once you're back in, ask directly instead of assuming:
   heuristic depends on. You hadn't picked a fix yet.
 ```
 
-That's not Pi re-deriving anything - it's reading the restored conversation straight back to you. The investigation you closed yesterday stays closed.
+That's not Pi re-deriving anything - it's reading the restored conversation straight back to you. **The investigation you closed yesterday stays closed.**
+
+One thing the picker doesn't do: search *inside* old sessions for something you don't remember the title of. It lists sessions by project and recency, not by content - there's no built-in `pi search "diacritics"` reaching across every session you've ever run. Because each one is a plain JSONL file, you can `rg` across `~/.pi/agent/sessions/` yourself when you need to find that one time you fixed a tokenizer three weeks ago; Pi just doesn't ship a command that does it for you.
 
 ## The real fork: two fixes, one problem
 
@@ -59,6 +71,8 @@ Betting on one before you've seen either in practice would be guessing. Instead,
 
 `/fork` branches a **new session** from any earlier message in the current thread - you pick the point, Pi copies everything up to it into a fresh session file, and the original thread keeps existing untouched. Run it once from "where you asked about the accent bug," try the tokenizer approach in the new branch, then `/fork` again from the same point for the normalize-at-write approach in a second branch. Now you have two live attempts, each with the full context of the bug report and neither one contaminated by the other's dead ends.
 
+Don't just take "copies everything" on faith - count it. Before you fork, run `wc -l` on the current session's file and note the number; call it N. Fork it, then run `wc -l` on the new branch's file. It reads N. Not close to N - N, because `/fork` doesn't re-summarize or re-derive anything, it copies the entries verbatim up to the point you picked. Fork again from the same point for the second branch, and that file reads N too. **Two branches, one shared starting point, byte for byte, not by trust.**
+
 This is the same command doing two different jobs, and it's worth naming both:
 
 - **Explore two options that share a starting point.** That's what you just did - fork twice from the same message, run both approaches, and compare real results instead of arguing about it in the abstract.
@@ -70,6 +84,8 @@ You try the tokenizer reconfiguration first, and it works - `unicode61 remove_di
 
 ## Knowing when *not* to resume
 
+Here's a claim worth testing before you take it on faith: leaving a session running and just typing through it, past the point where the window is genuinely full, is *itself* a decision - and the worst of the three you actually have. Pi doesn't ask permission when that happens; the reset lands anyway, unsteered, at whatever moment the window runs out on its own, and nobody told it which part of the last hour actually mattered. You'll watch that play out below, against the two choices that pick the moment on purpose instead.
+
 Resuming is cheap enough that it's tempting to reach for it out of habit - drag yesterday's extractor investigation into a task that has nothing to do with it, just because the session is right there. That's not continuity, that's clutter: Pi will happily keep talking about the extractor while you're actually trying to add a new tag-filter to the CLI, and the accumulated context does you no favors.
 
 When the next thing genuinely doesn't follow from the last one, start clean instead - check `pi --help` or `/help` for the exact fresh-session command in your installed version; we'll call it `/new` here:
@@ -80,12 +96,14 @@ When the next thing genuinely doesn't follow from the last one, start clean inst
 
 That clears to a blank session - no accent-bug history, no extractor trace, nothing to accidentally carry forward. The rule of thumb: resume or fork when you're continuing something, start clean when you're not. Getting this wrong in either direction costs you - dragging in unrelated history muddies a fresh task, and starting clean when you *were* continuing throws away context you'll just have to rebuild by hand.
 
-That judgment is easier to feel than to memorize, so here it is playing out - a session with its context window x-rayed beside the terminal, pausing at exactly this fork. The command names are generic; in Pi, read "clear" as starting a fresh session, and the compact branch as a preview of [what the next lesson does about a full window](/course/pi/context/compaction/):
+That judgment is easier to feel than to memorize. Below is a session hitting exactly that pressure point - 75% full, mid-task - with the window x-rayed beside the terminal so you can see what each of the three choices actually keeps and what it throws away. Pick one, watch it play out, then come back and try the other two. The command names are generic; in Pi, read "clear" as starting a fresh session, and the "compact" branch as a preview of [what the next lesson does about a full window](/course/pi/context/compaction/):
 
 <SessionXray client:visible />
+
+However you picked, "keep going" is the one to check against the claim above: it looks like doing nothing, but the window still resets on its own, and the reasoning you watched Pi work out over tens of thousands of tokens gets flattened to a filename the moment it happens. `/compact` and `/clear` don't dodge the reset - nothing does. **They just let you pick the moment and say what's allowed to survive it.**
 
 :::tip[Try it]
 Start a session, make a change, then fork it with `/fork`. In the fork, try a different approach. Use `/tree` to see both branches side by side, then resume the original and notice your context is untouched - the fork never polluted it.
 :::
 
-You've got the accent-search fix landed by forking instead of gambling, and a habit for picking up tomorrow morning without losing today's decisions. But the *next* piece of stash work - rewriting the extractor properly - is going to run long enough to fill the window outright. [Next: what happens when the thread runs out of room](/course/pi/context/compaction/).
+You've got the accent-search fix landed by forking instead of gambling, and a habit for picking up tomorrow morning without losing today's decisions. But the *next* piece of stash work - rewriting the extractor properly - is going to run long enough to fill the window outright, and this time you won't be the one who forces the reset. [Next: what happens when the thread runs out of room](/course/pi/context/compaction/).

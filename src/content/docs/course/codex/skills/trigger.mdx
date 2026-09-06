@@ -5,13 +5,15 @@ sidebar:
   label: "Trigger · the description"
 ---
 
-The Skill runs when you name it, but the whole point was that you *wouldn't have to* - that Codex would notice you're loading a new bank's export and run the import procedure on its own. Whether that happens, and whether it happens at the *right* time, comes down almost entirely to one field: the `description`.
+The Skill runs when you name it, but the whole point was that you *wouldn't have to* - that Codex would notice you're loading a new bank's export and run the import procedure on its own. Whether that happens, and whether it happens at the *right* time, comes down almost entirely to one field: the `description`. This is the lesson where the six turns you counted two lessons back either become two turns for real, or stay a claim you haven't tested.
 
 ## How Codex decides
 
 Codex keeps every Skill's frontmatter - its `name` and `description` - loaded so it always knows what's on the shelf. The full body of a Skill only loads when the Skill actually fires. So the description does double duty: it's both the menu Codex reads and the trigger it matches against. When your message looks like the situation a description names, Codex pulls in that Skill's instructions and follows them. When it doesn't, the Skill stays closed and costs almost nothing.
 
 That means the description isn't documentation - it's the *interface*. A vague one is the number-one reason a Skill sits there and never fires. To keep the menu from crowding the context window, Codex caps how much room the loaded Skill list can take, so a long-winded description competes for space with every other Skill's. The mechanics and the limits are on the [Codex Skills page](https://learn.chatgpt.com/docs/build-skills); the craft is in what you put in the field.
+
+Name what's actually happening here: Codex reading a plain description of your situation and matching it, on its own, to a procedure it was never told to run by name. Call that **recognition**. It's the one trick this whole chapter is building toward - everything from the frontmatter split to the wording rules below exists to make recognition fire on the situation you meant and stay silent on everything else.
 
 ## Describe the situation, not the Skill
 
@@ -35,7 +37,7 @@ The pattern that works: **what it does, then when to use it, in the user's words
 
 ## Test that it actually fires
 
-A Skill you only ever invoke by name might as well be a saved prompt. So prove the recognition works. Open `budgetcli`, point Codex at a sample export from a bank it hasn't seen, and say the kind of thing you'd really say - without naming the Skill:
+A Skill you only ever invoke by name might as well be a saved prompt. So prove recognition works, on the same job you traced by hand in the chapter opening: a new bank, cold. Open `budgetcli`, point Codex at a sample export from a bank it hasn't seen, and say the kind of thing you'd really say - without naming the Skill:
 
 ```text
 > got a statement export from my new credit card in data/newcard.csv.
@@ -56,18 +58,41 @@ A Skill you only ever invoke by name might as well be a saved prompt. So prove t
   Mapping looks right? I'll write the importer and run the full file.
 ```
 
-The `Using skill: import-bank-csv` line is the recognition firing - you described a *situation*, and Codex matched it to the Skill and ran the body without being told which one. Notice the amounts came back as integer cents, the rule the Skill body restated at exactly the spot it matters. That's the behaviour the whole chapter is building toward. If it *doesn't* fire when you expect it to, the fix is almost always the description: it's missing the words you actually used. Add the phrasing you'd really type and try again.
+That's turn one: you described the situation in your own words, `Using skill: import-bank-csv` fired without you naming it, and step four of the body - convert to integer cents, no floats - already ran on this bank's amount column before you said a word about money. Confirm, and turn two closes it:
 
-You can also invoke a Skill on purpose - by referencing it by name in your prompt, or from the `/skills` picker in the TUI - which is the fallback when you want the procedure right now regardless of how you phrased the ask.
+```text
+> looks right, go ahead
+
+  ⏵ Edit .agents/skills/... → write importer, run against sample   → approved
+  ⏵ Run  pytest tests/test_import_newcard.py
+    • 4 passed
+
+  Done. Importer written for the new card format, sample verified,
+  tests passing.
+```
+
+**Two turns.** Count them against the six from the chapter opening: no clarifying question about the column layout, because the body's first two steps already ask for it before Codex reports back. No thousands-separator slip to catch in review, because step four's rounding rule is sitting in the window at the exact moment the amount column gets parsed - the same miss that cost you two full turns the long way, gone before it happened. Same bank-shaped job, a third of the cost. That's the payoff this chapter opened on, and this time it isn't an estimate - it's a transcript you can count.
+
+It should feel like the loop got smarter. It didn't - it just stopped asking you questions the body already answers, and stopped guessing at a rule the body already states. You're still the one who reads "mapping looks right?" and says go ahead. Recognition removed the re-narration. It didn't remove you from the review.
 
 ## The opposite failure: firing too often
 
 A description tuned too broad has the reverse problem - the Skill fires when you didn't want it. Imagine you'd written "use whenever working with a CSV." Now Codex tries to run the full import procedure the moment you so much as *open* a CSV to glance at it, even when you only wanted to read a couple of rows. The cure is to make the description *narrower and more specific* - pin it to the genuine onboarding moment ("a new bank," "a layout budgetcli doesn't already handle") rather than any mention of CSVs.
 
+If a Skill you expect to fire *doesn't*, the fix is almost always the same field, from the other direction: the description is missing the words you actually used. Add the phrasing you'd really type and try again.
+
+You can also invoke a Skill on purpose - by referencing it by name in your prompt, or from the `/skills` picker in the TUI - which is the fallback when you want the procedure right now regardless of how you phrased the ask.
+
 ## Taking a Skill off the automatic menu
 
-Some procedures you never want Codex deciding to run on its own - anything expensive, slow, or state-changing where a mistimed trigger is costly. Codex gives each Skill an optional companion config file, `agents/openai.yaml`, inside the Skill directory, for exactly this kind of Codex-specific control. Among other things it carries an invocation-policy switch - set implicit invocation off and the Skill drops off the agent's automatic menu while staying available when you name it explicitly. That turns the Skill from "fires on recognition" back into "fires only when I ask" - the line between a Skill the agent reaches for and one you keep on a leash.
+Some procedures you never want Codex deciding to run on its own - anything expensive, slow, or state-changing where a mistimed trigger is costly. Codex gives each Skill an optional companion config file, `agents/openai.yaml`, inside the Skill directory, for exactly this kind of Codex-specific control. Treat the filename and the field names as version-sensitive, the same way you treat hook payloads: check the docs before you depend on either. Among other things it carries an invocation-policy switch - set implicit invocation off and the Skill drops off the agent's automatic menu while staying available when you name it explicitly. That turns the Skill from "fires on recognition" back into "fires only when you ask" - the line between a Skill the agent reaches for and one you keep on a leash.
 
 Our `import-bank-csv` doesn't need that - it ends in a *preview* and waits for your "looks right" before the full import, so a mistimed trigger costs nothing but a glance. But it's the knob to know about, and the exact field is on the [Codex Skills page](https://learn.chatgpt.com/docs/build-skills). The `agents/openai.yaml` file is also where a Skill declares dependencies on tools it needs, which is one of the threads the [next chapter](/course/codex/extending/) picks up.
+
+:::tip[Try it]
+Take the `description` you already wrote and try to break it in both directions. First write the situation in words you would actually use on a Tuesday, never the words in the file, and see whether the Skill still fires. Then describe a job it should stay out of and check that it does. A `description` that only fires on its own vocabulary has not been tuned yet.
+:::
+
+Look at what just moved, on all four questions this course keeps asking. Tokens: the Skill's stub cost about 80 every session, the body about 280 more only in the two sessions above that actually needed it - against six turns' worth of re-explaining, re-asking, and re-correcting the long way. Turns: six down to two. Blast radius: unchanged - you still approve the write and read the mapping before it runs. Recurrence: this is the one that changed the most. The procedure now holds *every* time a new bank shows up, not just the time you happened to remember every step.
 
 Keeping a Skill scoped to the right moment is half the discipline. The other half is knowing when a Skill is the wrong container entirely - when the thing you're about to write down is really a rule, or doesn't need writing down at all. [Skill, rule, or plain prompt - when does each one fit?](/course/codex/skills/vs/)

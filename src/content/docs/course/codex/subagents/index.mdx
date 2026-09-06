@@ -3,9 +3,17 @@ title: "Subagents, parallelism, and worktrees"
 description: "Some work is worth doing but not worth keeping in your main thread. Push it into an isolated context and give each parallel worker its own working tree."
 ---
 
-The last chapter was about dialling how hard the agent thinks. This one is about choosing *where* it thinks - and how many places at once. Because by now `budgetcli` has two jobs in front of it that are too big and too noisy to run in your main session as-is, and the move that lets you run them without drowning your context is delegation: a fresh window that does a scoped job off to the side and hands back only the conclusion.
+Chapter 5 was about how hard Codex thinks on a given turn - which model, which effort level, for which task. This chapter is about a question underneath that one: *where* the thinking happens, and whether it has to happen in the same window you're sitting in.
 
-The core idea is small and it carries the whole chapter, so hold onto it. A subagent is a separate Codex session with its own context window. You hand it a task, it works in isolation - reading files, running greps, dumping logs into *its* memory, not yours - and when it's done it returns a single summary to your main thread. The hundreds of file reads it did to reach that summary never enter your conversation. You get the destination; the worker eats the journey. That's the trade in one line, and everything below is learning when and how to make it.
+Here's the villain again, in this chapter's own words. Every turn Codex takes still starts the way it did back in [the loop](/course/codex/getting-started/the-loop/): it knows nothing about `budgetcli` it hasn't just read, in this same conversation. Nothing in the last four chapters changed that - a bigger model or a higher effort setting still reads before it reasons. What changes here is the *size* of the reading. Chapter 1's read-only question cost about 3,900 estimated tokens. The two jobs waiting for you next cost an order of magnitude more than that, and the villain doesn't care whose window it fills. Left alone, a big enough read fills yours, and buries the decision you actually came here to make under the material that produced it.
+
+## The trade this chapter argues
+
+A **subagent** is the way out: a separate Codex session, with its own window, that does the reading and hands back only what it found. That's a real win, and it's also not free. The subagent's window closes when the task is done, and everything it learned on the way to its answer - every file it opened, every dead end it ruled out - closes with it. You keep the finding. You lose the ability to ask it why. That trade is this chapter's whole argument, and the win being real doesn't make the cost optional.
+
+The shape of it, in the numbers you're about to derive properly in the next lesson: a subagent asked to recheck `budgetcli`'s transaction categories reads 19,620 tokens of code before it trusts its own answer, and hands back a finding a little over 300 tokens long - about 65 times smaller than what it read. That ratio is the entire case for isolation. Fan the same idea out across several workers at once, though, and a second number shows up: your wall-clock time doesn't shrink by the number of workers you spawned, because the reading shrinks and the reasoning splits, but the branches still have to come home through one gate, one at a time. Both halves get worked out below, not just claimed. (These numbers follow the same two estimators and the same rules every chapter uses - see [About the numbers](/course/codex/getting-started/#about-the-numbers-in-this-course) if you want the full explanation.)
+
+**Isolation is a real answer to a real problem, and it charges rent you don't see until you go looking for it.**
 
 ## The two jobs in front of you
 
@@ -17,9 +25,9 @@ The first is high-volume and embarrassingly repetitive: thousands of rows, the s
 
 Do all of that inline and you bury the actual work - the review, the decisions - under a landfill of file dumps and diffs the agent has to keep carrying. So we'll do it the other way. Over the next few lessons:
 
-- [Push the noisy recategorisation into an isolated subagent](/course/codex/subagents/delegate/) and watch what comes back - the summary, not the thousand rows that produced it.
-- [Fan the recategorisation out across parallel workers](/course/codex/subagents/fan-out/) when the job splits into independent slices, and learn when that's leverage versus when it's just showing off.
+- [Push the noisy recategorisation into an isolated subagent](/course/codex/subagents/delegate/), price what it read against what it returned, and name the trade.
+- [Fan the recategorisation out across parallel workers](/course/codex/subagents/fan-out/) once you've checked the job actually splits cleanly - and see what fanning out costs you that one worker didn't.
 - [Give each worker its own git worktree](/course/codex/subagents/worktrees/) so the money-handling refactor can have several agents editing at once without reading each other's half-written files.
-- [Coordinate the workers and merge the results](/course/codex/subagents/orchestrate/) with light orchestration - gate every handoff, write the aggregation step before you fan anything out.
+- [Coordinate the workers and merge the results](/course/codex/subagents/orchestrate/) with light orchestration - gate every hand-off, and find out exactly why the merge tail doesn't get shorter just because the fan-out was wide.
 
-By the end, "should this happen in my thread or somewhere else?" will be a question you ask before every noisy or parallel task. Start with [delegating the recategorisation](/course/codex/subagents/delegate/).
+Score all four the same way you've scored everything since chapter 1: tokens, turns, blast radius, recurrence. By the end, "should this happen in my thread or somewhere else?" will be a question you ask before every noisy or parallel task, with a real ratio behind the answer instead of a hunch. Start with [delegating the recategorisation](/course/codex/subagents/delegate/).

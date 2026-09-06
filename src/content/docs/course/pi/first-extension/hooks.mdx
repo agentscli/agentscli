@@ -7,7 +7,7 @@ sidebar:
 
 import GuaranteeLadder from '../../../../../components/interactive/GuaranteeLadder.tsx';
 
-You've already used one lifecycle hook without dwelling on it - the `session_start` handler in the very first extension skeleton, back in the anatomy lesson, just posted a notification. That was the smallest possible instance of the mechanism this whole chapter turns out to rest on: `pi.on(eventName, async (event, ctx) => { ... })`. Everything you'll build in the rest of this course that reacts to what Pi is doing rather than waiting to be invoked - a permission gate, an enforced task list, a status line - is this same call, wired to a different moment.
+You've already used one lifecycle hook without dwelling on it - the `session_start` handler in the very first extension skeleton, back in the anatomy lesson, just posted a notification. That was the smallest possible instance of the mechanism this whole chapter turns out to rest on: `pi.on(eventName, async (event, ctx) => { ... })`. Everything you'll build for the rest of this course that reacts to what Pi is doing rather than waiting to be invoked - a permission gate, an enforced task list, a status line, a subagent handoff - is this same call, wired to a different moment. Here's the falsifiable version of that claim: count the table below before you keep reading. That count is the entire event vocabulary the rest of this course reuses - not a subset, not a starting point, the whole thing.
 
 ## The events, in one place
 
@@ -24,7 +24,7 @@ Pi's extension API exposes a broad lifecycle surface. These are the events this 
 | `context` | Before an LLM call | Modify the message list without touching what's stored |
 | `message_end` | End of a message's lifecycle | Can replace the message if the role stays the same |
 
-Two more you'll reach for later in the course: `tool_execution_start` and `tool_execution_end`, which fire around a tool's *actual execution* rather than before it - `tool_execution_end` is how a status line tallies the calls that really completed.
+Eight. That's the number - the complete event vocabulary this course draws from, and every gate, tracker, and handoff you build from here on is one of these eight, aimed at a different moment. Two more exist and you'll meet them later, but they don't add to that count: `tool_execution_start` and `tool_execution_end` fire around a tool's *actual execution* rather than before it, for tallying calls that already ran - `tool_execution_end` is how a status line counts the calls that really completed, not a ninth or tenth thing to decide between.
 
 In the order they fire across a session, with the thing that matters most about each - whether you can change what happens next:
 
@@ -51,7 +51,7 @@ The mutable ones are where your extensions get teeth - they're the points where 
 
 ## Mutating and blocking: `tool_call`
 
-This is the event with teeth. `event.input` is the actual arguments the tool is about to run with, and you can edit them in place before Pi executes the call - or refuse the call outright:
+This is the event with teeth. `event.input` is the actual arguments the tool is about to run with, and you can edit them in place before Pi executes the call - or refuse the call outright. Here's the hook that finally puts a real guardrail on `stash.db`, and the claim to watch it prove: a `bash` command that runs `DROP TABLE` against that file should get blocked, full stop, with no chance for the model to argue its way past it. Watch it get blocked below.
 
 ```typescript
 pi.on("tool_call", async (event, ctx) => {
@@ -68,9 +68,13 @@ pi.on("tool_call", async (event, ctx) => {
 });
 ```
 
+Reload, ask the model to run `bash` with `DROP TABLE entries;` against `stash.db`, and check the prediction: the call never reaches the database. `event.input.command` matches the regex, the hook returns `{ block: true, reason: ... }` before `pi.exec` or anything like it ever runs, and the model sees a refusal instead of a result - the same way it would see any other tool error.
+
 Two things worth noticing here, because they're easy to gloss over: later handlers see whatever earlier handlers already mutated, and Pi doesn't re-validate the input after a mutation runs - so if you have several extensions loaded that both touch `tool_call`, the order they load in matters. And `pi.appendEntry` writes structured data straight into the session's own append-only log, which is why the audit trail above survives a restart or a `/fork` without you standing up a separate database for it - you're piggybacking on the session file Pi already keeps.
 
 This is a taste of a much bigger idea, deliberately kept small here. A regex check against a bash string is not the guardrail `stash`'s real database deserves - that's a whole extension of its own, coming next chapter.
+
+**`event.input` mutable, a `{ block: true }` return that stops the call cold - that's the whole vocabulary a guardrail needs.**
 
 ## Shaping the turn before it starts: `before_agent_start`
 
@@ -100,10 +104,20 @@ Stress-test that against a clock, because what a rule buys you while you're watc
 
 ## MCP is not core here
 
-If you've used MCP servers with another agent, the instinct at this point is to reach for one - bridge to some external system, get a pile of tools for free. Worth being precise about where Pi actually stands on that. MCP integration exists - there's community support for connecting Pi to MCP servers - but it isn't the core, encouraged path the way `registerTool` is, and Pi's creator has written that MCP is overkill for a lot of what people reach for it to do, preferring small CLI tools (or, in-process, an extension like the one you just built) over standing up a whole protocol server. Treat that preference as the author's stated philosophy rather than a hard rule, but the practical reason to take it seriously is concrete either way: **every tool mounted into a session - MCP or not - spends context.** Its schema, its description, its usage guidance all sit in the system prompt on every single turn, whether or not you end up calling it. `reextract_url` cost you a few hundred tokens of always-on schema to solve a problem that lives entirely inside `stash`'s own repo. Reaching for an MCP server would have cost more of that budget to solve a problem an in-process tool already solves.
+If you've used MCP servers with another agent, the instinct at this point is to reach for one - bridge to some external system, get a pile of tools for free. Say `stash` grows a real reason to want that: you decide the weekly digest of unread saves should post to a Slack channel instead of sitting in the database. That's a real external system with its own auth, its own API someone else designed, its own failure modes - exactly the shape of job MCP exists for. Re-extracting a URL was never that. The URL, the database, and the pipeline all live in the same repo you're already sitting in, which is why `registerTool` was the right call and an MCP server would have been the wrong one.
 
-The distinction that actually matters: MCP is for **reach** - a real bridge to a system you can't otherwise touch, a third-party API, someone else's database. If the capability you need lives inside the repo you're already sitting in, a `registerTool` extension is the cheaper, more direct answer, and it's the one this whole chapter has been showing you how to build.
+Worth being precise about where Pi actually stands on this, beyond the Slack case. MCP integration exists - there's community support for connecting Pi to MCP servers - but it isn't the core, encouraged path the way `registerTool` is, and Pi's creator has written that MCP is overkill for a lot of what people reach for it to do, preferring small CLI tools (or, in-process, an extension like the one you just built) over standing up a whole protocol server. Treat that preference as the author's stated philosophy rather than a hard rule, but the practical reason to take it seriously is concrete either way: **every tool mounted into a session - MCP or not - spends context.** Its schema, its description, its usage guidance all sit in the system prompt on every single turn, whether or not you end up calling it. You don't have to take `reextract_url`'s cost on faith - you already have the instrument for measuring it, from module 2. Reload once with `stash-tools.ts` moved out of `.pi/extensions/`, note the footer's `ctx` percentage (or call `ctx.getSystemPrompt()` and count it yourself); reload again with the file back, and read the difference. Whatever that delta is, it's `reextract_url`'s exact, permanent rent, paid on every turn whether you call the tool or not. Reaching for an MCP server for the same job would have added more schema than that, not less, to solve a problem the in-process tool already solves for free.
+
+The distinction that actually matters: MCP is for **reach** - a real bridge to a system you can't otherwise touch, a third-party API, someone else's database, the Slack channel above. If the capability you need lives inside the repo you're already sitting in, a `registerTool` extension is the cheaper, more direct answer, and it's the one this whole chapter has been showing you how to build.
 
 ## What you've built
 
-Two moves in your `stash` harness that weren't there this morning - a command you trigger, a tool the model triggers - and underneath both, the same `pi.on` mechanism that every later extension in this course reuses for a different job. The next one is the guardrail that regex check above was a sketch of: a real, understood reason to add back the permission layer Pi ships without, on purpose. [Next: rebuild the defaults](/course/pi/rebuild-the-defaults/).
+Two moves in your `stash` harness that weren't there this morning - a command you trigger, a tool the model triggers - and underneath both, the same `pi.on` mechanism that every later extension in this course reuses for a different job. You've been keeping a running ledger of what each chapter adds to the window since module 2; this chapter's rows are the clearest "permanent cost" entries in it so far, because unlike a routing dial or a system-prompt file, there's no cheap setting for a registered tool - its schema is in the window or it isn't:
+
+| Layer | What it costs | What it buys | Who decided |
+|---|---|---|---|
+| `/stash` command | Nothing on a quiet turn - it only spends when you type it | No more hand-written SQL to find which entry is broken | you |
+| `reextract_url` tool | A schema entry sent on every turn, called or not - measure it yourself the way the MCP section just showed | The model can fix a mangled entry mid-conversation, without the Python-shell dance | you |
+| `tool_call` hook on `stash.db` | One more mutable check Pi runs before every tool call | A `DROP TABLE` against your only copy of the data gets refused instead of executed | you |
+
+Notice who's in that last column every time. Not Pi, not the model - you, because you're the one who wrote the file. That's the trade this whole chapter has been making explicit: you can add capability now, and nothing stops you from adding more. Every one of those additions is permanent schema sitting in the window on every single turn, and nothing in Pi is checking whether it still earns that rent. The next chapter is the same question turned toward the gap you just felt writing that `tool_call` regex by hand: what's stopping the model from running anything else it wants, and which of the guardrails you'd have to rebuild are actually worth their own turn-by-turn cost. [Next: rebuild the defaults](/course/pi/rebuild-the-defaults/).

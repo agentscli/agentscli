@@ -21,7 +21,7 @@ If you'd rather go through npm, the canonical package lives under Earendil's sco
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 ```
 
-The `--ignore-scripts` flag is called out deliberately in Pi's own docs as a supply-chain precaution - worth keeping even though it's an extra thing to remember. You'll also see an older package name, `@mariozechner/pi-coding-agent`, still published and still updated; it's the pre-stewardship name and works the same way. Either package needs a reasonably recent Node - the current package wants `>=22.19.0`, with a `legacy-node20` version tag kept around if you're stuck on an older install.
+The `--ignore-scripts` flag is called out deliberately in Pi's own docs as a supply-chain precaution - worth keeping even though it's an extra thing to remember. You'll also see an older package name, `@mariozechner/pi-coding-agent`, still published and still updated; it's the pre-stewardship name and works the same way. Either package needs a reasonably recent Node - the published package currently requires `>=22.19.0`, with a `legacy-node20` dist-tag pinned to an older release if you're stuck on an old install. That floor has already moved once, from `>=20.6.0` a few weeks earlier, so don't take this number on faith: run `npm view @earendil-works/pi-coding-agent engines` yourself before you install, and you'll see whatever the current requirement actually is.
 
 Once it's on your `PATH`, launch it from inside the project - like most agents, Pi reasons about the directory it starts in:
 
@@ -30,15 +30,26 @@ Once it's on your `PATH`, launch it from inside the project - like most agents, 
 > pi
 ```
 
+### If it doesn't work
+
+Two failures cover almost everyone who gets stuck here, and neither is Pi-specific:
+
+- **`pi: command not found` after a successful install.** The installer put the binary somewhere your shell's `PATH` doesn't check yet - typically `~/.local/bin` for the curl script, or npm's own global bin directory for the npm path (`npm config get prefix`, then look in `bin/` under that). Add the missing directory to your shell profile (`~/.zshrc` or `~/.bashrc`) and open a new terminal; don't reach for `sudo` to force it onto a system path, since that's the more common cause of the next failure.
+- **`npm install -g` fails with `EACCES`.** That means npm's global directory isn't writable by your user, usually because an earlier install ran under `sudo`. Fix the ownership of npm's prefix directory, or better, install a Node version manager (`nvm`, `fnm`) so global installs never need root at all. The curl installer sidesteps this class of problem entirely, which is one real reason to prefer it.
+
 ## One small core, four front doors
 
 Here's the framing worth setting before you type anything else. What you just installed isn't really "a CLI with some extra modes bolted on" - it's a small agent core (the loop, the tools, the model-facing plumbing) that happens to expose itself through several different surfaces, all sharing the exact same behavior underneath:
 
-- **Interactive** - the TUI you just launched. This is where you'll spend this whole module: a live prompt, a running conversation, tool calls rendered as you go.
-- **Print mode** - `pi -p "your prompt"` fires one prompt, runs the loop to completion, and exits. Built for scripts and pipelines rather than a sitting conversation - you could pipe a log file in and ask Pi to summarize it without ever opening the interactive view.
-- **JSON event-stream mode** - `--mode json` emits every event of the run (tool calls, results, text) as structured lines instead of rendered TUI output, for anything that wants to consume Pi's behavior programmatically.
-- **RPC mode** - `--mode rpc` frames the same events as strict newline-delimited JSON over stdin/stdout, specifically so a non-Node process can drive Pi as a subprocess and talk to it without shelling out to a CLI parser.
+| Surface | Invocation | Output | When you'll use it |
+|---|---|---|---|
+| Interactive | `pi` | Rendered TUI, live | This module - every lesson from here on |
+| Print | `pi -p "your prompt"` | Runs one prompt to completion, then exits | Scripts and pipelines: pipe a log in, ask for a summary, done |
+| JSON event-stream | `pi --mode json -p "your prompt"` | Every tool call, result, and text chunk as structured JSON lines | Later in the course: subagents and teams both spawn a second Pi process this way and read its stream |
+| RPC | `pi --mode rpc` | The same events, framed as strict newline-delimited JSON over stdin/stdout | Driving Pi as a subprocess from a non-Node host process |
 
-You won't touch the last two in this module - they matter a lot once you start spawning Pi from your own code, much later in the course. What matters now is the framing: every habit you build at the interactive prompt this week - how the loop behaves, what it can see, what it's allowed to do - is the *same agent* underneath, not a different tool you'll have to re-learn later when you script it.
+You won't touch the last two in this module. But it's worth naming why they're on the table at all: two later modules in this course - the ones on subagents and on multi-agent teams - are built entirely on spawning a second `pi` process with `--mode json -p` and parsing its output. Nothing new gets bolted on to make that work; it's the exact table above, used from code instead of from your fingers.
+
+**Every surface runs the identical agent core - what changes is only how you talk to it, never what it does.** Every habit you build at the interactive prompt this week - how the loop behaves, what it can see, what it's allowed to do - is the *same agent* underneath, not a different tool you'll have to re-learn later when you script it.
 
 Pi is installed and sitting at a live prompt inside `stash`. It doesn't know who's paying for the model yet, though - and that choice has a real, easy-to-miss consequence. [Next: bring your own key](/course/pi/getting-started/auth/).

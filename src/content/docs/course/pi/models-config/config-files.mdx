@@ -30,28 +30,36 @@ Both are plain JSON. Both hold the same shape of thing: default model, default r
 { "compaction": { "reserveTokens": 8192 } }
 ```
 
-The effective config for a stash session is `{ "enabled": true, "reserveTokens": 8192 }` - `enabled` survives from global because the project file never mentioned it, `reserveTokens` comes from the project file because it's more specific. That's deep-merge: the project settings win on anything they actually declare, and everything else falls through from global. It's a small mechanical fact, but it's the one that'll save you from the "I changed the project file and nothing happened" afternoon - you didn't change the key that was actually winning.
+**Guess before you read the next paragraph.** Given those two files, which of these three happens when Pi merges them for a stash session: (a) `enabled` survives from global, `reserveTokens` comes from the project file, both in the same effective object; (b) the project's `compaction` block replaces the global one wholesale, so `enabled` is now undefined; or (c) the more specific file wins on everything, so `enabled` also gets dropped because the project file didn't repeat it?
+
+It's (a). The effective config for a stash session is `{ "enabled": true, "reserveTokens": 8192 }` - `enabled` survives from global because the project file never mentioned it, `reserveTokens` comes from the project file because it's more specific. That's deep-merge: the project settings win, key by key, on anything they actually declare, and everything else falls through from global untouched. **8,192. Compacts earlier than the global default, on purpose - stash sessions run long, so it forces a summary sooner rather than later.** It's a small mechanical fact, but it's the one that'll save you from the "I changed the project file and nothing happened" afternoon - you didn't change the key that was actually winning.
+
+**About the numbers in this module:** 16,384 and 8,192 above are quoted from Pi's own docs, not invented. Later lessons use small declared-toy numbers, invented purely so the arithmetic is hand-checkable, and labelled as toy at the point they appear - never presented as a real bill. Where this module claims a real number matters, it tells you to run `/session` and read your own.
+
+**Self-test, on your own files:** open `~/.pi/agent/settings.json` and stash's `.pi/settings.json` side by side. Pick one key that's set in both. Predict the merged value before you check it. If you're wrong, you've just found a setting you thought was working and wasn't.
+
+**One place deep-merge stops being intuitive: arrays.** `skills`, `extensions`, `prompts`, and `themes` are all arrays in `settings.json`. Object merge is unambiguous - key by key, more specific wins. Arrays don't have keys, so the same rule doesn't obviously apply: does a project-level `skills` array add to the global one, or replace it outright? The docs quoted above spell this out for the `compaction` object; they don't spell it out for the array case, and this module isn't going to guess for you. Before you rely on a project-level array to *add* skills rather than *replace* the global list, add one throwaway entry to `.pi/settings.json`'s `skills` array and check with `/skill:` autocomplete (gated by the `enableSkillCommands` field a few lines down) whether your global skills are still there. Verify it on your own machine before you build a habit on top of an assumption.
 
 ## The fields worth knowing on sight
 
-A non-exhaustive tour of what actually lives in `settings.json`, because you'll be editing several of these before this module is over:
+Every field below is one you'll actually set for stash before this module ends - not a reference dump. Read it once with that in mind:
 
-- **`defaultProvider`, `defaultModel`** - what Pi reaches for when you don't say otherwise.
-- **`defaultThinkingLevel`** - one of `off | minimal | low | medium | high | xhigh | max`, the reasoning-depth dial the next lesson is about.
+- **`defaultProvider`, `defaultModel`** - what Pi reaches for when you don't say otherwise. Right now this is whatever frontier model you've been using for everything, which is the exact setting the next lesson exists to stop treating as a default.
+- **`defaultThinkingLevel`** - one of `off | minimal | low | medium | high | xhigh | max`, the reasoning-depth dial the next lesson traces against the re-extraction sweep.
 - **`thinkingBudgets`** - override the token allocation for any of those levels, if the defaults don't fit your provider.
-- **`enabledModels`** - a pattern-based allow-list; this is what `Ctrl+P` cycles through mid-session, so it's worth curating down to the handful you actually reach for on stash instead of leaving it at everything your providers expose.
-- **`packages`, `extensions`, `skills`, `prompts`, `themes`** - arrays of extra paths/globs to load, on top of the convention directories.
-- **`retry.enabled` / `retry.maxRetries` / `retry.baseDelayMs`** - transient-error retry policy, worth tightening if a flaky provider is chewing through your session.
-- **`enableSkillCommands`** - toggles whether `/skill:name` shows up as a slash command at all.
+- **`enabledModels`** - a pattern-based allow-list; this is what `Ctrl+P` cycles through mid-session. Curate it down to the two or three models stash actually reaches for - once you add a cheap coding provider next lesson, this is where it has to appear before `Ctrl+P` can find it.
+- **`packages`, `extensions`, `skills`, `prompts`, `themes`** - arrays of extra paths/globs to load, on top of the convention directories. The extension stash grows in a couple of lessons loads from a path declared here.
+- **`retry.enabled` / `retry.maxRetries` / `retry.baseDelayMs`** - transient-error retry policy, worth tightening if the cheap third-party provider you're about to add turns out flaky.
+- **`enableSkillCommands`** - toggles whether `/skill:name` shows up as a slash command at all. The self-test above depends on this being on.
 - **`defaultProjectTrust`** - `ask | always | never`, the default answer to the next thing on this list.
 
 ## The three files config splits across
 
-`settings.json` isn't alone in `~/.pi/agent/` (or its project mirror, `.pi/`). Three siblings do one job each:
+`settings.json` isn't alone in `~/.pi/agent/` (or its project mirror, `.pi/`). Three siblings do one job each, and stash will touch all three before this module is done:
 
-- **`models.json`** - the provider and model definitions themselves: base URLs, API shapes, cost/context metadata, per-model overrides. This is the file the next lesson lives in.
-- **`auth.json`** - stored credentials, written automatically by `/login` for OAuth logins and holding plain API keys for everything else. Pi keeps it at `0600` permissions on purpose - it's the one file in this directory that's pure secret.
-- **`trust.json`** - global only, no project mirror. It's the record of which project directories you've actually agreed to trust. The first time Pi finds a project-local `settings.json`, or extensions, or skills sitting in a repo, it stops and asks before loading any of it - because all three can execute code the moment they load. Say yes once and the decision persists here; `defaultProjectTrust` and the `--approve`/`--no-approve` flags are how you skip that prompt on purpose, in either direction, for non-interactive runs.
+- **`models.json`** - the provider and model definitions themselves: base URLs, API shapes, cost/context metadata, per-model overrides. The next lesson adds a cheap coding provider here for stash's re-extraction backlog.
+- **`auth.json`** - stored credentials. Written automatically by `/login` for OAuth logins; holds the plain API key you paste in for that new cheap provider. Pi keeps it at `0600` permissions on purpose - it's the one file in this directory that's pure secret.
+- **`trust.json`** - global only, no project mirror. It's the record of which project directories you've actually agreed to trust. The first time Pi found stash's repo with a project-local `settings.json` sitting in it, it stopped and asked before loading any of it - because project-local settings, extensions, and skills can all execute code the moment they load. Say yes once and the decision persists here; `defaultProjectTrust` and the `--approve`/`--no-approve` flags are how you skip that prompt on purpose, in either direction, for non-interactive runs.
 
 That split is deliberate: settings you tweak often, credentials you never want printed to a screen, and trust decisions you only want to make once per repo, live in three files instead of one, so a stray `cat` of your config doesn't also dump your API keys.
 

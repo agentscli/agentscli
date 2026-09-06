@@ -1,26 +1,36 @@
 ---
 title: Troubleshooting
-description: "Common failure modes and what to do about them."
+description: "Five failures pulled straight from stash's own harness, each traced to its cause before the fix - not generic advice."
 sidebar:
   label: Troubleshooting
 ---
 
-### Extension fails to load
+This page is the spaceship problem made concrete. Nothing here is theoretical - every entry below is a specific way one of `stash`'s own `.pi/` files can fail, traced from the symptom to the cause the way you'd actually hit it, because a minimal harness doesn't ship a support line. You do.
 
-Check that your extension file exports a factory function as the default export - Pi calls it once at startup and keeps whatever it returns. Verify that jiti can transpile the file: run `npx jiti your-extension.ts` to surface syntax or import errors outside Pi. If you edited the file while Pi was running, run `/reload` to pick up the change without restarting the session.
+### `stash-tools.ts` won't load
 
-### Child process hangs
+You edit the extension, restart Pi, and the `/stash` command is just gone - no error, nothing in the transcript. Check that the file exports a factory function as its default export; Pi calls it once at startup and keeps whatever it returns, and a missing default export fails silently rather than loudly. Verify jiti can actually transpile the file: run `npx jiti .pi/extensions/stash-tools.ts` directly, outside Pi, and any syntax or import error that Pi swallowed shows up here instead. If you edited the file while Pi was already running the session, that's the more common cause than either of the above - run `/reload` to pick up the change without restarting.
 
-Check the spawn flags you're passing to the child `pi` process - a missing `--mode json` or a malformed argument array will leave the child waiting for input it never gets. Verify the prompt isn't phrased as a question that invites a follow-up rather than a one-shot answer. Pi has no built-in `--max-turns` flag: if a parent runner needs a cap, enforce a deadline with the child-process API, abort the child, and report the partial result explicitly.
+### The re-extraction batch driver hangs
 
-### Compaction produces a bad summary
+You wire up `reextract-chain.yaml` from [module 8](/course/pi/subagents/) for real - the driver spawns a child `pi` process against one saved URL, and the terminal just sits there. No error. No output. Nothing. That's the ground truth before you go looking for a cause: a hung child prints exactly nothing, which is itself the diagnostic - a crash would have told you something.
 
-Use the structured compaction template rather than the default free-form summary - it forces the model to preserve decisions, open questions, and file state in a predictable shape. Before compacting a long session, write key decisions to disk (a `DECISIONS.md`, inline comments, or a SYSTEM.md rule) so they survive regardless of what the summary keeps. Anything that exists only in the conversation is at risk.
+The cause, once you go look: the spawn call is missing `--mode json`, or the argument array is malformed, and the child is waiting for input on stdin it's never going to get, because nothing in `reextract-chain.yaml`'s design ever pipes anything to it. Check the exact flags you're passing against the working spawn call from [module 8's spawn lesson](/course/pi/subagents/spawn/) - `--mode json`, `--no-session` or an explicit `--session` path, `--tools`, all present. Also check that the prompt itself doesn't read as an open question inviting a follow-up ("what should I do with this URL?") rather than a one-shot instruction the child can finish and exit on. Pi has no built-in `--max-turns` flag, so if you want this driver to give up after a fixed time instead of hanging forever, that's a deadline you enforce yourself with the child-process API - abort the child, report the partial result explicitly, don't leave it to time out on its own.
 
-### Skill doesn't fire
+### Compaction drops the rate-limiter decision
 
-Revise the skill's `description` field - it's the only thing the model sees when deciding whether to load the skill, and vague descriptions don't match how you actually phrase things. Pi permits a skill's `name` to differ from its directory name, although matching them remains a useful convention. Verify the skill is in a directory Pi searches: `.pi/skills/`, `.agents/skills/`, `~/.pi/agent/skills/`, `~/.agents/skills/`, or inside an installed package.
+Mid-session, working through the fetch-worker rate-limiting redesign from [module 4](/course/pi/models-config/), Pi auto-compacts - and the next turn, it's proposing a retry strategy you already ruled out three turns ago. The decision existed only in the conversation, and compaction's summary didn't preserve it.
 
-### Permission gate doesn't block
+Use the structured compaction template rather than the default free-form summary; it forces the model to preserve decisions, open questions, and file state in a predictable shape instead of whatever a generic summary happened to keep. Before compacting a long `stash` session on purpose, write the load-bearing decision to disk first - a line in `PLAN.md`, an inline comment in `worker.py`, a rule in `APPEND_SYSTEM.md` if it's going to recur. Anything that exists only in the conversation is one compaction away from not existing at all.
 
-Check the rule order in your permission extension - rules are evaluated in sequence, and a broad `allow` early in the list can short-circuit a specific `deny` later. Verify the glob pattern actually matches the path or command you think it does (test it with a simple string match outside Pi first). Use `pi.appendEntry` to write an audit trail entry on every tool call so you can see exactly which rules fired and in what order.
+### `onboard-content-source` never fires
+
+You point Pi at a new saved-page adapter and describe the task the way you'd actually say it out loud - "add a parser for this site" - and the skill from [module 7](/course/pi/skills-packages/) never loads. The description on file says "onboard a new content source," and that's not the same sentence, and the model is only matching on the description, not the intent behind it.
+
+Revise `SKILL.md`'s `description` field to match your real phrasing - it's the only thing the model sees when deciding whether to pull the rest in. Pi permits the skill's `name` to differ from its directory name, though matching them stays a useful convention so you're not hunting for a mismatch later. If it still doesn't fire, verify the skill is actually in a directory Pi searches: `.pi/skills/`, `.agents/skills/`, `~/.pi/agent/skills/`, `~/.agents/skills/`, or inside an installed package - a skill sitting one directory off from where Pi looks is functionally the same as a skill that doesn't exist.
+
+### `damage-control.ts` lets a write through
+
+The gate you built and tested in [module 6](/course/pi/rebuild-the-defaults/) - the one whose whole job is stopping a write to `stash.db` or `.env` - doesn't fire on a write it should have caught. Check the rule order first: rules are evaluated in sequence, and a broad `allow` earlier in `damage-control-rules.yaml` can short-circuit a specific `deny` that comes after it. Verify the glob pattern in the rule actually matches the path or command you think it does - test the match as a plain string outside Pi before trusting it inside the extension. Use `pi.appendEntry` to write an audit-trail entry on every tool call the gate evaluates, allowed or blocked, so the next time this happens you can see exactly which rule fired, in what order, instead of reconstructing it from memory.
+
+None of these five are exotic - they're the ordinary cost of a harness where nobody but you is on call. [Back to housekeeping](/course/pi/daily-workflow/housekeeping/) is the routine that catches most of these before they turn into a debugging session at all.

@@ -5,7 +5,9 @@ sidebar:
   label: "The tiny prompt · compact by design"
 ---
 
-You now have a way to print the literal system prompt behind any given turn. Go do it on `stash` and the first thing that'll strike you is how short it is - the default template is compact, although its exact size changes with the active tools, skills, context files, and Pi version. You've likely used agents whose standing instructions run into the thousands of tokens before you've typed a single word to them. Pi's isn't thin because someone forgot to write the rest of it. It's thin on purpose, and the purpose is worth understanding before you start editing it yourself in a later chapter.
+You now have a way to print the literal system prompt behind any given turn. Here's the claim worth checking before you check it yourself: printed in full - identity line, tool list, guidelines, doc pointers, project context, skills metadata, the date and the working directory - Pi's default prompt runs under roughly 1,000 tokens. That's dramatically smaller than the thousands of tokens of standing instructions you've likely seen from other agents before you've typed a single word to them. Go print it on `stash` in a moment and you'll see whether that number holds up on a real project, not just in Pi's own docs. Pi's isn't thin because someone forgot to write the rest of it. It's thin on purpose, and the purpose is worth understanding before you start editing it yourself in a later chapter.
+
+{/* corpus: research/pi/02-architecture-agent-loop.md, §4 - "the whole default system prompt is under ~1000 tokens", verified from system-prompt.ts */}
 
 ## What's actually in there
 
@@ -19,13 +21,17 @@ The prompt isn't a static block of text sitting in a file somewhere - it's assem
 6. **Skills, as metadata only** - name, description, and file path for each one, never the full skill body. The model reads a skill's actual instructions only when a task matches it. This is the same lazy-loading instinct as `read`'s truncation from two lessons ago, applied to prompt construction itself: don't spend tokens on something until it's actually needed.
 7. **Runtime metadata** - today's date and the current working directory, so the model isn't reasoning from a training cutoff when either one matters.
 
-That's the whole shape. No fifty-line list of edge-case reminders, no repeated safety disclaimers, no verbose description of a tool that isn't even turned on.
+That's the whole shape. No fifty-line list of edge-case reminders, no repeated safety disclaimers, no verbose description of a tool that isn't even turned on. **Every one of those seven pieces earns its place by being conditionally there - nothing is inlined "just in case."**
 
 ## Context files layer in automatically, and you can watch it happen
 
-Before any of that project context lands in `<project_context>` tags, Pi walks the directory tree collecting `AGENTS.md`-style files - global first (`~/.pi/agent/AGENTS.md`), then every parent directory on the way down to your current one. All matching files are concatenated; closer files appear later in the assembled context, but Pi does not apply a formal "closest wins" override rule. You can disable the whole mechanism with `--no-context-files` if you ever need Pi reasoning with zero project context at all - useful for isolating whether a weird behavior is coming from your rules file or from the model itself.
+Before any of that project context lands in `<project_context>` tags, Pi walks the directory tree collecting `AGENTS.md`-style files - global first (`~/.pi/agent/AGENTS.md`), then every parent directory on the way down to your current one. All matching files are concatenated, and later, closer files take precedence over earlier, farther ones - the same layering rule `.gitignore` uses, where the more specific file wins over the general one. You can disable the whole mechanism with `--no-context-files` if you ever need Pi reasoning with zero project context at all - useful for isolating whether a weird behavior is coming from your rules file or from the model itself.
 
-`AGENTS.md` is this course's [`APPEND_SYSTEM.md`](/course/pi/context/) moment waiting to happen, not something to fully unpack here - you'll write one for `stash` next chapter. What matters now is just this: it's not magic, it's a walk up the filesystem, and you already know how to go check exactly what landed in the prompt because of it.
+{/* corpus: research/pi/02-architecture-agent-loop.md, §4 context-file discovery - "later/closer files take precedence, analogous to .gitignore layering" - corrects the prior draft's claim that no such override rule exists */}
+
+**A file two directories down from the global one doesn't just add to it - it can override it,** which matters the moment you write conflicting instructions at two levels and need to know which one wins.
+
+`AGENTS.md` is this course's [`APPEND_SYSTEM.md`](/course/pi/context/) moment waiting to happen, not something to fully unpack here - you'll write one for `stash` next chapter. What matters now is just this: **it's not magic, it's a walk up the filesystem, and you already know how to go check exactly what landed in the prompt because of it.**
 
 ## The prompt is meant to be replaced, not just read
 
@@ -36,12 +42,22 @@ Every piece of this is overridable, and Pi gives you several levels of override 
 - **CLI flags** - `--system-prompt <text>` and `--append-system-prompt <text>` do the same two things for a single invocation, no file required.
 - **A `before_agent_start` extension hook** can rewrite the prompt *for that turn only* - the base template resets right after, and if more than one extension hooks this event, each one sees the previous extension's already-modified version before adding its own. You'll build one of these in the extensions chapter.
 
-And when a custom tool registers its own `promptSnippet` and `promptGuidelines`, those get spliced into the assembled prompt the same way the built-in tools' guidance does - and disappear automatically the moment that tool is disabled. The whole thing is rebuilt from scratch every time, never left stale from a config that changed three sessions ago.
+And when a custom tool registers its own `promptSnippet` and `promptGuidelines`, those get spliced into the assembled prompt the same way the built-in tools' guidance does - and disappear automatically the moment that tool is disabled. **Every override mechanism composes**: a global `SYSTEM.md`, a project `APPEND_SYSTEM.md`, and a per-turn hook can all be active on the same turn at once, each layering on top of the last. The whole thing is rebuilt from scratch every time, never left stale from a config that changed three sessions ago.
 
 ## Why bet on "thin"
 
 The argument behind all of this, in its author's own words: frontier models have been *"RL-trained up the wazoo"* and already understand what a coding agent is and how to drive `read`/`write`/`edit`/`bash` without three paragraphs of hand-holding per tool. A bloated system prompt, on that view, is "unnecessary overhead" - tokens spent every single turn restating things the model already knows, that could instead go toward your actual project context, or just not be spent at all. The guiding line for what makes it into the template is blunt: **if it isn't needed, it doesn't get built.**
 
-That's a bet, not a law of nature - it assumes you're pointing Pi at a genuinely capable model, and it trades away some of the guardrail-by-verbose-instruction style you'll find in more opinionated agents. But it's a bet you can now personally audit rather than take on faith, because two lessons ago you learned exactly how to go print the real thing and see for yourself whether it's holding up on `stash`.
+That's a bet, not a law of nature - it assumes you're pointing Pi at a genuinely capable model, and it trades away some of the guardrail-by-verbose-instruction style you'll find in more opinionated agents. But it's a bet you can now personally audit rather than take on faith. Two lessons ago you learned how to print the real prompt; go run `ctx.getSystemPrompt()` on `stash` right now and count what comes back.
 
-You can now see everything: the exact tools, the loop with no hidden ceiling, the live context, and the tiny prompt underneath all of it. Seeing isn't the same as controlling, though - right now `stash`'s conventions live in your head, and you're re-explaining them to Pi every session because nothing durable has been written down yet. [Next: turn what you know about `stash` into context Pi carries automatically](/course/pi/context/).
+Here's what you should find: even with `stash`'s own `AGENTS.md` folded into `<project_context>` tags, the total still lands close to the under-1,000-token claim from the top of this lesson - not because `stash` happens to be a small project, but because every tool that isn't enabled, every skill you haven't triggered, every doc file you haven't asked to read, genuinely isn't in the string you just printed. **The claim held on a real project, not just in Pi's own numbers.**
+
+You can now see everything: the exact tools, the loop with no hidden ceiling, the live context, and the tiny prompt underneath all of it. Here's the full ledger this module opened, with the row this lesson earned added to the two from before:
+
+| Layer | What it costs | What it buys | Who decided |
+|---|---|---|---|
+| The four tools (`read`/`write`/`edit`/`bash`) | Fixed schema tokens on every turn - count them with `ctx.getSystemPrompt()` | Removes needing to learn, or pay for, a fifth tool nobody asked for | Pi |
+| No step ceiling on the loop | Turns, not tokens - and no upper bound on a task the model can't actually finish | Removes an arbitrary mid-task cutoff on real work | Pi |
+| The default system prompt | Under ~1,000 tokens, rebuilt fresh every turn | Removes a bloated always-on prompt eating your budget before you've typed a word | Pi |
+
+Every row still says **Pi**. Nothing in this module was your choice yet - the tool count, the missing step ceiling, the prompt template all shipped this way before you touched anything. Seeing isn't the same as controlling. You can read the window now, down to the literal string sent this turn. It fills anyway. [Next: turn what you know about `stash` into context Pi carries automatically](/course/pi/context/).

@@ -7,7 +7,7 @@ sidebar:
 
 import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
 
-The last lesson handed the whole recategorisation to one subagent, which ground through three years of history in sequence. That works, but it's slow for no good reason: the 2023 transactions don't depend on the 2024 transactions, the checking account doesn't depend on the savings account, one import batch doesn't depend on the next. The job is *embarrassingly parallel* - independent items, the same stable rule applied to each, a discrete result per slice. When work has that shape, running it serially is leaving speed on the table.
+The last lesson delegated the whole recategorisation to one subagent, which read 19,620 tokens of orientation once and ground through three years of history in sequence. That works, but it's slow for no good reason: the 2023 transactions don't depend on the 2024 transactions, the checking account doesn't depend on the savings account, one import batch doesn't depend on the next. The job is *embarrassingly parallel* - independent items, the same stable rule applied to each, a discrete result per slice. When work has that shape, running it serially is leaving speed on the table. What it isn't is free: fan out to three workers and you're about to pay that 19,620-token orientation cost three times over, not once.
 
 ## The two tests before you split anything
 
@@ -18,6 +18,8 @@ Before you fan out, two questions decide whether parallelism is leverage or thea
 **Write the aggregation first.** Before you spawn anything, you should be able to say in one sentence how the slices come back together: *"concatenate the per-slice change-logs and sum the per-category counts."* If you can't describe the merge that simply, your decomposition is wrong, not your tooling. Fan-out is an aggregation problem wearing a spawning costume - decide how the answers reduce *before* you scatter the questions.
 
 The recategorisation passes both. So we split it.
+
+**A test you fail here doesn't cost you a bad answer - it costs you a fan-out that looks like leverage and isn't.**
 
 ## Spawning workers on the slices
 
@@ -33,22 +35,28 @@ The natural split is one worker per year, or per account, or per import file. Yo
 
 Each worker reads, classifies, and dumps in *its own* window - and crucially that noise stays there. The thousand rows the 2023 worker reasons over never mix with the 2024 worker's rows, and none of them enter your thread. When the slices finish, the parent reads back the handful of summaries and reduces them with the aggregation you defined up front: one combined change-log, one set of before/after totals.
 
+But look at what each worker had to do first. Every one of the three starts as cold as the last delegate lesson's single worker did - no shared memory across subagents - so every one of them pays the same 19,620-token orientation read: the importer, the rules, the test suite. One worker paid that once. Three workers pay it three times: 58,860 tokens of reading, sunk before a single row gets reclassified in parallel. None of that lands in *your* window - it's still off to the side, still isolated - but it's real spend, and it's the reason "fan out and it's the same job, faster, for free" is the wrong story to tell yourself.
+
 That isolation is worth counting once, not just trusting. Toggle the same shape of job between running inline in your own window and fanning it out - the slices here are code sweeps rather than transaction years, but the arithmetic is the recategorisation's exactly:
 
 <SubagentFanout client:visible />
 
 Codex exposes `agents.max_concurrent_threads_per_session` (with legacy alias `agents.max_threads`) to cap concurrently open spawned-agent threads. If you leave it unset, Codex chooses its default; the public docs do not promise a universal numeric value. Start narrow - three or four workers gives you a way to measure speedup and rate-limit headroom - and widen only after checking your account and release behavior. Every worker counts against your account's rate budget, so concurrency is a design constraint, not free throughput. See the [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) before setting the cap.
 
+## The multiplier that doesn't come with the win
+
+Here's the anti-hype half, right where the win just landed: parallel reading and parallel classifying are real, and your wall-clock time on *that* part genuinely drops with the worker count. What it does not do is divide your total time by the number of workers, because the slices still have to come home. Three workers finish their reading and classifying at roughly the same time - but their results, or in the money refactor's case their branches, still merge back one at a time, through a gate, because nothing about parallel work makes the reduce step parallel too. **The next lesson prices that tail exactly. Remember this claim, because it gets paid off with real turns, not a hand-wave: the merge tail scales with how many slices you have to bring home, not with how many workers you fanned out to produce them.**
+
 ## When parallel is just overkill
 
 Once the fan-out works, the temptation is to reach for it everywhere. Resist that. It's overkill, or worse, when:
 
 - **The slices depend on each other.** If classifying this year needs a rule the previous year's run inferred, they can't run at once - you'd be guessing. Chain them: one worker's result feeds the next.
-- **The work is light.** Spinning up several fresh workers that each re-gather context can be slower than one thread that already knows the codebase. Fan-out has a fixed startup cost; tiny jobs don't earn it back.
-- **You fan out wider than you can aggregate.** This is the sharp edge. When subagents finish, their results return to the parent - and many workers each handing back a *detailed* report is its own flood, arriving all at once. The fix is the same as in the last lesson: brief each one to come back terse. "Return the counts and the rows you couldn't classify," not "return everything you found." Twenty workers each writing you an essay is a different mess than the one you were avoiding, but a mess all the same.
+- **The work is light.** Spinning up several fresh workers that each re-gather context can be slower than one thread that already knows the codebase. Fan-out has a fixed startup cost - the orientation read you just watched triple - and tiny jobs don't earn it back.
+- **You fan out wider than you can aggregate.** This is the sharp edge. When subagents finish, their results return to the parent - and many workers each handing back a *detailed* report is its own flood, arriving all at once. Twenty terse returns at 300 tokens apiece is 6,000 tokens landing in your thread in a single turn - noticeable, against a 200,000-token window, but manageable. Twenty verbose returns, an essay instead of a table, is easily five times that. The fix is the same at any width: brief each worker to come back terse. "Return the counts and the rows you couldn't classify," not "return everything you found." Fan out wider without tightening the brief and you haven't avoided the flood, you've just relocated it.
 
-A second guardrail belongs to bulk fan-out specifically: **partial failure is data, not a crash.** If three of twenty workers hit a rate limit, the parent keeps the seventeen good results and retries only the three - and it retries them a *capped* number of times, never indefinitely. A fan-out that loops forever on a stuck worker is a worse outcome than one that returns seventeen-of-twenty and tells you which three to look at.
+A second guardrail belongs to bulk fan-out specifically: **a partial failure doesn't stop the run.** If three of twenty workers hit a rate limit, the parent keeps the seventeen good results and retries only the three - and it retries them a *capped* number of times, never indefinitely. A fan-out that loops forever on a stuck worker is a worse outcome than one that returns seventeen-of-twenty and tells you which three to look at.
 
-So the shape that works: fan out across a *handful* of independent, heavy slices; tell each worker to come back terse; define the merge before you spawn; cap the retries. That's leverage.
+So the shape that works: fan out across a *handful* of independent, heavy slices; tell each worker to come back terse; define the merge before you spawn; cap the retries. That's leverage, and it's leverage with a known price, not a free multiplier.
 
 The recategorisation fanned out cleanly because the workers only *read* shared files and wrote isolated outputs. The money-handling refactor is different - there, several workers need to *edit* the repo at the same time, and the moment two agents write to the same working tree they start reading each other's half-finished files. [Next we give each worker its own git worktree](/course/codex/subagents/worktrees/).

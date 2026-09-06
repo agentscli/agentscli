@@ -1,0 +1,69 @@
+---
+title: "Your AI agent is smarter than you. And knows less than you."
+description: "The gap between agent capability and SME knowledge is the only problem worth solving. Context engineering is how you close it."
+seoTitle: "What Is Context Engineering for AI Coding Agents?"
+seoDescription: "AI coding agents are broad but contextless. Context engineering closes the gap with rules, skills, MCP servers, subagents, hooks, and permissions."
+authors: sanjay
+date: 2026-05-20
+tags: [context-engineering, thesis]
+draft: false
+---
+
+import GapDemo from '../../../components/interactive/GapDemo.tsx';
+import NapkinMath from '../../../components/interactive/NapkinMath.tsx';
+import LeverStaircase from '../../../components/interactive/LeverStaircase.tsx';
+
+The AI agent you're using has read more code than you have. More languages, more frameworks, more decades of open source. It can sketch a React app, refactor a Rust crate, write a SQL query against a schema it's never seen. Pattern-matched against a corpus larger than any single human will ever encounter.<span class="sidenote">Frontier models train on trillions of tokens; no engineer reads even a billion in a lifetime. The breadth is real — so is the shallowness about you.</span>
+
+It also doesn't know that your team uses `pnpm`, not `npm`. It doesn't know the auth service moved out of `services/auth` six months ago. It doesn't know which of the five "utils" folders is actually authoritative, or that the `Logger` class is preferred over `console.log`, or that your migrations have an unwritten rule about never being edited after merge.
+
+This post answers one question: **why does the most capable coding tool you've ever used still get your codebase wrong — and what, specifically, closes that distance?** The demo below runs the thesis live: the same task, once bare and once with your team's context mounted.
+
+<GapDemo client:visible />
+
+## The failure you've actually been having
+
+When the agent ships something wrong, it almost never *looks* like an intelligence failure. The code is idiomatic. The tests pass. And then a reviewer asks the question that matters: "why is this using `npm` when the whole repo is `pnpm`?" — or "this hits `services/auth`, that moved in March."
+
+Notice what those failures have in common. The agent chose a **reasonable pattern**. It just wasn't *your* pattern. It picked a perfectly good library; it just wasn't the one already vendored in your repo. That's the signature to internalize: the mistakes cluster on **convention, location, and history** — the three things that live in no public corpus, because they're facts about *your* world, not about programming.
+
+Ask yourself the diagnostic question before you blame the model: *could a brilliant contractor who has never worked here have gotten this right?* If the honest answer is "no, they'd need to be told" — that's not a capability gap. That's an information gap. Different problem, different fix.
+
+## How big is the gap? Napkin math
+
+Let's put a rough size on it, because the number explains why this is worth a whole site.
+
+Count what you do by hand in a day of agent-assisted work: opening `psql` to check a column, pasting the schema into the chat, grabbing the Jira title, screenshotting the Figma frame, re-explaining the "never edit merged migrations" rule. Move the sliders to your own day and watch the year fill in.
+
+<NapkinMath client:visible />
+
+Fifty-plus hours a year per engineer, spent being a human clipboard — that's the default setting. And that's only the *latency* — the more expensive half is the rework: the PRs that get built on a wrong assumption and reviewed into the ground. We won't put a number on that half, because it varies wildly by team. The direction is not in doubt.
+
+## Why a smarter model doesn't close it
+
+Here's the objection worth taking seriously: *models get smarter every year. Won't the gap close itself?*
+
+Reason from what the model can see at inference time: the code in your window, whatever you pasted, whatever a tool returned. Smarter models get better at **reasoning over what's present**. No amount of capability conjures facts that aren't in context — `services/auth` having moved is not derivable from first principles; it's a historical event. It lives in a Slack thread, a migration PR title, and your tech lead's head.<span class="sidenote">This is why wikis rot and rules files don't: the file is read every session; the wiki is read never.</span> The next generation of agent will still walk into your codebase blind to the things that aren't written down *somewhere it reads*.
+
+There's a subtler version of the same trap: *just RAG the whole wiki*. Retrieval helps with documents that already say the thing. But half of your team's knowledge is procedural, not textual — "the Logger class wins", "don't touch merged migrations", "the fifth utils folder is the real one" — and a retrieved paragraph explaining it is still competing for attention against code. Context engineering is less "index your docs" and more **compile your conventions into the places the agent already reads**: files it loads at startup, tools it can call, checks it cannot skip.
+
+## The practice: write it where the agent reads
+
+**Context engineering is the practice of closing that gap.** Writing down what only you know, in a form the agent can read. Connecting the agent to the systems your team's knowledge actually lives in (Jira, Postgres, Figma). Encoding the rules that can't be inferred from the code alone. Isolating the agent's context so one bad thread doesn't pollute the next.
+
+The levers, from lightest to heaviest:
+
+- **Rules** — a file the agent reads at startup. `pnpm`, not `npm`. Logger, not console.log. Twenty lines, an afternoon to write, pays back the first week. Start here.
+- **Skills** — packaged procedures for things your team does repeatedly, so the agent follows *your* runbook instead of improvising a generic one.
+- **MCP servers** — typed tools that let the agent query Jira, Postgres, or Figma itself, in-flow, instead of you relaying by hand.
+- **Subagents** — isolation chambers for the messy exploration, so the main thread's context stays clean for the work that matters.
+- **Hooks** — deterministic checks that run no matter what: format-on-save, "the migration rule", the linter the agent cannot argue with.
+- **Permissions** — the blast-radius control that decides how much of this newly-wired world the agent may touch on its own.
+
+Notice the shape of that list: nothing in it makes the model smarter. Every item moves *knowledge you already have* into *places the agent already reads*. That's the whole discipline. The capability was never the bottleneck. Click each rung for its cost, its assumption, and its first win.
+
+<LeverStaircase client:visible />
+
+## Where to start
+
+Start with [Rules](/foundations/rules/) — the simplest lever, the one every major AI coding tool added in the same year. Ship the twenty-line file today; it's the highest ratio of gap-closed to effort you will find anywhere in this practice.<span class="sidenote">If you write one thing after this leaf, make it the twenty lines.</span> We'll cover the rest from there.

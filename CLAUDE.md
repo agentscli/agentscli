@@ -46,22 +46,31 @@ Content structure:
 ### Components
 
 Custom Astro components in `src/components/`:
-- `Header.astro`, `Footer.astro` - Site-wide navigation
+- `Header.astro`, `Footer.astro` - Homepage navigation
+- `BlogHeader.astro`, `BlogLayout.astro`, `RelatedPosts.astro` - Blog chrome;
+  the post page itself is `src/layouts/BlogPostLayout.astro`
+- `SiteThemeToggle.astro` - Light/dark toggle for the custom routes (homepage,
+  blog). Starlight routes use the `ThemeSelect` override. Both write the same
+  `starlight-theme` localStorage key, so the choice carries across surfaces.
 - `FeatureCard.astro`, `GuideCard.astro` - Content cards
 - `Terminal.astro`, `TerminalBlock.astro` - Terminal/code display components
-- `BlogPost.astro`, `BlogLayout.astro`, `RelatedPosts.astro` - Blog-specific components
 - `AgentCallout.astro` - Special callout component
-- `Head.astro` - Shared head for custom pages; also carries the theme-var
-  `!important` override layer that makes the homepage and blog honor the
-  light/dark toggle (the scoped styles in those pages are dark-hardcoded)
+- `Head.astro` - Shared head for custom pages. Resolves the stored or OS theme
+  before paint and defines the custom-route tokens (`--page-bg`, `--accent`,
+  `--text-*`, `--border-*`, `--surface-bg*`) for light and dark. Custom pages
+  style themselves with these tokens; do not add fixed hex colors to them.
+- `StarlightHead.astro`, `StarlightPageTitle.astro`, `Sidebar.astro`,
+  `ThemeSelect.astro` - Starlight component overrides (see `astro.config.mjs`)
 
 ### Starlight Configuration
 
 Configured in `astro.config.mjs`:
 - Title: "agents.cli"
 - Blog authors defined in config (sourabh, sanjay)
-- Sidebar organized as topics (Courses, Foundations) via starlight-sidebar-topics
-- Custom fonts: Fira Code (mono), Instrument Serif (serif), Space Grotesk (sans)
+- Sidebar organized as topics (Courses, Playbooks, Foundations) via
+  starlight-sidebar-topics
+- Fonts are self-hosted through Fontsource: `src/styles/fonts.css` for the
+  Starlight routes, `src/styles/fonts-editorial.css` for the custom routes
 
 ### Deployment
 
@@ -72,15 +81,18 @@ The project uses Cloudflare Workers via `wrangler.toml`:
 
 ### Theming
 
-The site uses a custom dark/purple theme via `src/styles/theme.css`:
-- Overrides Starlight's default CSS custom properties for colors, fonts, and spacing
-- Applied globally via `customCss` in `astro.config.mjs`
-- All Starlight pages (docs, blog) inherit this theme automatically
-- Custom homepage (`src/pages/index.astro`) uses scoped styles plus the
-  theme-var override layer in `src/components/Head.astro`
-
-**Theme colors**: Primary purple (#7c69f7), dark background (#0a0910)
-**Fonts**: Fira Code (mono), Space Grotesk (sans), Instrument Serif (serif)
+One warm palette with an oxblood accent, light and dark, on every surface:
+- `src/styles/theme.css` sets the Starlight tokens (`--sl-*`, `--ac-*`) for
+  light (`:root`) and dark (`[data-theme='dark']`). Applied through
+  `customCss` in `astro.config.mjs`.
+- `src/components/Head.astro` sets the equivalent tokens for the custom routes.
+  `src/styles/blog-post.css` and `src/styles/widget-standalone.css` carry
+  copies of the same values. When a value changes in theme.css, change it in
+  all three.
+- Light: paper `#fcfbf7`, ink `#17160f`, accent `#9c2f27`. Dark: page
+  `#191a1f`, ink `#ece7dd`, accent `#d68a72`.
+- Purple (`#7c69f7`) is retired from the UI. It survives only as the agent
+  character in hero images and the dot in the logo.
 
 ## Key Patterns
 
@@ -94,14 +106,18 @@ The site uses a custom dark/purple theme via `src/styles/theme.css`:
 
 1. Create `.mdx` files in `src/content/docs/blog/`
 2. Use frontmatter with blog schema fields
-3. Reference existing authors (james, elena, marcus) or add new ones in `astro.config.mjs`
+3. Reference existing authors (`sourabh`, `sanjay`) or add new ones in `astro.config.mjs`
 
 ### Typography System
 
-The site uses three custom fonts:
-- **Fira Code** - Monospace (terminal, code, navigation labels)
-- **Instrument Serif** - Serif italic (hero subtitle, quotes)
-- **Space Grotesk** - Sans-serif (body, headings)
+- **Source Serif 4 Variable** - Reading face for body prose on blog posts,
+  Foundations and Courses. Loaded with the optical size axis
+  (`font-optical-sizing: auto`) and antialiased smoothing. That pairing is
+  what keeps the strokes light at 18-20px; do not swap in the static cuts.
+- **Space Grotesk** - Sans for headings, sidebar, tabs, nav and UI
+- **Fira Code** - Monospace (code, terminal, eyebrow labels)
+- **Instrument Serif** - Homepage hero italic only
+- **Plus Jakarta Sans**, **Geist Mono** - Blog listing and cards only
 
 ### Custom Homepage
 

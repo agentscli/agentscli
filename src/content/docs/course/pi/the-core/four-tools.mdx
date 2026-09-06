@@ -5,6 +5,8 @@ sidebar:
   label: "Four tools · read, write, edit, bash"
 ---
 
+Here's the claim this lesson proves, and it'll look strange until you've seen why: the fix from last chapter replaced an entire function - four lines longer than the actual bug - when only one line was wrong. That wasn't Pi being sloppy, and it wasn't being thorough for its own sake. It was the direct, mechanical consequence of one rule buried in a single tool's description. By the end of this lesson you'll be able to point at that rule and explain exactly why a smaller edit would have failed outright.
+
 Go back and actually read the diff from last chapter's fix. Not the summary Pi gave you - the real, `git show`-able change to `stash`'s date parsing. You'll notice it's small: a handful of lines, one function, no drive-by reformatting of the rest of the file. That's not luck. It's a direct consequence of which tool Pi reached for, and what that tool is and isn't allowed to do. Pi doesn't give the model forty specialized tools to choose between - it gives it four, and the small size of that set is exactly what makes each one worth knowing precisely.
 
 ## `read` - bounded, and it tells you when it's held back
@@ -17,7 +19,11 @@ That's what you're looking at at the top of last chapter's session - Pi reading 
 • Read app/worker/extract.py                             (312 lines)
 ```
 
-If that file had been ten times longer, you'd have seen a truncation notice instead of a clean read - and the very next tool call would have been another `read` at the offset it handed back. Nothing hidden, nothing magic - just a stated boundary and a stated way past it.
+:::note[About the numbers]
+Line counts and pass/fail counts in `stash`'s transcripts (312 lines, 12 passed, and so on) are invented for this course's running example - nobody has run this exact session against a real repo. Pi's own limits, like the one a few sections down for `bash`, are quoted straight from its source, not estimated. Where a number matters, this module tells you to count it yourself rather than take it from the page.
+:::
+
+If that file had been ten times longer, you'd have seen a truncation notice instead of a clean read - and the very next tool call would have been another `read` at the offset it handed back. Nothing hidden, nothing magic - just a stated boundary and a stated way past it. **A read either gives you the whole file or tells you exactly where it stopped.**
 
 ## `edit` - exact text, unique match, or it refuses
 
@@ -30,7 +36,7 @@ Two consequences follow directly from that:
 
 There's no `replace_all` flag anywhere in the picture. If an occurrence isn't already unique in the file, `edit` has no built-in way to blast every instance at once - that's a deliberate omission, not a missing feature. It forces precision instead of offering a blunt instrument.
 
-Watch that constraint do its job in `stash`'s fix. The bug was that `parse_page_date()` tried exactly one fixed date format and returned `None` silently the moment a date didn't match it; several different date strings needed to route through the same ordered list before falling back:
+Now predict the diff before you look at it. The bug was that `parse_page_date()` tried exactly one fixed date format and returned `None` silently the moment a date didn't match it. The one buggy line is `return datetime.strptime(raw, "%B %d, %Y").date()`. That's a common enough shape of Python that, in a file with several hundred lines and more than one date-handling helper, it isn't safe to assume it's unique on sight - and `edit` doesn't get to assume it either. If the model had sent that bare line alone as `oldText`, and the file happened to contain anything close enough to it elsewhere, `edit` would have refused rather than guess. Now look at what `oldText` actually contains:
 
 ```text
 • Edit app/worker/extract.py
@@ -38,19 +44,19 @@ Watch that constraint do its job in `stash`'s fix. The bug was that `parse_page_
   + Replace: "DATE_FORMATS = (\"%B %d, %Y\", \"%Y-%m-%d\", \"%m/%d/%Y\", \"%d %b %Y\")\n\ndef parse_page_date(raw: str) -> date | None:\n    for fmt in DATE_FORMATS:\n        try:\n            return datetime.strptime(raw, fmt).date()\n        except ValueError:\n            continue\n    return None"
 ```
 
-That block of `oldText` is a whole function body, not just the one changed line - because a bare `return datetime.strptime(...)` on its own might not have been unique across the file, and the model had already read enough of `extract.py` to know it. The edit landed clean on the first try because the match was unambiguous. If it hadn't been, you'd have seen the tool refuse and the model retry with more surrounding text - not silently touch the wrong occurrence.
+The whole function signature and body, not just the one changed line. That's the payoff: the extra lines in that diff aren't padding, and they aren't the model being cautious for style points. They're exactly what turns an ambiguous fragment into the unique, non-overlapping match `edit` requires. The edit landed clean on the first try because the match was unambiguous by construction. If it hadn't been, you'd have seen the tool refuse and the model retry with more surrounding text - not silently touch the wrong occurrence.
 
-The output you get back isn't just "done," either - `edit` returns a real diff for display and a standard patch underneath it, plus the line number where the change starts. That's what let the TUI show you a clean before/after instead of a vague confirmation.
+The output you get back isn't just "done," either - `edit` returns a real diff for display and a standard patch underneath it, plus the line number where the change starts. That's what let the TUI show you a clean before/after instead of a vague confirmation. **The size of an edit's `oldText` is a uniqueness proof, not a style choice.**
 
 ## `write` - the blunt instrument, on purpose
 
-`write` takes a path and full file content, and it does exactly one thing: create the file (making any parent directories along the way) or overwrite it wholesale. No merge, no partial application, no matching logic at all - the opposite end of the spectrum from `edit`'s precision. That's why the system prompt steers the model toward `write` only for brand-new files or genuine full rewrites, and toward `edit` for anything that's touching part of an existing one. You didn't see `write` fire during the date fix, and that's the expected outcome - a targeted bug fix in an existing function is `edit`'s job, not `write`'s.
+`write` takes a path and full file content, and it does exactly one thing: create the file (making any parent directories along the way) or overwrite it wholesale. No merge, no partial application, no matching logic at all - the opposite end of the spectrum from `edit`'s precision. That's why the system prompt steers the model toward `write` only for brand-new files or genuine full rewrites, and toward `edit` for anything that's touching part of an existing one. You didn't see `write` fire during the date fix, and that's the expected outcome - a targeted bug fix in an existing function is `edit`'s job, not `write`'s. **A tool that can't merge is a tool that can't corrupt a merge, either.**
 
 ## `bash` - synchronous, capped output, and no background jobs
 
 `bash` runs one command in `stash`'s working directory and waits for it to finish before returning anything - there's no way to fire a command and get control back immediately. That's a deliberate omission: Pi's author has argued background execution trades away observability for convenience, and points to `tmux` instead for anything genuinely long-running, since a human can watch and co-debug inside a real terminal session rather than trusting an agent's notion of "still running."
 
-Output is capped too - the **last 2,000 lines or 50KB**, whichever limit hits first, same truncation helper `read` uses. Here's the part worth remembering: when a command's output gets truncated, the *full* output isn't thrown away - it's written to a temp file, and the path comes back in the result so the model can `read` or grep the rest itself if it needs to:
+Output is capped too - the **last 100 lines or 10KB**, whichever limit hits first, the same truncation helper `read` uses, called here with its own limits for this tool. {/* corpus: research/pi/02-architecture-agent-loop.md, §3 bash - DEFAULT_MAX_LINES/DEFAULT_MAX_BYTES verified at 100 lines / 10KB for bash specifically; read's own constants are unverified in the corpus, so no number is stated for read above. */} Here's the part worth remembering: when a command's output gets truncated, the *full* output isn't thrown away - it's written to a temp file, and the path comes back in the result so the model can `read` or grep the rest itself if it needs to:
 
 ```text
 • Bash: python -m pytest tests/test_worker.py -v
@@ -59,7 +65,7 @@ Output is capped too - the **last 2,000 lines or 50KB**, whichever limit hits fi
   12 passed, 0 failed
 ```
 
-That's what ran after the edit landed - the fix verifying itself against `stash`'s existing test suite, not you taking the model's word for it. If those tests had produced a wall of output past the cap, nothing would have been lost; it would just be sitting in a temp file, one `read` call away.
+That's what ran after the edit landed - the fix verifying itself against `stash`'s existing test suite, not you taking the model's word for it. If those tests had produced a wall of output past the cap, nothing would have been lost; it would just be sitting in a temp file, one `read` call away. **A capped tool and a lossy tool are not the same thing.**
 
 ## Why this set, and not a bigger one
 
