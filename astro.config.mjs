@@ -13,6 +13,11 @@ const CF_BEACON_TOKEN = process.env.CF_BEACON_TOKEN ?? '';
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://www.agentscli.com',
+	// Astro 7 changed the default to 'jsx', which strips the whitespace between
+	// two adjacent inline elements. Our prose puts links, <code> and <strong>
+	// next to each other across 400+ pages, so that default silently joins
+	// words. 'true' is the HTML-aware compression Astro 5 and 6 used.
+	compressHTML: true,
 	integrations: [
 		react(),
 		starlight({

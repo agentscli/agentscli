@@ -13,3 +13,38 @@ const { isPageWithTopic } = Astro.locals.starlightSidebarTopics;
 
 {hasSidebar && isPageWithTopic && <CourseTopics />}
 <Default><slot /></Default>
+
+<script>
+	// Move Starlight's mobile-menu breakpoint from 50rem up to 72rem.
+	//
+	// Starlight 0.42 opens the sidebar with the popover API, and its PageFrame
+	// script strips the `popover` attribute above 50rem so the pane can sit in
+	// the page as a column. Our reading column is 54rem wide and cannot share a
+	// row with the 17.5rem sidebar until about 72rem, so theme.css holds the
+	// mobile layout through the 50-72rem band. Without the attribute the
+	// hamburger has no popover to target and the menu cannot open there.
+	//
+	// A MutationObserver re-asserts the attribute instead of a plain listener,
+	// so this does not depend on which script runs first.
+	const WIDE = '(min-width: 72rem)';
+	const PANE_ID = 'starlight__sidebar';
+
+	function keepPopoverUntilWide() {
+		const pane = document.getElementById(PANE_ID);
+		if (!pane) return;
+		const wide = matchMedia(WIDE);
+		const sync = () => {
+			const wanted = wide.matches ? null : 'auto';
+			if (pane.popover !== wanted) pane.popover = wanted;
+		};
+		new MutationObserver(sync).observe(pane, { attributeFilter: ['popover'] });
+		wide.addEventListener('change', sync);
+		sync();
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', keepPopoverUntilWide);
+	} else {
+		keepPopoverUntilWide();
+	}
+</script>
