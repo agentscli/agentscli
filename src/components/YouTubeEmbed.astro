@@ -1,0 +1,192 @@
+---
+// YouTubeEmbed - a lite embed for the Foundations explainer shorts.
+// The videos are vertical (1080x1920, 9:16), so the frame is 9:16 and capped
+// narrow. Nothing from YouTube loads until the reader clicks: the poster is a
+// static thumbnail, and the privacy-enhanced iframe replaces it on click.
+interface Props {
+  /** YouTube video id. */
+  id: string;
+  /** Human title, used for the iframe title and the caption. */
+  title: string;
+}
+
+const { id, title } = Astro.props;
+
+if (!id) throw new Error('YouTubeEmbed requires an `id`.');
+if (!title) throw new Error('YouTubeEmbed requires a `title`.');
+if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) {
+  throw new Error(`YouTubeEmbed got a malformed video id: ${id}`);
+}
+
+const videoTitle = `${title} - AgentsCLI Foundations`;
+const watchUrl = `https://www.youtube.com/watch?v=${id}`;
+const posterUrl = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+const embedUrl = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+---
+
+<figure class="yt-embed">
+  <p class="yt-embed-eyebrow">Watch the 2-minute version</p>
+
+  <div class="yt-embed-frame">
+    <button
+      type="button"
+      class="yt-embed-poster"
+      data-yt-embed
+      data-embed-src={embedUrl}
+      data-embed-title={videoTitle}
+      aria-label={`Play the video: ${title}`}
+    >
+      <img
+        src={posterUrl}
+        alt=""
+        width="480"
+        height="360"
+        loading="lazy"
+        decoding="async"
+        referrerpolicy="no-referrer"
+      />
+      <span class="yt-embed-play" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+          <path d="M8 5.5v13l11-6.5z" />
+        </svg>
+      </span>
+    </button>
+  </div>
+
+  <figcaption class="yt-embed-caption">
+    {title}. <a href={watchUrl} target="_blank" rel="noopener noreferrer">Watch on YouTube</a>
+  </figcaption>
+</figure>
+
+<script>
+  // One delegated listener for every embed on the page. Astro hoists and
+  // dedupes this script, so it costs one handler no matter how many embeds.
+  document.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest<HTMLButtonElement>('[data-yt-embed]');
+    if (!button) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.src = button.dataset.embedSrc ?? '';
+    iframe.title = button.dataset.embedTitle ?? 'YouTube video';
+    iframe.loading = 'lazy';
+    iframe.allow =
+      'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+    iframe.allowFullscreen = true;
+    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+    iframe.setAttribute('frameborder', '0');
+    button.replaceWith(iframe);
+  });
+</script>
+
+<style>
+  .yt-embed {
+    margin: 2rem 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .yt-embed-eyebrow {
+    margin: 0;
+    font-family: var(--sl-font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--sl-color-accent);
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+  }
+
+  /* The shorts render at 1080x1920, so the frame is 9:16 and stays narrow. */
+  .yt-embed-frame {
+    position: relative;
+    width: 100%;
+    max-width: 300px;
+    aspect-ratio: 9 / 16;
+    border: 1px solid var(--sl-color-hairline-shade, var(--sl-color-gray-5));
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--sl-color-bg-sidebar, var(--sl-color-bg));
+  }
+
+  .yt-embed-frame :global(iframe) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  .yt-embed-poster {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .yt-embed-poster img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* The thumbnail is a 4:3 sheet with the vertical frame pillarboxed in the
+       middle. `cover` crops the bars away and leaves the video itself. */
+    object-fit: cover;
+  }
+
+  .yt-embed-play {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--sl-color-accent);
+    color: var(--sl-color-text-on-accent, #fff);
+    box-shadow: 0 2px 10px rgb(0 0 0 / 35%);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+
+  .yt-embed-play svg {
+    margin-left: 3px;
+  }
+
+  .yt-embed-poster:hover .yt-embed-play,
+  .yt-embed-poster:focus-visible .yt-embed-play {
+    background: var(--sl-color-accent-high);
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+
+  .yt-embed-poster:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
+  .yt-embed-caption {
+    margin: 0;
+    max-width: 34rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--sl-color-gray-3);
+  }
+
+  .yt-embed-caption a {
+    color: var(--sl-color-text-accent, var(--sl-color-accent));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .yt-embed-play {
+      transition: none;
+    }
+    .yt-embed-poster:hover .yt-embed-play,
+    .yt-embed-poster:focus-visible .yt-embed-play {
+      transform: translate(-50%, -50%);
+    }
+  }
+</style>
