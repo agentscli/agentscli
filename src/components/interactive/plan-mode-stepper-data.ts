@@ -41,7 +41,7 @@ export const pmsStages: PmsStage[] = [
     detail: {
       'claude-code': {
         code: 'Shift-Tab',
-        text: 'A session toggle on the active agent - cycle into Plan mode mid-conversation. The `/plan` skill pairs with it but is a separate thing: the skill asks for a plan, the mode enforces the posture.',
+        text: 'A session toggle on the active agent - cycle into Plan mode mid-conversation. `/plan` on a single prompt is the lighter cousin: one prompt in the posture without switching modes - the prefix requests the plan, the mode enforces it.',
       },
       codex: {
         code: 'codex --sandbox read-only --ask-for-approval untrusted',
@@ -88,7 +88,7 @@ export const pmsStages: PmsStage[] = [
     title: 'An edit is attempted - the posture holds',
     detail: {
       'claude-code': {
-        text: 'Write, Edit, and mutating Bash are blocked by the mode itself. Even if the model reaches for an edit, the tool call can’t land.',
+        text: 'Write and Edit are blocked by the mode itself - even if the model reaches for an edit, the tool call can’t land. Bash is gated, not blocked: commands are prompted or classifier-reviewed, and approved commands run.',
       },
       codex: {
         text: 'The sandbox blocks file writes and mutating commands. With `--ask-for-approval untrusted`, an attempted escalation surfaces as an approval prompt instead of executing silently.',
@@ -132,7 +132,7 @@ export const pmsStages: PmsStage[] = [
     title: 'You approve - or keep planning',
     detail: {
       'claude-code': {
-        text: 'Accept the plan when prompted, or `Shift-Tab` again to stay in the posture and keep iterating. The gate is the toggle itself.',
+        text: 'Accept the plan when prompted - or `Shift-Tab` again to leave plan mode without approving anything. The gate is the toggle itself.',
       },
       codex: {
         text: 'There’s no plan-specific gate - approval happens per escalation prompt. When you’re satisfied, you change the posture yourself via `/permissions`.',

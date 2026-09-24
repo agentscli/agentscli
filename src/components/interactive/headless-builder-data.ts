@@ -55,6 +55,8 @@ export interface HlbFragment {
 export interface HlbPostureFragment extends HlbFragment {
   /** Posture that lives in config instead of flags (OpenCode) */
   config?: { title: string; code: string };
+  /** Per-tool label when the shared posture name would misdescribe the flags */
+  labelOverride?: string;
 }
 
 export interface HlbToolSpec {
@@ -94,7 +96,8 @@ export const hlbTools: HlbToolSpec[] = [
       },
       full: {
         part: '--permission-mode dontAsk',
-        note: 'No allowlist: every tool call goes through unprompted. Only inside a container you can throw away.',
+        labelOverride: 'Deny unlisted',
+        note: 'No allowlist, `dontAsk` alone: nothing prompts, and every call that would have asked is refused rather than run - the job finishes only work that needs no permission. True run-everything access is `--dangerously-skip-permissions`, and the permissions lesson’s warning about it stands.',
       },
     },
     footnote:

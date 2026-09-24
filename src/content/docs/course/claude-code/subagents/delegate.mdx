@@ -1,78 +1,78 @@
 ---
-title: Delegate a noisy investigation to a subagent with isolated context
-description: "Hand a scoped, high-volume task to a subagent: it reads, greps, and dumps in its own context window, then returns only the conclusion to your main thread."
-sidebar:
-  label: "Delegate · isolated context"
+title: Delegate the balance investigation to a subagent with its own context
+description: "Hand the zero-balance mystery to a subagent: it reads the route, the ledger, and the tests in its own window and returns the one-line disagreement."
 ---
 
-The ledger audit is exactly the kind of task that should never run in your main thread. It's high-volume - pages of grep output, dozens of files opened once and never referenced again - and self-contained: you don't need the journey, only the destination, the map of where the writes happen. That shape, *verbose work whose output you'll never look at again*, is the textbook case for delegating to a subagent.
+Some questions are one line wide and a dozen reads deep. Here is one, from a small Express plus TypeScript payments service this course uses as its example. `POST /payments` succeeds with a 201 and a completed payment. `GET /balance/:accountId` for the same account returns `{"balance":0}`, and keeps returning 0 after every further payment, for every account. The route handlers live in `src/index.ts`; the `Ledger` class that records money lives in `src/payments/ledger.ts` and exposes `append`, `balance`, and `history`. The six tests in `tests/payments.test.ts` and `tests/ledger.test.ts` all pass.
 
-## Just ask for it
+You could chase it yourself: open the route file, open the ledger, grep for every caller of `append` and `balance`, skim both test files. Every one of those reads would land in your **context window**, the finite space that holds your conversation and every tool result, and stay there after it stopped being useful. Work with that shape, high volume in and one conclusion out, is what a [subagent](/course/claude-code/subagents/) is for: a worker with its own context window that does the reading there and returns a summary to yours.
 
-There's no special command. You describe the work and say to use a subagent, and Claude spawns one:
+## Ask for the trace
 
-```text
-> use a subagent to map every place the payments code writes to the ledger,
-  and every test that covers those writes. return a table - write site,
-  the function, and the test files that exercise it.
-```
-
-What happens next is the whole point. The subagent starts with a **fresh, isolated context window** - it doesn't see your conversation history or the files you've already read; Claude writes it a delegation message describing the task, and it works from there. Then it goes to town in *its own* memory:
+There is no special command. Describe the work and say to use a subagent:
 
 ```text
-> use a subagent to map every place the payments code writes to the ledger...
-
-  ⏵ Agent (general-purpose)  mapping ledger writes
-     ⎿ Grep  "INSERT INTO ledger"  src/        → 14 hits
-     ⎿ Read  src/services/charge.js
-     ⎿ Read  src/services/refund.js
-     ⎿ Read  src/jobs/reconcile.js
-     ⎿ Read  src/webhooks/gateway.js
-     ⎿ Grep  "ledger" test/                     → 38 hits
-     ⎿ Read  test/charge.test.js
-     ⎿ ... 20 more reads
-  ⎿ Done (31 tool uses)
-
-  The subagent found four write sites:
-
-  | Write site            | Function            | Tests                          |
-  |-----------------------|---------------------|--------------------------------|
-  | charge path           | postCharge()        | test/charge.test.js            |
-  | refund path           | postRefund()        | test/refund.test.js            |
-  | nightly reconcile job | reconcileLedger()   | test/jobs/reconcile.test.js    |
-  | gateway webhook       | onSettlement()      | test/webhooks/gateway.test.js  |
-
-  The reconcile job's writes are not covered by any test.
+use a subagent to trace why GET /balance/:accountId returns 0 after
+successful payments. report the write path, the read path, and where
+they disagree. note which tests cover each, and which cover neither.
 ```
 
-Look at what landed in your conversation versus what didn't. The thirty-one tool calls - every grep result, every full file the subagent read - stayed in *its* context and were thrown away when it finished. What came back to your thread is the table and one sharp finding: the reconcile job is untested. You asked a sprawling question and got back a tight answer, and your main session is no heavier than if you'd typed that table yourself.
-
-## Why this protects the main context
-
-It helps to see the cost you avoided. Run that audit inline and your window fills with the raw material:
+The subagent always gets its own context window, but what initially enters that window depends on the session's subagent mode. A non-fork subagent starts fresh with the task Claude writes for it; in interactive fork mode, a spawned subagent can inherit the conversation so far while still doing subsequent work in its own window. Either way, its detailed tool results stay out of the main thread unless it reports them back. The run below illustrates the fresh, non-fork case; it is not captured. The tool counts are invented, while the files and finding match the example service described above:
 
 ```text
-in your main thread (inline)        in your main thread (delegated)
-────────────────────────────        ───────────────────────────────
-38 test-file greps                   "use a subagent to map ledger writes"
-24 full files read                   the 4-row table
-14 source-file greps                 "reconcile job is untested"
-the actual migration work…           the actual migration work…
-   ↑ buried under file dumps            ↑ still right there, in reach
+⏵ Agent (general-purpose)  tracing the zero balance
+   ⎿ Read  src/index.ts
+   ⎿ Grep  "ledger\."  src/                → 6 hits
+   ⎿ Read  src/payments/ledger.ts
+   ⎿ Read  tests/ledger.test.ts
+   ⎿ Grep  "balance"  src/ tests/          → 8 hits
+   ⎿ ...  a few more reads
+  ⎿ Done (11 tool uses)
+
+  The write path and the read path disagree on the account key.
+
+  - Write: POST /payments in src/index.ts calls
+    ledger.append(result.id, result.amount) - the entry is filed
+    under the payment's own UUID.
+  - Read: GET /balance/:accountId calls ledger.balance(accountId),
+    which counts only entries whose accountId matches the request.
+  - Every entry gets a fresh UUID no caller can predict, so every
+    real account sums to 0.
+
+  The Ledger class itself is sound: tests/ledger.test.ts calls
+  append("acct_1", 500) directly and passes. No test posts a payment
+  and then reads a balance, so nothing exercises the route wiring.
 ```
 
-Same answer, wildly different footprint. The migration you came here to plan is still the most recent, most prominent thing in your context - not pushed twenty file-reads into the past where the agent half-forgets it. This is the same context-as-a-resource discipline from the [Sessions & context](/course/claude-code/sessions-context/) chapter, but bought up front instead of reclaimed after the fact: rather than [compacting](/course/claude-code/sessions-context/compact/) the noise away once it's accumulated, you arrange for it never to enter the thread at all.
+Count what never entered your thread. Eleven tool calls, every grep hit, three files fully read, all of it lived in the subagent's window and was discarded when it finished. What landed in your conversation is the finding: the route files payments under their UUIDs, the balance route reads by account id, and no test connects the two. You asked a sprawling question and received a tight answer.
 
-The docs put the rule plainly: reach for a subagent when *a side task would flood your main conversation with search results, logs, or file contents you won't reference again* - see [isolate high-volume operations](https://code.claude.com/docs/en/sub-agents#isolate-high-volume-operations) for the canonical framing. Running the test suite, fetching documentation, chewing through log files - anything where you want the verdict and not the transcript.
+## The footprint you did not pay
 
-## When to keep it in the main thread instead
+The cost is worth seeing side by side. The transcript above is illustrative, but the columns list what an inline run of the same investigation would put in your window:
 
-Delegation isn't free, and the docs are explicit about the other side. Keep the work in your main conversation when it needs frequent back-and-forth, when several phases share real context - planning into implementation into testing - or when it's a quick, targeted change where spinning up a fresh agent that has to re-gather context just adds latency. The current guidance lives at [choose between subagents and main conversation](https://code.claude.com/docs/en/sub-agents#choose-between-subagents-and-main-conversation).
+```text
+inline, in your window               delegated, in your window
+----------------------------------   ----------------------------------
+src/index.ts, fully read             the prompt above
+src/payments/ledger.ts, fully read   the finding above
+tests/ledger.test.ts, fully read
+grep output for append and balance
+the route fix you are about to plan  the route fix you are about to plan
+   ↑ buried under the reads             ↑ still the nearest thing in context
+```
 
-The test is the same one from delegation everywhere: *would I hand this to someone, get back a paragraph, and be happy?* The ledger audit, yes - you want the map, not the reading. A delicate refactor you'll be steering line by line, no - the context the subagent throws away is exactly the context you need.
+Same answer, different footprint. The fix you are about to make stays the most prominent thing in your context instead of being pushed several file-reads into the past. This is the context-as-a-resource discipline from [Sessions & context](/course/claude-code/sessions-context/), bought up front: rather than [compacting](/course/claude-code/sessions-context/compact/) the noise away after it accumulates, you arrange for it never to enter the thread.
+
+The docs state the rule in those terms: reach for a subagent when a side task would flood your main conversation with search results, logs, or file contents you will not reference again. See [isolate high-volume operations](https://code.claude.com/docs/en/sub-agents#isolate-high-volume-operations).
+
+## When the main thread is the right place
+
+Delegation has a cost, and the docs are explicit about the other side. Keep work in your main conversation when it needs frequent back-and-forth, when phases share real context (planning into implementation into testing), or when it is a quick, targeted change for which a fresh agent would re-gather what you already hold. The current guidance lives at [choose between subagents and main conversation](https://code.claude.com/docs/en/sub-agents#choose-between-subagents-and-main-conversation).
+
+The test is the one delegation always asks: would you hand this to a colleague, get back a paragraph, and be satisfied? The zero-balance trace passes; you wanted the disagreement, not the reading. The fix itself fails it in the other direction: it is one line in a route you now understand, and the context a subagent would throw away is exactly the context the fix needs.
 
 :::tip[Try it]
-Ask Claude to investigate a noisy question inline (e.g., "find every place we handle date formatting"). Then ask the same question but say "delegate this to a subagent." Compare how clean your main conversation stays in each case.
+In one session - the companion payments checkout ([the getting-started chapter](/course/claude-code/getting-started/) describes where it comes from) or any repo of yours with a puzzling behavior - ask the noisy question inline: "why does GET /balance return 0 after successful payments?" Watch the reads land in your window. Then ask the same question prefixed with "use a subagent to trace" and compare what each version leaves behind.
 :::
 
-One subagent gave you a clean map of four write sites. But notice they're *independent* - the charge path, the refund path, the reconcile job, and the webhook don't depend on each other. When a problem splits cleanly like that, one worker grinding through them in sequence is leaving speed on the table. [Next we fan the work out](/course/claude-code/subagents/fan-out/).
+One subagent answered one question. Before you fix that line, the surrounding ground deserves an audit: test coverage, idempotency, the rate limiter, the fee math. Those four questions do not depend on each other, which is the condition for running them at once. [Next we fan them out](/course/claude-code/subagents/fan-out/).

@@ -1,18 +1,17 @@
 ---
 title: Ship it to your team through a marketplace
-description: "Get the payments kit onto your team's machines - publish it to a marketplace and the whole setup installs for anyone in one command."
-sidebar:
-  label: "Plugins · marketplace & ship"
+description: "Get the payments kit onto your team's machines - publish it to a marketplace they add once, and the whole setup installs for anyone in one command."
 ---
 
-The plugin runs on your machine from a `--plugin-dir` flag. To get it onto your team's machines you need one more layer: a **marketplace** - a catalog that lists one or more plugins and tells Claude Code where to fetch each one. Your teammates add the marketplace once, and from then on they install and update plugins from it by name. For a team, the marketplace is the difference between "here's a folder, good luck wiring it in" and "run one command, you're set up."
+Suppose you have a **plugin** - a directory bundling skills, agents, hooks, and MCP servers into one installable unit, with a manifest at `.claude-plugin/plugin.json` - and it runs on your machine from `claude --plugin-dir ./payments-kit`. The example here is `payments-kit`, built for the small TypeScript payments service this course uses: two MCP servers, `db` and `jira`, for a constructed team's database and ticket board, a `PreToolUse` hook, `ledger-needs-test`, that refuses ledger commits without a test, a `finish-pr` skill, and a `ledger-auditor` subagent. [The bundle lesson](/course/claude-code/extending/plugins-bundle/) assembles it.
+
+To get it onto your team's machines you need one more layer: a **marketplace** - a catalog that lists one or more plugins and tells Claude Code where to fetch each one. Your teammates add the marketplace once, then install and update plugins from it by name. For a team, that is the difference between "here's a folder, good luck wiring it in" and "run one command, you're set up."
 
 ## The catalog file
 
 A marketplace is itself just a file in a git repo: **`.claude-plugin/marketplace.json`** at the repo root. It names the marketplace and lists the plugins it offers, each with a `source` saying where the plugin directory lives:
 
 ```jsonc
-// .claude-plugin/marketplace.json
 {
   "name": "payments-team",
   "owner": {
@@ -22,35 +21,39 @@ A marketplace is itself just a file in a git repo: **`.claude-plugin/marketplace
     {
       "name": "payments-kit",
       "source": "./plugins/payments-kit",
-      "description": "Database + Jira reach, the ledger gate, and the PR ritual"
+      "description": "Database + board reach, the ledger gate, and the wrap-up ritual"
     }
   ]
 }
 ```
 
-Here `source` is a relative path because the plugin lives in the same repo as the catalog - the common case for a team that keeps its tooling in one place. A `source` can also point at a separate GitHub repo when a plugin is maintained elsewhere. The full schema is on the [marketplace docs page](https://code.claude.com/docs/en/plugin-marketplaces).
+The `name` and `owner` identify the marketplace; each plugin entry needs a `name` and a `source`. Here `source` is a relative path because the plugin lives in the same repo as the catalog - you moved the `payments-kit` directory into this repo, to `plugins/payments-kit` in the example above - the common case for a team that keeps its tooling in one place. A `source` can also point at a separate GitHub repo, a plain git URL, an npm package, or a zip archive. The full schema is on the [marketplace reference](https://code.claude.com/docs/en/plugin-marketplaces).
 
-Hosting is nothing exotic: push the repo to GitHub (or any git host) and the marketplace is live. There's no registry to register with, no build step. The catalog *is* the repo.
+Hosting is nothing exotic. Push the repo to GitHub or any git host - in the example the repo is `payments-team/payments-tooling` - and the marketplace is live: there is no registry to register with and no build step. The catalog *is* the repo.
 
-## The hand-off
+## Two commands for the new engineer
 
-Now the payoff - what a new engineer actually does. They add your marketplace once and install the kit:
+Now the payoff - what someone joining the payments team actually does. They add your marketplace once and install the kit:
 
 ```text
 /plugin marketplace add payments-team/payments-tooling
 /plugin install payments-kit@payments-team
 ```
 
-The first command points Claude Code at your repo (here by its `owner/repo` shorthand). The second installs the plugin from it, namespaced by the marketplace so it's unambiguous. And with that single install, everything you built across this whole course lands on their machine at once: the database and Jira MCP servers, the `ledger-needs-test` gate, the PR-ritual skill - all wired, all versioned. They didn't copy a single file or read your `settings.json`. They ran two commands.
+The first command points Claude Code at your repo, here by its `owner/repo` shorthand; a full git URL works too. The second installs the plugin from it, namespaced by the marketplace so the target is unambiguous. If they would rather look before installing, `/plugin` opens the browsing interface over everything the marketplace offers.
 
-When you improve the kit - tighten the gate, add a server - you bump the plugin's `version` and push. Your team refreshes marketplace sources with `/plugin marketplace update`, then uses `/plugin update` or the configured auto-update behavior for installed plugins. The setup stays in sync across everyone without anyone hand-merging config. A team that shares a marketplace converges on one agent configuration the way it converges on one set of lint rules: by reference, not by copy.
+With that single install, the whole kit lands on their machine at once: the `db` and `jira` MCP servers, the `ledger-needs-test` gate, the `finish-pr` skill, the `ledger-auditor` subagent - wired and versioned. They copied no files and read no `settings.json`. They ran two commands.
 
-That's the chapter. You took an agent that could only act on what it could already reach and gave it three things: **reach** into external systems via MCP, a **deterministic gate** via hooks, and a way to **ship the whole setup** as one installable plugin. Reach, gate, ship - the three ways you extend Claude Code past its defaults.
+## Updates by version bump
 
-## Where this goes next
+You improve the kit - tighten the gate's grep, add a server - and ship it the same way you ship code. Bump `version` in `plugin.json` and push: that string pins updates, so installed users pick up the new release when it changes. Your teammates run `/plugin marketplace update` to refresh the catalog and `/plugin update` to pull the release; a background refresh also notices new marketplace commits on its own and swaps the new catalog in. That refresh updates the catalog, not necessarily the installed plugin - auto-updating installed plugins is a separate setting on each machine - so for a release that matters, say so and have the team run `/plugin update`.
 
-Look back at the ledger hook - the gate that fires *regardless of what the model decides, with nobody in the loop*. At a terminal, with you watching every step, that property is a nice safety net. But it was built for a situation you haven't hit yet: running Claude Code with **nobody watching at all**.
+The setup stays in sync without anyone hand-merging config. A team that shares a marketplace converges on one agent configuration the way it converges on one set of lint rules: by reference, not by copy.
 
-Everything in this course so far assumed you're sitting there - approving an edit, reading a plan, reacting to a blocked commit. The next chapter drops that assumption entirely. **[Automation](/course/claude-code/automation/)** is Claude Code running headless: in a CI pipeline, wired into GitHub, kicked off by an event instead of a person. And when there's no human in the loop, the deterministic gates and scoped permissions you just learned stop being convenience features and become the only thing standing between the agent and a production mistake. The kit you just built is exactly what makes running unattended safe.
+That is the chapter. An agent that could only act on what it could already reach now has three things: **reach** into external systems via MCP, a **gate** the model cannot talk past via a command hook, and a way to **ship** the whole setup as one installable plugin. Reach, gate, ship - the three ways this chapter extended Claude Code past its defaults.
 
-Continue to [Automation](/course/claude-code/automation/).
+## The shipped gate is what makes unattended runs safe
+
+Look at the ledger gate once more - the wall that fires with nobody in the loop. At a terminal, with you watching every step, that property is a safety net. Its real job is a situation this chapter has not covered: running Claude Code with **nobody watching at all**.
+
+Everything here assumed you were there - approving an edit, reacting to a blocked commit. **[Automation](/course/claude-code/automation/)** drops that assumption: Claude Code running headless, in a CI pipeline, wired into GitHub, kicked off by an event instead of a person. The moment no human can answer a prompt, hooks and scoped permissions - the course's **control** layer - are what stand between the agent and a production mistake. A gate shipped in a plugin is a gate every unattended run carries.

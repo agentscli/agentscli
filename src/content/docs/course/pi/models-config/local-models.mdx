@@ -1,26 +1,25 @@
 ---
 title: Run a model on your own machine
-description: "Ollama is a first-class option in models.json, not a workaround. The honest version: real speed numbers, a real context ceiling, and where it earns its keep."
-sidebar:
-  label: "local-models · off the meter"
+description: "Ollama is a first-class option in models.json, not a workaround. The honest version: real speed facts, a real context ceiling, and where it earns its keep."
 ---
 
 The cheap-hosted-model trick from the last lesson still bills per token, even if the bill is small. There's a cheaper corner than that: a model running on hardware you already own, answering for the cost of electricity. Pi supports this the same way it supports every other provider - through `models.json` - because local inference servers like Ollama speak (approximately) the same OpenAI-compatible API shape as everything else Pi already talks to.
 
-**Here's the spoiler, and it's one you can check on your own machine in under a minute:** open a real stash session, do two or three ordinary prompts (read a file, run a command, ask a question), then run `/session` and look at the context total. That number is almost certainly bigger than you'd guess for "two or three prompts." Hold it against a local model's `contextWindow` further down this lesson, and the honest ceiling on local models stops being an abstract caution and starts being a number you already have.
+**Here's the spoiler, and it's one you can check on your own machine in under a minute:** open a real session in `stash` (the feed-reader project this course follows; any repo of your own works as well), do two or three ordinary prompts (read a file, run a command, ask a question), then run `/session` and look at the context total. That number is almost certainly bigger than you'd guess for "two or three prompts."
+
+Hold it against a local model's `contextWindow` further down this lesson, and the honest ceiling on local models stops being an abstract caution and starts being a number you already have.
 
 ## Pointing Pi at a local model
 
-The mechanism is the same file you were just in, with an entry for the endpoint your local server exposes and a `compat` block for the parts of the OpenAI API shape it doesn't fully implement:
+The mechanism is the same file you were just in - `~/.pi/agent/models.json` - with an entry for the endpoint your local server exposes and a `compat` block for the parts of the OpenAI API shape it doesn't fully implement. (No server yet? [Install Ollama](https://ollama.com/) for the smoothest path, run `ollama serve`, and pull a small coder model with `ollama pull <model>` - its endpoint then answers on the port below.)
 
 ```json
-// ~/.pi/agent/models.json
 {
   "providers": {
     "local-ollama": {
       "baseUrl": "http://localhost:11434/v1",
       "api": "openai-completions",
-      "apiKey": "not-needed",
+      "apiKey": "ollama",
       "models": [
         { "id": "qwen3.5-coder", "name": "Qwen3.5 (local)", "contextWindow": 32000 }
       ],
@@ -34,7 +33,9 @@ The mechanism is the same file you were just in, with an entry for the endpoint 
 }
 ```
 
-`compat` exists precisely because self-hosted servers - Ollama, LM Studio, vLLM - only partially implement the OpenAI shape; without it Pi will assume capabilities the local server doesn't actually have and the session will misbehave in small, confusing ways. Set `contextWindow` honestly too, because the next section is about why "honestly" matters more than it sounds like it should.
+`compat` exists precisely because self-hosted servers - Ollama, LM Studio, vLLM - only partially implement the OpenAI shape; without it Pi will assume capabilities the local server doesn't actually have and the session will misbehave in small, confusing ways. `supportsReasoningEffort: false` also means the thinking-level dial is not transmitted to this provider at all. Be precise about why the cost math below holds regardless: the cost is zero because nothing is metered, not because the dial is dropped - a thinking-capable local model can still produce reasoning output in its completion (Ollama exposes its own control for that), which you pay for in this page's other currency, wall-clock time. The `apiKey` there is a placeholder, not a credential: Ollama ignores it, but Pi treats a model as unauthenticated until its provider has some key, so keyless local servers keep a dummy value on purpose.
+
+Set `contextWindow` honestly too, because the next section is about why "honestly" matters more than it sounds like it should.
 
 ## The speed facts worth knowing before you commit to this
 
@@ -50,21 +51,23 @@ As a usable-speed heuristic: in our testing, there's a real split between a deco
 
 ## Trace the same four rows through it
 
-Same shared sweep as the last lesson: four rows off the re-extraction backlog, one HTTP fetch and one parse each. Route it to the local model and the cost side of the ledger is trivial - there's no per-token price to multiply by anything, so the toy accounting from the last lesson collapses to a flat **0, at any thinking level, on any of the four rows.** That's not a rounding win over the cheap hosted model from the last lesson, it's a different axis entirely: nothing is metered.
+Same shared sweep as the last lesson: four rows off the re-extraction backlog, one fetch and one parse each. Route it to the local model - selecting it is the ordinary dial work from the top of this module: `/model` lists it as soon as the file reloads (every `/model` open re-reads `models.json`), or a `defaultModel` setting routes it persistently - and the cost side collapses - there's no per-token price to multiply by anything, so the toy accounting from the last lesson flattens to a flat **0, at any thinking level, on any of the four rows.** That's not a rounding win over the cheap hosted model from the last lesson, it's a different axis entirely: nothing is metered.
 
-The trap is thinking "0" is the whole story. It isn't. Route the *other* task - the extractor redesign, several files and a genuine branch to reason through - to the same local model, and the constraint that shows up isn't price. It's room.
+The trap is thinking "0" is the whole story. It isn't. Route the *other* task - the `fetch_feed` hardening, a real design branch in `stash/feeds.py` to reason through - to the same local model, and the constraint that shows up isn't price. It's room.
 
 ## The real ceiling: context, not raw intelligence
 
 This is the fact that should actually change how you use a local model on stash. An advertised context window - `32000` in the example above - is a capability ceiling, not a guarantee of useful speed or accuracy. As prompts grow, prefill time, memory pressure, and answer quality depend on the exact model, quantization, runtime, and hardware. Benchmark your own model and hardware rather than planning around a fixed fraction of the spec-sheet number.
 
-Hold that ceiling against the spoiler at the top of this lesson: a real stash session's context total, two or three prompts in, is bigger than most people guess before they've measured it. That's not a local-model-specific problem - it's the same context-window math this whole course keeps returning to - but it means a local model's usable ceiling arrives almost immediately in real use, not after an afternoon of work. Point Pi's local model at the extractor redesign from the last lesson - the one with several files and a genuine design decision to reason through - and you're likely to cross that ceiling before it's finished reasoning. Point it at re-extracting *one* saved URL at a time - read the row, fetch the page, re-run the extractor, write the result, done - and each row stays well inside the four-row sweep's trivial footprint, which is exactly why the sweep traced to 0 above and the redesign doesn't.
+Hold that ceiling against the spoiler at the top of this lesson: a real stash session's context total, two or three prompts in, is bigger than most people guess before they've measured it. That's not a local-model-specific problem - it's the same context-window math this whole course keeps returning to - but it means a local model's usable ceiling arrives almost immediately in real use, not after an afternoon of work.
+
+Point Pi's local model at the `fetch_feed` hardening from the last lesson - the one with a genuine design decision to reason through - and you're likely to cross that ceiling before it's finished reasoning. One more limiter the page's checks cannot see: the local server has its own context-length setting (Ollama's defaults to a few thousand tokens, historically 2048 or 4096) that can bind far below your declared `contextWindow` - and it is changed server-side, not in `models.json`. When it binds, the server silently clips the oldest input, which is precisely the confident-truncation failure the table below names. Point it at re-syncing *one* row at a time - fetch the feed, parse it, upsert the row, done - and each row stays well inside the four-row sweep's trivial footprint, which is exactly why the sweep stays viable on a local model and the hardening runs out of room.
 
 **Self-test, not a spec-sheet number:** the next two stash prompts you actually run, hosted or local, check `/session` afterward. Compare that context total to the `contextWindow` value you set for your local model in `models.json`. However close the two numbers already are, that's your real ceiling, not the one on the model's marketing page.
 
 A local 7B model may be perfectly usable for micro tasks and painfully slow for multi-file work; throughput varies too much by hardware, quantization, runtime, and prompt length to promise a single tokens-per-second figure. The cost is zero, but the time cost is real.
 
-That's the honest scope for local models on stash right now: **micro agent tasks** - small, bounded, low-stakes work, ideally one file or one row at a time - not a wholesale replacement for a frontier model doing multi-file, multi-hour agentic work. RAM is the other hard constraint worth naming plainly: if the model doesn't fit in memory, it doesn't run, full stop - that's a ceiling before you ever get to a speed or accuracy question.
+That's the honest scope for local models on stash right now: **micro agent tasks** - small, bounded, low-stakes work, ideally one file or one row at a time - not a wholesale replacement for a frontier model doing multi-file, multi-hour agentic work. RAM is the other hard constraint worth naming plainly: if the model doesn't fit in memory, treat it as unrunnable: past RAM it decays to swap-bound speeds that make it useless - a ceiling before you ever get to a speed or accuracy question.
 
 ## Which of the three to reach for
 
@@ -72,30 +75,34 @@ Three stops now traced on the same sweep - a hosted cheap model at the matched c
 
 | Option | Cost on a mechanical sweep | The ceiling | What it costs when it's wrong |
 |---|---|---|---|
-| Hosted, cheap model, low thinking | Small and metered - the matched corner from the last lesson | A hosted context window, usually generous, billed per token past it | A batch of bad rows - cheap to redo at the same corner |
-| Local model | 0, traced above - genuinely off the meter | Your hardware and the model's declared `contextWindow`, whichever binds first; check yours with `/session` | A session that quietly runs out of room mid-task and hands back a confident, truncated answer instead of an error |
-| Hosted, frontier model, high thinking | Highest, by the 15x from the last lesson - and it doesn't buy anything on mechanical rows | The largest windows available; usually not what you hit first | The most expensive kind of wrong: a design mistake, reasoned about carefully, shipped at full price |
+| Hosted, cheap model, low thinking | Small and metered - the matched corner from the last lesson | A hosted context window, usually generous, and metered: every token you send inside it is billed | A batch of bad rows - cheap to redo at the same corner |
+| Local model | 0, traced above - genuinely off the meter | Your hardware, the server's own context-length setting, and the model's declared `contextWindow`, whichever binds first; check yours with `/session` and against the server's setting | A session that quietly runs out of room mid-task and hands back a confident, truncated answer instead of an error |
+| Hosted, frontier model, high thinking | Highest - many times the cheap corner's cost, [as the routing lesson traced](/course/pi/models-config/routing/) - and it doesn't buy anything on mechanical rows | The largest windows available; usually not what you hit first | The most expensive kind of wrong: a design mistake, reasoned about carefully, shipped at full price |
 
-Reach for the cheap hosted model when the work is mechanical and repeats. Reach for local when the work is mechanical, small, and you'd rather not meter it at all - one row, one file, one bounded check. Reach for the frontier model when the work has a real branch in it, because a wrong call there costs more than any of the corners above, cheap or local. None of the three replaces the other two; that's the point of tracing all three on the same task instead of picking a favorite.
+Reach for the cheap hosted model when the work is mechanical and repeats. Reach for local when the work is mechanical, small, and you'd rather not meter it at all - one row, one file, one bounded check. Reach for the frontier model when the work has a real branch in it, because a wrong call there costs more than any of the corners above, cheap or local.
+
+None of the three replaces the other two; that's the point of tracing all three on the same task instead of picking a favorite.
 
 ## The trade-off, named honestly
 
-People who've actually lived with a fully local Pi setup for a while have landed on a name for what you're signing up for: **the spaceship problem.** Pi's minimalism strips out the vendor bloat, which is exactly what makes a bespoke local setup possible - but every piece of reliability a bigger, more opinionated tool would have handled for you (retry behavior, sane defaults for a flaky local server, a plan mode you might've wanted) is now yours to build and maintain. That's a fair trade for someone treating their harness as a sandbox for developer agency. It's a bad trade if what you actually wanted was to plug in a model and never think about it again. Go in knowing which one you are.
+Pi's own author gave the incumbent shape of this trade its name, in [the essay quoted at the top of this module's reasoning](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/): the big agents have "turned into a spaceship with 80% of functionality I have no use for." Call the local-setup version **the spaceship problem**: Pi's minimalism strips out the vendor bloat, which is exactly what makes a bespoke local setup possible - but every piece of reliability a bigger, more opinionated tool would have handled for you (retry behavior, sane defaults for a flaky local server, a plan mode you might've wanted) is now yours to build and maintain. Your ship, your ground crew.
+
+That's a fair trade for someone treating their harness as a sandbox for developer agency. It's a bad trade if what you actually wanted was to plug in a model and never think about it again. Go in knowing which one you are.
 
 :::caution[Local doesn't need the ToS caution - the temptation it replaces does]
 None of this touches the [Anthropic subscription caution](/course/pi/getting-started/auth/) directly - a model on your own machine has no subscription to misuse. But it's worth naming the connection: local models and cheap hosted models exist for the same reason people reach for "just use my Claude subscription" in the first place - the desire to route grunt work somewhere that doesn't bill per token. Local is the version of that instinct with no provider subscription policy in the loop.
 :::
 
-**One more boundary worth naming, since it's the last honest thing this module owes you: everything in this module is a dial you turn yourself.** You picked the model, you picked the thinking level, per task, by hand, in `settings.json`, `/model`, or `Ctrl+P`. Pi's core doesn't study a prompt and pick a cheaper model for you automatically - that's consistent with the minimal-core design this whole course keeps naming, not an oversight. The gap is real enough that the community built an extension for it: a third-party package (nicknamed Downshift in the Pi extension gallery) that auto-downgrades to a cheaper model as context grows, precisely because the core product leaves that decision to you. Which is itself worth sitting with for a moment before the next module: routing yourself, task by task, is real leverage right up until the number of tasks makes doing it by hand tedious - and "write the routing rule once, as code, instead of deciding it every time" is exactly the shape of problem an extension exists to solve.
+**One more boundary worth naming, since it's the last honest thing this module owes you: everything in this module is a dial you turn yourself.** You picked the model, you picked the thinking level, per task, by hand, in `settings.json`, `/model`, or `Ctrl+P`. Pi's core doesn't study a prompt and pick a cheaper model for you automatically - that's consistent with the minimal-core design this whole course keeps naming, not an oversight.
+
+The gap is real enough that the community built an extension for it: a third-party package in the Pi package gallery, `pi-downshift`, that switches from your premium model to an economy model when context gets expensive - precisely because the core product leaves that decision to you.
+
+Which is worth sitting with for a moment before the next module: routing yourself, task by task, is real leverage right up until the number of tasks makes doing it by hand tedious - and "write the routing rule once, as code, instead of deciding it every time" is exactly the shape of problem an extension exists to solve.
 
 ## Where this leaves the module
 
-You've now got every lever config gives you: two `settings.json` files and where each one wins, a model and a thinking level you route per task instead of pinning once, and - for the right kind of small, bounded work - a model that costs nothing per token because it never leaves your machine. Add those to the ledger this course has been keeping since module 2:
+You've now got every lever config gives you: two `settings.json` files and where each one wins, a model and a thinking level you route per task instead of pinning once, and - for the right kind of small, bounded work - a model that costs nothing per token because it never leaves your machine.
 
-| Layer | What it costs | What it buys | Who decided |
-|---|---|---|---|
-| Model tier, per task (`defaultModel`, `/model`, `Ctrl+P`) | Token price scales with tier; the wrong tier on mechanical work multiplies cost for nothing bought | Removes the failure of paying frontier prices for rows with nothing to reason about | You |
-| Thinking depth, per task (`defaultThinkingLevel`, `Shift+Tab`) | Reasoning tokens, billed at the model's rate, spent even where there's nothing to reason about | Removes the failure of a shallow pass at a task that actually forks | You |
-| Local model (`models.json` entry, honest `contextWindow`) | Zero per token, in exchange for a hard context ceiling and a wall-clock cost you now own | Removes the failure of metering bounded, low-stakes work at all - inside the ceiling, never past it | You (and your hardware) |
+Run the who-decided question over them (for each lever: did a fixed default set this cost, or did you?) and notice the flip: unlike the fixed costs that shipped with Pi, every one of these is **you**. The model tier you pick per task (`defaultModel`, `/model`, `Ctrl+P`) either multiplies cost for nothing bought on mechanical work or removes the failure of paying frontier prices for rows with nothing to reason about. The thinking depth you set (`defaultThinkingLevel`, `Shift+Tab`) spends reasoning tokens even where there's nothing to reason about, or prevents a shallow pass at a task that actually forks. The local model entry in `models.json` costs zero per token in exchange for a hard context ceiling and a wall-clock cost you own. Nothing in this module routes itself - which is the leverage, and also its limit: it's still just configuration. Nothing you've done here taught Pi a new *move* - a command that lists the backlog rows still needing attention, a tool that re-runs one feed's sync.
 
-Three rows, and every one of them says **You** in the last column, because nothing in this module routes itself. That's real leverage, and it's still just configuration. Nothing you've done in this module taught Pi a new *move* - a re-extraction command it doesn't have, a check it doesn't know how to run. The cheap model handled the sweep, but only because the instructions were tight enough that there was nothing left to interpret: read the row, fetch, parse, write. Hand a cheap model anything looser and it needs *more* precision from you, not less - precision you don't want to retype into the prompt bar every single time stash's backlog produces another one of these chores. [Time to build one](/course/pi/first-extension/).
+The cheap model handled the sweep, but only because the instructions were tight enough that there was nothing left to interpret: read the row, fetch, parse, write. Hand a cheap model anything looser and it needs *more* precision from you, not less - precision you don't want to retype into the prompt bar every single time stash's backlog produces another one of these chores. [Time to build one](/course/pi/first-extension/).

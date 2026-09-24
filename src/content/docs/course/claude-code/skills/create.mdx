@@ -1,44 +1,29 @@
 ---
 title: Write a repeated procedure as a SKILL.md the agent can run
-description: "A skill is a folder with a SKILL.md inside - YAML frontmatter saying when to use it, a markdown body saying what to do. Build the PR-ritual skill end to end."
-sidebar:
-  label: "Create · SKILL.md"
+description: "A skill is a folder with a SKILL.md inside - YAML frontmatter saying when to use it, a markdown body saying what to do. Build the payments repo's wrap-up skill end to end."
 ---
 
 import SkillAnatomy from '../../../../../components/interactive/SkillAnatomy.tsx';
 
-You've decided the four-step wrap-up ritual is worth writing down. Good instinct - the test for "this should be a skill" is exactly the one you just applied: *you keep re-typing the same multi-step procedure into the chat.* That's the signal. Let's turn it into a file the agent can follow without you in the loop.
+A skill is a folder with a `SKILL.md` file inside it: YAML frontmatter that says when the skill applies, and a markdown body that says what to do. Claude Code keeps a listing of skill names and descriptions in context - descriptions can shorten or drop under a budget - and loads a body only when the skill is invoked, so a procedure you repeat is cheap to keep on the shelf. This lesson writes one from scratch.
 
-## A skill is a directory, not a line of config
+The procedure is the branch wrap-up in a small TypeScript payments service (the example this course returns to; the facts you need are here). Its `CLAUDE.md` - the instruction file Claude Code reads from the repo - sets three testing rules: run tests with `npm test`, never commit without passing tests, every bug fix must include a regression test. Its `package.json` supplies `lint` (`eslint src/ --ext .ts`) and `build` (`tsc`, in strict mode). Those four moves - tests, regression check, lint, build - are the ritual you would otherwise narrate at the end of every task.
 
-A skill isn't a setting you toggle. It's a folder on disk with one required file inside it: `SKILL.md`. The folder's name becomes the skill's name, and the `SKILL.md` is the entrypoint the agent reads. For a skill you want available in *this* project only, it lives in the repo under `.claude/skills/`:
+Make the folder first, inside the repo, so the skill is a property of the project rather than of your machine:
 
 ```text
-payments/
-└── .claude/
-    └── skills/
-        └── finish-pr/
-            └── SKILL.md
+mkdir -p .claude/skills/finish-pr
 ```
 
-That `finish-pr` directory name is the command name too - if you ever want to run it by hand you'd type `/finish-pr`. Where the folder lives decides who gets the skill: `.claude/skills/` in the repo means everyone who clones the payments service has it; `~/.claude/skills/` in your home directory would make it personal, available across all your projects but yours alone. Since the PR ritual is a property of *this codebase*, it belongs in the repo, where it gets committed and shared like any other project file. The full set of locations and their precedence is on the [skills page](https://code.claude.com/docs/en/skills).
+The name matters twice. The folder name is the skill's name, and it is also the command name - typing `/finish-pr` later runs this skill directly. Where the folder lives decides who gets it: `.claude/skills/` in the repo means everyone who clones the payments service has it, carried by `git` like any other project file; `~/.claude/skills/` would make it personal, available in all your projects but yours alone. The full locations table is in the [skills documentation](https://code.claude.com/docs/en/skills). This ritual belongs to this codebase, so it belongs in the repo.
+
+## Two halves, two jobs
+
+Every `SKILL.md` is the same two parts, and they do completely different jobs. The frontmatter between the `---` markers is the label on the outside of the box: the agent reads it to decide whether to open the skill at all. The body is what is inside - instructions that load only once the skill fires. Here is the whole file for the ritual - create it at `.claude/skills/finish-pr/SKILL.md`. It is a proposal for you to write, not a file the companion repo ships:
 
 ```text
-> mkdir -p .claude/skills/finish-pr
-```
-
-## The two halves of SKILL.md
-
-Every `SKILL.md` has two parts. YAML frontmatter between `---` markers, and a markdown body below it. They do completely different jobs, and keeping that distinction straight is the whole skill of writing skills:
-
-- **Frontmatter** is the *label on the outside of the box.* The agent reads it to decide *whether* to open the skill at all. The one field that matters here is `description` - it's what the agent matches your request against.
-- **Body** is *what's inside the box.* It only loads once the skill actually fires. This is where the procedure lives: the actual steps.
-
-Here's the whole thing for our ritual:
-
-```text
-// .claude/skills/finish-pr/SKILL.md
 ---
+name: finish-pr
 description: >-
   Run the standard wrap-up checks before opening a pull request on the
   payments service. Use when the user says a change is done, is ready to
@@ -48,51 +33,59 @@ description: >-
 Run these four steps in order before this branch is opened as a PR.
 Stop and report if any step fails - do not continue past a failure.
 
-1. Run the test suite with `npm test`. All tests must pass.
-2. Regenerate the API snapshot with `npm run snapshot`. If it changed,
-   the contract changed - call that out explicitly in your summary.
-3. Add a changelog entry. Read the staged diff, write one line in the
-   present tense under the "Unreleased" heading in CHANGELOG.md.
-4. Check formatting with `npm run format:check`. If it reports issues,
-   run `npm run format` to fix them.
+1. Run the test suite with `npm test`. All tests must pass - CLAUDE.md
+   is explicit: never commit without passing tests.
+2. If this branch fixes a bug, name the test that proves it. If you
+   cannot name one, stop and report - every bug fix must include a
+   regression test.
+3. Run `npm run lint`. If it reports issues, fix them and run it again.
+4. Run `npm run build` and confirm it compiles. TypeScript is strict
+   here, so this is the check that catches code no test exercises.
 
 When all four pass, summarize what each step did and flag anything the
-reviewer should look at - especially a changed API snapshot.
+reviewer should look at.
 ```
 
-The `description` is doing the heavy lifting: it names the *situation* ("a change is done… ready to open or push a PR") rather than just the action. That phrasing is what the agent will pattern-match against when you say "I think this is ready" - we'll tune it deliberately in the [next lesson](/course/claude-code/skills/trigger/). For now, notice it's the one field you should always write; everything else about a skill is optional. The agent uses `description` to decide when to apply the skill, so an empty or vague one is the single most common reason a skill never fires.
+The `description` names the *situation* - a change is done, a branch is ready to wrap up - not the mechanism. You would never type *finish a pull request* in those words, but you say *I think this is ready* constantly, and the agent matches your phrasing against this field. Leave `description` out entirely and Claude Code falls back to the first non-empty line of the body, which is almost never a trigger; the [trigger lesson](/course/claude-code/skills/trigger/) tunes the field deliberately.
+
+That is the entire contract: one directory, one file, frontmatter for *when*, body for *what*. The anatomy below maps the parts of a `SKILL.md` and shows which keys the other agent tools honor. Claude Code treats `name` as optional and defaults it to the folder name; several of the other tools in that anatomy require it, so the file states it outright and stays portable across all of them.
 
 <SkillAnatomy client:visible />
 
-## Keep the body a procedure, not an essay
+## A body that stops on failure
 
-The body is a set of standing instructions, and once a skill fires its content stays in the conversation for the rest of the session - so every line is a recurring cost. Write it the way you'd write the rules file: *state what to do, skip the why.* Numbered steps, exact commands, clear failure behavior. No narration about why the snapshot matters or how the changelog is formatted historically - just the four moves, in order, with the one rule that matters (*stop on failure*) stated once.
+The body is standing instructions, and once a skill fires its content stays in the conversation for the rest of the session - every line is a recurring cost, so state what to do and skip the why. Two lines in this body are doing more than they appear to:
 
-Two details in that body are worth seeing for what they are:
+- **Stop and report if any step fails.** A human running a wrap-up has an instinct for *obviously don't open a PR over a red suite*; the agent has only what is written. The guardrail is one line to write and impossible to improvise - an instruction the agent follows, not a gate that enforces it.
+- **Name the test that proves it.** Step two is not a command - it is the repo's own rule, every bug fix must include a regression test, turned into a demand the agent must answer before it can claim the branch is done. A skill can carry judgment, not only commands.
 
-- **The "stop and report if any step fails" line.** A procedure run by a human has an implicit "obviously don't push if tests are red." The agent has no such instinct unless you write it. Bake the guardrails into the body; a skill is only as safe as its instructions.
-- **The explicit "call that out" on the snapshot step.** The ritual isn't just *run four commands* - it's *run them and tell me what a reviewer needs to know.* A skill can carry judgment, not only commands.
+Notice what the four steps are: `npm test`, a regression-test check, `npm run lint`, `npm run build`. They map one to one onto the repo's real surface - the two `CLAUDE.md` gates and the two package scripts beyond `test`. If your own project's wrap-up has more moves than this one, they go in the same list; the skill is the container, the steps come from your repo.
 
-## Trying it once, by hand
+## Run it once by hand
 
-You don't have to wait for the agent to decide to use the skill - you can run it directly to confirm it works. Type its name with a slash:
+You do not have to wait for recognition to find out whether the steps work - invoke the skill directly by typing the folder name with a slash, in a Claude Code session running in the repo ([the getting-started chapter](/course/claude-code/getting-started/) covers starting one). An illustrative first run, shaped like the four steps above; the counts are invented, and yours depend on what your working copy carries (the companion repo ships `tests/payments.test.ts` and `tests/ledger.test.ts`; any spec you added is counted too):
 
 ```text
 > /finish-pr
 
-  ⎿ Running finish-pr…
-    1. npm test - 84 passed
-    2. npm run snapshot - snapshot changed (charge response gained `idempotency_key`)
-    3. CHANGELOG.md - added "Charge endpoint now returns the idempotency key"
-    4. npm run format:check - clean
+  1. npm test
+     ✓ tests/payments.test.ts (3)
+     ✓ tests/ledger.test.ts (3)
+     Test Files  2 passed (2)
+     Tests  6 passed (6)
+  2. No bug fix claimed on this branch - nothing to name.
+  3. npm run lint - clean
+  4. npm run build - compiled without errors
 
-  Heads up for the reviewer: the API snapshot changed. The charge
-  response now includes `idempotency_key`, so downstream consumers
-  see a new field. Everything else is green.
+  All four steps pass. Nothing flagged for the reviewer.
 ```
 
+Two failures are likely at this point, and both are inspectable. If the skill behaves as if it has no description, check the frontmatter: the `---` fences must open the file - anything saved above the first fence, a pasted filename included, becomes body text and hides the description - and a mis-indented `description` makes the YAML parse as body. The fallback is then the first non-empty body line - a procedure sentence rather than a trigger, and recognition will suffer for it.
+
+If the run stops at step one on a failing test, the skill is working, not broken: it reports which test failed and goes no further. Before blaming the branch, run `npm test` on a clean checkout of `main` and compare. A red suite that predates the branch is exactly the fact you want surfaced before a pull request, not after it.
+
 :::tip[Try it]
-Pick a three-step procedure you repeat weekly (test, lint, format). Write it as a SKILL.md in `.claude/skills/`. Start a fresh session and describe the situation - see if the skill fires without you naming it.
+Pick a three-step procedure you actually repeat weekly in your own project - test, lint, typecheck is the common shape. Write it as `.claude/skills/<name>/SKILL.md` with a `description` that names the moment it applies rather than what it does. Run it once by hand to confirm the steps work before you rely on recognition.
 :::
 
-That's the procedure you used to narrate four times a week, now a single command - and, more importantly, a thing the agent can reach for on its own. But "by hand with `/finish-pr`" is the *fallback*. The reason a skill beats a slash command is that you shouldn't have to remember to invoke it at all: the agent should recognize "this branch is ready" and run the ritual itself. That recognition lives entirely in the `description` - so [let's make it fire at the right time, and only the right time](/course/claude-code/skills/trigger/).
+That is the procedure you used to narrate at every wrap-up, now one command - and a thing the agent can reach for on its own. But *by hand* is the fallback, not the goal. A skill beats a plain command because you should not have to remember to invoke it: the agent should notice the branch is ready and run the ritual itself. That recognition lives in one frontmatter field - [so make it fire at the right time, and only the right time](/course/claude-code/skills/trigger/).

@@ -1,51 +1,69 @@
 ---
 title: Run OpenCode headless
-description: "Run the fix you just debugged as a one-shot command with no one at the keyboard. opencode run is the same agent minus the TUI, with JSON output you can pipe."
-sidebar:
-  label: "Headless · opencode run"
+description: "Run a fix as a one-shot command with no one at the keyboard. opencode run is the same agent minus the TUI, with JSON output you can pipe."
 ---
 
-You've been driving `feedmill` from the TUI all chapter, and that's the right surface while you're *deciding* things. But two jobs don't want a human in front of them. The first is the suspect-feed fix you just worked out interactively - the parser that chokes on one site's malformed `<pubDate>` - which you'd like to drop into a repair script so the next time a feed goes bad you run one command instead of reopening the whole session. The second is `feedmill`'s nightly digest: a regeneration job that should fire on a cron at 4am and leave you a fresh reading queue by morning, with nobody awake to approve anything.
+Two jobs don't want a human in front of them. The first, on `feedmill` - the course's illustrative Go feed aggregator - is the suspect-feed repair you would normally work out interactively in the TUI (terminal user interface): the parser that chokes on one site's malformed date fields. Once a fix like that is understood, you want it as a repair script - the next time a feed goes bad, you run one command instead of reopening the whole session. The second is `feedmill`'s nightly digest: a regeneration job that should fire on a cron at 4am and leave you a fresh reading queue by morning, with nobody awake to approve anything.
 
 Both are the same need - OpenCode without the terminal in the loop. That's `opencode run`.
 
 ## One prompt, no TUI
 
-`opencode run "<prompt>"` executes a single turn non-interactively. You hand it the prompt as an argument instead of typing it at a live prompt, it works the task, prints what it did, and exits. Same agent, same model resolution, same `AGENTS.md` - just no UI to sit in.
+`opencode run "<prompt>"` executes a single turn non-interactively (as of September 2026; [CLI documentation](https://opencode.ai/docs/cli/)). You hand it the prompt as an argument instead of typing it at a live prompt, it works the task, prints what it did, and exits. Same agent, same model resolution, same `AGENTS.md` - the standing-instructions file OpenCode loads into every session - just no UI to sit in. An illustrative run:
 
 ```bash
-$ opencode run "the atom parser drops entries whose <updated> is missing a
-  timezone. Make it fall back to UTC instead of skipping the entry, and add a
-  test feed that reproduces it."
+$ opencode run "some Atom feeds send <updated> as 'Tue, 03 Feb 2026 09:00:00
+  GMT' and parse.Date rejects it. Accept that layout as UTC, and add a test
+  feed that reproduces it."
 
-  Read internal/parse/atom.go, internal/parse/atom_test.go      (2 files)
+  Read internal/parse/atom.go, internal/parse/date.go           (2 files)
 
-  Entries with a naive <updated> timestamp fail time.Parse with the RFC3339
-  layout and get dropped silently. I'll add a UTC fallback layout and a
-  testdata feed that exercises it.
+  Date tries RFC3339, a naive ISO layout, and an RFC 1123 layout with a
+  numeric offset. A named zone like GMT matches none of them, so the date
+  is rejected. I'll add the named-zone layout and a testdata feed that
+  exercises it.
 
-  Edit internal/parse/atom.go
-  Edit internal/parse/atom_test.go
-  Run  go test ./internal/parse/
-    ok  feedmill/internal/parse   0.142s
+  Edit  internal/parse/date.go
+  Write internal/parse/testdata/gmt-updated.xml
+  Write internal/parse/date_gmt_test.go
+  Run   go test ./internal/parse/
+    ok  github.com/example/feedmill/internal/parse   0.142s
 
-  Done. Naive timestamps now parse as UTC; the new testdata/naive-updated.xml
-  feed pins the case that was previously dropped.
+  Done. GMT-named timestamps now parse as UTC; the new
+  internal/parse/testdata/gmt-updated.xml feed pins the rejected case.
 ```
 
-If you watched the TUI loop in the earlier chapters, nothing here is new - read, propose, apply, verify, all of it ran. What's gone is *you*. There was no approval pause, because in a headless run there's no one to approve. That's the part to be deliberate about, and it's the next section.
+The loop that ran is the same one the interactive interface runs - read the code, propose an edit, apply it, verify with a test. All of it happened; there was just no screen drawing it as it went. What's gone is *you*. There was no approval pause: the stock `build` agent asks before almost nothing by default, and in a headless run there's no one to approve anyway. That's the part to be deliberate about, and it's the next section.
 
 ## Headless reuses your whole setup - including the parts that say "ask"
 
-The thing people get wrong on their first cron run is assuming headless mode is a different, more permissive OpenCode. It isn't. `opencode run` reads the same `opencode.json`, agents, and `AGENTS.md` your TUI session does - OpenCode discovers configuration from the working directory and its project context, independently of whether a TUI is attached. See the [configuration](https://opencode.ai/docs/config/) and [rules](https://opencode.ai/docs/rules/) docs. So the same agents and per-tool permission map are in force. The rules you wrote about never touching the money path - or in `feedmill`'s case, never rewriting `testdata/` fixtures the parsers are pinned against - apply to the headless run too.
+The thing people get wrong on their first cron run is assuming headless mode is a different, more permissive OpenCode. It isn't. `opencode run` reads the same `opencode.json` (OpenCode's main config file), agents, and `AGENTS.md` your interactive session does - OpenCode discovers configuration from the working directory and its project context, independently of whether a TUI is attached, and the same holds for plugin gates: whatever a project's plugins load and enforce in an interactive session loads and enforces here too. See the [configuration](https://opencode.ai/docs/config/) and [rules](https://opencode.ai/docs/rules/) docs. So the same agents and [per-tool permission map](/course/opencode/permissions/per-tool-per-agent/) are in force. Standing rules - for `feedmill`, say, never rewrite the `testdata/` fixtures the parsers are pinned against - reach the headless run too, but a rule in `AGENTS.md` is guidance: the model usually follows it, and nothing stops an edit when it doesn't. When nobody is watching, only a permission rule enforces the boundary, which makes this the control decision for an unattended job. An explicit `deny` on `edit` for the pinned fixture paths, in the agent's permission map, blocks that edit in every mode, including `--auto` (the auto-approve flag, below).
 
-The wrinkle is permissions. Your TUI agent probably has `edit: ask` and `bash: ask`, because interactively the *ask* is a feature - it's the leash. Headless, there may be nobody to answer it. The CLI also exposes `--auto` to approve permissions that are not explicitly denied, but for unattended jobs prefer a purpose-built agent with explicit `allow` and `deny` rules and no dangling `ask` rules. Pick that agent with `--agent`, the same way you'd Tab to it in the TUI:
+The wrinkle is permissions. Out of the box, most permissions default to `allow`, so the stock `build` agent edits files and runs commands without a prompt; only `doom_loop` and `external_directory` default to `ask` ([permissions documentation](https://opencode.ai/docs/permissions/), as of September 2026). The source also sets reads of `.env` files to `ask`, where the documentation says they are denied ([`agent.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/agent/agent.ts) at v1.18.32), so a stock run that reads one meets the rejection described next. Many projects set `edit` or `bash` to `ask` for interactive work, because there the *ask* is a feature - it's the leash. In an unattended run nobody can answer it. `opencode run` does not wait: without `--auto`, it rejects each request that would ask and prints a `permission requested: ...; auto-rejecting` warning to stderr. By default a rejected permission also stops the agent's loop, so the run ends there (as of September 2026; [`run.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/cli/cmd/run.ts) and [`processor.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/processor.ts) source). The job does not hang. It finishes early, and a nightly run that looks complete can be half done. The documented alternative is `--auto`: launched with it, OpenCode automatically approves permission requests that are not explicitly denied, and explicit `deny` rules are still enforced - auto mode only changes requests that would otherwise ask for approval ([permissions documentation](https://opencode.ai/docs/permissions/), as of September 2026). For unattended jobs, though, prefer a purpose-built agent with explicit `allow` and `deny` rules and no `ask` rules of your own, so that every outcome is one you decided in advance. Pick that agent with `--agent`. In the examples below, `digest` is that agent, defined in the project's `opencode.json`. Assume that feedmill regenerates the digest with one command, `go run . digest`, which rebuilds the reading queue in `feedmill.db`, so the map allows that command and `go test` and denies every other shell command. Give it `mode: primary` (an agent you run directly; a subagent is one another agent calls), because `run --agent` falls back to the default agent, the stock `build`, when handed a subagent:
 
-```bash
-$ opencode run --agent build "regenerate tonight's digest from the synced feeds"
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "digest": {
+      "mode": "primary",
+      "permission": {
+        "edit": { "*": "allow", "internal/parse/testdata/*": "deny" },
+        "bash": { "*": "deny", "go test *": "allow", "go run . digest*": "allow" }
+      }
+    }
+  }
+}
 ```
 
-Treat the headless permission map as a contract you can read before you wire it into cron, not something you discover at 4am from a stuck job. Decide on purpose what an unattended `feedmill` run is allowed to do to your repo and your feed store.
+The `edit` rule is there for the night a feed fails to parse and the agent patches its parser, with the test fixtures walled off; if your job only regenerates the digest, set `"edit": "deny"` instead. Within each map the last matching pattern wins, so the catch-all `"*"` goes first ([`permission/index.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/permission/index.ts) at v1.18.32). Anything you leave out keeps its default: `doom_loop`, `external_directory` and `.env` reads still ask, so a run that trips one is rejected and ends, which is a stop you can accept for an unattended job. Under `--auto` those asks are approved instead, so if you do launch with it, deny secrets explicitly: `"read": { "*.env": "deny", "*.env.*": "deny", "*.env.example": "allow" }`.
+
+
+```bash
+$ opencode run --agent digest "regenerate tonight's digest from the synced feeds"
+```
+
+Treat the headless permission map as a contract you can read before you wire it into cron, not something you discover the next morning from a half-done job. Decide on purpose what an unattended `feedmill` run is allowed to do to your repo and your feed store.
 
 ## --format json turns a run into a stream
 
@@ -54,31 +72,32 @@ The default output is formatted for a human reading a terminal - fine for the re
 ```bash
 $ opencode run --format json "regenerate tonight's digest" \
     | tee /var/log/feedmill/digest-$(date +%F).jsonl \
-    | jq -r 'select(.type == "error") | .message'
+    | jq -r 'select(.type == "error" or .part.state.status == "error")
+             | (.error.data.message // .error.name // .part.state.error)'
 ```
 
-Now the cron job leaves a per-event JSON line trail you can grep tomorrow, and the `jq` filter surfaces any error the run hit without you reading the whole transcript. Two things to keep straight:
+Now the cron job leaves a per-event JSON line trail you can grep tomorrow, and the `jq` filter surfaces any session error or failed tool call without you reading the whole transcript. Each line is one event with a `type` field: `text` (the assistant's text, at `.part.text`), `tool_use` (a finished tool call; a failed one has `.part.state.status == "error"`), `step_start`, `step_finish`, `reasoning` (only with `--thinking`), and `error` (the message at `.error.data.message`, or the error name at `.error.name`) (as of September 2026; [`run.ts` source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/cli/cmd/run.ts)). A failed tool call is a `tool_use` event, not an `error` event, and that includes a permission the run auto-rejected: it arrives only as a `tool_use` with `.part.state.status == "error"` plus the stderr warning, and the process still exits 0, which is why the filter above matches both. Two things to keep straight:
 
-- `--format` takes exactly two values: `default` (the formatted output) and `json` (raw events). There is **no** separate `--output-format` flag, and no schema-validation flag - the JSON is an event stream, not a fixed-shape contract you can pin a schema against. Parse it as a sequence of typed events.
-- The same `--format json` works on `opencode session list`, so a monitoring script can ask "what ran overnight" without scraping logs: `opencode session list --format json | jq '.[] | {id, title}'` (the json output is an array). Note the value sets differ per command: `run` takes `default` or `json`, `session list` takes `table` or `json` (its formatted default is a table), and `opencode db` takes `json` or `tsv`.
+- `--format` takes exactly two values: `default` (the formatted output) and `json` (raw events). There is no `--quiet` or `--print` flag, and no schema-validation flag - the JSON is an event stream, not a fixed-shape contract you can pin a schema against. Parse it as a sequence of typed events.
+- The same `--format json` works on `opencode session list`, so a monitoring script can ask "what ran overnight" without scraping logs: `opencode session list --format json | jq '.[] | {id, title}'` (the json output is an array). Note the value sets differ per command: `run` takes `default` or `json`, `session list` takes `table` or `json` (its formatted default is a table), and `opencode db` takes `json` or `tsv` (as of September 2026; [CLI documentation](https://opencode.ai/docs/cli/)).
 
 ## Wiring it into cron
 
-With the agent and the output format settled, the cron entry itself is unremarkable - and that's the goal. Headless OpenCode should be boring infrastructure, not a fragile script that only works when you babysit it:
+With the agent and the output format settled, the cron entry itself is almost unremarkable - and that's the goal. Headless OpenCode should be boring infrastructure, not a fragile script that only works when you babysit it. Two cron facts matter. Cron runs with a minimal `PATH` and without your shell profile, and the curl installer puts `opencode` in `~/.opencode/bin` (after an npm install, use the path `which opencode` prints), so call it by its absolute path. Any provider key you keep in a shell environment variable is also absent, so make the credential available to the cron job (for example, through the crontab's own environment or a stored `opencode auth login` credential):
 
 ```bash
 # regenerate the feedmill reading queue every night at 04:00
-0 4 * * *  cd /srv/feedmill && opencode run --agent build --format json \
+0 4 * * *  cd /srv/feedmill && $HOME/.opencode/bin/opencode run --agent digest --format json \
              "regenerate the nightly digest from the synced feeds" \
-             >> /var/log/feedmill/digest.jsonl 2>&1
+             >> /var/log/feedmill/digest.jsonl 2>> /var/log/feedmill/digest.err
 ```
 
-Note the `cd` into the repo: OpenCode walks up from the working directory to find `AGENTS.md` and the project's `opencode.json`, so a cron job that fires from `/` won't see your rules. Run it from the repo root, or the unattended agent loses exactly the context you spent the chapter giving it.
+Stderr goes to its own file, so the warnings stay out of the JSON stream. Note the `cd` into the repo: OpenCode walks up from the working directory to find `AGENTS.md` and the project's `opencode.json`, so a cron job that fires from `/` won't see your rules. Run it from the repo root, or the unattended agent loses exactly the standing context - the rules, the config, the agent definitions - that makes its edits yours rather than a stranger's.
 
-That's the whole move: `opencode run` for one-shot non-interactive work, an agent whose permissions are written for an empty chair, and `--format json` when something downstream needs to read the result. The repair script and the nightly cron are now the same agent you've been driving all along - just without you in the room.
+That's the whole move: `opencode run` for one-shot non-interactive work, an agent whose permissions are written for an empty chair, and `--format json` when something downstream needs to read the result. The repair script and the nightly cron drive the same agent an interactive session drives - just without you in the room.
 
 :::tip[Try it]
-Run `opencode run --format json "list all exported functions"` in feedmill. Pipe the event stream through `jq` and extract just the text. Set a permission to `ask` and run it again - notice how the run waits for input.
+Run `opencode run --format json "list all exported functions"` in feedmill. Pipe the event stream through `jq` and extract just the text. Set `read` and `grep` to `ask` in the project's `opencode.json` and run it again - notice the `auto-rejecting` warning, and that the run ends at that point instead of waiting.
 :::
 
-There's one job left that headless `run` doesn't cover on its own: keeping a long-lived OpenCode process up so CI and a GitHub workflow can talk to it without paying cold-boot cost on every invocation. [Next: the server, CI, and GitHub](/course/opencode/share-and-headless/server-and-ci/).
+There's one job left that headless `run` doesn't cover on its own: keeping a long-lived OpenCode process up that clients can attach to, and wiring runs into CI and a GitHub workflow. [Next: the server, CI, and GitHub](/course/opencode/share-and-headless/server-and-ci/).

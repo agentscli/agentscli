@@ -91,7 +91,7 @@ export const gldConstraints: GldConstraint[] = [
     cells: {
       rule: {
         kind: 'judgment',
-        why: 'An instruction the model weighs - so “never” actually means “unless a debugging trail leads there after the line compacted out.” Walls that matter don’t get to be suggestions.',
+        why: 'An instruction the model weighs - so "never" actually means "unless a debugging trail leads there and, this turn, outweighs the line." Walls that matter don’t get to be suggestions.',
       },
       permission: {
         kind: 'wall',
@@ -113,7 +113,7 @@ export const gldConstraints: GldConstraint[] = [
     cells: {
       rule: {
         kind: 'judgment',
-        why: 'It works all morning, which is what makes it dangerous. The line compacts out at hour three, and the untested commit lands at 2am with nobody to catch it.',
+        why: 'It works all morning, which is what makes it dangerous. By hour three it is one line among hundreds and loses to an eager streak - the untested commit lands at 2am with nobody to catch it.',
       },
       permission: {
         kind: 'unexpressed',

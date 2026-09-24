@@ -1,138 +1,176 @@
 ---
 title: Gate a risky move with a hook
-description: "Codex must never write your real ledger. Wire a hook that blocks the write and reruns the money tests after an edit - checked, not remembered."
-sidebar:
-  label: "Hooks · the determinism gate"
+description: "Raw statements must never be rewritten and money math must never change untested. Wire hooks that block the one and rerun the suite after the other - checked, not remembered."
 ---
 
-There's one move in `budgetcli` you treat as sacred: **Codex must never write to your real ledger database.** It can read it, reason about it, generate a migration for you to review - but the live table where your actual account balances are counted is off-limits to automated writes. An accidental `UPDATE` there isn't a bug you find in code review; it's wrong numbers in your own money.
+What's sacred in `budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI), inventoried honestly: this repo has no production database. The ledger is 18 lines of in-memory Python, `app/services/ledger.py`, and every balance the API reports flows through it. The raw records live outside the repo - bank statements under `~/budget-data/statements/`, extending the constructed data directory [approvals & sandbox](/course/codex/approvals-sandbox/network-and-dirs/) set up. Two invariants follow. Raw statements are records, not working files: corrections happen in the importer, never in the history. And the money path - `app/importers/` plus `app/services/` - never changes untested.
 
-You could put this in `AGENTS.md` and ask the agent to honor it, and most of the time it would. That's the problem, not the reassurance. Count the shell commands that could actually reach `ledger_prod` from inside a `budgetcli` session: a direct `psql` call, a one-off Python script that opens a connection and executes something, an already-generated migration file applied without you looking at it first. Three different paths, and a rule has to be remembered, correctly, against every one of them, every single session, forever - which is exactly the kind of promise that fails you on the one turn it matters. Here's this lesson's tension: under enough pressure - a long session, a plausible-looking excuse, nobody watching - a rule and a permission both **fail open**. A hook is the only one of the three built to **fail closed**.
+A rule cannot hold either invariant. "Never rewrite a raw statement" would sit in `AGENTS.md`, in context, on every session - exactly where the money rule sat while the float parse survived chapter after chapter. Nothing argued the bug in, and nothing stopped it. Count the routes to the forbidden rewrite: a one-off `python -c` one-liner, an in-place `sed`, a script written earlier and run now - all shell - plus a fourth, the agent's own edit tools writing the file directly. A rule has to be remembered, correctly, against every one of them, every session, forever.
 
-By the end of this lesson, three different ways of typing that same forbidden write die at the identical wall - and a fourth way, one this hook genuinely can't see, is exactly why you still don't let Codex apply its own migrations unattended.
+The fence won't hold it either, and this track's own history is the proof. Under plain `workspace-write`, `~/budget-data` sits outside the writable roots and the sandbox itself says no. But `budget-build` deliberately widened the fence - `writable_roots = ["~/budget-data"]` - because the import work needed it. Inside that profile, nothing stands between the model and the raw records. Under enough pressure a rule and a permission both **fail open**. A hook is the one mechanism here built to **fail closed**.
+
+By the end of this lesson, the shell routes to that rewrite die at one wall, the script route is exposed as genuinely invisible to it, and a second matcher covers the edit-tool route - while the money path gets its own gate: the suite runs after every edit-tool edit to `app/importers/` or `app/services/`, including a direct edit to `ledger.py` mid-session. (A gate catches only what its matcher names; each one below is scoped to its routes, and that scoping is part of the design.)
 
 ## What a hook actually is
 
-A **hook** is a shell command Codex runs at a matching lifecycle point. It is deterministic and independent of the model's reasoning, but it is not a complete security boundary: hooks can require trust review, and specialized tool paths may not use the normal hook path. Use hooks as defense-in-depth alongside sandboxing, CI, database permissions, and network controls. The full event list and payload detail are on the [Codex hooks docs](https://learn.chatgpt.com/docs/hooks).
+A **hook** is a shell command Codex runs at a matching lifecycle point. It is deterministic and independent of the model's reasoning - but it is not a complete security boundary. Hooks can require trust review before they run, and some tool paths bypass the normal hook route; the docs' own framing is to treat tool hooks as a useful guardrail, not complete enforcement. Use hooks as defense-in-depth alongside sandboxing, CI, and file permissions. The full event list and payload detail are on the [Codex hooks docs](https://learn.chatgpt.com/docs/hooks).
 
-The way a hook talks back is equally simple, and it's the second half of the concept: the handler's documented decision contract determines whether the action proceeds or is blocked, and diagnostic output can be returned to the agent. Follow the current hook contract for the Codex release you deploy; do not treat an illustrative exit-code detail as a substitute for the documented enforcement path.
+The way a hook talks back is the second half of the concept. On `PreToolUse`, a deny stops the tool call before it runs: the documented form is a JSON output with `permissionDecision: "deny"` and a reason, with `decision: "block"` as a legacy alias and exit code 2 plus stderr doing the same job. Hook output can also *add* context or feedback the model reads - more on that in [the last lesson](/course/codex/extending/hooks-vs/).
 
 ## The right moment to fire
 
-Hooks attach to lifecycle **events**. Codex documents a family of them - `SessionStart` when a session opens, `UserPromptSubmit` when you send a message, `PreToolUse` before a tool runs, `PostToolUse` after, `PreCompact`/`PostCompact` around compaction, `PermissionRequest` when the agent asks to do something gated, and `Stop` when the session ends. Picking the right one is most of the design.
+Hooks attach to lifecycle **events**, and Codex documents a family of them. `SessionStart` when a session opens; `UserPromptSubmit` when you send a message; `PreToolUse`, `PermissionRequest`, and `PostToolUse` around tool calls; `PreCompact`/`PostCompact` around compaction. `Stop` fires when a **turn** completes - it is a turn-level event that can block or ask the model to continue, not a session-end signal. Session teardown is `SessionEnd`, which runs when the main thread ends and never runs for subagents.
 
-For our wall we want **`PreToolUse`**: it fires *before* a tool call runs, which is the only moment you can stop a write from ever happening. **A hook that fires after the fact can log a violation. Only one that fires before it can prevent one.**
+Picking the event is most of the design. For the statements wall we want **`PreToolUse`**: it fires *before* a tool call runs, the only moment you can stop a write from ever happening. **A hook that fires after the fact can log a violation. Only one that fires before it can prevent one.**
 
 ## Wire it up
 
-Hooks are configured next to your active config layers - a `hooks.json` file at `~/.codex/` or in the repo's `.codex/`, or inline as `[hooks]` tables in `config.toml`. You name the event, a **matcher** that narrows which tool calls trigger the hook, and the command to run.
+Hooks are configured in a `hooks.json` file - at `~/.codex/` for every session, or in the repo's `.codex/` - or inline as `[[hooks.EventName]]` arrays in `config.toml`. You name the event, a **matcher** that narrows which tool calls trigger it, and the command to run.
 
-:::caution[Verify before you trust this with your ledger]
-The config and script in this section are *illustrative* - the shape will look something like this, but the exact key names, nesting, matcher names, and payload field paths are version-sensitive. So is the event list itself: which events exist, and what each one covers, is exactly the kind of surface that grows between releases. Confirm all of it against the current [hooks docs](https://learn.chatgpt.com/docs/hooks) before you rely on the gate.
+:::caution[Verify before you trust this with your records]
+The shape below is the documented one as of 2026-09-19: events nest under a top-level `"hooks"` key, and root-level event keys are rejected outright. Field paths inside the payload, and the event list itself, are version-sensitive surfaces - confirm both against the current [hooks docs](https://learn.chatgpt.com/docs/hooks) before you rely on the gate. Hooks also require trust review: a non-managed hook must be reviewed and trusted, via the `/hooks` command, before Codex will run it.
 :::
 
 `.codex/hooks.json`:
 
 ```json
 {
-  "PreToolUse": [
-    {
-      "matcher": "Bash",
-      "hooks": [
-        { "type": "command", "command": "./.codex/hooks/protect-ledger.sh" }
-      ]
-    }
-  ]
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "./.codex/hooks/protect-statements.sh" }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "./.codex/hooks/protect-statements-edit.sh" }
+        ]
+      }
+    ]
+  }
 }
 ```
 
-The matcher narrows this to shell tool calls - `psql`, a migration runner, anything that could touch the database - so the hook isn't woken for every file read. Notice it isn't scoped to "a `psql` command" specifically: it fires on *any* shell call, and lets the script itself decide. That's deliberate - it's what lets the same script catch all three of the paths you counted a moment ago, regardless of which one Codex reaches for.
+The matcher is a regex on the tool name. `Bash` narrows the first entry to shell calls - `sed`, a one-off script, anything that could rewrite a file - so the hook isn't woken for every file read; it is deliberately not scoped to one command shape, firing on *any* shell call and letting the script itself decide. That is what lets one script catch every shell route you counted above. The `Edit|Write` entry covers the fourth route - the agent's own edit tools touching a statement file - with a sibling script that checks the payload's file path instead of a command string (the payload field is version-sensitive; verify against the [hooks docs](https://learn.chatgpt.com/docs/hooks)). MCP tools match by their full `mcp__server__tool` names, if you ever need those. Every route gets its wall by naming the tools that can travel it.
 
-Codex hands a hook a **JSON payload** describing the call and the session - fields like `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `model`, and `permission_mode`, with a `turn_id` on turn-scoped hooks. The script below greps the command string out of that payload; the `tool_input.command` path is the illustrative one, so verify it against the payload schema in the docs.
+Codex hands the hook a **JSON payload**: `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `model`, `permission_mode`, with `turn_id` on turn-scoped events and `tool_name`/`tool_input` describing the call (`tool_response` too, after the fact). The script greps the command out of that payload:
 
 ```bash
 #!/bin/bash
-# .codex/hooks/protect-ledger.sh
+# .codex/hooks/protect-statements.sh
 input=$(cat)
-# Field path below is illustrative - verify against the hooks payload schema.
+# Fail shut: if jq is missing, exit 2 rather than matching nothing and allowing.
+command -v jq >/dev/null 2>&1 || { echo "Blocked: jq is required to inspect this command." >&2; exit 2; }
+# Field path below is version-sensitive; verify against the hooks docs.
 command=$(echo "$input" | jq -r '.tool_input.command')
 
-# Refuse any write that targets the live ledger database.
-if echo "$command" | grep -Eqi 'ledger_prod|UPDATE .*ledger|INSERT .*ledger|DELETE .*ledger'; then
-  echo "Blocked: writes to the production ledger are not allowed from an agent session. \
-Generate a migration for review instead." >&2
+# Refuse shell commands that touch raw statement files at all.
+# Reading statements is what Codex's file tools are for; shell plus
+# a raw CSV means rewriting, moving, or "fixing" history.
+if echo "$command" | grep -Eq 'budget-data/[^ ]*\.csv'; then
+  echo "Blocked: raw statements are records, not working files. Fix the importer, not the history." >&2
   exit 2
 fi
 exit 0
 ```
 
-Everything in that script is plain shell - nothing here is AI, which is the whole point. The `exit 2` and the stderr message are the exit-code contract from the top of the lesson, doing their job.
+Everything in that script is plain shell - nothing in it is AI, which is the whole point. The `exit 2` and the stderr message are the deny contract from the top of the lesson, doing their job.
 
 ## Trace it by hand before you trust it
 
-Here's the ground truth, worked out the obvious way, before you watch it run. Take the same three commands you counted earlier and check each one against the pattern the script greps for - `ledger_prod`, or `UPDATE`/`INSERT`/`DELETE` next to the word `ledger` - the same way the script does:
+Here's the ground truth, worked out the obvious way, before you watch it run. Take the three routes from the opening and check each command against the pattern the script greps for - `budget-data/` followed by a `.csv` filename - exactly the way the script does:
 
 | Attempt | Command (shape) | Contains a match? | Verdict |
 |---|---|---|---|
-| Direct SQL | `psql budgetcli -c "UPDATE ledger_prod SET balance_cents=..."` | Yes - `ledger_prod` | Blocked |
-| A one-off script | `python -c "cur.execute('DELETE FROM ledger_prod WHERE id=4')"` | Yes - `ledger_prod` and `DELETE .*ledger` | Blocked |
-| Applying a migration | `alembic upgrade head` | No - the file it applies contains the `UPDATE`, the command that runs it doesn't | **Not blocked by this hook** |
+| A one-off rewrite | `python -c "fix the dates in ~/budget-data/statements/card.csv in place"` | Yes - path and file | Blocked |
+| A shell edit | `sed -i '' 's/2024/24/g' ~/budget-data/statements/card.csv` | Yes - same | Blocked |
+| Running a script | `python scripts/fixup_dates.py` | No - the rewrite lives inside the file, not the command | **Not blocked by this hook** |
 
-Sit with that third row before you read on. It isn't a bug in the script - it's the shape of what a hook can and can't see, and it's the reason this course still tells you to review and apply migrations yourself instead of letting Codex chain "write the migration" straight into "run it."
+Sit with that third row before you read on. It isn't a bug in the script - it is the shape of what a hook can and can't see. The write you meant to stop sits in a file on disk; the command line names only the interpreter.
 
 ## Watch the wall hold
 
-Codex finishes some balance-reconciliation work and reaches for the database - the first row from the table above, live:
+Codex is asked to tidy up March's statement and reaches for a rewrite - the first row from the table above. An illustrative reconstruction; your run supplies the wording:
 
 ```text
-> apply the corrected balances to the ledger
+> normalize the dates in March's card statement
 
-  ● Bash  psql budgetcli -c "UPDATE ledger_prod SET balance_cents=... "
+  • Ran  python -c "rewrite ~/budget-data/statements/card.csv with ISO dates in place"
 
-  ⊘ Blocked by PreToolUse hook (protect-ledger.sh):
-    Blocked: writes to the production ledger are not allowed from an
-    agent session. Generate a migration for review instead.
+  ⊘ Blocked by PreToolUse hook (protect-statements.sh):
+    Blocked: raw statements are records, not working files. Fix the
+    importer, not the history.
 
-  Understood - I can't write the live ledger directly. I'll emit the
-  corrections as a reviewed migration instead.
-
-  ● Write  migrations/0007_reconcile_balances.sql
-    -- review and apply this yourself
+  Understood - I won't modify the raw file. The importer already parses
+  these statements, so I'll add the normalization there and re-import
+  from the untouched copy.
 ```
 
-Same result if Codex had reached for the Python one-liner from row two instead - the matcher doesn't care which tool path produced the command, only what the command says. **Two attempts, two tools, one wall, because the wall checks the words, not the door they came through.** That's the trick worth naming: call it **the gate you can't talk down**. A rule can be reasoned past by a plausible-sounding excuse; a permission only knows tool names, not content. This script doesn't listen to either - it reads the string and answers yes or no, the same way every time.
+Same result had it reached for the `sed` from row two - the matcher doesn't care which route produced the command, only what the command says. **Two routes, one wall, because the wall checks the words, not the door they came through.** Call it **the gate you can't talk down**: a rule can be reasoned past by a plausible-sounding excuse, and a permission knows tool names, not content. This script reads the string and answers yes or no, the same way every time.
 
-Watch what the agent did with the rejection, too. It didn't get stuck - it read the diagnostic output the hook provided, understood *why*, and rerouted to the safe path: a migration you apply by hand. The gate didn't just stop a bad action; it steered Codex toward the right one. In a headless run, it can provide the same guardrail when the invocation reaches the supported, trusted hook path.
+Watch what the rejection did, too. The deny reason is feedback the model reads: it didn't get stuck, it understood *why*, and rerouted to the correct fix - change the code that reads history, not the history. The gate didn't just stop a bad action; it steered the next one.
 
 ## What this hook cannot do
 
-Row three matters more than it looks. The hook only ever sees the text of the shell command Codex is about to run - not the contents of a file that command might reference, not the outcome, not the intent behind it. `alembic upgrade head` is eight characters long and mentions no table at all, even when the migration it applies contains the exact `UPDATE` you're trying to stop. **A hook checks the command, not the plan.** It can stop a move. It cannot tell whether the move was a good idea.
+Row three matters more than it looks. The hook sees only the text of the shell command Codex is about to run - not the contents of files that command references, not the outcome, not the intent behind it. `python scripts/fixup_dates.py` names no path at all, even when the script it runs contains the exact rewrite you're trying to stop. **A hook checks the command, not the plan.**
 
-That's not a reason to skip it - two of your three paths are covered by four lines of shell, for free, forever. It's a reason the review step stays load-bearing: the safe path this hook steers Codex toward only stays safe because a human, not a script, is the one who runs `alembic upgrade head`. Pair the hook with that discipline, not instead of it.
+It also over-blocks, on purpose: a shell command that merely *reads* a statement gets refused too. That's a deliberate trade - reading is what Codex's file tools are for, and a shell command touching raw records is presumptively rewriting them. String gates over-match and under-match at once; write them knowing both directions.
 
-## The other shape: run the tests after the money math changes
+Neither fact is a reason to skip the gate. Two of three routes are covered by one small script, free, forever - and the third is why scripts get reviewed before they run, and why the raw records sit outside git. The hook is defense in depth: under plain `workspace-write` the sandbox already blocks these writes, and inside the widened `budget-build` fence this script is the only thing standing guard. Pair the layers; don't swap them.
 
-`PreToolUse` blocks; its sibling **`PostToolUse`** observes *after* a tool runs and can't block - perfect for "do this every time the agent edits a file." The money math in `budgetcli` is the part you least trust to a silent edit, so wire a `PostToolUse` hook on file edits to run the test suite:
+## The other shape: run the money tests after the money math changes
 
-`.codex/hooks.json`:
+`PreToolUse` blocks. Its sibling **`PostToolUse`** fires *after* a tool runs - it cannot prevent the action or undo its effects. But its `decision: "block"` (or exit 2) is still load-bearing: it replaces the tool result with the hook's feedback, and the model continues from that message. Perfect for "always do this when the money math changes":
 
 ```json
 {
-  "PostToolUse": [
-    {
-      "matcher": "apply_patch",
-      "hooks": [
-        { "type": "command", "command": "pytest tests/test_money.py -q" }
-      ]
-    }
-  ]
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "./.codex/hooks/money-tests.sh" }
+        ]
+      }
+    ]
+  }
 }
 ```
 
-Now every matching edit Codex makes can be followed by the money tests, whether or not the agent thought to run them. A regression in the cents math surfaces close to the edit instead of three edits later; keep the test suite or CI as the authoritative gate. **This is the same trick pointed the other way: not "never let this happen," but "always do this," and neither depends on Codex remembering to.**
+```bash
+#!/bin/bash
+# .codex/hooks/money-tests.sh - runs after every file edit Codex makes.
+input=$(cat)
+# Money path only: an edit's payload names the file it touched.
+if ! echo "$input" | grep -q 'app/importers/\|app/services/'; then
+  exit 0
+fi
+if ! pytest -q >/tmp/money-tests.out 2>&1; then
+  echo "Money tests failed after this edit - fix before continuing:" >&2
+  tail -20 /tmp/money-tests.out >&2
+  exit 2
+fi
+```
+
+The suite is the ten green tests this course has assembled in its labeled continuation - the shipped ledger and import tests, the [date regression](/course/codex/getting-started/first-change/), the categorizer wiring pins, and the `0.29` -> `29` Decimal pin from the [subagents chapter](/course/codex/subagents/orchestrate/). That pin is the tripwire: illustrative reconstruction of the failure it exists to catch -
+
+```text
+  • Edited app/importers/csv.py
+    a "tidy-up" that walks the amount parse back toward a float
+
+  ⊘ PostToolUse hook (money-tests.sh): money tests failed
+    0.29 should parse to 29 cents; got 28
+
+  The Decimal pin caught that edit. Restoring the parse and re-running.
+```
+
+The edit is already on disk when this fires - `PostToolUse` cannot undo it. But the failing pin becomes the model's next input, and the fix lands inside the same turn. This is the chapter's spine made mechanical: the float shipped originally because nothing stopped it, and nothing argued. Now every edit-*tool* edit to `app/importers/` or `app/services/` - including a direct edit to `ledger.py` mid-session, whose `balance()` the ledger tests pin - meets the suite immediately, whether or not anyone remembered to run it. Be as precise about what this gate does not catch as the statements wall was: the matcher names `Edit|Write`, so a shell command that rewrites `ledger.py` (`sed -i`, a `python -c` rewrite) fires no hook. Pair the gates with the fence - under `budget-audit` the sandbox itself refuses those writes - and count the routes for every guarantee you wire.
 
 :::tip[Try it]
-Write a simple `PreToolUse` hook script that blocks any `rm` command, following the current hook decision contract. Test it by asking Codex to delete a file and verify the trusted hook appears in the agent's output when it fires.
+Write a `PreToolUse` hook script that blocks any `rm` command, following the documented deny contract. Review and trust it via `/hooks`, then ask Codex to delete a file and watch the denial - and the reroute - come back.
 :::
 
-You've now built something categorically different from the MCP server in the last lesson. A server *widened* what Codex can do, and charged you rent for it on every turn. A hook *overrules* Codex, for free, on the one condition it can express - and stays blind to everything it can't. That difference is sharp enough to name precisely, and knowing when to reach for a hook instead of a rule or an approval setting is [the last lesson of this chapter](/course/codex/extending/hooks-vs/).
+You've now built something categorically different from the MCP server in the last lesson. A server *widened* what Codex can do, and charged rent for it. A hook *overrules* Codex, for free, on the one condition it can express - and stays blind to everything it can't. That difference is sharp enough to name precisely, and knowing when to reach for a hook instead of a rule or an approval setting is [the last lesson of this chapter](/course/codex/extending/hooks-vs/).

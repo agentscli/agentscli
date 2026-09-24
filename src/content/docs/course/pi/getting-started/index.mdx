@@ -5,40 +5,46 @@ description: "Your first hour with Pi: from nothing to one real fix shipped on a
 
 import GapDemo from '../../../../../components/interactive/GapDemo.tsx';
 
-A friend just handed you `stash` - a small self-hosted read-it-later service they put together over a few weekends. FastAPI, SQLite, a background worker that fetches every URL you save, strips the nav and ads out of the page, stores the readable text, and indexes it for full-text search. It has tags, a tiny web UI, a CLI. It works. It's also lightly documented, and you've already heard the confession that comes with every handoff like this: the readability extractor mangles some sites, the fetch worker has no rate-limiting or retry, and full-text search misses accented characters. One rough spot in particular is small enough to be your warm-up ticket - the dates on saved articles parse inconsistently, so your reading queue sorts some entries into the wrong place.
+A friend just handed you `stash` - a small feed reader they built over a few weekends to keep a reading queue. It's a FastAPI service with three routes: `GET /healthz`, `POST /feeds/{id}/sync` to fetch a feed and store its entries, and `GET /articles` to list what's stored. Under that sit SQLite through `stash/db.py`, feed fetching and parsing in `stash/feeds.py`, date parsing in `stash/extract.py`, and two pydantic models. Eleven files, two hundred-odd lines - you can read all of it in one sitting, and this module will make you.
 
 ## Before you start
 
 - macOS or Linux (Windows via WSL2)
 - Node.js >= 22.19.0 (`node --version` to check)
-- An API key for at least one provider (Anthropic, OpenAI, OpenRouter)
+- Python 3.11+ (`python3 --version`) - `stash` is a Python project
+- An API key or supported subscription for at least one provider (Anthropic, OpenAI, OpenRouter)
 - Basic terminal fluency
 - Git fundamentals
-- Estimated time: 4-5 hours
+- Any Git repo to try the moves on - there is no published companion repo to clone, and any repo with a failing test you understand will carry the module
+- Estimated time: about an hour for the four moves below
 
-Before you touch any of that, you're going to meet the tool you'll be doing it with, and it is not going to behave the way you expect.
+The handoff came with the usual confession, and this one is checkable. The README admits to one known failing test: feed dates lose their timezone offset on parse. Run the suite on a working copy yourself and you'll find the README is one test short - two fail, not one. (The staged project this course follows ships exactly that state; if you're starting here, any repo with a README-confessed failing test and one more besides will carry the lesson.) The second, `tests/test_feeds.py::test_fetch_feed_parses_entries`, is a bug the README never mentions: `fetch_feed()` returns zero articles from a sample Atom feed. It's the bigger of the two, and it can wait until you've shipped something.
+
+Your warm-up ticket is the one the README does confess to. `parse_date()` in `stash/extract.py` tries two date formats, neither of which accepts a timezone offset, so a date like `Mon, 03 Feb 2026 09:00:00 +0530` returns `None`. The article lands with no `published` value, and anything sorting your queue by that field puts it somewhere wrong. The failing test, `test_parse_date_preserves_offset`, already pins what "fixed" means: the offset survives. Small bug, clean edges - a decent first ticket, once you've met the tool you'll fix it with.
 
 ## The variable isn't the model
 
-Every other tool you've probably used already decided, on your behalf, what's worth spending your attention on watching. A permission prompt here, a collapsed tool-call summary there - conveniences that also mean you never had to look closely at a single turn to trust the next ten. That's the problem this whole module exists to fix, stated as plainly as it gets: **you cannot budget what you have never watched run once.** Before you can decide which of another agent's guardrails you'd actually rebuild, you need to have seen, one time, exactly what happens with none of them in place.
+Every other agent you've used already decided, on your behalf, what's worth watching. A permission prompt here, a collapsed tool-call summary there - conveniences that also mean you never had to look closely at a single turn to trust the next ten. You cannot budget what you have never watched run once. Before you can decide which of another agent's guardrails you'd actually rebuild, you need to have seen, one time, exactly what happens with none of them in place.
 
-Every agent you've likely used - Claude Code, Codex, whatever's wired into your editor - ships with a big system prompt, a curated toolbox, and a permission gate standing between the model and your disk. Pi ships with almost none of that. Four tools. A system prompt short enough to read in the time it takes to open your terminal. No subagents, no MCP, no plan mode, no to-do list, and - this is the part that should give you pause - no permission prompts. Out of the box, Pi can read, write, and run anything on your machine the moment you give it an instruction.
+That's what Pi is for. Claude Code or Codex ships a big system prompt, a curated toolbox, and a permission gate between the model and your disk; Pi ships almost none of it. Four tools. A system prompt short enough to read while your terminal opens. No subagents, no MCP (Model Context Protocol) servers, no plan mode, no to-do list, and - the part that should give you pause - no permission prompts. Out of the box, it can read, write, and run anything on your machine the moment you instruct it.
 
-That's not an oversight. Pi's whole bet, stated plainly by the person who built it, is that frontier models are already extensively trained on exactly the moves a coding agent makes - reading files, editing them, running a shell command - so a harness doesn't need to re-teach any of that in a bloated prompt. What a harness *does* need to do, on this bet, is get out of the way and let you build the parts you actually want. The scaffolding other agents bake in - guardrails, subagents, planning modes - Pi treats as optional extensions you add back deliberately, once you've felt the need for them. Which means, for the whole first module, you're going to feel the *absence* of guardrails before you build any.
+That is not an oversight. Pi's bet is that frontier models are already trained on the moves a coding agent makes - reading files, editing them, running a shell command - so a harness doesn't need to re-teach them in a bloated prompt. On this bet, a harness's job is to get out of the way and let you build the parts you actually want.
 
-This is the idea the whole course keeps coming back to: the model is the same frontier model you'd get anywhere else. What changes the outcome is the harness wrapped around it - what it can see, what it's told, what's allowed to run unattended. Same model, radically different harness, radically different day-to-day experience. Here's that idea in miniature, on a task that has nothing to do with `stash` yet:
+The scaffolding other agents bake in - guardrails, subagents, planning modes - Pi treats as extensions you add back deliberately, once you've felt the need for them.
+
+So for this whole first module, you'll feel the absence of guardrails before you build any. The model, meanwhile, is the same frontier model you'd get anywhere else. What changes the outcome is the harness wrapped around it - what it can see, what it's told, what's allowed to run unattended. Same model, radically different harness, radically different working day. Here's that idea in miniature, on a task that has nothing to do with `stash`:
 
 <GapDemo client:visible />
 
-Pi's version of "your context" isn't rules and MCP servers mounted for you - for now, it's closer to the bare run on the left. You're about to spend this module building toward the right side, by hand, on `stash`.
+Pi mounts no MCP servers for you, and its rules handling reads only files named where it looks - the `SYSTEM.md` your friend left at the repo root doesn't qualify yet, which is a later chapter's job - so for now your run looks closer to the `bare agent` one. You'll spend the rest of this course building toward the `+ your context` one, by hand, on `stash`.
 
 ## The hour we'll follow
 
-We'll go from nothing installed to that feed-date bug fixed and committed, in four moves:
+We'll go from nothing installed to the date bug fixed, verified, and committed, in four moves:
 
 - **Install it** and see the surfaces Pi actually runs on - [Install Pi and see the surfaces](/course/pi/getting-started/install/)
 - **Authenticate** with your own key, and understand a real restriction before it costs you an afternoon - [Bring your own key](/course/pi/getting-started/auth/)
 - **Watch one turn of the loop** - the whole mechanism Pi runs on, and what's missing from it - [Understand one turn of the loop](/course/pi/getting-started/the-loop/)
-- **Hand it the feed-date bug** and watch that loop close on a real fix in `stash` - [Ship your first fix](/course/pi/getting-started/first-change/)
+- **Hand it the date bug** and watch that loop close on a real fix in `stash` - [Ship your first fix](/course/pi/getting-started/first-change/)
 
-None of it is hard, and that's sort of the point. The habits this hour asks you to build - reading the loop closely, knowing exactly what has filesystem and shell access and when - matter more with Pi than with almost any other agent you've used, because here nothing is stopping the model from acting except your own understanding of what you just told it to do.
+None of it is hard, and that's sort of the point. The habits this hour asks for - reading the loop closely, knowing exactly what has filesystem and shell access and when - are the whole safety story here, because nothing stops the model from acting except your own understanding of what you just told it to do. One fix, one still-red failure deferred to the next chapter, and one commit by the end.

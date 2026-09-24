@@ -1,17 +1,21 @@
 ---
 title: "The size cap, fallback filenames, and why AGENTS.md is not a boundary"
-description: "AGENTS.md truncates silently past 32 KiB, accepts fallback filenames, and is never a security boundary. Rules shape behaviour; the sandbox is what enforces."
-sidebar:
-  label: "Not a boundary · limits & the hard line"
+description: "AGENTS.md stops loading silently past a 32 KiB project-chain cap, accepts fallback filenames, and is never a security boundary. budgetcli is the proof: both violations shipped under a correct, auto-loaded file."
 ---
 
-You can write a rule now, price what it costs, place it where it only charges rent to the sessions that need it, and phrase it so Codex actually follows it. A 36-times return on the file's own cost, from the last lesson, is a real number. It is not the whole story. This lesson is where the chapter admits what that number does and doesn't buy you - two practical limits that will quietly bite if you don't know them, and one conceptual one that matters more than the rest of the chapter combined.
+The chapter has now built the full picture of a rules file: what it costs, where each file lives, what a good line looks like, what the repo's file earned. This lesson is where the chapter admits what none of that buys you - two practical limits that bite quietly if you don't know them, and one conceptual line that matters more than the rest of the chapter combined. And this time the proof is not a constructed scenario. It is the repo's own history.
 
 ## The size cap truncates silently
 
-The combined `AGENTS.md` brief - every file Codex concatenated on its discovery walk - has a ceiling. It's set by `project_doc_max_bytes` in `config.toml`, and the default is **32 KiB** (32,768 bytes) as of this writing - a default like this is exactly the kind of value that moves between releases, so read it off the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference) rather than trusting the number here. Here's the part that bites: once the concatenated size reaches that limit, Codex **stops adding content** and gives you **no warning** that it did. Rules past the cap simply aren't in context, and nothing on screen tells you a rule went missing. A rule you paid to write and never got read is worse than no rule at all - you still think it's covered, and the ledger you've been building this chapter doesn't know the difference.
+The project side of the discovery walk - every file Codex collects from the project root down to your launch directory - has a ceiling. It is set by `project_doc_max_bytes` in `config.toml`, and the default is **32 KiB** (32,768 bytes) as of this writing. A default like this is exactly the kind of value that moves between releases, so read it off the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference) rather than trusting the number here.
 
-For `budgetcli` this is comfortable headroom - your money, category, and date rules are a few hundred bytes, nowhere near the cap on their own. But the cap is on the *combined* brief across the whole hierarchy from the last lesson. Stack a long global `~/.codex/AGENTS.md`, a fat project file, and a few subdirectory files, and they all sum toward one budget - the rule you actually care about might be the one that falls off the end. The fix is the same discipline as the last lesson: keep each file lean so you never approach the limit. If you genuinely need more room, you can raise `project_doc_max_bytes`, but the better instinct is to prune first.
+Here's the part that bites: once the combined project-chain size reaches that limit, Codex **stops adding files** and gives you **no warning** that it did. Rules past the cap simply aren't in context.
+
+One boundary of the cap is narrower than people assume. `project_doc_max_bytes` governs the **project chain only**. Your global `~/.codex/AGENTS.md` is loaded separately, before the walk, and is not charged against that budget - so a fat global file cannot push your project rules past the cap. It still costs its tokens in every session on every project; it just can't evict the project file.
+
+The cap itself stays a real hazard for the project side: stack a fat root file with a few nested files on a deep launch path, and the file that falls off the end might be the one you actually care about.
+
+For `budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI) this is comfortable headroom. The whole project chain today is one 460-byte file; you could add the parse-path proposal (the one drafted line this chapter adds: convert amount strings to integer cents without passing through a float) and forty like it without noticing the ceiling. The discipline is still worth having now, on a repo where mistakes cost nothing: keep each file lean so you never approach the limit. If you genuinely need more room you can raise `project_doc_max_bytes`, but the better instinct is to prune first.
 
 ```toml title="~/.codex/config.toml"
 # Default is 32 KiB. Raising it is a last resort - prune first.
@@ -20,38 +24,32 @@ project_doc_max_bytes = 32768
 
 ## Fallback filenames
 
-Codex looks for `AGENTS.md` by name. If a project doesn't have one, you can tell Codex to accept other filenames instead via `project_doc_fallback_filenames` - an array of additional names it tries when `AGENTS.md` is missing:
+Codex looks for `AGENTS.md` by name. If a project keeps its standing context under a different name, you can tell Codex to accept other filenames via `project_doc_fallback_filenames` - an array of additional names it tries in each directory when `AGENTS.md` is missing:
 
 ```toml title="~/.codex/config.toml"
 project_doc_fallback_filenames = ["CONTEXT.md", "CONVENTIONS.md"]
 ```
 
-This is useful when a repo already carries its standing context under a different name and you'd rather not duplicate it. Note the order from the discovery walk still holds: at each level Codex checks `AGENTS.override.md`, then `AGENTS.md`, then your fallback names. The fallbacks are a safety net for the base file, not a replacement for the override. Both knobs are documented in the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+The per-directory order from the discovery walk still holds: at each level Codex checks `AGENTS.override.md`, then `AGENTS.md`, then your fallback names, and uses at most one file from that directory. The fallbacks are a safety net for the base file, not a replacement for the override. Both knobs are documented in the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
 ## The hard line: guidance is not a boundary
 
-Now the part to internalise, and the reason a 36-times return on a rule's cost still isn't the end of the argument. Everything in this chapter - the money rule, "never write to `ledger.db` directly," the whole file - is **guidance the model interprets, not a constraint the system enforces.** `AGENTS.md` shapes what Codex *tends* to do. It does not *prevent* anything. A great ratio on paper doesn't change what kind of number it is.
+Now the part to internalize, and the reason this chapter exists. Everything in it - the money rule ("Money is always integer cents. Never use floats for currency."), the date rule ("Never use locale-dependent date formats."), the parse-path proposal, the whole file - is **guidance the model interprets, not a constraint the system enforces.** `AGENTS.md` shapes what Codex *tends* to do. It does not *prevent* anything.
 
-This matters most on `budgetcli` precisely because it's your own financial data. Suppose you write "never touch the production ledger database" in `AGENTS.md`. That's a good rule, gradeable by the last lesson's own bar, and Codex will usually honor it. But "usually" is not "cannot." The model could misread the situation, a rule could fall past the silent size cap above, or a confusing prompt could lead it somewhere the rule said not to go. If the only thing standing between Codex and your real ledger is a sentence in a Markdown file, you have a wish costed to look like a guarantee, not a guardrail.
+And `budgetcli` is the proof, no hypothetical needed. A correct, auto-loaded rules file was in context when the day-first date parse (`"%d/%m/%Y"`, line 11 of `app/importers/csv.py`) shipped against its date rule, and it is in context right now while line 13 of the same file (`int(float(row["amount"]) * 100)`) parses money through a float against its money rule. Both violations shipped. The file was read both times.
 
-The actual guardrail is the sandbox and approval posture. That's the entire reason [the approvals-and-sandbox chapter](/course/codex/approvals-sandbox/) came *before* this one. `workspace-write` with the network off, `writable_roots` scoped to a copy of the data, and approvals gating anything destructive establish a default capability boundary; interactive approvals can still authorize exceptions. `AGENTS.md` tells Codex the right thing to do; the sandbox and approval policy constrain what it can do by default. You need both, and you must never let a rule stand in for a boundary - not even one you've just watched pay for itself thirty-six times over.
+The repo's own testing rule shows the same line from another angle. "All tests must pass before committing" is in the file, and it is a good rule - specific, checkable, exactly the shape the last lesson prescribed. But it is a wish, not a gate. Nothing in Codex consults it before a commit happens; it relies on the model choosing to comply, which it usually does, and "usually" is not a mechanism.
+
+When a rule is load-bearing for *safety* - never touch this, always run that - a sentence in Markdown is the wrong tool. The right tools are the ones you already have and the ones coming: the sandbox and approval policy bound what the agent can do, and later chapters add gates that run deterministically, whatever the model's mood.
+
+That is the entire reason the approvals-and-sandbox chapter came *before* this one. The fence and the rules answer different questions. `budget-audit` - the [saved profile](/course/codex/approvals-sandbox/profiles-for-trust/) that pairs a `read-only` sandbox with `never` approvals, so no write can be requested or granted - *prevents* writes; `AGENTS.md` merely discourages wrong ones. You need both, and you must never let a rule stand in for a boundary - not even a rule that just made a fix cheap.
 
 :::caution[Two jobs, two tools]
-Use `AGENTS.md` to make Codex *correct* - integer cents, the right categories, the conventions it would otherwise miss. Use the sandbox and approvals to make Codex *safe* - unable to reach what it shouldn't, even if a rule fails. A rule that's load-bearing for safety belongs in the sandbox config, not in prose.
+Use `AGENTS.md` to make Codex *correct* - integer cents, ISO dates, the conventions it would otherwise guess at. Use the sandbox and approval policy to make Codex *safe* - unable to reach what it shouldn't, even when a rule fails or was never written. A rule that is load-bearing for safety belongs in the fence or a gate, not in prose.
 :::
 
-## The ledger, three rows in
+## What the chapter produced, and what it did not
 
-Two rows opened this course's ledger back in chapter one, and every chapter since has kept score the same way: tokens, turns, blast radius, and whether the move's value survives past the session it happened in.
+Count the chapter's own output honestly. The audit cost one read of a file the repo already had and changed no code. What it produced is understanding - the file informs, it does not enforce - plus one proposed line that states the sanctioned path from amount strings to cents. The hardening itself, the code change that kills the float parse in `app/importers/csv.py`, has not happened. Neither has the other job this chapter kept naming: wiring `categorise()` (the keyword categorizer in `app/services/categorise.py`, which nothing calls yet) into the import path, so imported transactions stop landing `"uncategorised"`.
 
-| Move | Tokens | Turns | Blast radius | Recurs? |
-|---|---|---|---|---|
-| Read-only question ("what does this do") | ~3,900 est. | 1 | None - nothing written | No - next session starts blind again unless it's written down |
-| Fix the CSV date bug | ~2,100 est. (csv.py alone) | 4 | Money-adjacent - briefly drifted into the amount field | Partly - the line holds in git, but the habit that let it drift doesn't |
-| **Write `AGENTS.md` (the three facts)** | **~284 est., paid every session** | **0 - reads automatically, before your first prompt** | **None - guidance, not enforcement** | **Yes** |
-
-That last cell is the first one in this ledger that gets to say yes. The read-only question taught you something that evaporated by the next session. The CSV fix held for one line and left the reason it broke undocumented, so the same class of mistake found a new line to hide in. The `AGENTS.md` you wrote this chapter doesn't wait to be triggered again and doesn't need a human to catch it a fourth time - it's read fresh, in full, before Codex's first move of every session from now on, for as long as the file stays in the repo. That's what "recurs" means here: not that the mistake keeps coming back, but that the fix does, automatically, without you.
-
-`budgetcli` now explains itself to Codex. The float-money bug, the invented categories, the day-first dates - written down once, read automatically every run, layered across scopes, phrased so Codex follows, and priced against the mistakes they replace. And you know the file's edges: the silent size cap, the fallback names, and the hard line that guidance never substitutes for the sandbox.
-
-But being correct isn't the same as being efficient. Every session now reads a file that keeps Codex from guessing wrong about money - and every session, on every task, Codex still spends exactly as much thought as it would have spent anyway, whether the task was a boilerplate endpoint or the hardest design decision in the repo. Fixing what Codex knows was free once you wrote it down. What it's still spending on *how hard to think* isn't priced at all yet. [That's the next chapter: tuning reasoning effort to fit the work.](/course/codex/models-effort/)
+Both jobs are exactly the kind of work the next chapter prices. One is pattern-following; one is a genuine design fork - where the categorizer hooks in, how conflicts resolve, what the keyword table has to say about each. They need different amounts of thought, and thought is a dial Codex exposes: which model, how much reasoning effort, per task. [That is the next chapter.](/course/codex/models-effort/)

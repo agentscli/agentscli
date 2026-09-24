@@ -1,13 +1,13 @@
 ---
 title: Ship your first reviewed change with Cursor
-description: "Hand the agent the date bug, watch the loop close on it, review the diff line by line, and commit the first change you actually trust."
+description: "Hand the agent a real date bug, watch the loop close on it, review the diff line by line, and commit the first change you actually trust."
 ---
 
-Now the actual ticket. `budgetcli` imports transactions from bank CSV exports, and you've already seen the symptom: a statement row that plainly reads one day lands in the database as another. From the last lesson you watched the Agent read first - it knows the parsing lives in `src/importers/csv.ts` and that the importer assumes one fixed date format, which is exactly why a bank that writes dates differently gets silently misread. You don't need to feed it any of that again. You describe the outcome you want in the same words you'd use with a teammate, and let the loop you just watched do the legwork.
+Here is the change you'll ship, driving the loop yourself. The course's illustrative repo, `budgetcli` - a small self-hosted personal-finance API that tracks accounts, imports bank statements from CSV exports, and flags overspend - has a bug in its CSV importer: a statement row that plainly reads one day lands in the database as another. No sample CSV or database ships with this site, so build the check yourself: in your repo, or in a disposable TypeScript repo, write a two-line CSV with a header and one row dated `03/02/2026` (3 February, day first), run it through the importer, and compare the date it returns with the date in the row. An importer that splits the day, month, and year and then hands the rebuilt `DD/MM/YYYY` string to `Date.parse()` returns a March date, because Node reads that string month first. Only *some* rows are wrong, which is the tell - the importer assumes one fixed date format, so a bank that writes dates differently gets silently misread. The change to ship: make the importer handle the common bank date formats, pin the broken case with a test, and commit it once you've reviewed the diff.
 
 ## Describe the outcome, not the steps
 
-Open the **Agent sidebar** (the chat panel from the last lesson, not Tab) and tell it what's wrong in terms of *behavior*:
+Open the **Agent sidebar** (Cursor's chat panel, <kbd>Cmd/Ctrl+I</kbd> - not Tab, which is inline completion) and tell it what's wrong in terms of *behavior*:
 
 ```text
 > the CSV importer is parsing some statement dates into the wrong day -
@@ -16,7 +16,7 @@ Open the **Agent sidebar** (the chat panel from the last lesson, not Tab) and te
   that's currently broken.
 ```
 
-Notice what you didn't say. You didn't name the function, didn't paste the parsing code, didn't spell out the test framework. You stated the *what* and left the *how* to the Agent - and on a repo you don't know yet, that's deliberate: you're letting Cursor do the part it's genuinely better at than you right now (finding the relevant code in an unfamiliar codebase) while you stay the judge of whether its answer is right. It works the problem the same way you would:
+Notice what you didn't say. You didn't name the function, didn't paste the parsing code, didn't spell out the test framework. You stated the *what* and left the *how* to the Agent - and on a repo you don't know yet, that's deliberate: you're letting Cursor do the part it's genuinely better at than you right now (finding the relevant code in an unfamiliar codebase) while you stay the judge of whether its answer is right. Here's an illustrative run of the whole turn:
 
 ```text
   Read src/importers/csv.ts, tests/csv-import.test.ts              (2 files)
@@ -27,11 +27,11 @@ Notice what you didn't say. You didn't name the function, didn't paste the parsi
   and add a test covering the format that's currently broken.
 
   Edited src/importers/csv.ts
-    - const txnDate = new Date(row["date"])
-    + const txnDate = parseStatementDate(row["date"])
+    - const parsed = new Date(Date.parse(`${day}/${month}/${year}`));
+    + const parsed = parseStatementDate(dateStr);
 
   Edited tests/csv-import.test.ts
-  Ran   npx vitest tests/csv-import.test.ts  →  9 passed
+  Ran   npx vitest run tests/csv-import.test.ts  →  2 passed
 ```
 
 It **read** the relevant files first - including the existing test, so its new test would match the house style instead of inventing one. It **proposed** a plan in two sentences. Then - and here's where Cursor differs from a terminal agent that stops and asks before every write - the Agent **applied** the edits to your files as it worked, showed them to you as red/green inline diffs, and ran the test itself to check its own work.
@@ -45,7 +45,7 @@ In a terminal agent the leash is the *approval prompt*: nothing touches disk unt
 So go read it. The Agent's closing summary is a *claim* about what it did; the diff is the evidence - and on code you inherited, holding your own money, the gap between claim and evidence is exactly where you want your eyes. Cursor gives you the diff two ways, and you'll use both:
 
 - **Inline, file by file.** Open `src/importers/csv.ts` and the changed lines show as red/green right in the gutter. Each file the Agent touched carries **Keep All** and **Undo All** controls (the exact label may vary by version), so once you've read a file you can lock it in or throw it out without leaving the editor.
-- **A dedicated review pass.** For anything bigger than a one-liner, you can have the Agent itself walk the changes line by line - Cursor's **Review → Find Issues** (the exact label may vary by version) runs a second model over the proposed edits looking for problems. Useful later; overkill for a date fix you can read in thirty seconds.
+- **A dedicated review pass.** For anything bigger than a one-liner, Cursor can walk the changes for you: **Agent Review** (as of September 2026) runs a dedicated code review over your local changes. Enable it in Settings → Agents → Agent Review (from Cursor 3.11 the setting lives under Git & PRs → Pull Requests), trigger it with the `/agent-review` command in the agent window, or run it from the Source Control tab. It offers two depths: **Quick**, a fast, low-cost pass suited to small diffs and sanity checks, and **Deep**, a slower pass for complex logic, security-sensitive code, and large refactors ([Agent Review docs](https://cursor.com/docs/agent/agent-review)). Useful later; overkill for a date fix you can read in thirty seconds.
 
 You're reading for two things: *does the change do what I asked,* and *did it do anything I didn't ask.* For this fix that's a quick read, but the point isn't the time - it's that you never skip it, because the muscle you're building on a one-liner is the one that protects you when the diff is forty lines across six files and you're tempted to skim. Three checks, every time:
 
@@ -59,20 +59,21 @@ If it's all right, **Keep All** on each touched file. If something's off, the cl
 
 Before the commit, know your two safety nets, because they are not the same net and they fail differently.
 
-The first is **checkpoints**. Cursor snapshots your files automatically before the Agent makes significant changes, and you can hover any earlier message in the chat and hit **Restore Checkpoint** to roll the whole working tree back to that point - the escape hatch when a turn goes sideways and Undo-by-file would be tedious. But checkpoints are stored locally, **separate from Git**, and Cursor itself is explicit that they're only for undoing Agent changes, not version control. Treat them as a session-scoped undo, not a floor - they can be wiped by a later restore, and they vanish with the chat.
+The first is **checkpoints**. Cursor snapshots your files automatically before the Agent makes significant changes, and you can hover any earlier message in the chat and hit **Restore Checkpoint** to roll the working tree back to that point - the escape hatch when a turn goes sideways and Undo-by-file would be tedious. But checkpoints are stored locally, **separate from Git**, and Cursor's docs are explicit that they're only for undoing Agent changes, not version control ([Agent overview](https://cursor.com/docs/agent/overview), as of September 2026; Cursor also snapshots automatically before significant changes, per the same page). Treat them as a session-scoped undo, not a floor.
 
 The second net is the one that doesn't vanish: **git**. When the review passes, commit immediately - and you can have the Agent do it:
 
 ```text
 > commit this with a sensible message
 
-  Ran  git commit -am "Fix CSV importer to handle multiple bank date formats"
+  Ran  git add tests/csv-import.test.ts
+       git commit -am "Fix CSV importer to handle multiple bank date formats"
 ```
 
-This is the single most valuable habit in the chapter, and on Cursor it's doubly load-bearing precisely *because* the Agent edits straight to disk. Everything it did is, until you commit, sitting in your working tree one bad next step - or one stray **Restore Checkpoint** - away from being lost or tangled. **Git is the floor that doesn't vanish.** Checkpoints undo the Agent; commits make a reviewed state permanent in a way nothing in Cursor's local session can quietly undo. Commit at every green, reviewed checkpoint and you can let the Agent take bigger swings, because the downside is always capped at "go back to the last commit." On a week-long build in someone else's codebase, that floor is what lets you move fast without fear.
+In this run the test file already existed (the Agent read it first), so the add is belt-and-braces - but make it the habit anyway: `commit -am` only stages changes to files Git already tracks, so a test file the Agent *created* would otherwise be left out of the commit. This is the single most valuable habit in the chapter, and on Cursor it's doubly load-bearing precisely *because* the Agent edits straight to disk. Everything it did is, until you commit, sitting in your working tree one bad next step - or one stray **Restore Checkpoint** - away from being lost or tangled. **Git is the floor that doesn't vanish.** Checkpoints undo the Agent; commits make a reviewed state permanent in a way nothing in Cursor's local session can quietly undo. Commit at every green, reviewed checkpoint and you can let the Agent take bigger swings, because the downside is always capped at "go back to the last commit." On someone else's codebase that floor is what lets you move fast without fear.
 
 :::tip[Try it]
 Open `budgetcli` (or your own repo) in Cursor and describe a small fix to the Agent. Before you hit **Keep**, read every line of the diff. If anything looks wrong, hit **Undo** and rephrase. Commit only when the diff matches your intent.
 :::
 
-Your first change is described, applied, reviewed in the diff, kept, and committed - the whole loop, closed once by hand on a real bug. The shape never changes for the rest of the course; what changes is how much latitude you give the Agent to run it. You ran that loop once, deliberately, as a ceremony. The next chapter is the next forty times you run it - fast enough that it stops being a ceremony and becomes a reflex, across the two surfaces you'll reach for a hundred times a day. [Next: the daily edit loop](/course/cursor/daily-edit-loop/).
+Your first change is described, applied, reviewed in the diff, kept, and committed - the whole loop, closed once by hand on a real bug. The shape never changes for the rest of the course; what changes is how much latitude you give the Agent to run it. You ran that loop once, deliberately, as a ceremony. The next chapter is the next forty times you run it - fast enough that it stops being a ceremony and becomes a reflex, across the Agent sidebar and Tab, the two surfaces you'll reach for a hundred times a day. [Next: the daily edit loop](/course/cursor/daily-edit-loop/).

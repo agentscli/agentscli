@@ -1,54 +1,82 @@
 ---
-title: "Generate your first CLAUDE.md from the repo with /init"
-description: "Don't write a CLAUDE.md from a blank page. Run /init and Claude reads your codebase, then drafts a baseline of the commands and conventions it can discover."
-sidebar:
-  label: "Init · /init drafts CLAUDE.md"
+title: "Improve an existing CLAUDE.md with /init"
+description: "On a repo that already has rules, /init suggests improvements instead of overwriting. The lesson is the audit: keep what is true, correct what is half-true, reject what is invented."
 ---
 
-You could open an empty `CLAUDE.md` and start typing everything the agent keeps forgetting about the payments service. Don't - at least not first. Most of what you'd write on day one is stuff the agent can find by *reading the repo*: the test command is in `package.json`, the directory layout is right there in `src/`, the linter config announces the style. Making yourself transcribe what the code already states is exactly the kind of toil this chapter is supposed to kill. So you let the agent do the first draft.
+`/init` is the Claude Code command that drafts a `CLAUDE.md` for a repository: it reads the code and writes the project's commands, structure, and conventions into a file that loads into every future session. On a repo with no such file, that is the whole story. Repositories you join often already have one, and there the documented behavior is different and more useful: if a `CLAUDE.md` already exists, `/init` suggests improvements rather than overwriting it ([memory reference](https://code.claude.com/docs/en/memory)). Your job becomes an audit. Keep what is true, correct what is half-true, reject what is invented.
 
-## One command, a drafted baseline
+## The starting state
 
-`/init` tells Claude to analyze your codebase and write a starting `CLAUDE.md` for it - build and test commands, project structure, and the conventions it can infer from the code it reads.
+The example repo is a small TypeScript payments service (the example this course returns to; each page restates the facts it needs). Its root `CLAUDE.md` holds eight rules in three sections: money handling (integer cents, never floating point), testing (`npm test`, no commit without passing tests, a regression test with every bug fix), and code style (strict TypeScript, `.js` extensions on imports, named exports). Those rules already earn their keep. What the file lacks is the map: the dev, build, and lint commands, and the shape of the source tree.
+
+To audit what `/init` proposes, you need three facts about the repo, all readable in a minute:
+
+- **Scripts in `package.json`:** `dev` is `tsx watch src/index.ts`, `build` is `tsc`, `test` is `vitest run`, `lint` is `eslint src/ --ext .ts`.
+- **Source layout:** `src/index.ts` holds the Express app, its routes, and the `listen` call. `src/payments/` holds `processor.ts`, `ledger.ts`, and `rate-limiter.ts`. `src/utils/` holds `idempotency.ts`. Tests live in `tests/`.
+- **The ledger:** the first line inside the class in `src/payments/ledger.ts` is `private entries: Entry[] = [];`. Balances live in an array in process memory and nothing writes them anywhere.
+
+The third fact is the one that will matter.
+
+## Suggest, don't overwrite
+
+Run it at the prompt of a Claude Code session opened in the repo ([the getting-started chapter](/course/claude-code/getting-started/) covers starting one):
+
+```text
+> /init
+```
+
+Claude reads the codebase and the existing rules, then proposes additions. The exchange below is illustrative, not captured, though the files and commands in it are the repo's real ones:
 
 ```text
 > /init
 
   ⏵ Read  package.json
-  ⏵ Read  README.md
-  ⏵ Bash  ls src/
-  ⏵ Read  src/routes/charges.js
-  ⏵ Glob  **/*.test.js
+  ⏵ Read  CLAUDE.md
+  ⏵ Read  src/index.ts
+  ⏵ Glob  src/**/*.ts
+  ⏵ Read  tests/payments.test.ts
 
-  Wrote CLAUDE.md:
+  CLAUDE.md exists - suggested additions:
 
-  # payments-service
   ## Commands
-  - Test: `npm test`
-  - Lint: `npm run lint`
-  - Dev server: `npm run dev`
+  - Dev server: `npm run dev` (tsx watch src/index.ts)
+  - Build: `npm run build` (tsc)
+  - Lint: `npm run lint` (eslint src/ --ext .ts)
+  - Test: `npm test` (Vitest, single pass via `vitest run`)
+
   ## Architecture
-  - Charge endpoints in src/routes/, gateway calls in src/services/
-  - Migrations in migrations/, run with `npm run migrate`
+  - Express app, routes, and server startup in src/index.ts
+  - Payment domain in src/payments/ (processor, ledger, rate-limiter)
+  - Idempotency helper in src/utils/idempotency.ts
+  - Ledger persists completed payments; tests live in tests/
   ...
 ```
 
-What lands is a real, repo-grounded baseline: the test command you were typing every morning is now captured, written down once, loaded into every future session for free. That single entry already pays back the daily tax from the chapter intro.
+Three of the four architecture lines describe the repo as it is. One does not, and it is the most plausible line in the block.
 
-A few things worth knowing about how `/init` behaves, because they shape how you use it. If a `CLAUDE.md` already exists, `/init` doesn't clobber it - it reads what's there and *suggests improvements* instead. With the newer initialization flow enabled, `AGENTS.md` can also be considered; do not assume every version reads it by default. If your repo carries `.cursorrules`, verify how the installed version handles it rather than assuming every instruction is imported. The exact behavior, including the optional interactive multi-phase flow, is documented on the [memory page](https://code.claude.com/docs/en/memory).
+## Audit each suggestion against the file it describes
+
+Take them in order. The commands: open `package.json` and compare its scripts. Four suggestions, four exact matches, and the current `CLAUDE.md` documents none of them as commands - it names `npm test` only inside a testing rule. Keep them. A suggestion that names a real command with the wrong details is the half-true case: correct it to the file's script. A session that knows how to lint and build stops guessing.
+
+The architecture: `src/index.ts` really does hold the app, the routes, and the `listen` call. `src/payments/` holds the three files named, and `src/utils/` holds the idempotency helper. True so far.
+
+Then the ledger line. `src/payments/ledger.ts` keeps its entries in an in-memory array. Restart the process and every balance is zero. The suggestion inferred "persists" from the class name, which is exactly how a fast reader reasoning from names fails. Reject it, or better, invert it: the corrected line `The ledger is in-memory; balances reset on restart` is worth keeping, because a constraint the directory's name does not announce is precisely what a rule is for. Proposed edits to existing rules get the same audit, and a line that predates the draft and still passes it outranks the draft's rewording of it.
+
+The likely failure at this step is the rubber stamp. A wrong line in `CLAUDE.md` is worse than no line, because it is a confident falsehood loaded into every future session. Five minutes checking each suggestion against the file it describes is the recovery. Expect a permission prompt when `/init` writes the file (how it appears depends on your permission mode and saved rules), and run `git diff CLAUDE.md` to see exactly what changed before you commit.
+
+## Two behaviors to pin to the docs
+
+Two more facts are worth taking from the [memory reference](https://code.claude.com/docs/en/memory) rather than from recall:
+
+- `/init` also reads existing Cursor rules (`.cursor/rules/`, `.cursorrules`) and Copilot instructions (`.github/copilot-instructions.md`) when it finds them, and folds what they say into its suggestions. A repo that has been driven by an IDE assistant is not a blank page either.
+- An optional interactive, multi-phase `/init` flow sits behind the `CLAUDE_CODE_NEW_INIT` environment variable. Do not assume which flow your version runs by default.
 
 :::note[Generated, not finished]
-`/init` gives you a *baseline*, not a final answer. It captures what's discoverable from the code. It cannot know the things that live only in your head - that charges are stored in cents, that retries must be idempotent, that nobody touches the legacy `v1/` routes. Those come next, by hand.
+`/init` captures what is discoverable from the code. It cannot supply the judgment around those facts: which lines are load-bearing, which conventions the team actually holds, what a new contributor must be told on day one. The commands section it drafted is true and useful; whether each line deserves permanent context is a different question.
 :::
-
-## Read the draft, don't rubber-stamp it
-
-Treat the generated file like a generated plan from the last chapter: useful, fast, and not automatically right. Open it and read it. `/init` infers, and inference can be subtly off - it might guess `yarn test` when your team standardized on `npm`, or describe a directory's purpose from its name rather than its contents. Every wrong line in `CLAUDE.md` is worse than no line, because it's a confident falsehood loaded into *every* session. Five minutes reading the draft now saves you from an agent that's been quietly misinformed for a month.
-
-So the workflow is: run `/init`, read what it wrote, correct what it got wrong, delete what it padded. You've turned a blank page into a near-complete first draft in one command, and spent your own effort only on the last mile - the judgment the agent couldn't supply.
 
 :::tip[Try it]
-Run `/init` in your own repo. Read the generated CLAUDE.md and delete every line that states the obvious. Keep only rules you'd tell a new teammate on day one. Commit the trimmed result.
+Run `/init` in a repo that already has a `CLAUDE.md`, yours. Read every suggestion next to the file it describes. Keep what is true, correct what is half-true, reject what is invented, and commit only a diff you would defend in review.
 :::
 
-That last mile is the real skill, though, and it's worth its own lesson. A `CLAUDE.md` full of the *wrong kind* of content is just expensive noise the agent drags into every conversation. [So what actually earns a place in the file?](/course/claude-code/rules-memory/good-rules/)
+The audit leaves the file true. Truth is the entry fee, not the winning criterion: every surviving line still has to justify the context it spends on every session. [What actually earns a place in the file?](/course/claude-code/rules-memory/good-rules/)

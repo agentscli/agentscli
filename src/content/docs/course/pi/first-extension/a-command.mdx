@@ -1,17 +1,19 @@
 ---
 title: "Build a command: /stash"
-description: "Build /stash, a triage view for the saved entries that need attention - and see exactly how a command you trigger differs from a tool the model calls."
-sidebar:
-  label: "A command · /stash"
+description: "Build /stash, a triage view for the stored entries still needing attention - and see exactly how a command you trigger differs from a tool the model calls."
 ---
 
-You've done the manual version of this four times this week already: open a SQLite browser, write a one-off query, squint at which rows the extractor choked on. The chore you're automating starts with that same question - finding *which* entry is broken - and it's a job for a command you trigger yourself, on demand, not something you want the model deciding to run on your behalf mid-conversation. Slash commands are Pi's answer to "user-initiated, not model-initiated," and `pi.registerCommand` is how you add one.
+You already know this chore's manual shape: open a terminal, write a one-off `SELECT` against `stash.db` (the database of `stash`, the course's running example - the small FastAPI feed reader [this module's opener](/course/pi/models-config/) describes, with its backlog of rows saved while date parsing was broken), squint at which rows still carry a missing `published` or a blank `summary`. The backlog shrinks every time you fix a feed and grows again whenever a bad one slips through.
+
+Finding *which* entries still need work is a job for a command you trigger yourself, on demand - not something you want the model deciding to run on your behalf mid-conversation. Slash commands are Pi's answer to "user-initiated, not model-initiated," and `pi.registerCommand` is how you add one.
 
 :::note[About the numbers in this chapter]
-The entry IDs, failed-entry counts, and character counts in this chapter's transcripts (`#142`, `3 failed entries`, `4,213 characters`) are invented to make the walkthroughs traceable - they're not real output from a running `stash`. Later in this chapter you'll count a real number yourself, straight off your own extension.
+The entry IDs, feed IDs, and row counts in this chapter's transcripts (`#1`, feed `1`, `2 undated entries`) are invented to make the walkthroughs traceable - they're not real output from a running `stash`. The queries themselves run as written against the repo as this course has left it. Later in this chapter you'll count a real number yourself, straight off your own extension.
 :::
 
 ## Registering it
+
+One frame before the code: an *extension* is a TypeScript file under `.pi/extensions/` (or your global extensions folder) whose default-exported function receives Pi's `ExtensionAPI` when Pi loads it - the same mechanism that carries tools and hooks, introduced properly in [the anatomy lesson](/course/pi/first-extension/anatomy/). That exported function is the factory; `pi.registerCommand` inside it is what adds a slash command. With that frame:
 
 Inside your extension's factory function:
 
@@ -19,26 +21,46 @@ Inside your extension's factory function:
 // .pi/extensions/stash-tools.ts
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+const FILTERS = ["undated", "unlinked", "blank"];
+
+const QUERY = `
+import sqlite3, sys
+where = {
+    "undated": "published IS NULL OR published IN ('', 'None')",
+    "unlinked": "link IS NULL OR link = ''",
+    "blank": "summary IS NULL OR summary = ''",
+}[sys.argv[1]]
+rows = sqlite3.connect("stash.db").execute(
+    "SELECT id, feed_id, title, link FROM articles WHERE " + where
+).fetchall()
+for r in rows:
+    print(f"# {r[0]}  feed {r[1]}  {r[2]}  {r[3] or '(no link)'}")
+`;
+
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("stash", {
-    description: "Show stash entries that need attention",
+    description: "Show stash entries that still need attention",
     getArgumentCompletions: (prefix) =>
       [
-        { value: "failed", label: "failed - extraction errored" },
-        { value: "empty", label: "empty - extracted zero characters" },
+        { value: "undated", label: "undated - published missing or stored as 'None'" },
+        { value: "unlinked", label: "unlinked - link empty" },
+        { value: "blank", label: "blank - summary empty" },
       ].filter((c) => c.value.startsWith(prefix)),
 
     handler: async (args, ctx) => {
-      const filter = args.trim() || "failed";
-      ctx.ui.setStatus("stash", `Checking ${filter} entries…`);
+      const filter = args.trim() || "undated";
+      if (!FILTERS.includes(filter)) {
+        ctx.ui.notify(`Unknown filter '${filter}' - try undated, unlinked, or blank.`, "error");
+        return;
+      }
 
-      const result = await pi.exec("stash", ["list", "--status", filter], {
+      const result = await pi.exec("python3", ["-c", QUERY, filter], {
         signal: ctx.signal,
         timeout: 10_000,
       });
 
       if (result.code !== 0) {
-        ctx.ui.notify(`stash list failed: ${result.stderr}`, "error");
+        ctx.ui.notify(`query failed: ${result.stderr}`, "error");
         return;
       }
 
@@ -54,29 +76,38 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-Save that, run `/reload`, and `/stash` is live. Before you type it, predict what you'll see: you've hand-fixed a broken entry four times this week by memory alone, so the failed list should come back somewhere around that size - not zero, not fifty.
+Two assumptions make that `pi.exec` work, and both come from how the repo already runs. Pi's session sits at the repo root, which is where `stash.db` lives - `stash/db.py` opens it by the bare relative path `Path("stash.db")`, so the working directory has to be right or the query hits a fresh empty database somewhere else.
+
+And `/stash` needs only the standard library: `sqlite3` ships with Python, so the `python3` executable established in the course prerequisites is enough. The project's venv doesn't have to be active for this one - remember that, because the next lesson's tool is pickier.
+
+One clause in the query earns a second look. `undated` matches both `NULL` and the literal string `'None'`, and that's not paranoia - `db.py`'s `save_article` stores `str(article.published)`, and `str(None)` is `'None'`. The rows saved while date parsing was still broken carry the *string*, not a null, so the filter has to catch both. That's the kind of wart you only find by reading the writer, and it's why the query lives in a file you can edit rather than a tool you were handed.
+
+Save that, run `/reload`, and `/stash` is live. Before you type it, predict what you'll see: the backlog was a few hundred rows at its worst and you've been working it down all week, so the undated list should come back a handful of rows long - not zero, not fifty. The shape of the reply, illustrative:
 
 ```text
-> /stash failed
+> /stash undated
 
-  3 failed entries:
-  #142  https://example.com/paywalled-article   (extractor: empty body)
-  #187  https://blog.example.org/post-slug       (extractor: timeout)
-  #201  https://news.example.net/story            (extractor: HTTP 403)
+  2 undated entries:
+  # 1  feed 1  Hello  https://example.com/hello
+  # 3  feed 2  Note  https://notes.example.org/n1
 ```
 
-Three - in the range you'd expect, and now you have exact IDs instead of a hunch. Hold onto `#142`, `#187`, and `#201`; you'll use `#142` again in the next lesson.
+Two rows, exact entry IDs, feed IDs attached - the two things the fix needs. Hold onto feed 1; you'll re-sync it in the next lesson.
 
-Type `/stash` and pause before hitting enter, and the completions you registered show up as suggestions - `failed`, `empty` - so you don't have to remember the exact filter strings you invented.
+Type `/stash` and pause before hitting enter, and the completions you registered show up as suggestions - `undated`, `unlinked`, `blank` - so you don't have to remember the exact filter strings you invented.
+
+One of the three filters will look broken the first time you run it, and it's worth knowing why before you distrust the other two. `/stash unlinked` comes back with at most one row, ever (the writer stores `link` as a plain string, so empty means `''` - which the unique index caps at one; a NULL would evade it, and this repo never writes one) - not a bug in the query.
+
+The dedup fix from [the context chapter](/course/pi/context/) put a unique index on `articles.link`, and the migration that made the index possible collapsed every duplicate link into its first row, empty links included. The schema itself already swept most of the unlinked class of the backlog. The filter stays because an empty link can still land - the index just makes it impossible for a second one to pile up behind it - and because the three completions read as the backlog's definition.
 
 ## What the handler actually receives
 
 A few things about the signature are worth being precise about, because they're easy to get wrong by analogy with the tool you'll build next lesson:
 
-- **`name` is passed without the leading slash.** You call `pi.registerCommand("stash", …)`; the user types `/stash`.
-- **`args` is the raw remainder of the line, as one string** - everything after `/stash `, unsplit. `/stash failed` hands your handler `"failed"`; there's no automatic positional-argument parsing the way some other tools' templating syntax works. If a command needs several arguments, splitting `args` yourself is on you.
-- **The handler gets `ExtensionCommandContext`**, not the plain `ExtensionContext` your hooks will see - a superset with session-control methods layered on (`ctx.newSession`, `ctx.fork`, `ctx.switchSession`, `ctx.navigateTree`), which is the machinery behind Pi's fork/tree/resume commands and, later in this course, subagent extensions. You won't need any of that for `/stash`, but it's there when you do.
-- **`pi.exec`**, not something on `ctx` - it's a top-level convenience for shelling out with the turn's abort signal already wired through (`ctx.signal`), returning `{ stdout, stderr, code, killed }`. It's the same helper the worked "deploy" example in Pi's own docs uses.
+- **`name` is passed without the leading slash.** You call `pi.registerCommand("stash", ...)`; the user types `/stash`.
+- **`args` is the raw remainder of the line, as one string** - everything after `/stash `, unsplit. `/stash undated` hands your handler `"undated"`; there's no automatic positional-argument parsing the way some other tools' templating syntax works. If a command needs several arguments, splitting `args` yourself is on you.
+- **The handler gets `ExtensionCommandContext`**, not the plain `ExtensionContext` your hooks will see - a superset with session-control methods layered on (`ctx.newSession`, `ctx.fork`, `ctx.switchSession`, `ctx.navigateTree`, `ctx.reload`), which is the machinery behind Pi's fork/tree/resume commands and, later in this course, subagent extensions. The docs note these live only on the command context because calling them from an event handler can deadlock the session. You won't need any of that for `/stash`, but it's there when you do.
+- **`pi.exec`**, not something on `ctx` - a top-level convenience for shelling out: pass a command, an argument array, and optionally `signal` and `timeout`, and it returns `{ stdout, stderr, code, killed }` with the turn's abort signal already wired through (`ctx.signal` above). Everything `/stash` does with the database goes through it.
 
 **A raw string in, a notification out - a command's contract is the simplest one this chapter builds.**
 
@@ -84,12 +115,12 @@ A few things about the signature are worth being precise about, because they're 
 
 A couple of ordering facts save you real confusion later:
 
-- **Commands are checked before skills or prompt templates expand.** If you later build a `stash` *skill* (chapter 7) with the same name, your registered command wins - it's resolved first, every time.
-- **Name collisions auto-suffix instead of erroring.** If two loaded extensions both register a `stash` command, Pi doesn't crash or silently drop one - you get `/stash:1` and `/stash:2`. Worth knowing if you ever load someone else's extension pack alongside your own.
-- Built-in commands you've already been using - `/settings`, `/model`, `/tree`, `/fork`, `/resume`, `/reload`, `/quit` - are registered through the exact same mechanism you just used. There's no separate, more-privileged tier for Pi's own commands versus yours.
+- **Extension commands come first in Pi's command ordering.** `pi.getCommands()` lists extensions first, then prompt templates, then skills - so if you later build a `stash` *skill* ([the skills chapter](/course/pi/skills-packages/)) with the same name, it doesn't shadow the command you registered.
+- **Name collisions between extensions auto-suffix instead of erroring.** If two loaded extensions both register a `stash` command, Pi doesn't crash or silently drop one - you get `/stash:1` and `/stash:2`, in load order. Worth knowing if you ever load someone else's extension pack alongside your own.
+- **Built-in commands are not the same mechanism with better names.** `/settings`, `/model`, `/tree`, `/fork`, `/resume`, `/reload` are a separate, privileged tier: they never appear in `pi.getCommands()`, and they're handled only in interactive mode - a `prompt` sent over RPC can't invoke them. The suffixing above is extension-versus-extension only; Pi's own commands don't compete in that list at all, and nothing you register displaces one.
 
 :::tip[Try it]
-Write a `/stash` command (or a command for your own repo) that runs tests and reports a summary. Register it in an extension, reload with `/reload`, and invoke it. Change the command's output format and reload again - no restart needed, the new format is live immediately.
+Write a command for your own repo that runs the focused test file and reports the summary - for `stash`, `pytest tests/test_feeds.py`. Register it in an extension, reload with `/reload`, and invoke it. Change the command's output format and reload again - no restart needed, the new format is live immediately.
 :::
 
-`/stash` solves half the chore: finding what's broken. But it only ever runs when *you* type it - the model can't reach for it mid-conversation, and it can't act on what it finds without you copy-pasting a URL back into the chat. Fixing an entry is exactly the kind of thing you'd rather hand to the agent directly. [Next: give the model its own tool to do the fixing](/course/pi/first-extension/a-tool/).
+`/stash` solves half the chore: finding what's left. But it only ever runs when *you* type it - the model can't reach for it mid-conversation, and it can't act on what it finds without you copying a feed ID back into the chat. Clearing a feed's backlog rows is exactly the kind of thing you'd rather hand to the agent directly. [Next: give the model its own tool to do the re-sync](/course/pi/first-extension/a-tool/).

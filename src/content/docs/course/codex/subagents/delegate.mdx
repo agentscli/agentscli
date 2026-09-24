@@ -1,71 +1,88 @@
 ---
-title: Delegate a noisy recategorisation to an isolated subagent context
-description: "Hand the noisy recategorisation to a subagent. It reads, classifies, and dumps in its own context window, then hands back only the conclusion to your thread."
-sidebar:
-  label: "Delegate · isolated context"
+title: "Delegate the parse-path audit to an isolated subagent"
+description: "Hand the noisy money-path audit to a subagent. It reads, greps, and probes in its own agent thread, then hands back only the findings to your thread."
 ---
 
-The recategorisation is exactly the kind of task that should never run in your main thread: high-volume, thousands of rows, the same classification judgement applied over and over, pages of output you'll skim once and never reference again. You don't need the journey through every row, only the destination - the set of recategorised transactions and a summary of what changed. That shape, *verbose work whose output you'll never look at again*, is the textbook case for delegating to a subagent. Here's the tension underneath that textbook case, though: the isolation that makes the delegation worth doing is the same isolation that erases the reasoning behind the answer the moment the task finishes. You get the finding. You lose the ability to interrogate it.
+Evidence first. The hardening has a known suspect - the float parse in `app/importers/csv.py` (line 14 since the categorizer wiring nudged it down a line), flagged when the course first audited the repo and turned into a proposed rule in [the rules chapter](/course/codex/rules/). A fix designed against one suspicious line is still a fix designed against a guess.
+
+Before touching anything, you want the parse path walked end to end: what the importer reads, what `models.py` accepts, and what the tests actually pin about money. That audit is exactly the shape that should never run in your main thread.
+
+Greps for `float` and `amount`, probe runs like `python3 -c "print(int(float('0.29') * 100))"`, file dumps, a read of the intake model - none of it is judgment; all of it is debris you will skim once and never reference again. You need the destination, a findings list, not the journey. Verbose work whose output you will never re-read is the textbook case for delegation, and this audit is that shape exactly.
 
 ## Price the reading before you delegate anything
 
-Before you weigh whether to hand this off, weigh what it costs to do it at all - inline or delegated, the reading has to happen somewhere. A careful pass at the recategorisation needs three things to work from: the importer that shapes every row it's about to classify (`src/budgetcli/importers/csv.py`, 210 lines, about 2,100 estimated tokens), the rules it's checking each row against (`src/budgetcli/categorise/rules.py`, 512 lines, about 5,120 tokens), and the test suite that already pins down what "correctly categorised" means for this repo, so it doesn't invent a rule the tests forbid (1,240 lines across the suite, about 12,400 tokens). Add it up: 19,620 tokens of reading, just to get oriented, before a single row gets reclassified.
+Weigh what the reading costs before deciding where it runs, because inline or delegated, it happens somewhere. A careful pass at the parse path needs three things: the importer (`app/importers/csv.py`, 23 lines since the wiring, about 230 estimated tokens), the intake contract (`app/models.py`, 24 lines, about 240), and the tests that define pinned money behavior - the shipped suite plus the regression and wiring tests the course has added along the way, another 400 or so by now. Roughly 850 tokens of orientation before the worker can trust its own verdict.
 
-**Remember that number - 19,620. It's about to turn into the whole case for isolation.**
-
-Run that reading inline and it sits in your window next to everything else you're doing:
+Run that inline and it sits in your window next to everything else - illustrative layout, real numbers:
 
 ```text
-in your main thread (inline)         in your main thread (delegated)
-─────────────────────────────        ───────────────────────────────
-19,620 tokens of orientation read     "recategorise history against the
-3,000 rows read + reasoned over        corrected taxonomy"
-every reclassification logged          a summary: 412 rows changed
-the review you came here to do…        the review you came here to do…
-   ↑ buried under row dumps              ↑ still right there, in reach
+in your window (inline sweep)      in your window (delegated sweep)
+────────────────────────────       ────────────────────────────────
+csv.py + models.py + tests:        "sweep the parse path, read-only;
+~850 est. tokens of reads            csv.py, models.py, what the tests
+grep hits, python3 -c probes         pin about money"
+the 0.29 -> 28 dead end              findings: one violation (csv.py
+the hardening brief, buried            line 14), one coverage gap,
+                                      intake clean. ~100 tokens.
 ```
 
-Same answer, wildly different footprint. The work you actually came to do - reviewing the changes, signing off - stays the most recent, most prominent thing in your context, instead of being pushed thousands of tokens into the past where the agent half-forgets it.
+Same answer, wildly different footprint. The work you came to do - deciding the hardening's shape - stays the most recent, most prominent thing in your context instead of being pushed hundreds of tokens into the past where the agent half-forgets it. The return itself, priced by the prose rule at four characters a token, runs about a hundred tokens: call it eight to one, read to return.
 
 ## Scope it before you hand it over
 
 :::note
-There is no slash command or CLI flag that spawns a subagent. You ask for one in plain language - "delegate this to a subagent," "spin up a worker for this" - and Codex decides to create the child session. The mechanism is prompt-driven: the parent reads your request, judges delegation appropriate, and spawns the worker itself. You steer *what* gets delegated and *how terse* the return should be; the spawning is the agent's call.
+There is no slash command or CLI flag that spawns a subagent. You ask in plain language - "delegate this to a subagent," "spin up a worker for this" - and Codex decides to create the child thread; the docs describe this as manual triggering by direct instruction. You steer *what* gets delegated and *how terse* the return should be. The spawning is the agent's call.
 :::
 
-A subagent is only as good as the brief, because it starts without your context. So the delegation message has to carry everything the worker needs and nothing it doesn't. For the recategorisation that means: the corrected category list (which lives in your `AGENTS.md` from the [rules chapter](/course/codex/rules/) - children inherit the in-scope `AGENTS.md`, so the taxonomy travels with them), the rule that money is integer cents, and a sharp definition of *done*.
+The brief carries everything the worker needs and nothing it does not: the files, the rule the sweep checks against, the return format.
 
 ```text
-> Delegate this to a subagent. Recategorise every transaction in the
-  imported history against the category list in AGENTS.md. For each row
-  that changes category, record the old and new category and the rule that
-  fired. Do not touch amounts - they're integer cents and stay untouched.
-  Return a summary table: count per category before and after, plus any
-  rows you couldn't classify confidently.
+> Delegate this to a subagent. Audit the money parse path, read-only:
+  app/importers/csv.py, app/models.py, and what tests/test_import.py
+  pins about amounts. Any use of float on a money value is a finding,
+  per the AGENTS.md cents rule and the parse-path rule the rules
+  chapter proposed. You may run no-write probes (python3 -c one-liners) to
+  check truncation. Return file:line findings plus a one-line verdict
+  per cleared file. Do not edit anything.
 ```
 
-Notice what the brief asks back for: *a summary, not the rows*. Written out, a table like that runs a little over a paragraph - call it 1,200 characters, which the prose estimator puts at about 300 tokens. Set the two numbers next to each other: 19,620 tokens read, 300 tokens returned. The subagent paid about 65 times its own answer in reading you never see, in a window that isn't yours.
+Note what the brief asks back for: findings and one-line verdicts, not a narrative. A subagent is only as good as its brief because it starts without your conversation - though it does start with the auto-loaded rules chain, so the cents rule and the proposed parse-path rule travel with it.
 
-**Call that trick pay once, keep the finding.** It's the whole reason isolation is worth its cost, and you'll reach for the same move in every later lesson that touches a subagent.
+```text
+findings (illustrative reconstruction; your run supplies the wording):
+  VIOLATION  app/importers/csv.py:14 - int(float(row["amount"]) * 100)
+             routes every amount through a float; 0.29 parses to 28.
+  GAP        no test pins sub-dollar amounts - the truncation is silent
+             on the sample CSV, which happens to survive.
+  CLEAR      app/models.py - amount_cents is int, enforced by pydantic.
+```
 
-## What "keep the finding" actually throws away
+**Call that trick pay once, keep the finding.** It is the whole reason isolation is worth its cost, and every later lesson in this chapter reaches for the same move.
 
-The finding is real, and 65-to-1 is a good trade in tokens. But the cost of delegating was never the reading - that reading happens whether or not you delegate it, and paying it in a window you never open is strictly better than paying it in the one you're working in. The real cost shows up the moment the subagent's window closes: the 19,620 tokens of reasoning that produced the 300-token finding are gone with it. Not archived, not searchable in a transcript - gone. If tomorrow you want to know why row 412 changed category and the summary table didn't say, there is no "it" left to ask. You spawn a fresh subagent, hand it the same brief, and pay the 19,620 tokens again, hoping it reasons its way to the same answer twice.
+## What comes back, and what you can still reach
 
-**Isolation doesn't erase the cost of the search. It just moves it somewhere you can't go back to.**
+The 850-odd tokens of reading and every dead end the worker ruled out live in the child's agent thread - not your window, and not the bin either. `/agent` switches you into that thread to inspect it, and the finished worker stays listed with its result until you close it. If tomorrow you want to know why `models.py` was cleared rather than assumed, the transcript holding the answer is one thread-switch away.
 
-That's the honest version of "the parent pays only for the aggregated summary": true about tokens, and silent about the fact that the parent also can't ask a follow-up. Keep that trade-off in view every time a subagent's answer looks a little too clean.
+What does not happen is the trail rejoining your context. Your window keeps the hundred-token finding; the reasoning that produced it stays in the child's thread until you go looking. Follow-ups are possible - steer the worker while it runs, or route a follow-up instruction to its thread - but they are expeditions, not continuations of your chat.
+
+**Isolation moves the trail somewhere you can reach but your window never sees.** That is the honest version of "the parent pays only for the summary": true about your context, and silent about the fact that asking "why" later means opening a door rather than glancing up.
 
 ## Give the worker only the trust it needs
 
-A subagent gets its own context window, but it does not start from a blank trust posture: by default it **inherits the sandbox and approval settings live in your main thread** at the moment you spawn it. A custom agent definition can pin its own - marking a summariser read-only, say - and any key it leaves out falls back to the parent's; runtime overrides you set in your session are reapplied on top either way. The two-axis model from the [approvals & sandbox chapter](/course/codex/approvals-sandbox/) still governs the worker, it just usually governs it *through* the parent. The recategoriser is reading your transaction history and writing classification changes back; it has no business hitting the network or touching anything outside the data directory. So set that posture in your own session before you hand the task over - scoped to the workspace, network off, which is the `workspace-write` default - and the worker runs inside it. Different trust levels for different workers is still a security primitive worth using where a worker definition supports it; just don't assume isolation you didn't configure. The corollary to remember: loosening your own session to unblock yourself loosens every worker you spawn afterwards, so tighten first, then delegate.
+A subagent gets its own context, not a blank trust posture: by default it inherits the sandbox and approval settings live in your session at the moment it spawns. A custom agent file can pin a role's own settings - a `sandbox_mode`, a model, an effort - and any key it omits falls back to the parent's, with your live runtime overrides reapplied on top either way. The two-axis model from the [approvals & sandbox chapter](/course/codex/approvals-sandbox/) still governs the worker, usually through the parent.
 
-Codex exposes a concurrency cap through `agents.max_concurrent_threads_per_session` (legacy alias `agents.max_threads`), while the current public config reference does not document a general maximum-depth key. Leave the concurrency setting unset to use Codex's default, or set it explicitly after checking the [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference). Do not build a workflow around an undocumented depth knob.
+This audit reads code and runs no-write probes, so it fits inside the `budget-audit` profile you built in that chapter - `read-only` with `never` - with nothing to escalate. Tighten first, then delegate: loosening your own session to unblock yourself loosens every worker you spawn afterwards.
+
+Two knobs deserve their names, both in the [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference). `agents.max_concurrent_threads_per_session` caps how many spawned threads stay open at once, with `agents.max_threads` as its legacy alias; leave it unset and Codex chooses the default. A depth key, `agents.max_depth` - root session at depth 0, default 1 - has appeared in the reference as a guard from the older multi-agent machinery, but the current reference documents the newer agent toolset and the concurrency cap instead. Treat depth as unavailable: cap concurrency, nest on purpose.
 
 ## When to keep it in the main thread instead
 
-Delegation isn't free, and now you know exactly what it isn't free in: not tokens, which it saves, but the reasoning trail, which it destroys. Keep the work in your main conversation when it needs frequent back-and-forth, when several phases share real context - planning into implementation into testing - or when it's a quick, targeted change where spinning up a fresh worker that has to re-gather context just adds latency and a follow-up you can no longer ask. For a tiny clarifying detour ("does this bank export use `DD/MM` or `MM/DD`?"), a lightweight in-session side conversation is cheaper than a full subagent spawn; isolation is a cost you opt into, not a default.
+Delegation costs you the trail's proximity, plus a little latency. Keep work in your main conversation when it needs frequent back-and-forth, when several phases share real context - planning into implementation into testing - or when it is a quick, targeted change where a fresh worker re-gathering context just adds a follow-up you must walk to another thread to ask. For a tiny clarifying detour, a [side conversation](/course/codex/sessions-context/side/) is cheaper than a spawn.
 
-The test is the same one as delegating to a person: *would I hand this off, get back a paragraph, and be happy never asking a follow-up?* The recategorisation, yes - you want the result and the summary, not the reasoning. A delicate money refactor you'll be steering line by line, no - the context the worker throws away is exactly the context you'd need to steer it.
+The test is the same one as delegating to a person: would I hand this off, get back a paragraph, and be happy never asking a follow-up? The parse-path audit, yes - you want the findings list, not the reasoning. A delicate change you will steer line by line, no - the context you would need to steer it with is exactly what stays in the worker's thread.
 
-One subagent could grind through the whole history in sequence, paying that 65-to-1 trade once. But notice the history splits cleanly - by account, by year, by import batch - into slices that don't depend on each other. When a problem decomposes like that, one worker working serially is leaving speed on the table, and the same isolation cost you just paid once is about to get paid several times at once. [Next we fan the work out](/course/codex/subagents/fan-out/) and find out what that multiplication actually buys you.
+:::tip[Try it]
+Run the delegation above on `budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI), or point the same brief at one money path in your own repo. Before reading the worker's return, write down the findings you expect. Diff the two lists - every difference is either news about the code or news about your assumptions, and both are worth having.
+:::
+
+The findings list came back short: one violation, one coverage gap, everything else clean - and one worker paid the whole reading serially. That was the parse path audited deeply. The paths money takes after storage - the ledger's sums, the endpoints that serve them, the newly wired categorizer - have not been walked yet, and they do not depend on each other. [Next we fan the audit out](/course/codex/subagents/fan-out/) and price what the multiplication actually buys.

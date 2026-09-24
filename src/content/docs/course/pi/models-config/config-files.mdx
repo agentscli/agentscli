@@ -1,13 +1,11 @@
 ---
 title: Two files, one merge
 description: "Pi's whole configuration story is two settings.json files, yours and this repo's, deep-merged. Find them - and their siblings - before you route anything."
-sidebar:
-  label: "config-files · global vs project"
 ---
 
 import ConfigExplorer from '../../../../../components/interactive/ConfigExplorer.tsx';
 
-Before you can decide *which* model does the re-extraction sweep, you need to know *where* that decision actually lives - and with Pi there are exactly two places, which is the whole point of a minimal core. No managed policy layer, no org-wide overrides, no five-deep precedence chain to memorize. Just yours, and this repo's.
+Before you can decide *which* model does the re-sync sweep (this module's running task: re-fetching and re-parsing the backlog rows described in [the module opener](/course/pi/models-config/)), you need to know *where* that decision actually lives - and with Pi there are exactly two places, which is the whole point of a minimal core. No managed policy layer, no org-wide overrides, no five-deep precedence chain to memorize. Just yours, and this repo's.
 
 ## The two settings.json files
 
@@ -16,50 +14,52 @@ Before you can decide *which* model does the re-extraction sweep, you need to kn
 .pi/settings.json              project - this repo only
 ```
 
-Both are plain JSON. Both hold the same shape of thing: default model, default reasoning depth, which extensions/skills/prompts/themes to load, retry policy, theme. The project file **doesn't replace** the global one - it **deep-merges** into it, key by key, on every nested object. Pi's own docs give the example that makes this concrete: say your global settings turn compaction on with a generous reserve -
+Both are plain JSON. Both hold the same shape of thing: default model, default reasoning depth, which extensions/skills/prompts/themes to load, retry policy, theme. The project file **doesn't replace** the global one - it **deep-merges** into it, key by key, on every nested object. Pi's own docs give the example that makes this concrete: say your global settings turn compaction on with a generous reserve (`~/.pi/agent/settings.json`):
 
 ```json
-// ~/.pi/agent/settings.json
 { "compaction": { "enabled": true, "reserveTokens": 16384 } }
 ```
 
-- and stash's project settings only want a tighter reserve, because stash sessions run long and you'd rather compact earlier:
+- and the project settings of `stash` (the course's running example, a small FastAPI feed reader), in `.pi/settings.json`, only want the window to fill further before a summary is forced, because stash sessions run long and you'd rather compact later:
 
 ```json
-// .pi/settings.json
 { "compaction": { "reserveTokens": 8192 } }
 ```
 
-**Guess before you read the next paragraph.** Given those two files, which of these three happens when Pi merges them for a stash session: (a) `enabled` survives from global, `reserveTokens` comes from the project file, both in the same effective object; (b) the project's `compaction` block replaces the global one wholesale, so `enabled` is now undefined; or (c) the more specific file wins on everything, so `enabled` also gets dropped because the project file didn't repeat it?
+**Guess before you read the next paragraph.** Given those two files, which of these three happens when Pi merges them for a stash session: (a) `enabled` survives from global, `reserveTokens` comes from the project file, both in the same effective object; (b) the project's `compaction` block replaces the global one wholesale, so `enabled` is now undefined; or (c) nested keys never merge at all, so the project's `reserveTokens` is ignored and the global 16,384 survives?
 
-It's (a). The effective config for a stash session is `{ "enabled": true, "reserveTokens": 8192 }` - `enabled` survives from global because the project file never mentioned it, `reserveTokens` comes from the project file because it's more specific. That's deep-merge: the project settings win, key by key, on anything they actually declare, and everything else falls through from global untouched. **8,192. Compacts earlier than the global default, on purpose - stash sessions run long, so it forces a summary sooner rather than later.** It's a small mechanical fact, but it's the one that'll save you from the "I changed the project file and nothing happened" afternoon - you didn't change the key that was actually winning.
+It's (a). The effective config for a stash session is `{ "enabled": true, "reserveTokens": 8192 }` - `enabled` survives from global because the project file never mentioned it, `reserveTokens` comes from the project file because it's more specific. That's deep-merge: the project settings win, key by key, on anything they actually declare, and everything else falls through from global untouched.
+
+**8,192 - and note the direction, because it is easy to get backwards.** The trigger formula (traced in [the compaction lesson](/course/pi/context/compaction/)) is `contextTokens > contextWindow - reserveTokens`, so a *smaller* reserve *raises* the threshold: this project compacts **later** than the global default, letting the window fill further before a summary is forced. If you want compaction sooner, raise the reserve - reserve is headroom, and less headroom means more patience, not less. It's a small mechanical fact, but it's the one that'll save you from the "I changed the project file and nothing happened" afternoon - and from changing it in the wrong direction.
 
 **About the numbers in this module:** 16,384 and 8,192 above are quoted from Pi's own docs, not invented. Later lessons use small declared-toy numbers, invented purely so the arithmetic is hand-checkable, and labelled as toy at the point they appear - never presented as a real bill. Where this module claims a real number matters, it tells you to run `/session` and read your own.
 
 **Self-test, on your own files:** open `~/.pi/agent/settings.json` and stash's `.pi/settings.json` side by side. Pick one key that's set in both. Predict the merged value before you check it. If you're wrong, you've just found a setting you thought was working and wasn't.
 
-**One place deep-merge stops being intuitive: arrays.** `skills`, `extensions`, `prompts`, and `themes` are all arrays in `settings.json`. Object merge is unambiguous - key by key, more specific wins. Arrays don't have keys, so the same rule doesn't obviously apply: does a project-level `skills` array add to the global one, or replace it outright? The docs quoted above spell this out for the `compaction` object; they don't spell it out for the array case, and this module isn't going to guess for you. Before you rely on a project-level array to *add* skills rather than *replace* the global list, add one throwaway entry to `.pi/settings.json`'s `skills` array and check with `/skill:` autocomplete (gated by the `enableSkillCommands` field a few lines down) whether your global skills are still there. Verify it on your own machine before you build a habit on top of an assumption.
+**One place deep-merge stops being intuitive: arrays.** `skills`, `extensions`, `prompts`, `themes`, and `packages` are all arrays in `settings.json`. Object merge is unambiguous - key by key, more specific wins. Arrays don't have keys, so the same rule can't obviously apply: does a project-level `skills` array add to the global one, or replace it outright?
+
+The docs are explicit about exactly one array, and it's the replace answer: a project `defaultTools` array replaces the global array. For the resource arrays - `skills`, `extensions`, and their siblings - the docs don't say. So don't build a habit on an assumption: add one throwaway entry to `.pi/settings.json`'s `skills` array and check with `/skill:` autocomplete (gated by the `enableSkillCommands` field a few lines down) whether a skill that is declared *only* in your global settings `skills` array - not one living in `~/.pi/agent/skills/`, which convention loads regardless - still appears (if you have no settings-only skill yet, point your global `skills` array at any scratch folder with a `SKILL.md` first; that's the thing whose disappearance would indicate replacement). Only such a settings-only skill's disappearance would actually indicate replacement; verify it on your own machine before you rely on add-behavior.
 
 ## The fields worth knowing on sight
 
 Every field below is one you'll actually set for stash before this module ends - not a reference dump. Read it once with that in mind:
 
 - **`defaultProvider`, `defaultModel`** - what Pi reaches for when you don't say otherwise. Right now this is whatever frontier model you've been using for everything, which is the exact setting the next lesson exists to stop treating as a default.
-- **`defaultThinkingLevel`** - one of `off | minimal | low | medium | high | xhigh | max`, the reasoning-depth dial the next lesson traces against the re-extraction sweep.
+- **`defaultThinkingLevel`** - one of `off | minimal | low | medium | high | xhigh | max`, the reasoning-depth dial the next lesson traces against the re-sync sweep.
 - **`thinkingBudgets`** - override the token allocation for any of those levels, if the defaults don't fit your provider.
-- **`enabledModels`** - a pattern-based allow-list; this is what `Ctrl+P` cycles through mid-session. Curate it down to the two or three models stash actually reaches for - once you add a cheap coding provider next lesson, this is where it has to appear before `Ctrl+P` can find it.
-- **`packages`, `extensions`, `skills`, `prompts`, `themes`** - arrays of extra paths/globs to load, on top of the convention directories. The extension stash grows in a couple of lessons loads from a path declared here.
+- **`enabledModels`** - the pattern list `Ctrl+P` cycles through mid-session; `/scoped-models` is the picker you curate it with. Trim it to the two or three models stash actually reaches for - a model that isn't enabled for cycling never comes up under `Ctrl+P`, however many providers expose it.
+- **`packages`, `extensions`, `skills`, `prompts`, `themes`** - arrays of extra paths/globs to load, on top of the convention directories. The extra extensions and skills you'll add for stash in later chapters can be declared here.
 - **`retry.enabled` / `retry.maxRetries` / `retry.baseDelayMs`** - transient-error retry policy, worth tightening if the cheap third-party provider you're about to add turns out flaky.
-- **`enableSkillCommands`** - toggles whether `/skill:name` shows up as a slash command at all. The self-test above depends on this being on.
-- **`defaultProjectTrust`** - `ask | always | never`, the default answer to the next thing on this list.
+- **`enableSkillCommands`** - toggles whether `/skill:name` shows up as a slash command at all. The `/skill:` autocomplete check above depends on this being on.
+- **`defaultProjectTrust`** - `ask | always | never`, the default answer to the trust prompt in the next section.
 
 ## The three files config splits across
 
-`settings.json` isn't alone in `~/.pi/agent/` (or its project mirror, `.pi/`). Three siblings do one job each, and stash will touch all three before this module is done:
+`settings.json` isn't alone in `~/.pi/agent/`. Three siblings do one job each, and stash will touch all three before this module is done (all three live globally; the project `.pi/` directory mirrors only `settings.json` and the resource folders):
 
 - **`models.json`** - the provider and model definitions themselves: base URLs, API shapes, cost/context metadata, per-model overrides. The next lesson adds a cheap coding provider here for stash's re-extraction backlog.
-- **`auth.json`** - stored credentials. Written automatically by `/login` for OAuth logins; holds the plain API key you paste in for that new cheap provider. Pi keeps it at `0600` permissions on purpose - it's the one file in this directory that's pure secret.
-- **`trust.json`** - global only, no project mirror. It's the record of which project directories you've actually agreed to trust. The first time Pi found stash's repo with a project-local `settings.json` sitting in it, it stopped and asked before loading any of it - because project-local settings, extensions, and skills can all execute code the moment they load. Say yes once and the decision persists here; `defaultProjectTrust` and the `--approve`/`--no-approve` flags are how you skip that prompt on purpose, in either direction, for non-interactive runs.
+- **`auth.json`** - stored credentials. Written automatically by `/login` for OAuth logins; holds the plain API key you paste in for that new cheap provider. Pi creates it with `0600` permissions on purpose - it's the one file in this directory that's pure secret.
+- **`trust.json`** - global only, no project mirror. It's the record of which project directories you've agreed to trust. The first time Pi found stash's repo with project-local settings sitting in it, it stopped and asked before loading any of them - because project-local settings, extensions, and skills can all execute code the moment they load. Say yes once and the decision persists here (`/trust` saves it from inside a session); `defaultProjectTrust` and the `--approve`/`--no-approve` flags are how you skip that prompt on purpose for non-interactive runs.
 
 That split is deliberate: settings you tweak often, credentials you never want printed to a screen, and trust decisions you only want to make once per repo, live in three files instead of one, so a stray `cat` of your config doesn't also dump your API keys.
 
@@ -69,6 +69,6 @@ Every agent CLI you might have used draws roughly this same line - a personal se
 
 <ConfigExplorer client:visible initialTool="pi" />
 
-Click through the neighbors and the shape rhymes: a project file the team commits, a home-directory file that's yours alone, and the more-specific one winning where they overlap. Then flip back to Pi's tab and count the files - two `settings.json`, deep-merged, the three siblings above, and a handful of resource directories. No `mcp.json`, no `agents/`, no hooks file; one `extensions/` folder carries all three jobs. Less to memorize is the trade Pi is making everywhere, and config is where you feel it first.
+Click through the neighbors and the shape rhymes: a project file the team commits, a home-directory file that's yours alone, and - in most of these tools - the more-specific one winning where they overlap (Copilot's rules layers are the exception the tabs will show you: your personal instructions outrank the repo's). Then flip back to Pi's tab and count the files - two `settings.json`, deep-merged, the three siblings above, and a handful of resource directories. No `mcp.json`, no `agents/`, no hooks file; a single `extensions/` mechanism - one folder project-side, one personal - carries the whole extension surface (commands, tools, hooks among what it can register). (The `.agents/skills/` entry the explorer shows is the cross-tool skills standard's directory - a place Pi looks for `SKILL.md` files - not an agent-definitions folder; no Pi config lives in it.) Less to memorize is the trade Pi is making everywhere, and config is where you feel it first.
 
 You now know exactly where the model default lives and which file wins when you change it. Time to actually change it - on purpose, per task, instead of once and forever. [Route the cheap work to the cheap model](/course/pi/models-config/routing/).

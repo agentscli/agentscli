@@ -1,104 +1,95 @@
 ---
 title: Ship your first reviewed change with Codex
 description: "Hand Codex the CSV date bug in plain English, watch the loop close, then read the diff before you commit. Your name is on the change, not the agent's."
-sidebar:
-  label: "First change · fix, review, commit"
 ---
 
-Now the actual ticket. `budgetcli` imports transactions from three banks' CSV exports, and you've already seen the symptom: a statement row that plainly reads one day lands in the database as another. From the last lesson you know the parsing lives in `src/budgetcli/importers/csv.py` and that all three banks are read with one fixed date format - which is exactly why a bank that writes dates differently gets silently misread. You don't need to feed the agent any of that. You describe the outcome you want in the same words you'd use with a teammate, and let the loop you just learned do the legwork. Here's the tension this lesson actually turns on: trusting the loop's *shape* is not the same as trusting any single diff it produces, and the two are easy to conflate right after watching the shape work cleanly once.
+You have a failing test suite and a concrete bug to fix. **budgetcli** here is the same illustrative project as elsewhere in this chapter: a small FastAPI personal-finance API with pytest, `AGENTS.md` at the repo root, CSV import in `app/importers/csv.py`, and money stored as integer cents. To follow along you need Codex [installed](/course/codex/getting-started/install/) and [authenticated](/course/codex/getting-started/authenticate/), plus a disposable project with the stated starting files. The authoring fixture is not published with the site; use a course-host copy if one is provided or adapt the task to your own repo. Install its development dependencies and run `pytest` to record the real baseline before continuing.
+
+After `pytest`, a typical failure looks like three tests dying on one line: `ValueError: time data '2024-03-15' does not match format '%d/%m/%Y'`. The importer uses day-first parsing while the data is ISO. If you already ran the [loop lesson](/course/codex/getting-started/the-loop/), you know where parsing lives; you do not need to paste paths or dictate keystrokes.
+
+Trusting the loop's **shape** is not trusting every **diff**. This lesson is outcome-first prompting plus review before commit.
 
 ## Describe the outcome, not the steps
 
-```text
-> the CSV importer is parsing some statement dates into the wrong day -
-  it looks like it assumes one date format. Make it handle the three
-  bank formats correctly, and add a test that pins down the case
-  that's currently broken.
-```
-
-Notice what you didn't say. You didn't name the function, didn't paste the parsing code, didn't spell out the test framework. You stated the *what* and left the *how* to the agent - call this **outcome-first prompting**: naming the destination and letting Codex find its own path there, the way you'd hand a ticket to a teammate instead of dictating their keystrokes. It works the problem the same way you would:
+**Illustrative reconstruction, not a captured run:**
 
 ```text
-  • Read src/budgetcli/importers/csv.py, tests/test_csv_import.py   (2 files)
-
-  The importer parses every row's date with a single hardcoded format,
-  so a statement using a different one is silently parsed wrong. I'll
-  make it try the three bank formats in order and fail loudly if none
-  match, and add a test covering the format that's currently broken.
-
-  ⏵ Edit src/budgetcli/importers/csv.py
-    - txn_date = datetime.strptime(row["date"], "%m/%d/%Y").date()
-    + txn_date = parse_statement_date(row["date"])
-    - amount_cents = to_cents(row["amount"])
-    + amount_cents = float(row["amount"])
-
-  Apply this change? › Yes / Edit / No
+> the CSV importer is crashing on ISO dates - the rows are
+  2024-03-15 but it parses "%d/%m/%Y", and three tests are
+  failing on the ValueError. Make ISO exports import cleanly
+  and pin it with a regression test.
 ```
 
-It **read** the relevant files first - including the existing test, so its new test would match the house style instead of inventing one. It **proposed** a plan in two sentences before touching anything. Then it **stopped and asked**. That pause is the leash from the last lesson: Codex's default **Auto** posture doesn't stop for every edit - it works inside your project directory on its own and pauses when it judges a move consequential, which an edit on the date-parsing path of a repo holding your real ledger squarely is. (How much it asks is a dial you'll set on purpose in the [approvals chapter](/course/codex/approvals-sandbox/approval-modes/).) You approve the edit, it moves on to the test, and then does the thing that actually closes the ticket - it runs the test itself:
+You stated the what, not the how. A plausible continuation:
 
 ```text
-  ⏵ Edit tests/test_csv_import.py          → approved
+  • Read app/importers/csv.py, tests/test_import.py   (2 files)
 
-  ⏵ Run  pytest tests/test_csv_import.py
-    • 9 passed
+  The importer parses each row's date with "%d/%m/%Y", but the
+  CSV data is ISO - and AGENTS.md says dates are ISO 8601, never
+  locale-dependent. I'll parse ISO dates and add a regression
+  test that rejects a day-first row instead of silently
+  reinterpreting it.
 
-  Done. The importer now tries the three bank date formats and raises
-  if a row matches none; the new test covers the date that was
-  previously parsed into the wrong day.
+  • Edited app/importers/csv.py                        (+2 -2)
+    - date = datetime.strptime(row["date"], "%d/%m/%Y")
+    + date = datetime.strptime(row["date"], "%Y-%m-%d")
+
+  • Edited tests/test_import.py                        (+9 -0)
+  • Ran pytest
+    7 passed
 ```
 
-There's the full loop, closed on a real bug: read, propose, approve, apply - with the apply beat ending in the agent checking its own work. **A clean-looking "done" is a claim, not a verdict - the diff is the verdict, and you haven't read it yet.**
+It read first (including existing tests for style), cited the ISO rule from auto-loaded `AGENTS.md`, edited the parser, added a test, ran the suite.
+
+In the recommended **Auto** posture (`workspace-write` + `on-request` approvals), edits inside the workspace and commands like `pytest` usually run without a `y/n`. A network reach such as `pip install` would pause at the boundary. See [approval modes](/course/codex/approvals-sandbox/approval-modes/) for the dial.
+
+Four beats closed: read, propose, apply, verify - with **approve** silent because nothing crossed the fence. **A green summary is a claim; the diff is the verdict.**
 
 ## Read the diff before you believe the summary
 
-Codex's closing summary told you about the date fix. It said nothing about the second line in that same diff, because it genuinely believed both edits belonged to the same cleanup. On code you inherited, holding your own money, that gap between claim and evidence is exactly where you want your eyes:
+Ask for the full change set if the UI did not already show it:
 
 ```text
 > show me everything you changed
 ```
 
-You're reading for two things: *does the change do what I asked*, and *did it do anything I didn't ask*. Scroll back to the diff above and look at the second hunk. `to_cents(row["amount"])` called the repo's existing helper, which returns an integer number of cents - `budgetcli`'s money rule, in place since before you inherited it. The replacement, `float(row["amount"])`, throws that rule away, quietly, three lines below the fix you actually asked for. Nothing about the test run caught it, because nothing you asked Codex to verify touches the amount field at all.
+Check: does it do what you asked, and only what you asked? For this ticket you expect two files - date line and tests.
 
-That's not a hypothetical warning - it just happened, in the diff you're looking at right now. Tell Codex what you found:
+Read the lines the agent did **not** touch. Two lines below the date fix you may still see:
 
-```text
-> that amount line isn't something I asked for - budgetcli stores
-  every amount as integer cents, put it back to to_cents()
-
-  ⏵ Edit src/budgetcli/importers/csv.py
-    - amount_cents = float(row["amount"])
-    + amount_cents = to_cents(row["amount"])
-
-  Apply this change? › Yes / Edit / No
+```python
+amount_cents = int(float(row["amount"]) * 100)
 ```
 
-**You just caught the first of this week's three float-bug reintroductions - the one this chapter's spoiler promised, right on schedule.** It cost you one extra turn, because a human read the diff. Two more are coming before Friday, and none of them get caught this way: catching a wrong edit by reading every line doesn't scale past a four-line diff, and this repo is about to get bigger changes than this one. Filing that habit's limit away now is the honest thing to do with a clean win - a later chapter is where you stop relying on your own eyes for this and start relying on something that can't get tired of reading.
+`AGENTS.md` says money is integer cents, never floats. That line routes amounts through float. On sample CSV amounts it may look fine; on others it does not. Checked arithmetic on CPython (run this yourself):
 
-If a review ever turns up something bigger than a one-line correction, the clean move is to step the change back and re-ask rather than patching a fix on top of the agent's mistake - but a small inline correction, like the one above, is fine when the problem is this contained. The discipline that matters today is simply: read first, decide second.
-
-## Commit the moment it's right
-
-When the review passes, commit immediately - and you can have the agent do it:
-
-```text
-> commit this with a sensible message
-
-  ⏵ Run  git commit -am "Fix CSV importer to handle three bank date formats"   → approved
+```bash
+python3 -c "print(int(float('0.29') * 100))"
 ```
 
-This is the single most valuable habit in the chapter. Everything the agent does is, until you commit, sitting in your working tree one bad next step away from being lost or tangled. **Git is the floor that doesn't vanish.** Every time the agent reaches a genuinely working, reviewed state, a commit locks it in - and then the next experiment, however badly it goes, can never cost you more than the work since your last commit. That's the blast-radius instrument from the last lesson, paying rent for the first time: a commit doesn't stop a bad edit from happening, it just shrinks how far back you ever have to travel to undo one. Commit at every green, reviewed checkpoint and you can let the agent take bigger swings, because the downside is always capped at "go back to the last commit."
+`28` - truncation loses a cent. The suite may stay green because samples never hit the bad case.
 
-That's a genuinely clean run: one ticket, four turns, one caught mistake, shipped. It's also the easy case. Four turns is small enough to read in full; the float bug got caught because you were watching every line of a four-line diff, not because anything in the loop prevented it from happening. **Don't mistake a clean run for proof the agent has learned budgetcli's money rule - it hasn't. It just got caught, once, because you were paying attention.**
+The agent was right not to expand scope beyond the date ticket. The rules file **informed** the session; it did not **enforce** the float parse. Name the defect (TODO, issue), leave the line alone for this commit, and harden the money path in a later lesson. **Control** in this course eventually means gates that can say no, not only guidance in context.
+
+## Commit the moment it is right
+
+Commit only what you reviewed, with explicit paths:
+
+```text
+> stage the two files you changed and commit: importer now
+  parses ISO dates, regression test added
+
+  • Ran git add app/importers/csv.py tests/test_import.py
+  • Ran git commit -m "Parse ISO dates in CSV import; add regression test"
+```
+
+Prefer named paths over `git commit -am`, which stages every modified tracked file. Run `git status` before committing so nothing you did not review rides along.
+
+Until you commit, the agent's work sits in the working tree one bad step away from loss. **Git is the floor that does not vanish** - commit at green, reviewed checkpoints so the next experiment's downside is bounded by `git reset` to the last good commit.
 
 :::tip[Try it]
-Open `budgetcli` (or your own repo) and describe a small bug fix to Codex in plain English. Before you approve the change, read the diff line by line - if anything looks off, tell Codex what you expected instead and let it revise. Commit only when the diff matches your intent exactly.
+In budgetcli or your own repo, describe a small bug fix in plain English. Read the diff and the unchanged context around it. Push back if something looks wrong. Commit only files you reviewed, by name.
 :::
 
-## What the fix cost, and what it didn't buy
-
-Score the two moves you've made the way this course will score every move from here: tokens, turns, blast radius, recurrence. The first three are easy. The read-only question cost about 3,900 estimated tokens and one turn and touched nothing. The date fix cost about 2,100 for `csv.py` and four turns, and it reached further than you meant it to for about ninety seconds.
-
-The fourth is the one that matters, and it is where the good news runs out. The code fix holds. It is in git, it is not going anywhere. What does not hold is the *reason* the mistake happened: nothing about this session told Codex that `budgetcli` treats money as integer cents, so tomorrow's session does not know it either. **A fact you only ever said out loud gets re-paid, in full, every single session.** This is Monday's tax, and you just paid the first installment by hand. Two more are coming before this class of bug is actually fixed rather than merely caught, and that is a later chapter's job.
-
-Your first change is described, proposed, approved, applied, reviewed, corrected, and committed - the whole loop, closed once by hand on a real bug, with the villain caught red-handed in the middle of it. Now make the loop itself something you reach for without thinking, by putting it [where you already spend your day: next to your editor](/course/codex/getting-started/editor/).
+The date fix is in git with a regression test; the float money path remains a known open defect. Put Codex where you already code - [editor integration](/course/codex/getting-started/editor/).

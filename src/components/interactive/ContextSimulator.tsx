@@ -99,12 +99,16 @@ export default function ContextSimulator() {
         </div>
       </div>
 
+      <p className="cxs-seg-detail-hint">
+        Illustrative simulation: window size, token counts, and compaction threshold are assumptions, not measurements of your session.
+      </p>
+
       <div className="cxs-gauge-row">
         <span className={overThreshold ? 'cxs-gauge cxs-gauge-hot' : 'cxs-gauge'}>
           {total}k / {WINDOW_TOKENS}k tokens ({pct}%)
         </span>
         {overThreshold && (
-          <span className="cxs-gauge-warning">past the auto-compact threshold</span>
+          <span className="cxs-gauge-warning">past the simulated threshold</span>
         )}
       </div>
 
@@ -139,7 +143,7 @@ export default function ContextSimulator() {
           className="cxs-threshold-label"
           style={{ left: `${(AUTO_COMPACT_AT / WINDOW_TOKENS) * 100}%` }}
         >
-          auto-compact ~{Math.round((AUTO_COMPACT_AT / WINDOW_TOKENS) * 100)}%
+          simulated threshold {Math.round((AUTO_COMPACT_AT / WINDOW_TOKENS) * 100)}%
         </span>
       </div>
 

@@ -1,39 +1,55 @@
 ---
 title: Fan subagents out across the consumers
-description: "Twelve consumers to check for breakage, and you don't want to do it by hand. A coordinating agent delegates each check to a subagent in isolated context."
-sidebar:
-  label: "Subagents · fan out across consumers"
+description: "A dozen consumers to check for breakage, and you don't want to do it by hand. A coordinating agent delegates each check to a subagent in isolated context."
 ---
 
-You have a reviewer that judges the change. Now the harder question: the new `shared-lib` version is about to go out - does it break the services or packages that already import it? In the running scenario there are roughly twelve; in your own lab, use the consumers you actually have. Each consumer may use the library a little differently. Checking them is a set of separate investigations, and doing them one after another in a single chat is both slow and muddy.
+You have a [reviewer](/course/copilot/custom-agents/a-reviewer/) that judges a proposed change against the rules of `shared-lib` - the course's illustrative internal library, imported by about a dozen services. The harder question comes when you are about to ship: does the new library version break the services that already import it, *as each of them uses it today*? In the running scenario there are roughly a dozen consumers; use whichever consumers your own library has. Each one is a separate investigation, and running them one after another in a single chat is both slow and muddy - by service nine, the conversation is carrying the assumptions of services one through eight.
 
-This is what subagents are for. A **subagent** is a separate agent process called *by another agent* rather than by you, and it runs in its **own context**. A coordinating agent can dispatch one checker per consumer, each focused on a single service, then collect the verdicts. The number twelve is illustrative; the pattern works for two consumers or twenty.
+That is what subagents are for. A **subagent** is a separate agent invocation called *by another agent* rather than by you, and it runs in its **own context**. A coordinator can dispatch one checker per consumer, each focused on a single service, then collect the verdicts. The number twelve is illustrative; the pattern works for two consumers or twenty.
 
 ## What makes an agent a coordinator
 
-Delegation isn't on by default - an agent has to be explicitly allowed to call others, and that takes two things in its frontmatter, both required:
+Delegation takes two things in the coordinator's frontmatter, and they do different jobs:
 
-1. It must include the **`agent`** tool in its `tools` list. That's the capability to invoke another agent at all. No `agent` tool, no delegation.
-2. It must list the agents it's permitted to call in its **`agents`** field - by name, or `*` for all of them.
+1. The **`agent`** tool in its `tools` list is the capability to invoke another agent at all. No `agent` tool, no delegation - and an `agents` list without it has no mechanism to call anyone.
+2. The **`agents`** field is the guest list: the agents it may call, by name. Leave it out and the [subagents documentation](https://code.visualstudio.com/docs/agents/run/subagents) treats it as `*`, every available agent; `[]` blocks subagents entirely (as of September 2026).
 
-Miss either one and the coordinator simply can't fan out: the `agent` tool without an `agents` allowlist has nothing it's cleared to call, and an `agents` list without the `agent` tool has no mechanism to call them. You need both. Think of it as a capability (`agent` in `tools`) plus a guest list (`agents`).
+So the tool is required and the list is a narrowing. For an audit whose whole value is a predictable checker per consumer, name the checker rather than leaving the list open.
 
 ## Build the fan-out
 
-Make a coordinating agent - call it something like `consumer-audit` - whose job is to check the consumers against the new `shared-lib` surface. In its frontmatter, add the `agent` tool and set `agents` to allow the per-consumer checker it will delegate to. The checker itself is a custom agent like any other: a focused persona that, given one service, reads how that service uses `shared-lib` and reports whether the upcoming change breaks it. You might even mark the checker `user-invocable: false`, since it's meant to be summoned by the coordinator, not picked from your dropdown.
+Two files make the fan-out: a per-consumer checker, and a coordinator - call it `consumer-audit` - that delegates to it (the `agents` allow-list, the `*` wildcard, and `user-invocable` are [documented agent fields](https://code.visualstudio.com/docs/agent-customization/custom-agents), verified September 2026).
 
-Now hand the coordinator the job: here's the new `shared-lib` surface, here are the consumers, check each one for breakage. It dispatches a checker per service. Each checker examines one consumer and returns a clean verdict - *breaks / doesn't break, and where*. The coordinator gathers the answers into one report you can read.
+The checker is a custom agent like any other: a focused persona that, given one service, reads how that service uses the library and reports whether the upcoming change breaks it. It gets read-only tools and `user-invocable: false`, because it is meant to be summoned by the coordinator, not picked from your dropdown:
 
-The coordinator's file:
+```markdown title=".github/agents/consumer-checker.agent.md"
+---
+name: consumer-checker
+description: Checks one consumer service against a proposed shared-lib change and reports breaks per affected symbol.
+tools:
+  - read
+  - search
+user-invocable: false
+---
+
+You check exactly one consumer service against a proposed shared-lib change.
+
+Given the service name and the change summary:
+1. Find every import of shared-lib in that service.
+2. For each imported symbol the change touches, decide whether the service's current usage still compiles and behaves the same.
+3. Report a verdict: breaks / doesn't break, with each affected symbol and the file that uses it.
+
+Report only. Do not edit files.
+```
+
+The coordinator adds the `agent` tool and names the checker in `agents`. It keeps the `search` tool set only to gather the change summary and the consumer list before delegating - the checking itself is delegated:
 
 ```markdown title=".github/agents/consumer-audit.agent.md"
 ---
 name: consumer-audit
 description: Coordinates per-consumer breakage checks against a proposed shared-lib change.
 tools:
-  - read
-  - glob
-  - grep
+  - search
   - agent
 agents:
   - consumer-checker
@@ -49,8 +65,10 @@ Given a description of the change and a list of consumer services:
 Do not check consumers yourself - delegate every check so each runs in isolated context.
 ```
 
+Hand the coordinator the job - here is the new library surface, here are the consumers, check each one - and it dispatches a checker per service. Each checker examines one consumer and returns a verdict: breaks, does not break, and where. The coordinator gathers the answers into one report you can read.
+
 ## Why isolation is the whole point
 
-The reason this beats a long single conversation isn't just speed, though running them in parallel is faster. It's that **each consumer gets reasoned about on its own terms.** A subagent checking service number nine isn't carrying the assumptions, the half-remembered file paths, or the conclusions from services one through eight. Isolated context means each verdict stands on its own evidence - which is exactly the rigor you want when "doesn't break" is a promise you're making to twelve teams.
+The reason this beats a long single conversation is not just speed, though the documentation describes subagents running in parallel. Nor is it cost: a dozen subagent invocations is a spend decision, even when each focused check is small. It is that **each consumer gets reasoned about on its own terms.** The subagent checking service nine is not carrying assumptions, half-remembered file paths, or conclusions from services one through eight. Isolated context means each verdict stands on its own evidence - which is exactly the rigor you want when "doesn't break" is a promise you are making to other teams.
 
-That fan-out gives you a list: which consumers are clear, which need a heads-up, which would actually break. That list is an input to a *plan* - the careful sequence in which you'll make the change, given everything the subagents found. Sequencing agents into a deliberate workflow, and producing that plan before any code, is the last move in the chapter. [Next: handoffs and the plan agent](/course/copilot/custom-agents/handoffs-plan/).
+The fan-out gives you a list: which consumers are clear, which need a heads-up, which would actually break. That list is an input to a *plan* - the careful sequence in which you make the change given everything the subagents found. Sequencing agents into a deliberate workflow, and putting a plan at the front of it, is the last move in the chapter. [Next: handoffs - chaining plan, review, and audit](/course/copilot/custom-agents/handoffs-plan/).

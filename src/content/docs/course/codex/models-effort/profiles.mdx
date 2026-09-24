@@ -1,11 +1,11 @@
 ---
 title: Bundle model, effort, approval, and sandbox into a named profile
-description: "The same combinations keep recurring - light for boilerplate, heavy for design. Name each one in config.toml and select a whole posture with a single flag."
-sidebar:
-  label: "profiles · one flag, a whole posture"
+description: "The same combinations keep recurring - light for pattern work, heavy for design. Name each one as a profile file and select a whole posture with a single flag."
 ---
 
-By the end of the last lesson you were setting the model one way, the effort another, and - back in the approvals chapter - the approval policy and sandbox mode separately on top. That's four knobs, and across a week on `budgetcli` you keep reaching for the *same two combinations*: light model, low effort, loose-enough approvals for the accounts endpoint and anything shaped like it; capable model, high effort, careful approvals for the rules engine and anything shaped like it. Setting all four by hand every time is exactly the kind of friction that makes you stop bothering. **Profiles** are how you name a combination once and select it with a single flag - and, run against the same two tasks, they're also where a mismatch stops costing you four wrong choices and starts costing you exactly one.
+The model gets set one way, the effort another, and - from the approvals chapter - the approval policy and sandbox mode on top of those. Four knobs. On real work the same combinations keep recurring: a light model at low effort for pattern-following tasks (the category-filter shape), a capable model at high effort with ask-first trust for design forks (the categorizer-wiring shape). Setting four knobs by hand every time is exactly the friction that makes you stop bothering.
+
+Profiles name a combination once and select it with a single flag. The approvals chapter already wrote two - `budget-audit` and `budget-build`, introduced in [its profiles lesson](/course/codex/approvals-sandbox/profiles-for-trust/). This chapter's judgment adds the model-and-effort half to the same files, and writes one new profile for the shape of work that had none: design.
 
 ## A profile is a named bundle
 
@@ -20,65 +20,78 @@ model_reasoning_effort = "low"
 ```toml
 # ~/.codex/budget-design.config.toml
 model_reasoning_effort = "high"
-approval_policy        = "untrusted"
+approval_policy        = "on-request"
 sandbox_mode           = "read-only"
 ```
 
-That `budget-build` is the same file you wrote in [Approvals & sandboxing](/course/codex/approvals-sandbox/profiles-for-trust/), not a second one - the block above shows only the keys this lesson is adding, so its `[sandbox_workspace_write]` section is still sitting there underneath. Any key you set inside the file replaces the base-config value when that profile is active; anything you leave out falls back to your defaults. (The `model` line is left out of these examples on purpose - that's the key you'd set to your chosen model, and which models you can name there depends on your auth tier, exactly as the [last lesson covered](/course/codex/models-effort/switch-models/).)
+`budget-design` is new, and its trust pairing deserves a word: `read-only` with `on-request` is the documented restrictive posture - reads happen freely, and anything that wants to write or cross a boundary stops to ask. For a design task that is the point. The heavy gear spends its thinking on a proposal, and nothing lands on disk until you have read it.
+
+That `budget-build` is the same file the approvals chapter wrote, not a second one - the block above shows only the key this lesson is adding, so the `[sandbox_workspace_write]` section from that chapter's version is still sitting there underneath. Any key set inside the file replaces the base-config value when that profile is active; anything left out falls back to your defaults.
+
+The `model` line is omitted from both blocks because its legal values depend on your auth, exactly as [the last lesson covered](/course/codex/models-effort/switch-models/) - but write it yourself in each file, picking your names from the picker: that key is what separates `budget-build`'s light pairing from `budget-design`'s capable one, and a file without it simply inherits your base default. The full mechanics - where the layer files live, which keys are eligible - are in the [advanced config reference](https://learn.chatgpt.com/docs/config-file/config-advanced).
 
 ## Matched: one flag instead of four
 
+The commands below run in `budgetcli`, the course's running example: a small transactions API (`GET /transactions` served from `app/main.py` over a ledger service) plus an unused keyword-categorization function - the same two tasks the chapter has priced. Follow along there or in a repo of your own. The traces are illustrative reconstructions, labeled once here rather than per block: the commands are real, the outputs show the shape a run takes.
+
 ```bash
-codex -p budget-build  "add the accounts CRUD endpoint following the pattern in transactions.py"
+codex -p budget-build  "add an optional category query parameter to GET /transactions, filtering with ledger.by_category"
 ```
 
 ```text
-  read transactions.py
-  ✎ accounts.py - list / create / read / delete, same shape
+  • Read app/main.py
+  • Edited app/main.py (+3) - category param; by_category when set
   Done.
 ```
 
-**Matched.** The same trace, and the same verdict, as `light/low` two lessons ago - `-p budget-build` just carries the light model and low effort in one name instead of two flags.
+The same three-line outcome the effort lesson showed for light-and-low - `-p budget-build` just carries the pairing in one name instead of two flags.
 
 ```bash
-codex -p budget-design "design the categorisation rules engine for budgetcli"
+codex -p budget-design "wire categorise() into the CSV import path"
 ```
 
 ```text
   Thinking…
-    Matching: substring is too blunt - merchant-code first, regex fallback.
-    Conflicts: two rules can match one transaction. Need a deterministic
-    tiebreak - first-match-wins lets the user control order directly…
-
-  Here's the design I propose, before I write any of it:
-  ## Matching   merchant code first, then a user-ordered list of regex rules
-  ## Conflicts  first match wins; the user's ordering *is* the priority
+    Hook: parse_csv - where a description first becomes data; the
+    route is its only caller. Conflicts: table order is the
+    priority, first match wins. Boundary: POST /transactions keeps
+    its sender's category.
+  Proposed before writing: one import line, one category= argument,
+  tests for hits and fallback. Nothing written yet - the sandbox is
+  read-only and approvals are on-request.
 ```
 
-**Matched.** Same pairing, same design, and now the read-only sandbox means nothing gets written until you've reviewed the proposal - the trust posture from the approvals chapter riding along with the model-and-effort posture from this one, in the same name.
+Matched, with the trust posture riding along: the design arrives, nothing lands, and the read-only fence makes that a fact about the sandbox rather than a promise from the model. Two chapters' decisions, one flag.
 
 ## Mismatched: one flag, still wrong
 
 Bundling doesn't remove the choice - it just makes the wrong choice one keystroke away instead of four. The failure mode that actually happens is habit: you finish the design session in `budget-design` and, without switching, launch straight into the next small ticket.
 
 ```bash
-codex -p budget-design "add the accounts CRUD endpoint following the pattern in transactions.py"
+codex -p budget-design "add an optional category query parameter to GET /transactions, filtering with ledger.by_category"
 ```
 
 ```text
   Thinking…
-    Should accounts support soft-delete? transactions.py doesn't, but…
-  read transactions.py, models.py
-  ✎ accounts.py - list / create / read / delete, same shape
-  Done. (Kept hard-delete for consistency with transactions.py.)
+    Should the parameter be validated against the taxonomy in
+    categorise.py? Separate endpoint instead of a query parameter?
+    Weighing REST-purity against consistency…
+  • Read app/main.py, app/services/ledger.py, app/models.py
+  Ask: write app/main.py (sandbox is read-only) → you approve
+  • Edited app/main.py (+3) - same three lines
+  Done. (Kept the query parameter; matches existing routes.)
 ```
 
-**Overkill** - the exact `capable/high` verdict from two lessons back, now arrived at by forgetting to type `-p budget-build` instead of forgetting to set two flags by hand. Run it the other way - `budget-build` left on for the rules engine - and you get the opposite failure, the `light/low` design that never asks the conflict question. A profile doesn't fix a mismatch. It makes the mismatch cheaper to *notice*, because there's exactly one name to check instead of four settings to re-derive.
+The ask is the fence doing its job: under `budget-design`'s `read-only` sandbox nothing lands without your yes, and habit carried you straight through the checkpoint without noticing the gear was wrong.
+
+Overkill - the verdict from two lessons back, now arrived at by forgetting to type `-p budget-build` instead of forgetting to set two flags by hand. Run it the other way, `budget-build` left on for the wiring fork, and you get the opposite failure: the low-effort hook that never asks where it should live.
+
+A profile doesn't fix a mismatch. It makes the mismatch cheaper to *notice*, because there's exactly one name to check instead of four settings to re-derive. And the read-only fence in `budget-design` bounds even the unnoticed one: nothing lands without your yes, so the wrong gear wastes your tokens and one approval click, not your working tree.
 
 ## This is the same bundle you met under approvals
 
-If `approval_policy` and `sandbox_mode` in those files look familiar, they should - profiles are not a models-chapter feature that happens to also carry trust settings. They're the **one** mechanism for bundling a posture, and the approvals chapter builds the trust half of exactly the same idea: a read-only, ask-first profile for code you don't trust yet, a looser one for work you do. This lesson adds the two model knobs to the same files, and doesn't touch what the trust half decides - `budget-build`'s `workspace-write` sandbox is the approvals chapter's call, not this chapter's. The full profile mechanics - where the layer files live, which keys are eligible - are in the [advanced config reference](https://learn.chatgpt.com/docs/config-file/config-advanced).
+If `approval_policy` and `sandbox_mode` in those files look familiar, they should. Profiles are not a models-chapter feature that happens to also carry trust settings - they're the **one** mechanism for bundling a posture, and the approvals chapter builds the trust half of exactly the same idea: `budget-audit` for read-only questions, `budget-build` for fenced writing. This lesson adds the two model knobs to the same files and doesn't touch what the trust half decided - `budget-build`'s `workspace-write` sandbox is the approvals chapter's call, not this chapter's.
 
-You'll drill exactly this pairing as a daily habit a few chapters from now, in [the two-profile workflow](/course/codex/daily-workflow/profiles-habit/) - that lesson names the profiles for what they're *for* (exploring versus building), which composes with the model-and-effort naming here without either chapter redefining the other's file.
+You'll drill exactly this pairing as a daily habit a few chapters from now, in [the two-profile workflow](/course/codex/daily-workflow/profiles-habit/) - that lesson names the profiles for what they're *for*, exploring versus building, which composes with the model-and-effort naming here without either chapter redefining the other's file.
 
-**One flag now carries a whole posture, and the posture is only as good as the name you remembered to type.** The last lesson is the judgment underneath it all - [reasoning about what each gear actually costs you](/course/codex/models-effort/cost-aware/), so you reach for the right name on purpose rather than by whatever you happened to run last.
+**One flag now carries a whole posture, and the posture is only as good as the name you remembered to type.** The judgment underneath it all is [reasoning about what each gear actually costs](/course/codex/models-effort/cost-aware/), so you reach for the right name on purpose rather than by whatever you ran last.

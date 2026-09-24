@@ -1,42 +1,44 @@
 ---
 title: Connect an external system with an MCP server
 description: "Stop pasting schemas and tickets into chat. An MCP server bridges the agent to a system it can't otherwise see, so it reads and acts on that system directly."
-sidebar:
-  label: "MCP · claude mcp add"
 ---
 
 import McpCostMeter from '../../../../../components/interactive/McpCostMeter.tsx';
 
-You're debugging a failing charge, and the conversation has settled into a bad rhythm: you paste the Jira ticket, the agent asks what the `charges` table looks like, you run a `psql` query and paste the schema back, it guesses at a column name and gets it wrong. The agent is smart but blind - it can reason about the payments service all day, but the two systems that actually hold the answers, the **Postgres database** and the **Jira board**, sit outside the walls it can reach. Every fact from them has to pass through you, by hand.
+You are debugging a failed charge in a payments service, and the two systems that hold the answers - the team's staging Postgres and the ticket board - sit outside the agent's reach. The conversation settles into a relay. You paste the ticket text, the agent asks what the `charges` table looks like, you run a `psql` query and paste the schema back, it guesses a column name and guesses wrong. Every fact from those systems passes through you, by hand.
 
-That copy-paste loop is the exact signal that you want an MCP server. The **Model Context Protocol** is an open standard for connecting an agent to an external tool or data source; an *MCP server* is one such connection. Add the database as a server and the agent can query the schema itself; add Jira and it can read the ticket without you relaying it. The systems stop being things you describe and become things the agent touches.
+One thing to be straight about: the small TypeScript payments service this course uses as its example is self-contained. No file in it opens a database connection, and there is no ticket board. The two systems in this lesson are a constructed scenario, the surroundings a real payments team would have. The commands below are real; the systems they point at are the imagined team's, and you substitute your own.
 
-## Add the two servers
+The relay is the signal. The **Model Context Protocol** (MCP) is an open standard for connecting an agent to an external tool or data source; an *MCP server* is one such connection. Add the database as a server and the agent queries the schema itself. Add the board and it reads the ticket without you relaying it.
 
-You register a server with `claude mcp add`. There are two transport shapes you'll meet immediately, and our two systems happen to land one on each.
+## Register the two servers
 
-A **local stdio server** runs as a process on your machine - right for a tool that needs direct system access, like a database client. The Postgres server is one of these:
+You register a server with `claude mcp add`. Two transport shapes meet you immediately, and our two systems land one on each.
+
+A **local stdio server** runs as a process on your machine - the right shape for a tool that needs direct system access, like a database client. Postgres through the DBHub server is one of these:
 
 ```bash
 claude mcp add --transport stdio db -- npx -y @bytebase/dbhub \
   --dsn "postgresql://readonly:pass@localhost:5432/payments"
 ```
 
-Read that command carefully, because the ordering bites people. Transport and environment options come before the server name in this form; scope placement follows the current CLI syntax, so copy the [MCP command reference](https://code.claude.com/docs/en/mcp) rather than assuming every option has the same position. The bare `--` then separates the name from the command Claude Code will actually spawn to run the server. (Note the `readonly` user in that connection string - we'll come back to why that choice matters in the next lesson.)
+Read the command's shape carefully, because the ordering bites people. Options like `--transport`, `--scope`, and `--env` come *before* the server name; everything after the bare `--` is the command Claude Code spawns to run the server, passed through untouched. The sharpest documented trap is `--env`: if the server name directly follows an `--env` pair, the CLI can read the name as another pair, so keep another option between them. Full syntax is on the [MCP reference](https://code.claude.com/docs/en/mcp). Note the `readonly` user in that connection string - the next lesson explains why.
 
-A **remote HTTP server** is the recommended shape for a cloud service, and most hosted tools - Jira among them - expose one. You point it at the URL the vendor publishes for their MCP endpoint:
+A **remote HTTP server** is the recommended shape for a cloud service, and most hosted tools expose one. You point it at the URL the vendor publishes for their MCP endpoint:
 
 ```bash
-claude mcp add --transport http jira https://<your-jira-mcp-endpoint>
+claude mcp add --transport http jira "https://<your-board-mcp-endpoint>"
 ```
 
-(Check the vendor's own MCP docs for the exact endpoint - they publish it; don't guess.) Cloud servers often need authentication. HTTP MCP can use OAuth, bearer/header authentication, or a server-specific helper. Follow the server's documentation and use secure storage or environment expansion; never paste a password or long-lived secret into a checked-in config file.
+The quotes are part of the command, not decoration: the angle-bracket placeholder marks a URL you substitute, and an unquoted `<` is an input redirection to the shell - the line is a syntax error before `claude` even runs.
 
-The exact flags, the SSE and WebSocket transports, and the `claude mcp add-json` form for pasting a full config are all on the [MCP docs page](https://code.claude.com/docs/en/mcp). The three commands above - `add`, plus `claude mcp list` and `claude mcp get <name>` to inspect what you've registered - are the ones you'll use daily.
+Check the vendor's own MCP docs for the exact endpoint; they publish it, so do not guess. Cloud servers usually need authentication. HTTP MCP supports OAuth through the `/mcp` panel or `claude mcp login <name>`, static headers with `--header`, and server-specific helpers for short-lived tokens. Follow the server's documentation, and keep secrets out of checked-in config files.
 
-## Use what you connected
+The SSE and WebSocket transports, and `claude mcp add-json` for pasting a complete config, are all on the [MCP docs page](https://code.claude.com/docs/en/mcp). The commands you will use daily are `claude mcp add`, `claude mcp list`, and `claude mcp get <name>`; inside a session, `/mcp` shows each registered server's status and authentication.
 
-Once a server is connected, its tools simply appear, and the agent reaches for them the way it reaches for `Read` or `Bash`. The copy-paste loop collapses:
+## Ask one question across both systems
+
+Once a server connects, its tools appear alongside the built-ins, and the agent reaches for them the way it reaches for `Read` or `Bash`. Here is an illustrative exchange showing the shape of the collapse - invented particulars, real mechanism:
 
 ```text
 > charge ch_8812 failed for this customer - look at the ticket and the db,
@@ -45,7 +47,7 @@ Once a server is connected, its tools simply appear, and the agent reaches for t
   ● jira - get_issue (PAY-441)
     "Charge rejected: customer reports card was valid"
 
-  ● db - query
+  ● db - execute_sql
     SELECT status, failure_code FROM charges WHERE id = 'ch_8812'
     → status=failed, failure_code=expired_idempotency_key
 
@@ -54,11 +56,11 @@ Once a server is connected, its tools simply appear, and the agent reaches for t
   so the retry arrived after the key's TTL. That's our bug, not the bank's.
 ```
 
-Notice what changed. You asked one question in plain language; the agent pulled the ticket from Jira and the row from Postgres on its own and reasoned across both. Nothing was pasted. Two systems that lived entirely in your head a minute ago are now part of the agent's working context.
+One question in plain language, and the agent pulled the issue and the row on its own, then reasoned across both. Nothing was pasted. Two systems that lived entirely in your head a minute ago are now part of the agent's working context: the information it can draw on when it decides. The example repo does carry a real idempotency defect - `checkIdempotency` in `src/utils/idempotency.ts` records a key as used at first check, before the payment completes - but this particular `failure_code` and row belong to the constructed scene, not a captured run.
 
-Servers also expose **resources** you can pull in deliberately with an `@` mention - `@db:schema://charges` drops the table schema in as an attachment - and **prompts** that show up as `/mcp__server__name` commands. But the everyday win is the one above: the agent quietly using the right tool for a question that used to require you as the courier.
+## What a mounted server costs
 
-One discipline before you connect a third server: mounted servers add context overhead, although tool search usually defers full definitions until needed. Providers and models can differ, so monitor the actual cost with `/context` rather than assuming every server has the same startup footprint. Mount and unmount below and watch what each one costs:
+Reach is not free. Each mounted server contributes tool definitions to the agent's context, so a connection you never use still costs window space - the finite capacity of that working context - on every session, although [tool search](https://code.claude.com/docs/en/mcp#scale-with-mcp-tool-search) defers loading full tool definitions until they are needed. Providers and models differ, so check the real cost with `/context` ([the costs guide covers reading it](https://code.claude.com/docs/en/costs#reduce-mcp-server-overhead)) rather than assuming every server has the same startup footprint. The meter below uses order-of-magnitude schema sizes, not measured ones. Mount and unmount servers and watch what each one costs:
 
 <McpCostMeter client:visible />
 
@@ -71,7 +73,7 @@ One discipline before you connect a third server: mounted servers add context ov
 :::
 
 :::tip[Try it]
-Connect an MCP server you already use (or a simple filesystem server). Ask Claude a question that requires it. Then disconnect the server and ask the same question - notice what changes in the answer.
+Connect an MCP server you already use (or a starter from the [MCP quickstart](https://code.claude.com/docs/en/mcp-quickstart), such as `claude mcp add playwright -- npx -y @playwright/mcp@latest`). Ask Claude a question that requires it. Then disconnect the server and ask the same question - notice what changes in the answer.
 :::
 
-You've now handed the agent reach into two systems it couldn't see. Which should feel slightly uncomfortable - because you just gave a thing that acts on its own a live connection to your production-adjacent database and your ticket tracker. A connection is not the same as unrestricted trust, and the next lesson is about [drawing that line deliberately](/course/claude-code/extending/mcp-scope/) instead of by accident.
+You have handed the agent reach into two systems it could not see. That should feel slightly uncomfortable: a thing that acts on its own now holds a live connection to a production-adjacent database and your ticket tracker. A connection is not the same as unrestricted trust, and [drawing that line deliberately](/course/claude-code/extending/mcp-scope/) is the next lesson.

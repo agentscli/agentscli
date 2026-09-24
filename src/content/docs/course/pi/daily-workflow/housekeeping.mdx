@@ -1,46 +1,58 @@
 ---
 title: Housekeeping
 description: "The harness drifts on its own. The routine that keeps it worth trusting, what it costs to skip, and what to do before you hand it to a teammate."
-sidebar:
-  label: "Housekeeping · prune and review"
 ---
 
-The tree you just walked doesn't stay accurate on its own. Sessions accumulate, extensions break against a new API, rules go stale, skills stop matching how you actually phrase things - the same way a default spends your context window without asking, an unmaintained harness spends your trust without asking. Staying sharp costs turns too. Here's where.
+Pi, the terminal coding agent this course builds around, reads its per-repo configuration from a `.pi/` directory - in this course, the one in `stash`, the course's running example, a small FastAPI feed reader: rules, settings, extensions, prompts, skills, themes, and agent definitions. That harness doesn't stay accurate on its own. Sessions accumulate, extensions break against a new API, rules go stale, skills stop matching how you actually phrase things. An unmaintained harness spends your trust quietly, the way any unwatched default spends anything - and the routine below is what keeps it worth handing to a teammate. (Arriving cold? [The course opener](/course/pi/) describes the harness this page maintains.)
 
 ## Review cadence, by file
 
-Not every file in `.pi/` needs the same attention. Some are write-once; some rot if you don't look at them monthly.
+Not every file in the harness needs the same attention. Some are write-once; some rot if you don't look at them monthly.
 
 | File | What can go wrong | Review it |
 |---|---|---|
 | `APPEND_SYSTEM.md` | A rule stops matching how `stash` actually works | Monthly |
-| `settings.json` / `models.json` | Routing still points at a model that got deprecated or repriced | Monthly, or whenever a provider changes pricing |
-| `damage-control-rules.yaml` | A path or table gets renamed and the rule silently stops matching it | Whenever `stash`'s schema or layout changes |
+| `settings.json` (project `.pi/`, plus the global sibling it merges with) / `models.json` (global only, `~/.pi/agent/models.json`) | Routing still points at a model that got deprecated or repriced | Monthly, or whenever a provider changes pricing |
+| `damage-control-rules.yaml` | A path gets renamed and the rule silently stops matching it - it names `stash.db` and `.pi` today | Whenever `stash`'s schema or layout changes |
 | `PLAN.md` | Stale once the unit of work ships | Every time a plan closes |
 | `extensions/*.ts` | Pi's event API shifts a hook's signature | After every `pi update` |
 | `prompts/*.md`, `skills/*/SKILL.md` | Description drifts from how you actually phrase the task | Whenever a skill or prompt goes quiet for a month |
 | `themes/*.json` | Cosmetic only - review never required | Never, unless you want to |
 | `agents/*.md`, `agents/*.yaml` | Persona or driver assumptions go stale as the codebase moves | Whenever the domain it covers changes |
 
+Two rows name file families earlier chapters only touched in passing: `prompts/*.md` are prompt templates - the reusable slash-command prompts [the templates lesson](/course/pi/skills-packages/templates-themes/) covers - and `agents/` holds the persona notes and driver definitions [the teams chapter](/course/pi/teams/) wrote for its leads and child agents. The cadence question for both is the same: does the file still describe how the work is actually done?
+
 ## Session cleanup
 
-Every Pi session writes a JSONL transcript to `~/.pi/agent/sessions/`, organized by working directory. Over weeks of daily use those files pile up into history you'll probably never reread. Run this yourself right now: `ls ~/.pi/agent/sessions/<your-stash-checkout-path-with-slashes-as-dashes>/ | wc -l`. That count is your actual backlog, not a guess - if it's in the dozens, review with `pi -r` (or `/resume`) and delete from Pi's session picker with Ctrl+D, which keeps branch and active-session state visible and uses the trash CLI when available. Avoid a blanket `find ... -delete`: age alone doesn't prove a session is disposable, and the verifier pattern from [module 8](/course/pi/subagents/) depends on exactly the session file you'd be deleting.
+Every Pi session writes a JSONL transcript under `~/.pi/agent/sessions/`, organized by project - and the directory convention has a shape that's easy to miss. Take the repo's full path, drop its leading slash, turn every slash that remains into a dash, and wrap the result in a double dash at each end (that encoding is [Pi's own](https://github.com/earendil-works/pi/blob/main/packages/agent/src/harness/session/jsonl/repo.ts)). A `stash` checked out at `/Users/you/stash` becomes `Users-you-stash` and lives under `--Users-you-stash--`, one directory per project. A repo at `/home/you/stash` lives under `--home-you-stash--`.
+
+Get the shape wrong - keep the leading slash, or drop a wrapping dash - and `ls` finds nothing and you conclude Pi keeps sessions somewhere else. Run this yourself right now, on the worked example above or your own path run through the same rule: `ls ~/.pi/agent/sessions/--Users-you-stash--/ | wc -l`. That count is your actual backlog, not a guess. If it's in the dozens, review with `pi -r` (or `/resume`) and delete from Pi's session picker with Ctrl+D, which keeps branch and active-session state visible and uses the trash CLI when available.
+
+Avoid a blanket `find ... -delete`: age alone doesn't prove a session is disposable, and the verifier pattern from [module 8](/course/pi/subagents/) depends on exactly the files you'd be deleting. The whole reason you spawned builders with `--session <path>` was so a verifier could go read that transcript later - delete the transcript and you've deleted the evidence the next verification would run against.
 
 ## Extension updates - and vetting what you didn't write
 
-When Pi itself updates, re-test your own extensions first: fire `/stash`, trigger the damage-control hook, exercise the re-extract tool. The event API can shift between releases - a hook signature that worked last month may gain a parameter, rename a field, or change when it fires. Five minutes of manual testing now saves an afternoon of "why did my gate stop working" later.
+When Pi itself updates, re-test your own extensions first: fire the `/stash` slash command, trigger the damage-control hook, exercise the `resync_feed` tool once against a feed you don't care about. The event API can shift between releases - a hook signature that worked last month may gain a parameter, rename a field, or change when it fires. Five minutes of manual testing now saves an afternoon of "why did my gate stop working" later.
 
-That's for code you wrote. Anything you didn't - a third-party extension package someone else published - needs a different pass before you install it, not after: it runs with the same `bash` and `write` access as `damage-control.ts`, and nothing in Pi checks whether it deserves that access. Read the package's source before installing it, specifically the parts that register a `tool_call` hook or call `bash` - that's where a malicious or just-careless package does damage. Check who publishes it and whether it's still maintained. None of this is optional the way it might be for a read-only dependency; an extension package is a standing grant of exactly the access `damage-control.ts` exists to gate.
+That's for code you wrote. Anything you didn't - a third-party extension package someone else published - needs a different pass before you install it, not after. It runs with the same `bash` and `write` access as `damage-control.ts`, and nothing in Pi vets who published it or whether it deserves that access (Pi ships no built-in allow/deny layer; [the hooks lesson](/course/pi/first-extension/hooks/) covers what that means as of September 2026).
+
+Read the package's source before installing it, specifically the parts that register a `tool_call` hook or call `bash` - that's where a malicious or just-careless package does damage. Check who publishes it and whether it's still maintained. None of this is optional the way it might be for a read-only dependency; an extension package is a standing grant of exactly the access `damage-control.ts` exists to gate.
 
 ## Rule review, and catching config drift
 
-Every month, read `APPEND_SYSTEM.md` top to bottom. Delete rules that no longer apply - the "always run `pytest -x` before committing" rule is dead weight once you've moved the project to `uv run pytest`. Add rules for mistakes you keep correcting by hand; if you've told Pi three times not to touch the migration files, that's a rule, not a conversation. Rules that pay no rent are noise that dilutes the ones that do.
+Every month, read `APPEND_SYSTEM.md` top to bottom. It's five rules today, and each one points at something real: `httpx` and never `requests`, pydantic models staying in `stash/models.py`, dates normalized with their offsets kept. When a rule and the code disagree, the rule follows the code - [module 1's offset fix](/course/pi/getting-started/first-change/) is why the normalize-dates rule grew its "stored rows must keep their timezone offset" half in the first place.
 
-The same review should cross-check `.pi/settings.json` against `~/.pi/agent/settings.json`. [Module 4](/course/pi/models-config/) showed you the two deep-merge, key by key - project wins on anything it declares, global fills in the rest - which means a key you meant to override at the project level can quietly stop overriding anything if you rename it in one file and not the other. That's config drift, and it's silent by construction: nothing errors, the merge just resolves differently than you assumed. Diff the two files by hand periodically, the same way you'd diff `APPEND_SYSTEM.md` against what `stash` actually needs.
+Delete rules that no longer apply; add rules for mistakes you keep correcting by hand. If you've told Pi three times to run the focused test file first, that's a rule, not a conversation. And a generic illustration, since this one isn't from `stash`: a rule like "always run `pytest -x` before committing" is dead weight the day the project moves to `uv run pytest` - the habit survives, the command rots. Rules that pay no rent are noise that dilutes the ones that do.
+
+The same review should cross-check `.pi/settings.json` against `~/.pi/agent/settings.json`. [Module 4](/course/pi/models-config/) showed you the two deep-merge, key by key - project wins on anything it declares, global fills in the rest - which means a key you meant to override at the project level can quietly stop overriding anything if you rename it in one file and not the other.
+
+That's config drift, and it's silent by construction: nothing errors, the merge just resolves differently than you assumed. Diff the two files by hand periodically, the same way you'd diff `APPEND_SYSTEM.md` against what `stash` actually needs.
 
 ## Skill pruning
 
-If a skill hasn't fired in a month, its description probably doesn't match how you actually phrase the task. You don't say "onboard a new saved-page adapter" - you say "add a parser for this site." Revise the description to match your real language, or delete the skill if the procedure has changed enough that it would mislead. A skill that fires on the wrong prompt is worse than no skill at all.
+If a skill hasn't fired in a month, its description probably doesn't match how you actually phrase the task. `add-feed-source`'s description leads with "Wire a new feed source into stash when a feed URL isn't syncing or parses to nothing" - but your real request was "this newsletter's feed saved zero rows, can you wire it up?" The description has to cover that second phrasing, or the skill stays on disk no matter how good its steps are.
+
+Revise the description toward the words you actually use, or delete the skill if the procedure has changed enough that it would mislead. A skill that fires on the wrong prompt is worse than no skill at all.
 
 ## Package updates
 
@@ -48,8 +60,12 @@ Run `pi update --extensions` periodically to pull the latest versions of install
 
 ## Sharing the harness
 
-This module opened with a promise: a `.pi/` directory you could actually hand a teammate. That only works if it's in git, and not all of it should be. Commit `APPEND_SYSTEM.md`, `settings.json`, `damage-control-rules.yaml`, `PLAN.md`, everything under `extensions/`, `prompts/`, `skills/`, `themes/`, and `agents/` - all of it is either plain text or code, and none of it is secret. Do not commit anything holding a raw API key or token; keep that in whatever file your provider credentials live in, gitignored, exactly the way `stash`'s own `.env` is already gitignored for the same reason `damage-control.ts` guards it.
+This module opened with a promise: a `.pi/` directory you could actually hand a teammate. That only works if it's in git, and for this harness all of it should be: everything under `.pi/` - `APPEND_SYSTEM.md`, `settings.json`, `damage-control-rules.yaml`, and the `extensions/`, `prompts/`, `skills/`, `themes/`, and `agents/` folders - plus `PLAN.md`, which sits at the repo root. It's all plain text or code, and none of it is secret - which holds only because the files that *can* carry a key live outside the repo entirely, as the next paragraph shows.
 
-One more use this same directory quietly supports: none of it requires the interactive TUI. `pi --mode json -p "..."` or `pi --mode rpc` - the same flags [module 8](/course/pi/subagents/) used to spawn a child - work identically from a CI job or a cron script, reading the same `.pi/` a teammate would. If part of your `stash` maintenance (a nightly re-extraction sweep, say) should run unattended instead of from your own terminal, that's a scripted, headless Pi run against this exact harness, not a different tool. The site's [Headless & CI](/foundations/headless/) chapter is the spec-level version of that pattern.
+The secrets live outside the repo. Pi's stored credentials sit in `~/.pi/agent/auth.json`, and the global `~/.pi/agent/models.json` can also carry a key (literal, `$ENV_VAR`, or command form - [the config lesson](/course/pi/models-config/config-files/) covers the three). Pi gives `models.json` no project mirror, so a literal key there never has to touch the repo - but if you ever do paste a key into a file that gets committed, treat it as burned and rotate it, on principle. The day `stash` grows a real secrets file of its own, a `.env` carrying provider keys say, is the day it joins `.gitignore` and the rule file's `zeroAccessPaths` in the same commit. [Module 6](/course/pi/rebuild-the-defaults/) left that bucket empty on purpose; filling it is a two-line change when the file exists.
+
+One more use this same directory quietly supports: none of it requires the interactive TUI. `pi --mode json -p "..."` or `pi --mode rpc` - the same flags [module 8](/course/pi/subagents/) used to spawn a child - work identically from a CI job or a cron script, reading the same `.pi/` a teammate would.
+
+If part of your `stash` maintenance (a nightly re-sync sweep, say) should run unattended instead of from your own terminal, that's a scripted, headless Pi run against this exact harness, not a different tool. The site's [Headless & CI](/foundations/headless/) chapter is the spec-level version of that pattern.
 
 [Next: when to reach for Pi](/course/pi/daily-workflow/when-pi/).

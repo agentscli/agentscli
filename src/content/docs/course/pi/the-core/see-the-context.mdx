@@ -1,8 +1,6 @@
 ---
 title: See the context Pi is actually working from
-description: "Not a summary of the context - the context itself. Tokens, cost, the raw session log, and the literal system prompt exactly as it was sent."
-sidebar:
-  label: "See the context · Pi's signature"
+description: "Not a summary of the context - the context itself. Tokens, cost, the raw session log, and the API that hands you the literal system prompt as it was sent."
 ---
 
 import ContextSimulator from '../../../../../components/interactive/ContextSimulator.tsx';
@@ -14,44 +12,53 @@ Here's the honest version of what happened during the last two lessons: you watc
 Look down at the footer while a session is running. It's not decorative - it's a live readout of exactly what the loop is spending:
 
 ```text
-stash · main · ↑ 4,210  ↓ 1,840  R 12,400  W 0 · $0.09 · ctx 31% · claude-sonnet-4-5
+~/stash (main)
+↑4.2k ↓1.8k R12k $0.090 9.0%/200k claude-sonnet-4-5
 ```
 
-Those exact figures are a plausible mid-session reading, not a captured screenshot - nobody logged `stash`'s real numbers for this page. What's real is the mechanism, not the specific digits: input tokens, output tokens, cache-read and cache-write tokens, running cost, context-window percentage used, and the exact model serving the session - every one of those fields updates as the loop runs, not just at the end. Compare that to an agent where "how much of the window is left" is something you infer from vibes (the model getting vague, re-reading a file it already read) rather than read off a number. That inference-from-vibes failure mode is common enough elsewhere that it's worth naming directly: with Pi, you don't have to diagnose a feeling. You read the number.
+Those exact figures are a plausible mid-session reading, not a captured screenshot - nobody logged real numbers from `stash` (the course's running example, a small FastAPI feed reader) for this page. What's real is the field layout, [as Pi's footer source builds it](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/components/footer.ts): the first line is the working directory with the git branch in parentheses (`main` here), plus the session's name after a `•` if you've named it; the second line is input tokens (↑), output tokens (↓), and cache-read (R), with cache-write (W) and a cache-hit rate (CH) also in the usage block but omitted from this compact example, then cost to three decimals, the context window as a percentage of its size, and the model on the right. Every one of those updates as the loop runs (the model call, tool result, next model call cycle), not just at the end.
+
+Compare that to an agent where "how much of the window is left" is something you infer from vibes - the model getting vague, re-reading a file it already read - rather than read off a number. That inference-from-vibes failure mode is common enough elsewhere that it's worth naming directly: with Pi, you don't have to diagnose a feeling. You read the number.
 
 ## Nothing gets thrown away - it gets written to disk
 
-Every session persists to a plain JSONL file on disk, and it holds the *full*, uncompacted history - every message, every tool call, every result - not a rolling window that quietly drops what doesn't fit. When a session eventually gets compacted (a full lesson of its own, coming next chapter), that only changes what gets sent to the model on the next turn. The complete record on disk doesn't shrink, and `/tree` lets you navigate back through it after the fact. If you ever want to know exactly what a session actually did three hours ago, the answer isn't "trust the running summary" - it's "go read the log; it's right there."
+Every session persists to a plain JSONL file under `~/.pi/agent/sessions/`, organized by working directory, and it holds the *full*, uncompacted history - every message, every tool call, every result - not a rolling window that quietly drops what doesn't fit. When a session eventually gets compacted (a full lesson of its own, coming next chapter), that only changes what gets sent to the model on the next turn. The complete record on disk doesn't shrink, and `/tree` lets you navigate back through it after the fact.
+
+If you ever want to know exactly what a session actually did three hours ago, the answer isn't "trust the running summary" - it's "go read the log; it's right there."
 
 ## The system prompt isn't a black box either
 
 This is the one that matters most. Pi's `ExtensionAPI` exposes `ctx.getSystemPrompt()` and `ctx.getContextUsage()` directly - a few lines of TypeScript in an extension (you'll write your first one in a later chapter) get you the literal, fully-assembled system prompt as it was actually sent for that turn, and the exact token count backing that context-percentage number in the footer. Not a description of the prompt. Not "here's roughly what we tell the model." The actual string.
 
-Why that specific capability is worth dwelling on: it's the only reliable way to catch a prompt quietly growing on you. Skills, project context files, and per-turn extension injections all get spliced into the system prompt at runtime - and every one of them is invisible *until you actually look at the rendered result*. An agent that only shows you a static, documented version of its system prompt can't tell you that a skill you installed last week added another 400 tokens to every single turn. One that hands you the real, as-sent string can. That gap - between "here's our documented prompt" and "here's the prompt this exact turn actually used" - is the whole reason this level of access is worth having, not a nice-to-have on top of a summary view.
+Why that specific capability is worth dwelling on: it's the only reliable way to catch a prompt quietly growing on you. Skills, project context files, and per-turn extension injections all get spliced into the system prompt at runtime - and every one of them is invisible *until you actually look at the rendered result*. An agent that only shows you a static, documented version of its system prompt can't tell you that a skill you installed last week added another 400 tokens to every single turn.
 
-It's also why the ecosystem around Pi leans so heavily into building on top of these events. People have wired the full event stream - every tool call with its exact arguments, every assistant message, thinking blocks, tokens-per-second, cost - into standalone dashboards: side-by-side "swim lanes" for comparing two runs, a start-of-session view showing the literal prompt as sent for that boot, cost tracking that doesn't stop at the footer's rounded number. None of that ships in the box. What ships in the box is the thing that makes it *possible to build* - an event surface with nothing withheld from it.
+One that hands you the real, as-sent string can. That gap - between "here's our documented prompt" and "here's the prompt this exact turn actually used" - is the whole reason this level of access is worth having, not a nice-to-have on top of a summary view.
 
-## Keeping score: the context ledger
+It's also why the ecosystem around Pi leans so heavily into building on these events: people have wired the full stream - every tool call with its exact arguments, every assistant message, thinking blocks, tokens-per-second, cost - into standalone dashboards, side-by-side "swim lanes" for comparing two runs, and cost tracking that doesn't stop at the footer's rounded number (browse [the package gallery](https://pi.dev/packages) for the current crop). None of that ships in the box. What ships in the box is the thing that makes it *possible to build* - an event surface with nothing withheld from it.
 
-You've now got three separate ways to see cost: a live footer, a full log on disk, and the literal prompt string. Everywhere else in this course, that cost gets tracked one way - a small table, replayed and extended every module, that answers four questions about anything Pi adds to your session: what layer is this, what does it cost, what does it buy, and who decided to spend it.
+## Keeping score
 
-Two rows are already earned, from the two lessons before this one:
+You've now got three separate ways to see cost: a live footer, a full log on disk, and the literal prompt string. Here is how to use them: whenever something new enters your session - a tool, a rule file, a skill, an extension - put four questions to it. What layer is this? What does it cost? What does it buy? And who decided to spend it - Pi, by shipping it as a default, or you, by choosing to add it? Those questions are this course's working form of the **cost** principle - what completing the work consumes - aimed at the context window, and the same questions work unchanged on money, elapsed time, and attention.
 
-| Layer | What it costs | What it buys | Who decided |
-|---|---|---|---|
-| The four tools (`read`/`write`/`edit`/`bash`) | Fixed schema tokens on every turn - count them with `ctx.getSystemPrompt()` | Removes needing to learn, or pay for, a fifth tool nobody asked for | Pi |
-| No step ceiling on the loop | Turns, not tokens - and no upper bound on a task the model can't actually finish | Removes an arbitrary mid-task cutoff on real work | Pi |
+Ask them of the two layers this module has already put in front of you:
 
-Notice the last column. Both rows say **Pi**, because both of those costs were fixed the moment you installed it - you didn't choose the tool count and you didn't choose the absence of a step limit. That column is going to keep mattering as this course goes on: every later module adds a row, and a growing share of them are going to say **you** instead.
+- **The four tools (`read`/`write`/`edit`/`bash`)** cost their schema tokens on every turn - sent with every request alongside the prompt, which is why Pi's own accounting bills the two as one fixed cost - and buy not having to learn, or pay for, a fifth tool nobody asked for.
+- **The missing step ceiling on the loop** costs turns - and the tokens every extra turn spends - with no upper bound on a task the model can't actually finish, and buys the absence of an arbitrary mid-task cutoff on real work.
+
+Both decisions were made by **Pi**. They were fixed the moment you installed it: you didn't choose the tool count, and you didn't choose the absence of a step limit. That last question - who decided - is the one worth carrying out of this module. As you add layers of your own in the chapters ahead, keep asking it, because an honest accounting of a harness never lets a line item in the window go unattributed: "nobody, it was just sitting there" is rarely true, and it is never useful.
 
 ## Rehearse the discipline
 
-The habit worth building is: before you assume the window is "getting full" or "acting weird," look - don't guess. The simulator below isn't a Pi session, and it isn't `stash`'s - it's a generic walkthrough of how a context window fills over a long task, reused from elsewhere on this site, complete with things Pi itself doesn't ship (an MCP connection, a subagent delegation) just to show the shape at a bigger scale than one date fix. Every number in it is invented for the walkthrough, not measured from a real run.
+The habit worth building is: before you assume the window is "getting full" or "acting weird," look - don't guess. The simulator below isn't a Pi session, and it isn't `stash`'s - it's a generic walkthrough of how a context window fills over a long task, reused from elsewhere on this site, complete with two things this course later builds by hand on Pi because the core doesn't ship them (a mounted MCP-style server, a subagent delegation), just to show the shape at a bigger scale than one feed-parsing fix.
 
-Before you step through it, predict the single worst spike. It won't be the run of several file reads during exploration - that's a deliberate, expected cost. It's one accidental full read of a file nobody meant to open, and it burns more of the window in that single call than the entire exploration phase before it. Step forward until you find it, click the segment, and check whether your prediction was right:
+Every number in it is invented for the walkthrough, not measured from a real run.
+
+Before you step through it, predict the single worst spike. It won't be the run of several file reads during exploration - that's a deliberate, expected cost. It's one accidental full read of a file nobody meant to open, and it burns more of the window in that single call than that entire exploration run of deliberate file reads combined.
+
+Step forward until you find it, click the segment, and check whether your prediction was right:
 
 <ContextSimulator client:visible />
 
-Whatever the exact step turns out to be, the reflex is the same one you're building on `stash`: a full context window is never a mystery you diagnose from symptoms. It's a number, a log on disk, and a string you can print. Every one of those is one call away.
+Whatever the exact step turns out to be, the reflex is the same one you're building on `stash`: a full context window is never a mystery you diagnose from symptoms. It's a number, a log on disk, and a string you can print - the first two on your screen and disk already, the third a few lines of extension code away.
 
 You now have direct access to *what's* in the window at any moment. The last piece is *why* it starts out so small in the first place - Pi's default system prompt is deliberately compact, and its exact size varies with the active configuration. [Next: read the tiny prompt](/course/pi/the-core/the-tiny-prompt/).

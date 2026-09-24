@@ -1,35 +1,38 @@
 ---
 title: Discovery and the nesting walk
-description: "Drop an AGENTS.md in a subdirectory and you expect the root rules to vanish. OpenCode walks up and combines every file it finds - learn the walk and the fix."
-sidebar:
-  label: "Discovery · walk-up combine"
+description: "Drop an AGENTS.md in a subdirectory and whether it loads depends on where you start OpenCode. Learn the walk up to the repo root, the read-time attach, and the explicit alternative."
 ---
 
 import ConfigExplorer from '../../../../../components/interactive/ConfigExplorer.tsx';
 
-The root `AGENTS.md` from the last lesson is working. UTC at ingest, fetches through the limiter - OpenCode names both rules back to you on every relevant task, and you've stopped reviewing the same two mistakes. So you reach for the obvious next step. `feedmill`'s HTTP sync server lives under `server/` and has a convention of its own: every handler must wrap its response in the standard error envelope. Rather than bloat the root file with a server-only rule, you do the tidy thing and drop a second `AGENTS.md` inside `server/` with just that one rule in it.
+`feedmill`, the course's illustrative Go feed aggregator, carries a root `AGENTS.md` with two rules in it - timestamps parsed to UTC at ingest, fetches routed through the shared rate-limit limiter - and the agent has been applying both on tasks that touch them. So you reach for the obvious next step. `feedmill`'s HTTP sync server lives under `cmd/sync/` and has a convention of its own: every handler must wrap its response in the standard error envelope. Rather than bloat the root file with a server-only rule, you do the tidy thing and create a second `AGENTS.md` inside `cmd/sync/` with just that one rule in it. feedmill has no such file yet; you add it here.
 
-Then you stop, because you've been bitten by exactly this before - in a different tool. There, a rules file only ever came from the *nearest* directory: the moment you nested one, it took over and the root rules silently stopped applying to that subtree. You've learned to distrust nesting. So before you trust the server task, you ask OpenCode what it's actually reading.
+Then you stop, because the stakes are not obvious. Whether that nested file *adds* to the root rules or *replaces* them for work in that subtree depends entirely on how the tool discovers instruction files - and tools genuinely differ. Some combine every ancestor file they pass on the way up; some use only the nearest one. Before you trust the server task, you need to know which kind OpenCode is, and in OpenCode's case, where you started it.
 
-It turns out OpenCode does not work the way that other tool does.
+## OpenCode walks up to the repo root and loads every AGENTS.md
 
-## OpenCode walks up to the first project match
+Here's the mechanism. When OpenCode assembles the system prompt for a turn, it **walks up** from the directory you started it in to the root of the git worktree (the top of your checkout) and collects every `AGENTS.md` on that path. Filename precedence applies to the whole walk: if any `AGENTS.md` turns up, `CLAUDE.md` files are skipped, and only a walk that finds no `AGENTS.md` at all collects `CLAUDE.md` files instead. The [rules documentation](https://opencode.ai/docs/rules/) states the search order and the filename precedence. It does not say whether ancestors stack; the source does. Every `AGENTS.md` between the start directory and the repo root loads, not only the nearest one ([`instruction.ts` at v1.18.32](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/session/instruction.ts), as of September 2026).
 
-Here's the mechanism, and it's worth holding precisely because most people arrive expecting the opposite. When OpenCode builds its context for a turn, it **walks up** from the current working directory toward the worktree root looking for project instruction files. The first matching filename category wins: a nearer `AGENTS.md` takes precedence over an ancestor `AGENTS.md`, and `AGENTS.md` takes precedence over the Claude-compatible fallback `CLAUDE.md`. It does not automatically concatenate every ancestor file. This is the behavior described in OpenCode's [rules documentation](https://opencode.ai/docs/rules/).
+So when you start OpenCode inside `cmd/sync/`, the walk finds `cmd/sync/AGENTS.md`, keeps climbing, and finds `feedmill/AGENTS.md` too. Both load: the envelope rule and the root UTC and rate-limit rules arrive together. The nested file adds to the root rules; it does not replace them.
 
-So when you're working from inside `server/`, the walk starts there and finds `server/AGENTS.md`. It stops using the project-level discovery result there; the root `feedmill/AGENTS.md` is not automatically added to that turn. Your server-only rule wins, but the root UTC and rate-limit rules no longer arrive through the same implicit path. If both sets are required, make that composition explicit with `instructions`.
+Start OpenCode at the feedmill root instead, and the walk begins above `cmd/sync/`, so it never passes that file. The root rules load. The envelope rule is not in the system prompt.
 
-The whole walk, from the global file down to the subtree:
+The whole picture, for both start directories:
 
 ```text
- ~/.config/opencode/AGENTS.md     global rules        (combined with project rules)
-        │
-        ▼
- feedmill/server/AGENTS.md        nearest project match (wins)
-        │
-        ╰── feedmill/AGENTS.md    used when no nearer project match exists
+ ~/.config/opencode/AGENTS.md     global rules, combined with project rules
+                                  (~/.claude/CLAUDE.md is used if this file is absent)
 
- result: global rules + the selected project instruction file
+ started in feedmill/cmd/sync/:
+   feedmill/cmd/sync/AGENTS.md    loaded
+   feedmill/AGENTS.md             loaded (the walk continues to the repo root)
+
+ started in feedmill/:
+   feedmill/AGENTS.md             loaded
+   feedmill/cmd/sync/AGENTS.md    not on the walk; attached later only if the
+                                  agent reads a file under cmd/sync/
+
+ result: global rules + every AGENTS.md from the start directory up to the repo root
 ```
 
 The line in OpenCode's own docs that people misread is this one:
@@ -38,42 +41,47 @@ The line in OpenCode's own docs that people misread is this one:
 The first matching file wins in each category.
 ```
 
-It is tempting to read "first matching file wins" as "only the filename matters, while every directory-level copy is loaded." The safer reading is the one to teach: the nearest project instruction file selected by the upward walk is the implicit project rules source. The docs' own example also pins down the filename precedence: *if you have both `AGENTS.md` and `CLAUDE.md`, only `AGENTS.md` is used.* Global rules are a separate category and are combined with the selected project file.
+It is tempting to read "first matching file wins" as "the nearest file wins and the ancestors drop out." The source shows the other meaning: the rule picks a filename, not a directory. Within the project walk, the first filename that matches anywhere on the path wins, and every copy of that filename on the path loads. The docs' own example pins down the filename half: *if you have both `AGENTS.md` and `CLAUDE.md`, only `AGENTS.md` is used.* Global rules are a separate category. `~/.config/opencode/AGENTS.md`, or `~/.claude/CLAUDE.md` when that file is absent, is combined with the project files.
 
-So "first match wins" is real, and so is "project and global rules combine." They're answers to two different questions: *which project file do I pick in this directory* versus *which separate global and explicit instruction sources are added*.
+So "first match wins" is real, and so is "every `AGENTS.md` on the path loads." They answer two different questions: *which filename counts* versus *which directories contribute*.
 
-## Why people expect the opposite
+## Where the walk still catches you
 
-If you've come from a tool that combines every ancestor rules file, OpenCode's nearest-project-file behavior is the important difference: dropping a file in `server/` can hide root project rules from implicit discovery. Other tools differ, so verify their current rules documentation before transferring this mental model.
+Because the walk adds files, a nested `AGENTS.md` cannot hide the root rules. The traps sit elsewhere, and other tools differ on each of them, so verify their current rules documentation before transferring this mental model.
 
-OpenCode makes the boundary explicit, but it introduces a different trap: a rule you place three directories deep can silently replace the root project's implicit rules for work below that directory. The failure mode is "I forgot this subtree selects a different project file." If the root rules must remain active too, name both files in `instructions` instead of relying on directory discovery.
+- **The start directory decides the set.** The same repo gives the agent a different rules layer depending on where you launched OpenCode. Start at the root and the `cmd/sync/` rule is missing from the system prompt, even for a task that only touches the server; it arrives only if the agent reads a file there, as the last section shows.
+- **One `AGENTS.md` silences every `CLAUDE.md` on the startup walk.** A repo that keeps its rules in `CLAUDE.md` files and then gains a single `AGENTS.md` anywhere between the start directory and the root stops loading those `CLAUDE.md` files.
 
-You can confirm the intended rule set without asking the model to self-report it. OpenCode's public docs document cwd walk-up plus explicit `instructions` paths, globs, or URLs; they do not promise a debug command or a stable system-prompt header. When the exact set must be location-independent, put it in `opencode.json`'s `instructions` field.
-
-The point of looking is the same either way: confirm the rules layer is what you think it is, before a wrong answer tells you it wasn't.
+There is no command that confirms the intended rule set for you: OpenCode's public docs document cwd walk-up plus explicit `instructions` paths, globs, or URLs, and promise no debug command or stable system-prompt header, so asking the model to self-report its rules is not verification either. What you can do is prevent the ambiguity - when the exact set must be location-independent, put it in `opencode.json`'s `instructions` field (`opencode.json` is OpenCode's project config file).
 
 ## When you do want per-subtree files
 
-Walk-up discovery covers the simple case, but it has two limits worth naming. First, it selects one project instruction file based on where you start; a file in `parsers/json/` won't be in the turn's base context when you're working from `server/`, because the walk goes up, not sideways. Second, the set of files the walk-up loads depends on where you happen to be, which is implicit and easy to misjudge.
+Walk-up discovery covers the simple case, but it has two limits worth naming. First, it only climbs; a file in `internal/feed/` won't be in the turn's base context when you're working from `cmd/sync/`, because the walk goes up, not sideways. Second, the set of files the walk-up loads depends on where you started OpenCode, which is implicit and easy to misjudge.
 
 When you want an **explicit, location-independent** set of rule files - load *these* every turn, no matter which directory the task touches - the tool isn't directory nesting at all. It's the `instructions` field in `opencode.json`, which takes explicit file paths and glob patterns and loads every match additively:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["AGENTS.md", "packages/*/AGENTS.md"]
+  "instructions": ["AGENTS.md", "cmd/sync/AGENTS.md"]
 }
 ```
 
-Every matched `instructions` file is loaded and combined with the selected project and global rules. The difference from the walk-up is **implicit-by-location versus explicit-by-config.** The walk-up selects one project file based on cwd; the `instructions` glob gathers exactly the set you name, from anywhere in the tree, every turn. Entries can be relative paths, globs, `~/`-rooted paths, or even remote `https://` URLs (fetched with a short timeout).
+Every matched `instructions` file is loaded and combined with the discovered project and global rules; a file that both routes find loads once. The difference from the walk-up is **implicit-by-location versus explicit-by-config.** The walk-up loads what sits on the path from where you started; the `instructions` list gathers exactly the set you name, every turn. OpenCode resolves a relative entry against the start directory and each parent up to the repo root, so `cmd/sync/AGENTS.md` matches whether you start at the root or inside `cmd/sync/` ([`instruction.ts` at v1.18.32](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/session/instruction.ts), as of September 2026). Entries can also be globs, `~/`-rooted paths, or remote `https://` URLs (fetched with a short timeout).
 
-That's the next lesson, in full. You've seen how discovery actually behaves - the walk climbs toward the worktree root and selects the nearest matching project instruction file, while global rules are combined separately - and where the explicit additive alternative lives. Now wire it up on purpose: split `feedmill`'s long-lived conventions into their own files and load them by name.
+That reliability has a price. A listed file loads on every turn, whether the task touches the server or not, so a subtree rule listed here spends context on work that never goes near that subtree. List a subtree file when its rule must be present from the first message; leave it to the walk when it matters only for work inside that directory and you start OpenCode there, or rely on the undocumented read-time attach that the last section describes.
 
-## One more way nested files load: when you read into the subtree
+That explicit additive set is a topic of its own - which files to name, how the globs behave, and Claude Code's `@path` import habit, which OpenCode does not expand and which fails silently - and [the next page](/course/opencode/rules-agents-md/extra-instructions/) covers it in full.
 
-Do not treat a below-cwd read as a second documented discovery path. The public [rules documentation](https://opencode.ai/docs/rules/) documents walk-up from the current directory and explicit `instructions` paths or globs. The closed issues [#6316](https://github.com/anomalyco/opencode/issues/6316) and [#7576](https://github.com/anomalyco/opencode/issues/7576) are feature discussions, not release evidence. If a nested rule must load no matter where you start, list it in `opencode.json`'s `instructions` field.
+## Is reading into the subtree a second path?
 
-The documented loading paths answer one question: *which files reach the agent, from where.* That question is bigger than rules. Skills, commands, agents, and `opencode.json` itself all draw the same project-versus-home line, and it's worth holding the whole layout once rather than rediscovering it a surface at a time:
+You started at the root, but the task sends the agent reading into `cmd/sync/`. Does the nested `AGENTS.md` down there apply? In the current source, yes, although the public [rules documentation](https://opencode.ai/docs/rules/) describes only two paths: the walk-up from the start directory and explicit `instructions` entries. When the read tool opens a file, OpenCode walks up from that file's directory toward the start directory and attaches any instruction file on the way that the session has not already received. This read-time walk stops at the start directory, so it covers only files beneath it; in a session started in `cmd/sync/`, a read of `internal/feed/parser.go` attaches nothing. The file arrives inside that read result, not in the system prompt ([`instruction.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/session/instruction.ts) and [`read.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/tool/read.ts) at v1.18.32, as of September 2026).
+
+So a root-started session that asks for a handler change gets the envelope rule once the agent reads a file under `cmd/sync/`. Two limits follow. The rule is absent until that read, so a task that creates a new file there without reading a neighbor first may never see it. And the behavior is undocumented, so a release can change it without notice; the closed issues [#6316](https://github.com/anomalyco/opencode/issues/6316) and [#7576](https://github.com/anomalyco/opencode/issues/7576) discuss nested-context behavior, and they are feature discussions, not a documented contract. If a nested rule must load from the first message no matter where you start, list it in `opencode.json`'s `instructions` field.
+
+The loading paths answer one question: *which files reach the agent, from where.* That question is bigger than rules. Skills, commands, custom agents, and `opencode.json` itself all draw the same project-versus-home line - a project scope rooted at the repo, and a home scope under `~/.config/opencode/` - and it's worth holding the whole layout once rather than rediscovering it a surface at a time.
+
+One warning before you use the explorer: its `AGENTS.md` cards still describe nearest-file selection. The walk described above, checked against the source, is the current behavior. Its global `agents/` card also lists a `scout` subagent that the current release no longer ships.
 
 <ConfigExplorer client:visible initialTool="opencode" />
 

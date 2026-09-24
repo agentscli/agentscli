@@ -1,113 +1,128 @@
 ---
 title: Switch agents to switch policy
-description: "Audit inherited code on a tight leash, then flip to a free hand to build - without touching a config file. In OpenCode the permission policy rides on the agent."
-sidebar:
-  label: "Agent = policy · build vs plan"
+description: "Audit a codebase on a tight leash, then flip to a free hand to build - without editing config between tasks. In OpenCode the permission policy rides on the agent."
 ---
 
 import AutonomyDial from '../../../../../components/interactive/AutonomyDial.tsx';
 
-You've inherited `feedmill` - a Go CLI plus a sync server that pulls dozens of differently-shaped RSS, Atom and JSON feeds, dedupes them, and serves a reading queue. Before you change a line you want to *understand* it: trace how a malformed Atom feed slips past the parser, read the dedupe key logic, walk the cron path. That's a read-heavy hour, and the last thing you want during it is the agent "helpfully" rewriting a parser you were only trying to read. You want a posture: eyes on, hands off.
+On `feedmill` - the course's illustrative Go feed aggregator, a Go CLI plus a sync server pulling dozens of differently-shaped RSS, Atom, and JSON feeds into one deduped reading queue - one source keeps re-syndicating the same article with different tracking parameters on its link, and the queue lists the article twice. Before you change a line of the dedupe pass, you want to *understand* it: trace how an entry becomes "new", read the key logic, walk the sync path. That's a read-heavy investigation, and the last thing you want during it is the agent "helpfully" rewriting the code you were only trying to read. You want a posture: eyes on, hands off.
 
-Then the audit ends and the work begins - fix the parser, add the test, wire the new source - and now the read-only leash is just friction. You want the opposite posture: a free hand.
+Then the investigation ends and the work begins - fix the key logic, add the test, wire the new source - and that no-edits leash is just friction. You want the opposite posture: a free hand.
 
-In a tool with named profiles you'd be editing a settings file to flip between those two stances. OpenCode puts the policy somewhere you can reach without leaving the prompt: **on the primary agent itself.** You don't edit a permission map to go from auditing to building - you switch which agent you're talking to.
+In a tool with saved permission profiles you'd be editing a settings file to flip between those two stances. OpenCode puts the policy somewhere you can reach without leaving the prompt: **on the primary agent itself.** A primary agent - the kind you talk to directly, like the built-in `build` and `plan` - carries its own permission map, so you don't edit a map to go from auditing to building. You switch which agent you're talking to.
 
 ## The two agents are two policies
 
-OpenCode ships two primary agents, and the only interesting difference between them for this lesson is what they're *allowed to do*:
+OpenCode ships two primary agents, and the interesting difference between them here is what they're *allowed to do*:
 
-- **`plan`** - restricted. File edits and bash commands are gated behind approval: they're set to `ask`, so the agent can read, grep, and reason freely, but any edit or shell command pauses for your explicit go-ahead instead of running on its own.
-- **`build`** - the default, with all tools enabled. Edits and bash run end to end, no checkpoint.
+- **`plan`** - restricted. Its permission map denies the edit tools (it can still write its own plan files under `.opencode/plans/`): the agent can read, grep, and reason freely, but it cannot change your code. It does not gate bash unless you add a rule, so shell commands still run (as of September 2026, v1.18.32, per the `plan` definition in [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts); the [agents documentation](https://opencode.ai/docs/agents/) describes edits and bash as defaulting to `ask`).
+- **`build`** - the default, with all tools enabled. Out of the box, edits and bash run end to end, no checkpoint ([agents documentation](https://opencode.ai/docs/agents/), as of September 2026).
 
-Switch between them with the **Tab** key, right at the prompt - no command, no file, no restart (the keybind is `agent_cycle`, default `tab`; `shift+tab` cycles back). The active agent is surfaced in the TUI so you can see which posture you're in, which means your permission policy stays visible instead of buried in a config you have to remember the state of.
+Switch between them with the **Tab** key, right at the prompt - no command, no file, no restart (the default binding for the `agent_cycle` keybind; `shift+tab` cycles back as `agent_cycle_reverse`; [keybinds documentation](https://opencode.ai/docs/keybinds/), as of September 2026). The active agent is surfaced in the TUI, OpenCode's full-screen terminal interface, so you can see which posture you're in - your permission policy stays visible instead of buried in a config you have to remember the state of.
 
-Start the audit in `plan`. Tab until the active agent shows `plan`, then ask the read-only questions:
-
-```text
-plan ▸ how does the Atom parser decide an entry is a duplicate of one
-       we've already ingested? walk me through the dedupe key.
-
-  ⏵ read  internal/feed/atom.go
-  ⏵ grep  "dedupeKey" internal/feed
-  ⏵ read  internal/store/dedupe.go
-
-  The dedupe key is built in store.DedupeKey: it hashes the entry's
-  <id> if present, else falls back to the entry link. Atom entries
-  without an <id> and with a tracking-param'd link therefore hash to
-  different keys on each fetch - that's your duplicate leak.
-```
-
-That landed you a real finding, and reading never tripped a gate. Now suppose, mid-trace, you reflexively ask it to fix what it just found:
+Start the investigation in `plan`. Tab until the active agent shows `plan`, then ask the read-only questions - an illustrative exchange:
 
 ```text
-plan ▸ ok, fix it - fall back to a normalized link when <id> is missing.
+plan ▸ how does the dedupe pass decide an entry is new? walk me
+       through the key, and where a tracking-param'd link would
+       slip past it.
 
-  ⏸ edit needs approval (agent: plan)
-    internal/store/dedupe.go
-    [a]pprove   [d]eny   - or Tab to build to drop the prompt entirely
+  ⏵ read  internal/dedupe/hash.go, internal/adapter/normalise.go
+
+  Key hashes the feed URL plus whatever entry ID it is given. The Atom
+  adapter in internal/adapter/normalise.go keeps no entry ID, only the
+  link, so the raw link is the only identity a caller can pass - and a
+  source that re-syndicates with new tracking parameters hashes to a
+  new key on every fetch. That's your duplicate.
 ```
 
-That checkpoint is the point. In `plan`, an edit doesn't just *happen* - it stops and waits for you. The policy isn't advice you're trusting the model to honor; the agent is configured to pause every write and shell command for a human yes. On code you've owned for an hour, that pause is the difference between an audit and an accident. (If you want a wall that *can't* be approved away rather than a checkpoint you might absent-mindedly wave through, see the custom agent below.)
+That landed a real finding, and reading never tripped a gate. Now suppose, mid-trace, you reflexively ask it to fix what it just found (illustrative again):
 
-Which posture an hour of work deserves is a call you can make before you touch Tab, and it rests on two properties of the work - never on how hard it is. Set them for the audit hour (inherited parsers you only mean to read), then for the fix that follows, and watch the recommended rung move; `plan` and `build` are OpenCode's names for two of the rungs you'll land on:
+```text
+plan ▸ ok, fix it - normalize the link before it becomes the key.
+
+  ✗ edit denied (agent: plan)
+    internal/dedupe/hash.go
+```
+
+That refusal is the point. In `plan`, an edit to your code doesn't happen - the permission map denies it, and there is no prompt to approve. The policy isn't advice you're trusting the model to honor; the agent is configured to refuse every edit outside its plan files. That's enforcement rather than guidance - a distinction the [plugin hooks page](/course/opencode/extending/plugins-hooks/) develops further when code, not config, starts doing the gating. On code you were only trying to understand, that refusal is the difference between an audit and an accident. Its limit is the shell: `plan` leaves bash at `allow`, so a command that writes a file, such as `gofmt -w`, still runs. (If you want a wall that covers the shell too, see the custom agent below.)
+
+Which posture a piece of work deserves is a call you can make before you touch Tab, and the stakes side of it rests on two properties of the work, not on how hard it is: how hard the worst single wrong action would be to undo, and how far its consequences would reach. Sizing the leash by those two properties - deciding, before the run, how much the agent may do without asking and where it must stop for you - is the **control** principle, and the dial below runs on it. Set it for this page's work first. The trace and the fix both touch git-tracked files in your own repo (undone with a `git checkout`, reaching only your working copy), so the dial puts both on the same rung: run free inside a fence. This page has no fence yet, so the fix below runs tighter than that rung, near ask-before-acting, in `build` with edits gated. The dial measures stakes, not intent. You pick `plan` for the trace for a reason it doesn't score: while you're only reading, you want no edits at all. Now set the worst action to damage to the reading store, which takes real work to rebuild, and the rung tightens to auto-apply edits, gate the rest. `plan` sits on no single rung: it refuses edits like the read-and-propose-only rung but runs shell commands without asking. A `build` agent with `edit: "allow"` and `bash: "ask"` fits the auto-apply-edits-gate-the-rest rung; `feedmill`'s `build` from the per-tool page, which asks before edits and before any command outside its short `bash` allowlist, sits closer to ask-before-acting (the map is on [the per-tool page](/course/opencode/permissions/per-tool-per-agent/)). The read-and-propose-only rung is the custom `audit` agent you'll write below, and the run-free-inside-a-fence rung is what the [container page](/course/opencode/permissions/container-isolation/) builds:
 
 <AutonomyDial client:visible />
 
 ## Tab carries the thread across the policy line
 
-Here's what makes this better than two separate settings files: switching agents doesn't switch *sessions*. The conversation comes with you. So the natural move is to do the whole audit in `plan`, let it propose an approach in words, and only then cross into `build` to execute - same thread, same context, gated-then-open policy:
+Here's what makes this better than two separate settings files: switching agents doesn't switch *sessions*. The conversation comes with you. So the natural move is to do the whole investigation in `plan`, let it propose an approach in words, and only then cross into `build` to execute - same thread, same context, restricted-then-open policy.
+
+One note before the transcript, because a stock config would show something slightly different: out of the box, `build`'s edits land without asking. This run is against `feedmill`'s `opencode.json`, the project config file at the repo root, which sets `agent.build.permission.edit` to `ask` - the gate the per-tool map page writes onto `build` - so the edits below arrive behind your approval. The excerpt shows only that key; the per-tool page's `bash` map, which lets `go test` run without a prompt, is left out here:
+
+```json title="opencode.json"
+{
+  "agent": {
+    "build": {
+      "permission": { "edit": "ask" }
+    }
+  }
+}
+```
+
+That setting belongs only to `build`. The separate `plan` agent refuses edits because that is its built-in default, not because it inherits `build`'s map. That default sits under your global config: a top-level `permission` rule for `edit`, such as `"edit": "allow"`, is applied after it and overrides the deny. To keep the wall, set `agent.plan.permission.edit` to `deny` ([`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts), as of September 2026, v1.18.32). An illustrative run:
 
 ```text
 plan ▸ outline the fix without writing anything yet.
 
   Plan:
-  1. In store.DedupeKey, when <id> is absent, normalize the link
-     (strip utm_* and fbclid params, lowercase host) before hashing.
-  2. Add a table test in dedupe_test.go covering the tracking-param case.
+  1. Add a CanonicalLink helper in hash.go that strips utm_* and
+     fbclid params and lowercases the host, and hash its result.
+  2. Add a table test in hash_test.go covering the tracking-param case.
 
-  (From plan I'd have to ask before applying this - Tab to build when ready.)
+  (Plan can't apply this - Tab to build when ready.)
 
 ▸ [Tab]  agent: build
 
 build ▸ do it.
 
-  ⏵ edit  internal/store/dedupe.go
-  ⏵ edit  internal/store/dedupe_test.go
-  ⏵ bash  go test ./internal/store/
-    ok  github.com/you/feedmill/internal/store  0.142s
+  ⏵ edit  internal/dedupe/hash.go            → approved
+  ⏵ write internal/dedupe/hash_test.go       → approved
+  ⏵ bash  go test ./internal/dedupe/
+    ok  github.com/example/feedmill/internal/dedupe  0.142s
 ```
 
-You kept the dangerous part behind an approval gate and relaxed it for the safe part, and you never left the prompt to do it. The `plan` agent read and proposed; the `build` agent edited and ran the test - and because it's one thread, `build` already knew exactly what the plan was.
+Edits were refused in `plan` and waited for your approval in `build`, the test command ran without a prompt, and you never left the prompt to do it. The `plan` agent read and proposed; the `build` agent edited and ran the test - and because it's one thread, `build` already knew exactly what the plan was.
 
 ## When two policies aren't enough, write a third
 
-`plan` gates everything behind approval and `build` is wide open, but your audit hour wanted something sharper than both: a hard read-only wall on edits - not a checkpoint you could approve away - *and* a narrow set of read-only shell commands allowed to run without prompting at all (`git log`, `git blame`, `go vet`). Neither shipped agent is exactly that.
+`plan` walls off edits but leaves the shell open, and `build` is wide open, but the read-only pass wanted something sharper than both: a hard wall on edits *and* on the shell, with only a narrow set of read-only commands allowed to run without prompting (`git log`, `git blame`, `go vet`). Neither shipped agent is exactly that.
 
-This is where OpenCode's answer to named profiles shows up. There are no saved "profiles" here in the Codex sense; a **custom primary agent** is the saved posture. You author one once, and from then on it's just another agent on the Tab cycle. The fastest way is `opencode agent create`, which walks you through scope, description, and which permissions to grant, then writes the file for you. Or hand-write it - a primary agent is a markdown file in `~/.config/opencode/agents/` (global) or `.opencode/agents/` (this repo only), frontmatter on top, system prompt in the body:
+This is where a tool with saved permission profiles would send you into its settings menu. OpenCode's out-of-the-box answer is the agent itself: a **custom primary agent** is the saved posture, and per-agent policy is the first-class knob. You author one once, and from then on it's just another agent on the Tab cycle. The fastest way is `opencode agent create`, which runs interactively - asks where to save it and what it's for, has you pick a starting permission posture, then generates the identifier and the system prompt and writes the file for you (as of September 2026; [agents documentation](https://opencode.ai/docs/agents/)). Or hand-write it - a primary agent is a markdown file in `.opencode/agents/` (this repo only) or `~/.config/opencode/agents/` (every project on your machine), frontmatter on top, system prompt in the body:
 
-```text
-# .opencode/agents/audit.md
+```md title=".opencode/agents/audit.md"
 ---
 description: Read-only auditor - reads code and runs read-only git/vet, never edits
 mode: primary
 permission:
   edit: deny
+  task: deny
   bash:
     "*": deny
     "git log*": allow
     "git blame*": allow
     "go vet ./...": allow
+    "*--output*": deny
+    "*>*": deny
 ---
-You are auditing inherited code. Read, trace, and report findings.
+You are auditing feedmill's pipeline. Read, trace, and report findings.
 Never propose edits unless asked; when asked, describe the change in
 words and tell the user to switch to build to apply it.
 ```
 
-The `mode: primary` line is what puts `audit` on the Tab cycle alongside `build` and `plan`. The `permission` block is the posture: `edit: deny` is a hard wall - unlike `plan`'s `ask`, there's no approve button to fat-finger - and the `bash` map uses OpenCode's last-match-wins evaluation, so the catch-all `"*": deny` comes first and the specific allowances after, letting `git blame` run while `rm -rf` never does.
+The `mode: primary` line is what puts `audit` on the Tab cycle alongside `build` and `plan`. The `permission` block is the posture: `edit: deny` is the same hard wall `plan` puts on edits, with no approve button to fat-finger. `task: deny` closes the side door: a subagent that `audit` launched through the `task` tool would run under its own permissions, not `audit`'s ([subagent permission source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/subagent-permissions.ts), as of September 2026). The `bash` map uses OpenCode's last-match-wins evaluation, so the catch-all `"*": deny` comes first and the specific allowances after, letting `git blame` run while `rm -rf` never does. The last two lines close two ways an allowed command can still write a file: `*--output*` denies `git log --output=<file>`, and `*>*` denies a shell redirect such as `git log > notes.txt`, which OpenCode checks as the full statement text and which `git log*` would otherwise allow. The rule also blocks harmless redirects such as `2>&1` ([shell tool source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/tool/shell.ts), as of September 2026, v1.18.32). An allowlist is only as tight as its patterns, so test each one before you rely on it.
 
-Permission values are `allow`, `ask`, or `deny`, and they're not limited to `edit` and `bash` - the documented keys include `read`, `edit`, `glob`, `grep`, `list`, `task`, `skill`, `lsp`, `question`, `webfetch`, `websearch`, `external_directory`, and `doom_loop`. `list` gates the file-listing tool separately from `glob`. Per-agent permissions merge with your global config, with the agent's rules taking precedence.
+One limit on "read-only": every agent starts from the default `"*": "allow"`, so a tool the map does not name keeps `allow`. That covers `webfetch` and any MCP or plugin tool, and an MCP tool can write to the system it reaches, so deny those tools here too if the auditor must not touch them (as of September 2026, v1.18.32, per [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts)).
 
-Now your audit hour is one keystroke away. Tab to `audit` to investigate with exactly the latitude you want, Tab to `build` when it's time to fix, Tab to `plan` when you want the approval-gated middle ground. The policy isn't something you configure each time you need it - it's something you *select*, the same way you select which agent does the thinking.
+Permission values are `allow`, `ask`, or `deny`, and the keys go far beyond `edit` and `bash` - `read`, `webfetch`, `external_directory`, and the rest of the documented keys are all settable per agent, with the agent's rules taking precedence over your global config ([permissions documentation](https://opencode.ai/docs/permissions/), as of September 2026). The full list, the shipped defaults (including the `.env` read rule), and the bash pattern grammar live in [the per-tool reference page](/course/opencode/permissions/per-tool-per-agent/).
 
-That's the coarse-grained version: a whole posture per agent, enforced at the agent boundary. But an agent that *can't* edit is still an agent that can read every file on your disk and shell out to whatever its `bash` rules allow. When read-only isn't a strong enough wall - auditing genuinely untrusted code, or letting a build agent run wide while you sleep - you stop relying on policy and put a real boundary around the whole process. [Next: isolate by running in a container](/course/opencode/permissions/container-isolation/).
+Now the read-only pass is one keystroke away. Tab to `audit` to investigate with exactly the latitude you want, Tab to `build` when it's time to fix, Tab to `plan` when you want edits refused but commands still available. The policy isn't something you configure each time you need it - it's something you *select*, the same way you select which agent does the thinking.
+
+That's the coarse-grained version: a whole posture per agent, enforced at the agent boundary. But an agent that *can't* edit can still read your code and shell out to whatever its `bash` rules allow, as your user, on your machine. When read-only isn't a strong enough wall - auditing genuinely untrusted code, or letting a build agent run wide while you sleep - you stop relying on policy and put a real boundary around the whole process. [Next: isolate by running in a container](/course/opencode/permissions/container-isolation/).

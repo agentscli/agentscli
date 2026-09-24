@@ -1,75 +1,94 @@
 ---
 title: One level deeper into the loop
 description: "No hidden step limit, and two different ways to talk to a run that's already underway - steering it mid-turn versus queuing what comes next."
-sidebar:
-  label: "The loop · no step limit, two ways to interrupt"
 ---
 
-You already know the loop's shape from the last chapter: the model responds, any tool calls it made get executed, the results go back in, and it responds again - repeat until a response comes back with no more tool calls attached. What that description leaves out is a decision Pi's author made on purpose: there's no ceiling on how many times that cycle can run. In his own words, describing the design: *"I never found a use case for that."*
+You already know the loop's shape from [the loop lesson](/course/pi/getting-started/the-loop/): the model responds, any tool calls it made get executed, the results go back in, and it responds again - repeat until a response comes back with no more tool calls attached. What that description leaves out is a decision Pi's author made on purpose: there's no ceiling on how many times that cycle can run. In [his own words](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/), describing the design: *"I never found a use case for that."*
 
-That cuts two ways, and the second one is worth sitting with before you get comfortable with the first. On a task that's genuinely finishable, no ceiling means a five-line fix and a fifty-line migration run the exact same mechanism - nothing artificial stops the loop one call short of done. On a task the model can't actually solve, that same absence of a ceiling means it keeps calling tools, keeps burning turns, keeps costing real money, with nothing built in that says enough. Pi doesn't protect you from that case by design. It hands you the means to notice it and stop it yourself, which is what the rest of this lesson is about.
+That cuts two ways, and the second one is worth sitting with before you get comfortable with the first. On a task that's genuinely finishable, no ceiling means a five-line fix and a fifty-line migration run the exact same mechanism - nothing artificial stops the loop one call short of done.
 
-Watch what "no ceiling" looks like in practice by handing `stash` something bigger than a date fix - the fetch worker's missing retry logic. Right now, if a site times out or 429s, the fetch just fails and the URL sits unprocessed forever. Ask Pi to fix that:
+On a task the model can't actually solve, that same absence of a ceiling means it keeps calling tools, keeps burning turns, keeps costing real money, with nothing built in that says enough. Pi doesn't protect you from that case by design. It hands you the means to notice it and stop it yourself, which is what the rest of this lesson is about.
+
+Watch what "no ceiling" looks like in practice by handing Pi the failure you deferred yesterday: `fetch_feed` parses zero entries from the Atom sample in `tests/test_feeds.py`, so `test_fetch_feed_parses_entries` sits red while everything else is green. Ask for the fix in one sentence and let the loop do the legwork:
 
 ```text
-> the fetch worker has no retry or backoff - a slow site just fails once and
-  never gets retried. Add retry with exponential backoff, and don't hammer
-  sites that are genuinely down.
-
-  • Read app/worker/fetch.py                              (198 lines)
-  • Read app/worker/queue.py                               (94 lines)
-  • Edit app/worker/fetch.py
-  • Bash: python -m pytest tests/test_worker.py -v
-    [3 failed, 9 passed]
-  • Read tests/test_worker.py                              (140 lines)
-  • Edit app/worker/fetch.py
-  • Bash: python -m pytest tests/test_worker.py -v
-    [12 passed, 0 failed]
+> the feeds test we deferred is still failing - fetch_feed parses 0 entries
+  from the Atom sample in tests/test_feeds.py. Find out why and fix it;
+  the test should pass and nothing else should change.
 ```
 
-Laid out as a ledger instead of a scrolling transcript, that run looks like this:
+What follows is an authored illustration of the run, not a captured log - but every path, line count, and pass/fail state in it is the staged repo's real one:
 
-| Turn | Tool call | Result |
+```text
+  • Read stash/feeds.py                                     (30 lines)
+  • Read tests/test_feeds.py                                (27 lines)
+  • Edit stash/feeds.py
+  • Bash: python -m pytest tests/test_feeds.py -v
+    FAILED ... assert '' == 'Hello'
+  • Read stash/feeds.py                                     (31 lines)
+  • Edit stash/feeds.py
+  • Bash: python -m pytest tests/test_feeds.py -v
+    1 passed
+```
+
+Laid out as a table instead of a scrolling transcript, that run looks like this:
+
+| Call # | Tool call | Result |
 |---|---|---|
-| 1 | `read app/worker/fetch.py` | 198 lines |
-| 2 | `read app/worker/queue.py` | 94 lines |
-| 3 | `edit app/worker/fetch.py` | applied |
-| 4 | `bash pytest tests/test_worker.py -v` | 3 failed, 9 passed |
-| 5 | `read tests/test_worker.py` | 140 lines |
-| 6 | `edit app/worker/fetch.py` | applied |
-| 7 | `bash pytest tests/test_worker.py -v` | 12 passed, 0 failed |
+| 1 | `read stash/feeds.py` | 30 lines |
+| 2 | `read tests/test_feeds.py` | 27 lines |
+| 3 | `edit stash/feeds.py` | applied |
+| 4 | `bash python -m pytest tests/test_feeds.py -v` | 1 failed - entry found, title empty |
+| 5 | `read stash/feeds.py` | 31 lines, current state |
+| 6 | `edit stash/feeds.py` | applied |
+| 7 | `bash python -m pytest tests/test_feeds.py -v` | 1 passed |
 
-Seven tool calls, two of them because the first attempt broke three existing tests and the model went back to find out why. Nothing about this run required a bigger step budget than the one-line date fix - Pi didn't pre-allocate a turn count for "small task" versus "medium task." It just kept looping, tool call after tool call, until turn 7 came back with nothing left to call. A much larger migration later in this course will run the exact same loop for far longer, with no different mechanism underneath it.
+Here's what actually happened across those seven calls, because the mid-run failure at turn 4 is the instructive part. The test's sample feed opens with `<feed xmlns="http://www.w3.org/2005/Atom">`, and ElementTree folds that namespace into every tag: what looks like `<entry>` to you is `{http://www.w3.org/2005/Atom}entry` to the parser. So `root.iter("entry")` matched nothing and `fetch_feed` returned an empty list - yesterday's `assert 0 == 1`.
 
-One more mechanical detail worth knowing before that happens: tool calls inside a single turn don't have to run one after another. When a response includes more than one tool call, Pi can execute them in parallel and reorder the results back into the sequence the model expects before feeding them back in - so what looks like a strict queue in a transcript is really "whatever the model asked for this turn," not a hard-coded chain. The retry-worker run above happened to be sequential because each step depended on the last one's result; a turn that reads three unrelated files at once wouldn't wait for each read to finish before starting the next.
+Turn 3 fixed the *iteration* only, and turn 4 is where the loop earned its keep. The failure changed shape: the count assertion now passes - one entry found - but the title assertion fails with `assert '' == 'Hello'`, because `findtext("title")` is still namespace-blind. The namespace prefixes every child tag too, not just the entry you matched. A fix that looked complete was half complete, and the test named the missing half.
+
+Turn 6 carries the namespace through every lookup - and fixes a second, latent defect the re-read at turn 5 surfaced: `entry.get("link", "")` reads an XML attribute, but Atom's link is a child element, `<link href="..."/>`, so `link` would have come back empty even with parsing fixed. Turn 7: green.
+
+One honesty check before you admire the green. `1 passed` proves exactly what the test asserts - one entry, title `"Hello"` - and nothing else; the `link` rewrite isn't pinned by any assertion yet. The move is to extend the test with `assert articles[0].link == "https://example.com/hello"` and run it again: still `1 passed`, and now the second defect has a tripwire.
+
+Then the full suite, `python -m pytest`: `2 passed`, the whole repo green for the first time. Read the diff, commit it - same discipline as yesterday, and this diff touches two defects in one function, which is exactly the kind worth reading twice.
+
+Seven tool calls, two edit cycles, one mid-run failure that redirected the work. Nothing about this run required a bigger step budget than yesterday's date fix - Pi didn't pre-allocate a turn count for "small task" versus "medium task." It just kept looping, tool call after tool call, until turn 7 came back with nothing left to call. A much larger migration later in this course will run the exact same loop for far longer, with no different mechanism underneath it.
+
+One more mechanical detail worth knowing before that happens: tool calls inside a single turn don't have to run one after another. When a response includes more than one tool call, Pi can execute them in parallel and reorder the results back into the sequence the model expects before feeding them back in - so what looks like a strict queue in a transcript is really "whatever the model asked for this turn."
+
+The two reads at the top of this run could have shipped as one turn's parallel pair; the table flattens that. Everything from turn 3 onward ran sequentially because each step depended on the last one's result.
 
 ## Interjecting without derailing it
 
 A loop with no step limit is only comfortable to use if you can talk to it while it's running - otherwise "no ceiling" just means "no way to stop a run that's heading somewhere you didn't intend." Pi gives you two distinct ways to interject, and they land at genuinely different points:
 
-- **Steering** - press Enter while the agent is mid-run and type a message. It doesn't interrupt the tool call in flight; it gets queued and delivered the moment the *current* turn's tool calls finish, folded into the next turn as though you'd said it right then. Good for a correction that matters *now*: "stop, that retry count is way too high" while the edit is still being drafted.
+- **Steering** - press Enter while the agent is mid-run and type a message (these keybindings are Pi's documented defaults as of September 2026; [the keybindings doc](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/keybindings.md) is the source to check if yours differ). It doesn't interrupt the tool call in flight; it gets queued and delivered the moment the *current* turn's tool calls finish, folded into the next turn as though you'd said it right then. Good for a correction that matters *now*: "stop, that retry count is way too high" while the edit is still being drafted.
 - **Follow-up** - Alt+Enter queues a message for after the *entire* run completes, once the loop has already terminated on its own. Good for "and once that's done, also update the README" - something that belongs after this task, not stitched into the middle of it.
 
 The distinction matters because of where each one lands relative to the loop's own termination check. A steering message can only be delivered between turns - after a tool call's result has come back, before the model is asked to respond again - never in the middle of the model composing a response. That's why steering feels like a correction and follow-up feels like a queue: one rides inside the current loop, the other waits for the loop to end and starts a new one.
 
-Try it on the retry fix. Midway through, before the second `Edit app/worker/fetch.py` call, you notice the backoff cap it chose is too aggressive for `stash`'s use case:
+Try both on the feeds fix (the two exchanges below stay illustrative, like the run above - authored, not captured). Midway through, after turn 4's half-green result, you watch the model reach for a generic XML-wrapping approach when the fix is just the namespace, written out:
 
 ```text
-[mid-run] > cap retries at 3 attempts, not 5 - this is a personal read-it-later
-            tool, not a production crawler
+[mid-run] > plain ElementTree with the namespace written out is enough -
+            no new helper, no dependency
 ```
 
-That lands as steering - folded into context the moment the current tool call resolves, before the model drafts its next move. The run doesn't restart; it just receives the correction and keeps going with it in view. Contrast that with queuing a genuinely separate ask for after the fix ships:
+That lands as steering - folded into context the moment the current tool call resolves, before the model drafts turn 5's next move. The run doesn't restart; it just receives the correction and keeps going with it in view. Contrast that with queuing a genuinely separate ask for after the fix ships:
 
 ```text
-[Alt+Enter] > once retry logic is in, also add a `last_fetch_error` column so
-              the UI can show why a URL is stuck
+[Alt+Enter] > once the feeds test is green, update README.md - its
+              "known failing test" section still lists the date bug we
+              fixed yesterday
 ```
 
-That one waits. It's not relevant to whether the retry fix is correct, and folding it into the same turn would just be two unrelated changes tangled together in one diff. Follow-up keeps them separate without you having to remember to type it again later. **Steering corrects the turn in front of you; follow-up queues the next one.**
+That one waits. It's not relevant to whether the feeds fix is correct, and folding it into the same turn would just be two unrelated changes tangled together in one diff. Follow-up keeps them separate without you having to remember to type it again later. **Steering corrects the turn in front of you; follow-up queues the next one.**
 
 ## Why this is worth noticing at all
 
-The absence of a step ceiling isn't a performance detail - it's a statement about what Pi assumes you'll do instead of relying on a governor. Some agents cap step count as a safety valve against a model looping forever on a task it can't actually solve; Pi's answer is that the human is the safety valve, via steering, via `Ctrl+C` to abort outright, via reviewing the diff before it's committed. That only works if you're actually watching - which is exactly the habit this whole module is building.
+The absence of a step ceiling isn't a performance detail - it's a statement about what Pi assumes you'll do instead of relying on a governor. Some agents cap step count as a safety valve against a model looping forever on a task it can't actually solve; Pi's answer is that the human is the safety valve, via steering, via `Escape` to abort outright, via reviewing the diff before it's committed.
 
-That's two costs paid so far this module: a fixed tool schema you never chose, and now open-ended turns with no built-in stop. The next lesson shows you exactly where both of those numbers actually live - along with everything else the model is working from at any given moment, and the prompt sitting underneath all of it. [Next: see the full context Pi is working from](/course/pi/the-core/see-the-context/).
+`Ctrl+C` is not that button - it clears the editor and then exits; `Escape` is the one that stops a running turn.
+
+That only works if you're actually watching - which is exactly the habit this whole module is building. That's also two fixed costs stacked so far: a tool-schema bill you never chose, and now an open-ended turn budget with no built-in stop. The next lesson shows you exactly where the first one actually lives - along with everything else the model is working from at any given moment, and the prompt sitting underneath all of it. [Next: see the full context Pi is working from](/course/pi/the-core/see-the-context/).

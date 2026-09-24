@@ -1,51 +1,38 @@
 ---
 title: How rules layer - personal, repo, organization
-description: "Rules can arrive from three places at once. Precedence runs personal over repository over organization, and one thing about org rules trips everyone up."
-sidebar:
-  label: "Hierarchy · personal, repo, org"
+description: "Rules can arrive from three places at once. Precedence runs personal over repository over organization - and the organization layer behaves differently on every surface."
 ---
 
 import ConfigExplorer from '../../../../../components/interactive/ConfigExplorer.tsx';
 
-You now have rules coming from more than one place: a repo-wide file your team commits, path-specific files over `shared-lib`'s helpers, and - once you start tuning Copilot to your own taste - personal instructions that live on your machine and follow you across repos. Most of the time these stack peacefully, each adding context the others don't. But occasionally they say contradictory things, and when that happens you want to know which one wins before it surprises you in a diff.
+Rules can come from more than one place at once: a repo-wide file your team commits, [path-specific files](/course/copilot/rules/path-specific/) over the directories that need them, personal instructions (account-level rules set on github.com that follow you across repos, plus your editor's user-level instruction files), and instructions your organization sets centrally. Most of the time these stack peacefully, each adding context the others do not. When they contradict, you want to know which one wins before it surprises you in a diff.
 
 ## The precedence order
 
-On GitHub.com chat, code review, and the cloud agent, [the documented precedence order](https://docs.github.com/en/copilot/concepts/prompting/response-customization) is:
+On GitHub.com chat, code review, and the cloud coding agent, [the documented precedence order](https://docs.github.com/en/copilot/concepts/prompting/response-customization) is:
 
 **Personal > Repository > Organization.**
 
-- **Personal** instructions - your own, on your machine - sit at the top. They're how *you* like to work, and they override the others when they conflict. Use them sparingly: a personal rule that fights your team's repo rules is a way to quietly ship code that doesn't match the team's.
-- **Repository** instructions - the committed `copilot-instructions.md`, `AGENTS.md` / `CLAUDE.md`, and path-specific files - are the shared team layer, in the middle.
-- **Organization** instructions sit at the bottom of the precedence stack.
+- **Personal** instructions sit on top, and they have two homes. The account-level ones are set at github.com/settings/copilot and apply to your sessions everywhere; VS Code additionally reads user-level instruction files from your own home directory (for example `~/.copilot/instructions` in current builds). Both outrank repository files - which is also why a personal rule that fights your team's repo rules quietly ships code that does not match the team's. Use them sparingly.
+- **Repository** instructions - the committed `.github/copilot-instructions.md`, the `AGENTS.md` or `CLAUDE.md` convention files, and path-specific files - are the shared team layer.
+- **Organization** instructions sit at the bottom of the stack.
 
-For a monorepo, or a checkout nested inside a parent repo, surface-specific settings may control whether an IDE discovers customizations from parent repositories. Do not assume the same precedence or discovery behavior in Copilot CLI, IDEs, GitHub.com, and the cloud agent.
+For a monorepo or a checkout nested inside a parent repo, VS Code controls parent-repo discovery with `chat.useCustomizationsInParentRepositories` (per the [custom instructions documentation](https://code.visualstudio.com/docs/agent-customization/custom-instructions), as of September 2026). And do not assume the same precedence and discovery behavior across Copilot CLI, IDEs, GitHub.com, and the cloud agent; the surfaces combine instructions differently.
 
-## The organization gotcha - read this twice
+## The organization layer, precisely
 
-Here's the misconception that trips up almost everyone, and it's worth being exact about.
+The misconception to head off is that org instructions are always in force everywhere. The truth is narrower and worth being exact about:
 
-**Organization custom instructions do not apply in your IDE.** Not in VS Code, not in JetBrains, not in the other editors. They take effect only in **chat on GitHub.com**, in the **cloud coding agent**, and in **code review** on GitHub. The server-side control for them is `github.copilot.chat.organizationInstructions.enabled`, and it governs those GitHub-side surfaces - not the editor you're working in right now.
+**By default, the IDE does not apply organization custom instructions.** Outside the IDE, they take effect in chat on GitHub.com, in code review (Copilot reviewing pull requests), and in the cloud coding agent (the async Copilot that works on GitHub). In VS Code, org instructions are not on by default: discovery is gated by the client-side setting `github.copilot.chat.organizationInstructions.enabled`, which [VS Code's own documentation](https://code.visualstudio.com/docs/agent-customization/custom-instructions) describes enabling for org-level instruction discovery. [GitHub's support matrix](https://docs.github.com/en/copilot/reference/custom-instructions-support), separately, still listed Organization support for VS Code Copilot Chat as absent as of September 2026, so the two primary sources currently disagree about how completely the layer reaches the IDE; check both, and verify in your own editor, before relying on org instructions there. JetBrains does not apply the organization layer.
 
-:::caution[Org rules are invisible in your editor]
-If a rule must hold in VS Code or JetBrains, it has to live in the **repository** file. An org-level instruction shapes GitHub.com chat, code review, and the cloud agent - but it will never reach a teammate's IDE. Don't assume centrally-set conventions are silently enforcing themselves where you write code. They aren't.
+:::caution[Where org rules actually reach]
+An org-level instruction reliably shapes GitHub.com chat, code review, and cloud-agent pull requests. Whether it shapes what Copilot writes in a teammate's VS Code depends on the setting above and on surface support that is currently documented inconsistently; in JetBrains it does not apply. **If a rule must hold in the editor, put it in the repository-wide file** (`.github/copilot-instructions.md` or your `AGENTS.md`) - the broadly supported shared layer. Path-specific files are the one repo-level mechanism with a gap: [they are not honored in GitHub.com chat](/course/copilot/rules/path-specific/).
 :::
 
-So why does "Organization" even appear in a precedence order you mostly experience in the IDE? Because precedence describes what happens *on the surfaces where all three layers exist* - primarily GitHub.com chat, code review, and the cloud agent. In your editor, the organization layer simply isn't present, so what governs your Copilot there is your **personal** instructions over your **repository** instructions, full stop.
+So when "Organization" appears in a precedence order, remember that the order describes what happens *on the surfaces where all three layers exist*. In your editor, the org layer may simply not be present, and what governs your Copilot is personal over repository. The practical placement decision: *which layer does this rule need to live in so it reaches the surfaces that must obey it?*
 
-The practical consequences are sharp:
-
-- A convention your org sets centrally will shape what Copilot does in a draft PR from the cloud agent and in GitHub.com chat - but it will **not** shape what Copilot writes in a teammate's VS Code. If a rule must hold in the editor, put it in a repository file supported by that editor.
-- Don't assume an org-level instruction is silently enforcing your standards in everyone's IDE. It isn't. The repo-committed file is the only layer that reaches every surface.
-
-This is exactly why the repo-wide file you wrote in the [first lesson](/course/copilot/rules/copilot-instructions/) carries the weight it does: it is the broadly supported shared layer, with surface-specific limitations.
-
-## The mental model
-
-Think of it as three rings of context - yours, your team's, your org's - read together where that surface supports all three, with the inner ring winning ties. But know where each ring is visible: personal and repository support varies by surface; organization instructions currently apply to GitHub.com chat, code review, and the cloud agent. Copilot CLI combines applicable instructions but does not define one universal precedence order. Get that right and the precedence order becomes a placement decision - *which layer do I put this rule in so it reaches the surfaces that need it?*
-
-The three rings get much easier to reason about once you see where each layer physically lives - and with Copilot that's an unusual map: mostly `.github/`, VS Code settings, and toggles on github.com rather than dotfiles. Walk it file by file, including the surfaces later chapters build on (prompt files, custom agents, skills, MCP):
+The three layers get easier to reason about once you see where each one physically lives - and with Copilot that is an unusual map: mostly `.github/`, VS Code settings, and toggles on github.com rather than dotfiles. Walk it file by file, including the surfaces later chapters build on (prompt files, custom agents, skills, MCP):
 
 <ConfigExplorer client:visible initialTool="copilot" />
 
-Which leaves the last and most human question of the chapter: of all the conventions you *could* write down, which ones actually earn a place in the file? [What earns a place in the file](/course/copilot/rules/good-rules/).
+Which leaves the chapter's final question: of all the conventions you *could* write down, which ones actually earn a place in the file? [What earns a place in the file](/course/copilot/rules/good-rules/).

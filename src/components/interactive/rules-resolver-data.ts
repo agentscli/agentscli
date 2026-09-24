@@ -44,7 +44,7 @@ export const rlrTools: RlrTool[] = [
     slug: 'claude-code',
     label: 'Claude Code',
     model:
-      'Additive - every applicable file loads; more specific guidance wins on conflict.',
+      'Additive - every applicable file loads; more specific guidance sits later and tends to draw more attention, but a flat contradiction is not a reliable override - Claude may pick either.',
     results: {
       root: {
         outcomes: [
@@ -72,7 +72,7 @@ export const rlrTools: RlrTool[] = [
           },
         ],
         summary:
-          'Two files load, additively. When they conflict, the more specific (project) guidance takes precedence over the user-wide file.',
+          'Two files load, additively. The project file sits later in context and tends to draw more attention - but where the two flatly contradict, Claude may simply pick one. Keep the layers consistent.',
       },
       api: {
         outcomes: [
@@ -102,7 +102,7 @@ export const rlrTools: RlrTool[] = [
           },
         ],
         summary:
-          'All four load, additively. Specificity order on conflict: path-scoped rule > nested CLAUDE.md > project root > user-wide.',
+          'All four load, additively, each more specific than the one before it. Later means more attention, not precedence - on a contradiction Claude may pick any of them, so the layers must not disagree.',
       },
       web: {
         outcomes: [

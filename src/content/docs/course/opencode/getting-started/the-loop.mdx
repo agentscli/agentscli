@@ -1,69 +1,68 @@
 ---
 title: Understand one turn of the OpenCode loop
-description: "Read, propose, approve, apply - the four beats under every OpenCode task. Watch them once from the read-only plan agent so the real fix holds no surprises."
-sidebar:
-  label: "The loop · read → propose → approve → apply"
+description: "Read, propose, approve, apply - the four beats of an OpenCode task, with approve only where a permission asks. Watch the first two from the plan agent, whose edit tools are denied, so the real fix holds no surprises."
 ---
 
 import LoopStepper from '../../../../../components/interactive/LoopStepper.tsx';
 
-You're authenticated, a model is wired up, and you're standing at a live prompt inside `feedmill` - the self-hosted feed aggregator a colleague left you, a Go CLI plus a sync server that pulls dozens of RSS, Atom, and JSON feeds into one reading queue. You already have a suspect: one feed's items keep showing up with the wrong timestamps, so the parser is almost certainly mishandling that source's date format. Your instinct is to throw that bug at the agent right now. Hold it for two minutes.
+Every task you'll ever give OpenCode - this chapter's date fix, a refactor across a dozen parsers, a one-line rename - runs through the same small loop. This page watches exactly one turn of that loop, from the cheapest possible seat: a read-only question, asked from the agent whose edit tools are denied by default.
 
-Every task you'll ever give OpenCode - from this date fix to a refactor that spans a dozen feed parsers four chapters from now - runs through the same small loop. The cheapest possible place to *see* that loop is on a question that can't break anything, asked from the agent that literally can't write to disk. Watch it once here and the real change in the next lesson will feel like something you've already done.
+The working example is `feedmill`, the course's illustrative project - a Go CLI plus an HTTP sync server that pulls dozens of RSS, Atom, and JSON feeds into one reading queue - with a suspected bug: one feed's items keep showing up with the wrong timestamps, so the parser is almost certainly mishandling that source's date format. The site ships no copy of `feedmill`; adapt the read-only prompt to a repository you own. Your instinct is to throw that bug at the agent right now. Hold it for a moment: watch the loop once on a question that only reads, and the real fix on the next page will hold no surprises.
 
 ## Start in plan, not build
 
-OpenCode ships two primary agents. The default is **`build`** - full development access, including editing files. The other is **`plan`** - read-only, with edits gated to ask or deny. You switch between them with the **Tab** key, right in the TUI; the agent you're in shows in the interface, and Tab cycles to the other.
+OpenCode ships two primary agents (defaults as of September 2026; see the [agents documentation](https://opencode.ai/docs/agents/)). The default is **`build`** - full development access, including editing files. The other is **`plan`**, which denies the edit tools, so those tools cannot change your files (it can still write its own plan files under `.opencode/plans/`), and does not gate bash unless you add a rule, so a shell command can still modify files (as of September 2026, v1.18.32, per the `plan` definition in [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts); the agents documentation describes edits and bash as `ask`). You switch between them with the **Tab** key, right in the TUI (OpenCode's full-screen terminal interface); the agent you're in shows in the interface, and Tab cycles to the other.
 
-For your very first turn on an inherited codebase, start in `plan`. Tab over to it before you type anything. The point isn't that you're planning a feature - it's that `plan` is gated by construction, so you get to watch the agent gather context with the writing hand tied behind its back. There is no "trust me" required: nothing lands without you clearing it, because that's the agent's own configuration, not your vigilance.
+For a first turn in a codebase you don't fully know, start in `plan`: with OpenCode open in your repo ([install it first](/course/opencode/getting-started/install/) if you haven't), Tab over before you type anything. The point isn't that you're planning a feature - it's that `plan`'s permission config denies file edits, so you get to watch the agent gather context while its edit tools cannot change your code. There is no "trust me" required for edits: that's the agent's own configuration, not your vigilance. Shell commands are different: `plan` leaves bash at `allow`, so a question that keeps the agent reading is still your part.
 
 ## Make your first turn a question, not a command
 
-You've just inherited this repo. So has the agent - it knows nothing about `feedmill` that it hasn't read yet. A read-only question costs you almost nothing and shows you exactly how it builds a map before it's ever allowed to write:
+The agent starts cold: it knows nothing about `feedmill` that it hasn't read yet. A read-only question costs you almost nothing and shows you exactly how it builds a map before it's ever allowed to write:
 
 ```text
-> what does this project do, and where does it parse the published date out of a feed item?
+> what does this project do, and where does it parse feed timestamps?
 
   ⏺ read README.md
-  ⏺ read cmd/feedmill/main.go
-  ⏺ grep "time.Parse" internal/feed/
-  ⏺ read internal/feed/parse.go
+  ⏺ read main.go
+  ⏺ grep "time.Parse" internal/parse/
+  ⏺ read internal/parse/date.go
+  ⏺ read parser/date_test.go
 
-  feedmill is a self-hosted feed aggregator: a Go CLI (cmd/feedmill)
-  plus an HTTP sync server (internal/server) that fetches RSS, Atom,
-  and JSON feeds, dedupes items, and serves a reading queue.
+  feedmill is a small Go feed aggregator: a root CLI plus an
+  HTTP sync command under cmd/sync, with parsing, normalization,
+  dedupe, and SQLite storage packages under internal/.
 
-  Item dates are parsed in internal/feed/parse.go, in parsePublished().
-  It tries time.RFC1123Z and then RFC3339, and falls back to the zero
-  time if neither matches - so a feed using a different layout silently
-  gets a zero/garbage timestamp instead of an error.
+  Feed timestamps are parsed by Date() in internal/parse/date.go. It
+  tries three layouts and returns a ParseError when none match. The
+  existing regression test suggests its RFC3339 offset conversion is
+  wrong, so that is the next path to inspect.
 ```
 
-The exact tool-call lines and ordering above are illustrative - a real session may label or order the reads and grep differently - but the shape is what matters: the agent reads and greps for context before it answers.
+The exact tool-call lines and ordering above are illustrative - a real session may label or order the reads and grep differently - but the shape is what matters: the agent reads and greps for context before it answers. (`feedmill` keeps its date regression test in `parser/date_test.go`, a separate test package that imports `internal/parse`.)
 
-Watch what that one turn bought you. The agent went and **read** files - and it told you *which* ones, the grep included, before it said a single thing about the code. It came back with a map: what the project is, the CLI-plus-sync-server split, where the date parsing lives, and an early hunch about *why* timestamps go wrong. You've learned the lay of the land for your ticket. You've learned something more useful too - how this agent behaves when it needs context. It reads first, then answers. And you learned it from `plan`, where the worst case was a wrong sentence, not a wrong edit.
+Watch what that one turn bought you. The agent went and **read** files - and it told you *which* ones, the grep included, before it said a single thing about the code. It came back with a map: what the project is, the CLI-plus-sync-server split, where the date parsing lives, and an early hunch about *why* timestamps go wrong. You've learned the lay of the land for the bug. You've learned something more useful too - how this agent behaves when it needs context. It reads first, then answers. And you learned it from `plan` on a question that kept the agent reading, where the worst case was a wrong sentence, not a wrong edit.
 
-## The four beats under every task
+## The four beats under a task
 
-That single turn is the whole loop in miniature. Strip away the specifics and every OpenCode turn - in `plan` or `build` - has the same shape:
+That single turn is the whole loop in miniature. Strip away the specifics and an OpenCode task has the same shape in `plan` or `build`, with one condition: the approve beat appears only where a permission is set to `ask`:
 
 1. **Read** - it gathers the context it needs, pulling in the specific files relevant to your request (and grepping to find them) rather than guessing from the prompt alone.
-2. **Propose** - it tells you what it intends to do. For a question that's an answer; for a task it's a concrete plan and the exact edits or commands it wants to run.
-3. **Approve** - it stops and waits for you. Permissions in OpenCode are per-tool per-agent: the built-in `plan` agent defaults its file edits and bash commands to `ask`, while the built-in `build` agent is the full-tool primary agent. The current [permissions documentation](https://opencode.ai/docs/permissions/) lists `doom_loop` and `external_directory` among the permissions that default to `ask`; most other permissions default to `allow`. Tighten the build policy in config when you want a checkpoint between the agent's intent and your filesystem.
-4. **Apply** - only after the permission clears does it actually write the edit or run the command - and then it checks its own work, usually by running whatever verifies the change.
+2. **Propose** - it tells you what it intends to do. For a question that's an answer; for a task it's a concrete plan and the exact edits or commands it wants to run. In default `build` the proposal and the edit can be the same tool call, so the reliable proposal is the permission prompt when a tool is set to `ask`, and otherwise the diff afterward.
+3. **Approve** - it stops and waits for you wherever a permission requires it (that's the beat the question turn skipped: its reads are allowed, so nothing ever needed your approval). Permissions in OpenCode are per-tool per-agent: the built-in `plan` agent denies file edits outright and leaves bash at `allow`, while the built-in `build` agent is the full-tool primary agent. The current [permissions documentation](https://opencode.ai/docs/permissions/) (as of September 2026) lists `doom_loop` (triggered when the same tool call repeats three times with identical input) and `external_directory` (tool access to paths outside the directory where you started OpenCode) as the permissions that default to `ask`; most other permissions default to `allow`. So under default config, `build` has no approve beat for edits or commands: it writes the edit and runs the command, and your checkpoint moves to reading the diff afterward. Set `edit` (and `bash`, if you want commands gated too) to `ask` for `build` in config when you want a checkpoint between the agent's intent and your filesystem; [the next page](/course/opencode/getting-started/first-change/) does exactly that.
+4. **Apply** - only after any required permission clears does it actually write the edit or run the command - and then it checks its own work, usually by running whatever verifies the change.
 
-Read, propose, approve, apply. When a task goes well it's because all four beats happened in order; when one goes wrong it's usually because a beat got skipped - it proposed without reading enough, or applied something you didn't really look at. Learning to *see* those beats is most of what makes you good at driving the agent, and you just watched a clean instance of the first two on a question where a wrong answer couldn't cost you anything.
+Read, propose, approve, apply. When a task goes well it's because each beat that applies happened in order (in default `build`, the diff review after the edit stands in for approve); when one goes wrong it's usually because a beat got skipped - it proposed without reading enough, or applied something you didn't really look at. Learning to *see* those beats is most of what makes you good at driving the agent, and you just watched a clean instance of the first two on a question where a wrong answer couldn't cost you anything.
 
-The two beats you *haven't* watched yet - the write and the check - you can step through here without leaving `plan`. A different small fix, traced through the same loop: *gather* is the read beat you just saw, and each *act* is exactly the kind of edit `build` would apply and `plan` cannot. Watch what happens when the first verify comes back red:
+The beat you *haven't* watched yet - apply, with the write and its check inside it - is what the stepper below covers, so you can watch it without leaving `plan`. It follows a different small fix, a failing login test, through the loop: *gather context* is the read beat you just saw, and it can include shell commands the agent runs to observe, which run with no prompt even in `plan`; each *act* is exactly the kind of edit `build` would apply and `plan` would refuse; *verify* is the agent checking its own work. The stepper has no approve step: it shows the edits landing with no pause, which is what default `build` does. With `edit` set to `ask`, the approve beat would stop each *act* for you first. Step through it and watch what happens when the first verify comes back red.
 
 <LoopStepper client:visible />
 
-The reason starting in `plan` matters on `feedmill` specifically: this is code you didn't write, and it runs unattended on a cron, pulling from sources you don't control. The approve beat is not a formality to rush past - it's the only thing between a confident-sounding wrong edit and a sync server that quietly corrupts your reading queue at 3am. Lead with a *write* as your very first move and you'd be trusting a tool you've watched do nothing yet, on a codebase it hasn't shown you it understands. Spend one read-only question first and that trust is earned instead of assumed.
+The reason starting in `plan` matters on `feedmill` specifically: this is code that runs unattended on a cron, pulling from sources you don't control. On `build`, once you configure it, the approve beat is not a formality to rush past - with the diff review after it, it's what stands between a confident-sounding wrong edit and a sync server that quietly corrupts your reading queue at 3am. Lead with a *write* as your very first move and you'd be trusting a tool that hasn't shown you it understands the codebase. Spend one reading question in `plan` first and that trust is earned instead of assumed.
 
 ## A typed codebase gives the agent a second set of eyes
 
-One more thing worth knowing before the real fix, because it changes how the apply beat plays out in Go specifically. OpenCode can integrate Language Server Protocol servers. LSP is off by default, but once you enable it (`"lsp": true` in config, or a per-server object) it surfaces diagnostics - type errors, unresolved symbols - back into the agent's loop, so a fix that doesn't compile gets caught and corrected rather than handed to you broken.
+One more thing worth knowing before the real fix, because it changes how the apply beat plays out in Go specifically. OpenCode can integrate Language Server Protocol servers. LSP is off by default, but once you enable it (`"lsp": true` in config, or a per-server object - as of September 2026, [LSP documentation](https://opencode.ai/docs/lsp/)) it surfaces diagnostics - type errors, unresolved symbols - back into the agent's loop, so the agent can see and correct a compile error before it hands the fix back.
 
 That said, OpenCode's own guidance is that in many projects the more reliable feedback is the agent running your real `go vet` / `go build` / `go test` directly, so errors land back in the loop the same way they would for you. `feedmill` is a typed codebase full of parsers - exactly the kind of place where "does it still compile and pass tests" (`go build ./...` and `go test ./...`) is the cheapest possible signal, and you'll lean on it heavily once you start editing.
 
-You now know where the date parsing lives, how the agent behaves when it works, and that read-only `plan` was a safe place to find both out. That's exactly what you need to Tab over to `build`, hand it the actual bug, and watch all four beats close on a real fix. [Next: ship your first reviewed change](/course/opencode/getting-started/first-change/).
+You now know where the date parsing lives, how the agent behaves when it works, and that `plan` was a safe place to find both out with a reading question. That's exactly what you need to gate `build`'s edits to `ask`, hand it the actual bug, and watch all four beats close on a real fix - [ship your first reviewed change](/course/opencode/getting-started/first-change/).

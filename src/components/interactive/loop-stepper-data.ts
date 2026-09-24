@@ -34,7 +34,7 @@ export const loopSteps: LoopStep[] = [
     phase: 'you',
     title: 'You hand over a task',
     decide:
-      'Your message lands in the context window. The model reads it and decides what it needs first - it can’t fix what it hasn’t seen, so the first move is almost never an edit.',
+      'Your message lands in the context window. In this illustrative run, the model starts by reproducing the failure so it has evidence to investigate.',
     tool: {
       call: '> The login test is failing on main. Fix it.',
       result: '(prompt enters the window)',
@@ -59,11 +59,11 @@ export const loopSteps: LoopStep[] = [
     phase: 'gather',
     title: 'Read the suspect code',
     decide:
-      'The trace points at session.ts:42. Reading the file, the model spots it: the expiry check uses `>` where it should be `>=` - a token expiring exactly now is still accepted. Hypothesis formed; time to act.',
+      'The trace points at session.ts:42. Reading the file, the model spots it: the validity check uses `>=` where it should use `>` - a token expiring exactly now is still accepted. Hypothesis formed; time to act.',
     tool: {
       call: 'read: src/auth/session.ts',
       result: `41  const now = Date.now();
-42  if (token.expiresAt > now) {   // ← boundary bug
+42  if (token.expiresAt >= now) {   // ← boundary bug
 43    return session;`,
     },
   },
@@ -75,8 +75,8 @@ export const loopSteps: LoopStep[] = [
       'One-line edit. Note what the model is acting on: not the codebase, but its picture of the codebase - the file contents it read one step ago.',
     tool: {
       call: 'edit: src/auth/session.ts',
-      result: `- if (token.expiresAt > now) {
-+ if (token.expiresAt >= now) {`,
+      result: `- if (token.expiresAt >= now) {
++ if (token.expiresAt > now) {`,
     },
   },
   {
@@ -125,13 +125,13 @@ export const loopSteps: LoopStep[] = [
     phase: 'done',
     title: 'The loop exits',
     decide:
-      'The model reports back: what was wrong, what changed, how it verified. Everything it read, ran, and edited along the way is still sitting in the context window - which is exactly where the next section picks up.',
+      'The model reports back: what was wrong, what changed, how it verified. Everything it read, ran, and edited along the way is still sitting in the context window - which is exactly where later lessons pick up.',
     tool: {
       call: 'reply',
       result:
-        'Fixed a boundary bug in the token expiry check (> → >=) and a stale hard-coded timestamp in the test fixture. Both auth tests pass.',
+        'Fixed a boundary bug in the token validity check (>= to >) and a stale hard-coded timestamp in the test fixture. Both auth tests pass.',
     },
     callout:
-      'Every tool result from this loop stays in the window. That cost is the subject of the next section.',
+      'Every tool result from this loop stays in the window. That cost is what later lessons cover.',
   },
 ];

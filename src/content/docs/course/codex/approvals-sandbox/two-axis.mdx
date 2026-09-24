@@ -1,104 +1,104 @@
 ---
 title: The two-axis model - approval policy is independent of the sandbox
 description: "Codex has no single trust slider, but two independent dials: how much the agent does without asking, and how far it can reach. Conflating them costs you."
-sidebar:
-  label: "Approvals × sandbox · the two axes"
 ---
 
 import AutonomyDial from '../../../../../components/interactive/AutonomyDial.tsx';
 
-You're about to start a refactor on `budgetcli`'s money handling - the original author stored some amounts as floats, and you want them converted to integer cents across six files: the importer, the model layer, the accounts route, the FX conversion, the app entrypoint, and the test that already pins the importer's behaviour. One edit each. Six files, six edits - by construction of this refactor, not a measurement of anything Codex has done yet. It's the kind of job where stopping to approve every single edit is friction you'll feel six separate times before you're done. So your instinct is to reach for some "let it run" setting. Before you do, you need to know what you're actually turning up, because in Codex that instinct splits into two separate questions - and conflating them is how people end up either babysitting work that's safe or walking away from work that isn't.
+Picture a small, ordinary hardening job in a Python repo: a money amount is converted through a float (`int(float(row["amount"]) * 100)`) and silently drops a cent on inputs like `0.29`. The fix means reading four or five files along the money path, editing two of them, pinning the case with a test, and running the test suite. Nothing exotic - but before you let an agent execute it, you have to decide what you are letting it do.
+
+Your instinct on a job like this is to reach for some "let it run" setting. Before you do, know what you're actually turning up, because in Codex that instinct splits into two separate questions - and conflating them is how people end up either babysitting work that's safe or walking away from work that isn't.
 
 ## One slider is the wrong shape
 
-Think about what could go wrong when an agent works on your financial data, and you'll notice the risks aren't all the same kind:
+Think about what could go wrong when an agent works on code you care about, and you'll notice the risks aren't all the same kind:
 
-- It could **do something you didn't expect** - delete a file, run a destructive command, rewrite something it shouldn't have. The defence against that is *making it ask you first*.
-- It could **reach somewhere it shouldn't** - read your `.env`, write outside the project, phone home to some endpoint with your data. The defence against that is *fencing where it can go*, independent of whether it asks.
+- It could **do something you didn't expect** - rewrite a file you meant to keep, run a command that wrecks the working tree. The fence decides how far that mistake can physically reach: inside `workspace-write`, the blast radius is the workspace and nowhere else.
+- It could **need to get beyond the fence** - write outside the project, open a network connection. Whether that crossing stops for your `y/n` is a separate question entirely.
 
-A single trust slider can't separate these. "More autonomous" on a one-dial tool means *both* more-without-asking *and* more-reach, bolted together - so to stop being interrupted on a safe refactor, you'd also have to widen the blast radius. That's a bad trade, and it's the trade Codex refuses to make you. **It gives you two dials.**
+One dial draws the fence; the other staffs the crossings. A single trust slider can't separate them. "More autonomous" on a one-dial tool means *both* more-without-asking *and* more-reach, bolted together - so to stop being interrupted on a safe job, you'd also have to widen the blast radius. That's a bad trade, and it's the trade Codex refuses to make you. **It gives you two dials.**
 
-Before the flags, feel the judgment itself. Here are the same two questions stripped of any tool's vocabulary - set them for the cents refactor, then toggle each one on its own. Notice they move *independently*: exactly the property a single slider can't encode, and the reason Codex ships two axes instead of one:
+Before the flags, calibrate the judgment itself. Any autonomy decision rests on two properties of the task, not of the tool: how recoverable the worst single action is, and how far the consequences could reach. The dial below asks exactly those two questions in tool-neutral vocabulary - the worst action runs from a `git checkout` you can undo to a change no one can, the reach from your working copy to beyond the machine - and answers with one rung of a trust ladder: read and propose only, ask before acting, auto-apply edits with the rest gated, run free inside a fence, or run free with none:
 
 <AutonomyDial client:visible />
 
-Whichever rung you landed on, notice what the dial never asked: it never asked how autonomous you'd like Codex to be, in general, forever. It asked two narrower questions about the task in front of you - how bad the worst single mistake would be, and how far it could reach - and only then told you how much leash that combination earns. Codex's own two axes ask exactly those two questions, in its own vocabulary. Learn that vocabulary next, then come back and count what it actually costs you on the six-file refactor.
+Notice what that ladder is not: two separate settings. It collapses the two questions into a single posture - which is precisely the single-slider shape this section argued against. Collapsing is fine for judging a task; it is a poor shape for configuring an agent, because the interruptions you want and the fence you want won't always sit on the same rung. Codex's answer is to split the posture back into two settings you set yourself - one for how much flows without asking, one for how far the agent can reach. (In the ladder's terms, "run free inside a fence" is the `never` × `workspace-write` pairing and "read and propose only" is `read-only`; the middle rungs that mix the two questions - ask before acting, auto-apply with the rest gated - are postures whole-policy Codex expresses less cleanly, which is roughly what the granular approval form exists for. The exact definitions come next.)
 
 ## Axis one - how much it can do without asking
 
-The **approval policy** controls when Codex pauses to get your `y/n` before it acts. You set it with `--ask-for-approval` (short form `-a`), and it takes three values:
+The **approval policy** controls when Codex pauses to get your `y/n` before it acts. You set it with `--ask-for-approval` (short form `-a`), and it takes two values:
 
 ```text
--a untrusted     pause for anything not on a known-safe list
--a on-request    let the agent decide when to ask; it pauses for the riskier moves
+-a on-request    work inside the sandbox without asking; pause when an action
+                 needs to cross the sandbox boundary
 -a never         never pause - run end to end without interrupting you
 ```
 
-The whole first axis runs from "check with me constantly" to "don't interrupt me at all." Notice what it does *not* say anything about - where the agent is allowed to read, write, or connect. **Approval is purely about the interruptions.**
+The whole first axis runs from "ask me at the fence line" to "don't interrupt me at all." In config, `approval_policy` takes the same two values plus a granular table - `{ granular = { ... } }` - a config-only form that sets approval per action category; the [approvals lesson](/course/codex/approvals-sandbox/approval-modes/) shows when that earns its keep. Notice what the axis does *not* say anything about: where the agent may write, or whether it may open a network connection. **Approval is purely about the interruptions.**
 
 ## Axis two - how far it can reach
 
-The **sandbox** sets the agent's default reach: what the execution environment lets it touch without an approval-mediated exception. You set it with `--sandbox` (short form `-s`), and it takes three common values:
+The **sandbox** sets the agent's default reach: what the execution environment lets it do without an approval-mediated exception. You set it with `--sandbox` (short form `-s`), and it takes three values:
 
 ```text
--s read-only            can read files; edits and blocked commands need approval
--s workspace-write      can read and write inside the project; outside access and network need approval
--s danger-full-access   no fence at all - whole filesystem, full network
+-s read-only          reads flow; edits and commands that write need approval
+                      (or fail)
+-s workspace-write    read and write inside the workspace by default; writes
+                      outside it and network access need approval (or fail)
+-s danger-full-access no fence at all - whole filesystem, full network
 ```
 
-The sandbox is enforced by the execution environment, not by the agent's good behaviour, but it is not automatically an absolute wall: an interactive approval can allow an operation beyond the default boundary. That's why the two axes are still useful: the sandbox defines the default capability boundary, while approval decides whether an exceptional request is allowed. If you need a non-mutating unattended audit, pair `read-only` with `approval_policy = "never"` so no escalation can be approved. **The sandbox draws the fence; approval decides who gets to open a gate in it.**
+The sandbox is enforced by the execution environment, not by the agent's good behavior, but it is not an absolute wall: an interactive approval can allow an operation beyond the default boundary. That's why the two axes are still useful: the sandbox defines the capability boundary, while approval decides whether an exceptional request is allowed. For a non-mutating unattended audit, pair `read-only` with `approval_policy = "never"` so no escalation can be approved. **The sandbox draws the fence; approval decides who gets to open a gate in it.**
 
-## Count the six stops
+## Count the stops
 
-Now put a number on the trade from the top of this lesson, instead of just feeling it. The six-edit refactor - `csv.py`, `models.py`, `routes/accounts.py`, `fx.py`, `main.py`, `tests/test_csv_import.py` - is fixed. Read the two definitions above against that fixed shape, and the approval count for each policy falls straight out of them, no run required.
+Now put a number on the trade, not just a feeling. Take the hardening job as fixed: read the four files along the money path to confirm it (`app/importers/csv.py`, `app/models.py`, `app/main.py`, `app/services/ledger.py`); edit `csv.py` to replace the float parse; edit `tests/test_import.py` to pin the `0.29` case; run `pytest`. Five files, two edits, one command. Read the two definitions above against that fixed shape and the stop count for each pairing falls straight out - no run required, by construction.
 
-`untrusted` pauses for anything not on a known-safe list, and an edit is never on that list. **Six edits, six stops. Remember that number - it's about to get checked twice.** `never` pauses for nothing, so the same six edits cost zero stops: the whole refactor goes through in one uninterrupted pass. This toy can honestly promise a range, by construction: 6 stops at one end, 0 at the other, nothing invented about how Codex actually behaves in between.
-
-Trace the six files one at a time to confirm the six lands where the definition says it should:
-
-| File | Edit | On the known-safe list? | Stops at `untrusted` |
+| Action | Crosses the `workspace-write` fence? | `read-only` + `on-request` | `workspace-write` + `on-request` |
 |---|---|---|---|
-| `csv.py` | float parse → `to_cents()` | No | 1 |
-| `models.py` | float field → integer cents | No | 1 |
-| `routes/accounts.py` | float total → integer cents | No | 1 |
-| `fx.py` | float rate math → integer cents | No | 1 |
-| `main.py` | float default → integer cents | No | 1 |
-| `tests/test_csv_import.py` | assert float → assert cents | No | 1 |
-| **Total** | | | **6** |
+| Read the four money-path files | No - reads need no writes | flows | flows |
+| Edit `app/importers/csv.py` (drop the float parse) | No - inside the workspace | stops - edits need approval | flows |
+| Edit `tests/test_import.py` (pin `0.29`) | No - inside the workspace | stops - edits need approval | flows |
+| Run `pytest` (writes cache files) | No - the writes land inside the workspace | stops if the cache is needed - see below | flows |
+| **Total** | | **2 stops for certain, up to 3** | **0 stops** |
 
-Same number, arrived at twice - once by reading the rule, once by walking the files. **That match is the whole point of doing the arithmetic: when the rule's prediction and the file-by-file count agree, you can trust the count instead of just the feeling.**
+The rule predicts the two edits exactly: an edit is a write by nature, so under `read-only` it cannot land without crossing the boundary, and it stops. The test run deserves its asterisk. Under `read-only`, a command whose writes are optional - and `pytest` tolerates an unwritable cache directory with a warning - may never trigger a stop at all; the stop happens when the agent asks to cross, not when a write would merely be nice to have. **The count is derived from the definitions, not measured: read it as two certain stops plus one conditional, and check it against a real run of your own tooling.**
 
-Where does `on-request` land? Nowhere fixed, and that's not a gap in this arithmetic - it's the honest answer. `on-request` doesn't pause on a list and it doesn't never pause; it pauses on what *it* judges risky, and for six mechanical one-line edits that could land anywhere from 0 stops to 6. You're not buying a specific number at that setting. You're buying the agent's judgment about which of the six, if any, deserves a second look - which is exactly the trust this whole chapter is teaching you to place deliberately instead of by accident.
+Where does `on-request` land on its own? Wherever the boundary puts it. A job that stays inside the fence costs zero stops at `on-request` because nothing it does crosses the fence, not because the agent decided its edits were safe. A job that needs the network stops once per crossing you allow. **You're not buying the agent's judgment about which edits deserve a second look; you're buying a line the agent cannot move.**
 
-Call this the **two-axis model**: interruption counted separately from reach, on purpose. A single fused dial could never have kept those two counts apart - loosen the one slider enough to skip babysitting six mechanical edits, and you've loosened the thing bolted to it too, the reach the sandbox is supposed to be guarding. The six stops and the zero stops above are the proof this needed to be two dials, not one.
+`never` changes the question. Nothing stops anywhere - so the count that matters becomes blocked versus flowing. Under `read-only` + `never` the job is dead on arrival: both edits are refused outright (there is no checkpoint to ask at), and while a cache-tolerant command might limp along with warnings, the job as defined - two edits plus a passing test run - cannot complete. Under `workspace-write` + `never` the edits and the test run flow and the job finishes unattended; had anything needed the network or a directory outside the workspace, it would fail, not prompt.
+
+Call this the **two-axis model**: interruption counted separately from reach, on purpose. A single fused dial could never keep those two counts apart - loosen the slider enough to skip babysitting two mechanical edits and a test run, and you've loosened the thing bolted to it too: the reach the sandbox is guarding. The certain-stops-versus-zero column above shows what the sandbox axis alone buys; the `never` paragraph shows the approval axis moving on its own. Together, they are why this needed to be two dials, not one.
 
 ## They combine
 
 Because the two are **orthogonal** - each axis moves independently of the other - you pick one value from each, and the pair defines the session. The whole model in one grid - approval policy down the left, sandbox across the top, each cell the session that pairing gives you:
 
 ```text
- ┌─────────────┬─────────────────────────┬─────────────────────────┬─────────────────────────┐
- │ approval    │ read-only               │ workspace-write         │ danger-full-access      │
- ├─────────────┼─────────────────────────┼─────────────────────────┼─────────────────────────┤
- │ untrusted   │ look, ask to act        │ refactor, ask on risk   │ (rarely sensible)       │
- ├─────────────┼─────────────────────────┼─────────────────────────┼─────────────────────────┤
- │ on-request  │ read & propose          │ the daily driver        │ power use, asks on risk │
- ├─────────────┼─────────────────────────┼─────────────────────────┼─────────────────────────┤
- │ never       │ silent read-only        │ hands-off in the fence  │ no guardrails at all    │
- └─────────────┴─────────────────────────┴─────────────────────────┴─────────────────────────┘
+ ┌─────────────┬──────────────────────┬──────────────────────┬──────────────────────┐
+ │ approval    │ read-only            │ workspace-write      │ danger-full-access   │
+ ├─────────────┼──────────────────────┼──────────────────────┼──────────────────────┤
+ │ on-request  │ read and propose;    │ the daily driver     │ the fence is gone -  │
+ │             │ every edit and       │ (the Auto preset)    │ almost nothing left  │
+ │             │ writing command asks │                      │ to ask about         │
+ ├─────────────┼──────────────────────┼──────────────────────┼──────────────────────┤
+ │ never       │ unattended audit -   │ hands-off inside     │ no guardrails at all │
+ │             │ reads only, fails    │ the fence; anything  │ (--yolo lives here)  │
+ │             │ shut                 │ outside it fails     │                      │
+ └─────────────┴──────────────────────┴──────────────────────┴──────────────────────┘
 ```
 
-The grid answers two questions separately. The cell that fits today's money refactor is **`on-request` × `workspace-write`**: let the agent edit freely inside the project and stop for genuinely risky moves, including requests to go beyond the default boundary. That's the cell where the six edits from a moment ago flow without any of the six stops - not because the risk disappeared, but because the wall around it is doing the work the interruptions would otherwise have to do. You get a productive default *and* a checkpoint for exceptions. If the work must never escalate, use `never` with the tightest sandbox that still permits the task.
+The grid answers two questions separately. The cell that fits the hardening is **`on-request` × `workspace-write`**: edits and commands inside the workspace flow, and the only stops are boundary crossings. That's the cell where the job above runs with zero stops - not because the risk disappeared, but because the wall around it is doing the work the interruptions would otherwise have to do. If the work must never escalate, take `never` with the tightest sandbox that still permits the task; "fails shut" in the grid means errors instead of prompts, not a paused session. (The `--yolo` shorthand in the bottom-right cell is a single flag that throws both dials fully loose at once; the profiles lesson covers it and why to treat it as a warning sign.)
 
 ## What the two dials don't promise
 
 Two things worth nailing down now, before you start reaching for these flags on real work - both are objections that would otherwise catch you mid-task:
 
-- **The flags are not the whole UX.** The CLI exposes the `--ask-for-approval` × `--sandbox` axes, and current Codex surfaces can also expose named or custom permission profiles. You may see references to `suggest`, `auto-edit`, or `full-auto` presets; treat those as surface/version-specific. The deprecated `--full-auto` flag should not be the basis of a new workflow.
-- **The default is deliberately cautious.** Launch Codex with neither flag and it picks a safe pairing for you - closer to the top-left of that grid than the bottom-right. You loosen on purpose, per task, not by accident.
+- **The flags are not the whole UX.** The CLI exposes the two axes as `--ask-for-approval` and `--sandbox`; Codex surfaces also offer named postures - the **Auto** preset among them, which is exactly `workspace-write` + `on-request`. Treat surface-specific names as version-dependent; the two values underneath are the stable part. Legacy flags like the deprecated `--full-auto` should not be the basis of a new workflow.
+- **The default is trust-aware, not one cell.** Launch Codex with neither flag and it may start `read-only` until you explicitly trust the working directory; our recommendation for version-controlled work is the Auto preset - the middle cell of the grid. You loosen on purpose, per task, not by accident.
 
-Neither of those is the same claim as "the default is safe *because Codex understands `budgetcli`*." It isn't, and it doesn't. **Two well-set dials only decide how much damage a wrong guess can do while Codex is still guessing - they don't stop it from guessing wrong in the first place.** That gap is the villain of this whole course, still fully intact underneath a properly fenced session; the next chapters close it, this one just makes sure a wrong guess is cheap while it's still there.
+Neither of those is the same claim as "the default is safe *because Codex understands your repo*." It isn't, and it doesn't. **Two well-set dials only decide how much damage a wrong guess can do while Codex is still guessing - they don't stop it from guessing wrong in the first place.** Both dials are **control**, one of the course's four principles: what guides execution and enforces boundaries. The fence bounds what the agent may do; it says nothing about what it knows, which is **context**, and later chapters take up that half.
 
-You'll often set both dials persistently rather than typing flags every time - the config keys are `approval_policy` and `sandbox_mode` in `config.toml`, and they take the same values. We'll bundle them into a named profile in the [last lesson](/course/codex/approvals-sandbox/profiles-for-trust/). The authoritative list of values and their precise behaviour lives in the [Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference); pin to that rather than trusting a fixed memory, since the granular options grow over time. (Every stop count in this lesson follows the same two estimators and the "toy, estimated, or quoted" rule set out in [Getting started](/course/codex/getting-started/).)
+You'll often set both dials persistently rather than typing flags every time - the config keys are `approval_policy` and `sandbox_mode` in `config.toml`, taking the same values (`approval_policy` adds the granular table). We'll bundle them into a named profile in the [last lesson](/course/codex/approvals-sandbox/profiles-for-trust/). The authoritative value lists live in the [Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference) - the lists above were checked against it in September 2026 - and pinning to the reference beats memorizing, since the options grow over time. (The stop counts in this lesson are derived from the definitions, not measured; the file and edit counts describe the stated example job.)
 
-Now take each axis one at a time. Start with the wall, because it's the one protecting your money - [the three sandbox levels in depth](/course/codex/approvals-sandbox/sandbox-modes/).
+Now take each axis one at a time. Start with the wall, because it's the one doing the enforcing - [the three sandbox levels in depth](/course/codex/approvals-sandbox/sandbox-modes/).

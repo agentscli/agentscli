@@ -1,53 +1,52 @@
 ---
 title: A reviewer for the shared library
-description: "Build a library-reviewer agent that holds shared-lib's one hard rule - add surface, never break what twelve consumers depend on - so you stop re-explaining it."
-sidebar:
-  label: "A reviewer · a persona for shared-lib"
+description: "Build a library-reviewer agent that holds the library's one hard rule - add surface, never break what existing consumers depend on - so you stop re-explaining it."
 ---
 
-Now build the agent the whole act needs. `shared-lib` has a rule that every change lives or dies by, and it's not written down anywhere a stranger could find it - it's in the heads of the people who maintain it. The rule is: **you may add surface, but you must never change or remove what existing consumers already depend on.** A new audit-event type is fine; a new optional validation rule is fine. Renaming an exported function, tightening a signature, changing what an existing call returns - those ripple out to twelve services and break code you can't see. That's the line `library-reviewer` exists to hold.
+A shared library lives or dies by a rule that is usually nowhere in writing: **you may add surface, but you must never change or remove what existing consumers depend on.** A new event type is fine; a new optional parameter is fine. Renaming an exported function, tightening a signature, changing what an existing call returns - those ripple out to every importer and break code you cannot see. In this course's scenario the library is `shared-lib`, and a dozen services consume it; in yours, however many consumers your library has.
+
+Without a custom agent, you enforce that rule by hand: every session opens with "remember, this library has many consumers, additive-only, watch for..." - phrased slightly differently each time, and skippable on a tired day, which is exactly the day a breaking change slips through. The rule is too important to depend on memory. Put it in the agent.
 
 ## The persona is the rule, written down once
 
-Without a custom agent, you'd enforce that rule by hand. Every session you'd open with "remember, this library has a dozen consumers, so additive-only, no breaking changes to exported surface, watch for…" - and you'd phrase it slightly differently each time, and some day you'd be tired and skip it, and that's the day a breaking change slips through. The whole reason this lesson is the second one in the chapter is that the rule is too important to depend on your memory.
+Create `.github/agents/library-reviewer.agent.md` - with `/create-agent`, or written directly. The body is where the rule lives, as a short checklist: exported signatures must not change in breaking ways, contracts such as sort order must be documented and tested, new exports need tests, and downstream consumers must not break. The last line states the rule outright: be strict about backwards compatibility, because many services consume this library.
 
-So put it in the agent. Create `.github/agents/library-reviewer.agent.md` - use `/create-agent` and describe it, or write it directly. The body is where the rule lives, in plain prose: this agent reviews proposed changes to a shared library that roughly twelve services depend on; its job is to catch anything that changes or removes existing exported behavior; additive changes are acceptable, breaking changes are not; when it finds a breaking change it should name exactly what would break and suggest the additive alternative.
-
-That paragraph is the entire value. You wrote the library's compatibility contract once, and now a persona carries it into every review without you re-typing a word.
+That body is the entire value. The library's compatibility contract is written once, and a persona carries it into every review without you re-typing a word.
 
 The complete file:
 
 ```markdown title=".github/agents/library-reviewer.agent.md"
 ---
 name: library-reviewer
-description: Reviews proposed changes to shared-lib for breaking changes against existing consumers.
+description: Reviews changes to shared-lib for breaking changes and API contract violations.
 tools:
   - read
-  - glob
-  - grep
-model: claude-sonnet-4-20250514
+  - search
 ---
 
-You are a reviewer for a shared library that roughly twelve services depend on.
+You are a library reviewer for @acme/shared-lib.
 
-Your one rule: additive changes are acceptable, breaking changes are not. You may approve new exports, new optional parameters, and new event types. You must flag anything that renames, removes, tightens, or changes the return shape of existing exported surface.
+When reviewing changes:
 
-When you find a breaking change:
-1. Name exactly which exported symbol is affected.
-2. Explain what downstream consumers would break.
-3. Suggest the additive alternative that achieves the same goal without breaking existing callers.
+1. Check that exported function signatures have not changed in breaking ways.
+2. Verify that sort order contracts are documented and tested.
+3. Ensure money formatting uses integer cents as input.
+4. Flag any new exports that lack corresponding tests.
+5. Check that downstream consumers in orders-service are not broken.
 
-Read the diff or plan you are given. Search the codebase for context when you need it. Do not edit files - your job is judgment, not implementation.
+Be strict about backwards compatibility. This library is consumed by multiple services.
 ```
+
+The `model` field is deliberately absent. The reviewer does not need a specific pinned model to hold one rule faithfully, and model names churn; if you later find it reasoning too shallowly on gnarly diffs, the [Models chapter](/course/copilot/models/) covers pinning one deliberately.
 
 ## Scope its tools to its job
 
-A reviewer reviews. It reads code, reasons about compatibility, and reports - it doesn't need to be rewriting files while it's supposed to be judging them. So scope its `tools` to what review actually requires: the ability to read and search the codebase, not the full builder's toolkit. A narrow tool list isn't a formality here. It's what makes the agent trustworthy on a repo where you care most about *not* changing things by accident. You can summon `library-reviewer`, hand it a diff or a plan, and know its lane is judgment, not edits.
+A reviewer reviews. It reads code, reasons about compatibility, and reports - it does not need to rewrite files while judging them. So its `tools` list is exactly what review requires: the `read` and `search` tool sets to open files and explore the codebase, nothing that edits (tool-set names per the [VS Code features cheat sheet](https://code.visualstudio.com/docs/agents/reference/ai-features-cheat-sheet), checked September 2026). That is not a formality. On a repo where the whole point is *not changing things by accident*, a narrow tool list is what makes the agent trustworthy. You can summon `library-reviewer`, hand it a diff or a plan, and know its lane is judgment.
 
-Set its `description` to capture what it's for in the one line the dropdown shows - something a teammate skimming the agent list reads as "the thing that checks shared-lib changes for breakage." Give it a `name` you'll recognize. Leave `model` to a later chapter. You now have a reusable reviewer: any time anyone on the squad touches `shared-lib`, they summon the same persona, applying the same rule, instead of improvising the review from scratch.
+Set its `description` to the one line the dropdown shows - something a teammate skimming the agent list reads as "the thing that checks library changes for breakage." Give it a `name` you will recognize. Summoning it means selecting it from the agents dropdown - the same picker that selects the Ask, Plan, and Agent roles. Any time anyone touches the library, they summon the same persona applying the same rule, instead of improvising the review from scratch.
 
 ## Why a persona beats a prompt here
 
-You might ask why this isn't just a prompt file. A prompt file is a *task* you run; a custom agent is an *identity* you adopt for a stretch of work. The library review isn't one prompt - it's a posture you hold across a whole conversation: reading a file, asking a follow-up, checking a second file, weighing a tradeoff, all under the same "additive-only" lens. The persona keeps that lens on for the entire session. That's the move that earns its keep when the stakes are twelve consumers deep.
+Why not just a prompt file? A [prompt file](/course/copilot/prompt-files/) is a task you run; a custom agent is an identity you adopt for a stretch of work. A library review is not one prompt - it is a posture held across a whole conversation: reading a file, answering a follow-up, checking a second file, weighing a tradeoff, all under the same additive-only lens. What a persona adds over phrasing the same rule in a prompt: a named identity anyone on the team summons the same way, tools scoped to its lane, and one rule written once instead of re-phrased per session - which is what earns its keep when the stakes are a dozen consumers deep.
 
-A reviewer judges *your* change. But to actually ship the `shared-lib` update you need the inverse question answered too: does the change break any of the twelve consumers as they exist today? That's not one review - it's twelve, and you don't want to run them one at a time. [Next: fan subagents out across the consumers](/course/copilot/custom-agents/subagents/).
+A reviewer judges *your* change. To ship the library update you also need the inverse question answered: does the change break any consumer as it exists today? That is not one review - it is one per consumer, and you do not want to run them serially by hand. [Next: fan subagents out across the consumers](/course/copilot/custom-agents/subagents/).

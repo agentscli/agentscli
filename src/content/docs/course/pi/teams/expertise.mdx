@@ -1,85 +1,97 @@
 ---
 title: "Expertise, domain, and skills per agent"
 description: "A persona file with plain frontmatter - model, tools, domain, expertise, skills - is what turns a one-shot worker into a lead that gets better at its own lane."
-sidebar:
-  label: "Expertise · specialize the roster"
 ---
 
 Leads fixed the coordination cost of *reading* - three reports instead of seven. They didn't fix the coordination cost of *forgetting*. Spawn the extraction lead fresh for a new session and it knows nothing about the migration it already ran yesterday, which means part of the same villain - more agents, more windows, more re-explaining - survives even with the hierarchy in place. By the end of this chapter: one written line turns a rediscovery a lead pays for every session into a cost it pays exactly once.
 
 ## What "starts from nothing" actually costs
 
-Three of the sites in the extraction lead's backlog are paywalled - no amount of extractor logic recovers content that never reached the fetch worker. Spawn the extraction lead with no memory of its own lane, and it doesn't know that. It reads the backlog, sees three unresolved items, and does the only sane thing an agent with that assignment can do: spawns a worker to go investigate them. That worker reads the fetch logs, checks the raw response, and eventually reaches the exact conclusion last session's lead already reached - paywalled, not fixable, don't reassign. One whole worker spawn, burned re-deriving a fact you already paid for once.
+Some of the stored entries point at pages that will never yield server-side HTML - pages that build their article body with JavaScript after load, so `httpx` gets an empty shell, and pages behind a login wall that hand it the wall instead of the article. `readability-lxml` extracts essentially nothing from either. (This dead-end class is constructed for this walkthrough - the staged repo's backlog is toy data - but every real backlog has some class like it, and the arithmetic below doesn't care which class yours is.)
 
-Guess how often that repeats. Take a toy pace for this migration - one extraction-lead session a day, for two weeks - and with no expertise file, that's fourteen wasted worker-spawns on the exact same three-site dead end, once per fresh spawn, until someone happens to catch it by hand and mention it in the prompt. Write the fact down once, in a file the lead actually reads before it plans, and the number for every session after the first is zero.
+Spawn the extraction lead with no memory of its own lane, and it doesn't know that. It reads the re-processing backlog, sees a handful of unresolved items, and does the only sane thing an agent with that assignment can do: spawns a worker to go investigate them. That worker fetches the pages, inspects the raw responses, and eventually reaches the exact conclusion last session's lead already reached - no server HTML, not fixable, don't reassign. One whole worker spawn, burned re-deriving a fact you already paid for once.
+
+Guess how often that repeats. Take a toy pace for this migration - one extraction-lead session a day, for two weeks - and with no expertise file, that's fourteen wasted worker-spawns on the exact same dead-end class, once per fresh spawn, until someone happens to catch it by hand and mention it in the prompt. Write the fact down once, in a file the lead actually reads before it plans, and the number for every session after the first is zero.
 
 ## Personas are just markdown with frontmatter
 
-There's no separate "agent config" system to learn here - a persona is a `.md` file, frontmatter on top, prose underneath, the same shape you've been writing prompts in all course. What makes it a *team* persona is a handful of extra frontmatter fields your team extension knows to read and act on: `model`, `tools`, `domain`, `expertise`, `skills`. None of these are special to Pi's core - they're plain YAML keys your own dispatch code parses before it spawns the child process, the identical idiom every extension in this course has used for its own config.
+There's no separate "agent config" system to learn here - a persona is a `.md` file, frontmatter on top, prose underneath, the same shape you've been writing prompts in all course. What makes it a *team* persona is a handful of extra frontmatter fields your team extension knows to read and act on: `model`, `tools`, `domain`, `expertise`, `skills`.
+
+None of these are special to Pi's core - they're plain YAML keys your own dispatch code parses before it spawns the child process, the identical idiom every extension in this course has used for its own config.
 
 ```md
 ---
-model: sonnet
-tools: read,edit,bash,grep
-domain: src/stash/extract/, app/worker.py
+model: anthropic/claude-sonnet-4-5
+tools: read
+domain: stash/extract.py
 expertise: .pi/agents/expertise/extraction-lead.md
-skills: onboard-content-source
+skills: add-feed-source
 ---
 
-You are the extraction lead for the stash migration. You own everything under
-`src/stash/extract/` and the extractor call site in `app/worker.py`. Read
-your expertise file below before planning any work.
+You are the extraction lead for the stash migration. You own stash/extract.py
+and the sync-path step that fetches an entry's page and runs the extractor.
+Read your expertise file below before planning any work. When a worker surfaces
+a fact that will matter on the next spawn - a dead-end class, an API quirk, a
+row shape another lead will need - append one line to that file before you
+report, so the next session starts knowing it.
 ```
+
+The `tools` field here is what your dispatch code passes as `--tools` when it spawns this persona - and for a lead, the role lock from the last lesson clamps the active set down to `dispatch_agent` on session start anyway. The field mostly matters for workers; keep it honest for leads anyway, because the frontmatter is also the roster's documentation, and a persona that claims `edit` while the lock forbids it is a lie you'll read later and believe.
 
 ## `domain` - a boundary, not a suggestion
 
-`domain` restricts where an agent is allowed to look and work - the extraction lead's domain is the extractor module and the worker call site, full stop. It's the same domain-scoping idea the damage-control gate used back in the harness-building chapter, just pointed at *focus* instead of *safety*: there, a domain boundary stopped an agent from touching the database or `.env`; here, it stops the extraction lead's reads from wandering into the index rebuild or the UI, which is exactly the discipline the last lesson's "focused agent is a performant agent" argument depends on. A domain field that's advisory only is worth nothing - enforce it the same way you'd enforce a damage-control rule, in code the agent can't talk itself past.
+`domain` restricts where an agent is allowed to look and work - the extraction lead's domain is `stash/extract.py` (`stash` is the course's running example, a small FastAPI feed reader) and the sync-path extraction step, full stop. It's the same domain-scoping idea the damage-control gate used back in the harness-building chapter, just pointed at *focus* instead of *safety*. There, a rule stopped an agent from deleting `stash.db` or anything under `.pi/`; here, it stops the extraction lead's reads from wandering into the storage migration or the endpoint - the discipline the last lesson's "focused agent is a performant agent" argument depends on.
+
+A domain field that's advisory only is worth nothing - enforce it the same way you'd enforce a damage-control rule, in code the agent can't talk itself past.
 
 ## `expertise` - not memory, a curated file
 
-"Memory" is vague - a raw transcript, everything the agent ever said, useful for nothing in particular. **Expertise** is narrower and more useful: a file the agent deliberately curates, holding only the judgment calls worth keeping about its own recurring lane. Nobody auto-logs it; the agent (or you) decides what earns a line. Here's what the extraction lead's expertise file might look like a few sessions into the migration, with the paywalled-site fact from above already paid off as its third line:
+"Memory" is vague - a raw transcript, everything the agent ever said, useful for nothing in particular. **Expertise** is narrower and more useful: a file the agent deliberately curates, holding only the judgment calls worth keeping about its own recurring lane. Nobody auto-logs it; the agent (or you) decides what earns a line. Here's what the extraction lead's expertise file might look like a few sessions into the migration, with the empty-shell fact from above already paid off as its second line:
 
 ```md
 # Extraction lead - expertise
 
-- Sites using client-rendered article bodies (no server HTML) still fail
-  under the new extractor too - same failure mode as the old readability
-  pass, not something this migration fixes. Flag, don't "fix."
-- The new extractor returns `lang` on every row; the old one didn't. Index
-  lead needs to know before it reindexes, or it'll reindex against a shape
-  that's about to change again.
-- Three of the sites in the "broke the old extractor" backlog turned out to
-  be paywalled - no amount of extractor logic recovers content that never
-  reached the fetch worker. Don't keep re-assigning these to a worker.
+- readability's summary() returns the article body, not the feed's blurb.
+  word_count is derived from that body, so the number is ours to define.
+  Article now carries it; the storage lead needed that before re-processing.
+- Pages that build their body with JavaScript hand readability an empty
+  shell; auth-gated pages hand it a login wall. It extracts essentially
+  nothing from either. Classify, don't reassign - a worker cannot fix
+  what never reached the server.
+- short_title() disagrees with the feed's own <title> about one entry in
+  ten. Keep the feed's title. The feed is the source of record; the
+  extractor's job is the body.
 ```
 
-{/* Corpus note for reviewer, not published prose: a curated expertise file
-for a comparably narrow role has run to about 75 lines in a demonstrated
-multi-team build - research/pi/transcripts-mined-orchestration.md §3. */}
-A curated file like this stays short by design - a comparably narrow role in a demonstrated multi-agent build ran to around 75 lines, not a transcript's worth. Short enough to read in one sitting is the point: this is judgment worth keeping, not a log of everything that happened.
+A curated file like this stays short by design - short enough to read in one sitting, which is the point. This is judgment worth keeping, not a log of everything that happened, and a line that never changes a decision a spawn would otherwise get wrong doesn't earn its place. Let one run long and you've rebuilt the transcript you were avoiding, one careful line at a time.
 
 ## Why this belongs on leads, not workers
 
-Workers are cheap and disposable on purpose - spun up for one job, torn down when it's done, no state worth keeping because they'll never see this exact task again. Leads are the opposite: they're the ones who come back to the *same* domain, spawn after spawn, for as long as the migration runs. That's the entire criterion for where an expertise file earns its keep - not "is this agent important," but "will this agent see this domain again." Give expertise files to your leads and your domain-owning long-runners; skip them for one-shot workers, or you're just maintaining files nobody ever reads.
+Workers are cheap and disposable on purpose - spun up for one job, torn down when it's done, no state worth keeping because they'll never see this exact task again. Leads are the opposite: they're the ones who come back to the *same* domain, spawn after spawn, for as long as the migration runs. That's the entire criterion for where an expertise file earns its keep - not "is this agent important," but "will this agent see this domain again."
 
-This is the same "write it down once" instinct from the `SYSTEM.md` lesson, and the same instinct behind packaging a skill instead of re-explaining a procedure - just scoped one level narrower, to a single agent's own lane instead of the whole project. The `skills` field is where those two ideas meet directly: if your onboarding skill from the skills chapter already teaches "how to bring in a new content source," attach it to a lead's frontmatter and every worker that lead spawns can invoke it too, without you re-teaching it per persona.
+Give expertise files to your leads and your domain-owning long-runners; skip them for one-shot workers, or you're just maintaining files nobody ever reads.
+
+This is the same "write it down once" instinct from the `SYSTEM.md` lesson, and the same instinct behind packaging a skill instead of re-explaining a procedure - just scoped one level narrower, to a single agent's own lane instead of the whole project. The `skills` field is where those two ideas meet directly: your `add-feed-source` skill from the skills chapter already teaches "how to bring in a new feed source."
+
+Attach it to a lead's frontmatter and every worker that lead spawns can invoke it too, without you re-teaching it per persona.
 
 ## What the roster looks like now
 
-Three leads, each with a domain that doesn't overlap the others', each with an expertise file that only it writes to, each pointed at whatever skills its lane actually needs. Not every lead needs a skill yet - the extraction lead does, because onboarding a new content source is a real recurring job; the other two don't have one assigned, and an empty field beats a skill invented to fill it:
+Three leads, each with a domain that doesn't overlap the others', each with an expertise file that only it writes to, each pointed at whatever skills its lane actually needs. Not every lead needs a skill yet - the extraction lead does, because a feed that fails mid-migration gets re-onboarded through the same procedure the skill encodes. The other two don't have one assigned, and an empty field beats a skill invented to fill it. The companion repo has no `.pi/agents/` directory, so create the three expertise files now - the extraction lead's can start with the lines above, the other two empty until their leads learn something:
 
 | Lead | Domain | Expertise file | Skills |
 |---|---|---|---|
-| Extraction lead | `src/stash/extract/`, `app/worker.py` | `.pi/agents/expertise/extraction-lead.md` | `onboard-content-source` |
-| Index lead | full-text search rebuild | `.pi/agents/expertise/index-lead.md` | - |
-| Interface lead | web UI + CLI rendering | `.pi/agents/expertise/interface-lead.md` | - |
+| Extraction lead | `stash/extract.py` + the sync-path extraction step | `.pi/agents/expertise/extraction-lead.md` | `add-feed-source` |
+| Storage lead | `stash/db.py`, `stash/models.py` | `.pi/agents/expertise/storage-lead.md` | - |
+| Interface lead | `stash/main.py` HTTP surface | `.pi/agents/expertise/interface-lead.md` | - |
 
 The workers underneath stay exactly as disposable as they were in the last lesson - nothing about specialization changes their job, only their leads'.
 
-**This chapter's line in the running ledger: an expertise file costs a small curated file a lead re-reads on every spawn, and buys back every rediscovery it would otherwise pay for again.**
+Priced the same way: an expertise file costs a small markdown file the lead
+re-reads every spawn - nothing, if nobody curates it - and buys zero repeated
+worker-spawns rediscovering a fact the lead already paid to learn once. The lead
+curates it by hand; nothing auto-logs it.
 
-| Layer | What it costs | What it buys | Who decided |
-|---|---|---|---|
-| Expertise file, one per lead | a small markdown file the lead re-reads every spawn; nothing if nobody curates it | zero repeated worker-spawns rediscovering a fact the lead already paid to learn once | the lead, curated by hand - never auto-logged |
+So far, though, every message in this team has flowed one way: orchestrator down to lead, lead down to worker, and a summary back up the same path it came down. That's about to become a problem, because the migration has a fact one lead discovers that another lead needs *immediately* - the extraction lead's first worker lands a row shape the storage lead is about to re-process against - and routing it through you adds two hops that have nothing useful to contribute.
 
-So far, though, every message in this team has flowed one way: orchestrator down to lead, lead down to worker, and a summary back up the same path it came down. That's about to become a problem, because the migration has a fact one lead discovers that another lead needs *immediately*, and routing it through you adds two hops that have nothing useful to contribute. [Next: let two leads talk to each other directly - and the honest test for whether that's worth building](/course/pi/teams/coms/).
+[Next: let two leads talk to each other directly - and the honest test for whether that's worth building](/course/pi/teams/coms/).

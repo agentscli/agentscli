@@ -1,73 +1,59 @@
 ---
-title: Resume a Codex session with codex resume, --last, and an id
-description: "Yesterday you got Codex deep into budgetcli. This morning the terminal is empty - but the session isn't gone. Reopen it with codex resume."
-sidebar:
-  label: "Resume · codex resume / --last"
+title: Resume a Codex session with codex resume or /resume
+description: "Reopen a saved Codex conversation with codex resume or /resume - and know what a restored transcript does and doesn't bring back."
 ---
 
-Yesterday you got Codex deep into `budgetcli`. It knew the original author stored some money values as floats and that you'd decided everything moves to integer cents. It knew the category taxonomy you'd settled on - groceries, rent, subscriptions, and the rest - and which two transactions you'd already hand-checked against the bank statement. Then you closed the laptop.
+You closed the terminal mid-task yesterday. The code may be committed; the reasoning about what to do next may exist only in that closed session. **Codex persists sessions to disk.** Reopening one is cheaper than retyping a recap from memory, and far more faithful than a paraphrase the agent will treat as ground truth.
 
-Now you're staring at a fresh terminal and all of that shared understanding is sitting on the wrong side of a closed session. The naive move is to start typing and re-explain it - and here's the size confrontation before you try: that recap runs maybe 450 characters, call it 113 estimated tokens at 4 characters per token, the prose estimator from chapter 1. That's nothing against a 200,000-token window. **The cost of re-explaining was never going to be tokens.** It's that you'll re-explain it *imperfectly*, and Codex will half-remember a version of yesterday that never happened - a wrong category, a migration step you actually finished but describe as pending. Cheap in tokens, expensive in accuracy.
-
-You don't have to pay either price. Codex persists every session to disk; this morning is just a matter of reopening yesterday's instead of starting over.
+A **session**, in this chapter, means that saved conversation: messages, tool traces, and decisions in Codex's session store, restorable with `codex resume`. It is not the same as the files in your repo.
 
 ## Picking the session back up
 
-Resuming happens at launch, not from inside a running session - you ask for it on the command line:
+From the shell:
 
 ```bash
-codex resume          # show a picker of past sessions, choose one
-codex resume --last   # skip the picker, reopen the MOST RECENT session
+codex resume          # open a picker of past sessions, choose one
+codex resume --last   # skip the picker, reopen the most recent session
+codex resume <SESSION_ID>   # reopen one specific session by id
+codex resume --all    # widen search beyond the current directory (see reference)
 ```
 
-`codex resume --last` is the one you'll use most mornings: same project, straight back to the most recent thread. From inside the repo:
+Inside a running TUI, `/resume` opens the saved-session picker and reloads the chosen transcript without leaving the session.
+
+For day-to-day work in one repo, `codex resume --last` from that repo's root is often enough:
 
 ```text
+$ cd ~/code/budgetcli
 $ codex resume --last
 
-  ⎿ Resumed session (yesterday 18:40) · budgetcli
-    Conversation restored.
-
-> where did we leave the cents migration?
-
-  You'd converted Account.balance and Transaction.amount to integer cents
-  and updated the CSV importer to multiply by 100 on the way in. The reports
-  endpoint still reads the old float column - that's the next edit. The
-  category list we agreed on is groceries, rent, utilities, subscriptions,
-  restaurants, transport, transfer.
+> where did we leave the amount parsing?
 ```
 
-Notice what didn't happen: Codex didn't *re-derive* any of that. It read it straight back from the restored conversation, word for word, instead of the possibly-wrong version you would have typed from memory for those 113 tokens. The float-vs-cents decision you closed yesterday stays closed instead of getting cheerfully re-litigated an hour into this morning.
+What answers is the restored thread, not a summary of it. If yesterday's session recorded that a date fix was committed, that a float parse line was flagged and left for later, and that `app/services/categorise.py` exists but has no callers, those settled facts should come back as they were closed, not be re-debated from scratch.
 
-Plain `codex resume` is for the mornings when the most recent session *isn't* the one you want - maybe you did a quick README tidy after the migration work, and `--last` would drop you into that. The picker lets you reach past it:
+Use plain `codex resume` when the most recent session is not the one you want (for example after a quick README edit that ran after the real work). An illustrative picker list; yours shows your sessions:
 
 ```text
 $ codex resume
 
   Select a session to resume:
     budgetcli · README + run notes        yesterday 19:10
-  ❯ budgetcli · cents migration           yesterday 18:40
-    budgetcli · CSV date-parse fix        2 days ago 16:22
+  ❯ budgetcli · date fix                 yesterday 18:40
+    budgetcli · first look at the repo    2 days ago 16:22
 ```
 
-And when you already know the exact session you want - you wrote its id into a note, or a teammate sent it - name it directly and skip the picker entirely:
+## The picker is scoped to where you stand
 
-```bash
-codex resume <SESSION_ID>   # reopen one specific session by its id
-```
+`codex resume --last` resumes the most recent session for the **current working directory**. Run it from your home folder and you may get the wrong thread or none. `cd` into the project first. The [`--all` flag](https://learn.chatgpt.com/docs/developer-commands?surface=cli) widens the search across directories; the default cwd scope is intentional.
 
-## Two things that will trip you up
+## A restored conversation is not a restored world
 
-The first is **scope**. `codex resume --last` resumes the most recent session *for the directory you're standing in* - it's scoped to the current working directory. Run it from your home folder instead of the repo and you'll resume the wrong thread or none at all. `cd` into `budgetcli` first; it's a five-second habit that saves a confusing minute. (There's a flag to widen the search across all directories - see the [resume reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli) - but the default is cwd-scoped on purpose.)
+Resuming restores the **conversation**, not the **world on disk**. The transcript may still show three failing tests, a proposed diff, and review notes from before you committed. On disk, `pytest` may now pass and the tree may be clean. Treat code as whatever `git status` and your tests report **now**. Treat the chat as **intent and history** that may lag the filesystem.
 
-The second is subtler and matters more: **resuming restores the conversation, not the world.** It brings back what was *said* yesterday - not your uncommitted edits, not the branch you had checked out, not anything you changed by hand overnight. If yesterday-you left the reports endpoint half-edited and then stashed it, this morning's resumed session will happily talk about that change as though it's still in the file. Treat the code as whatever `git status` says *right now*; treat the conversation as a record of what you intended - the filesystem may have moved on since. This is the one thing resuming does not solve, and no amount of resuming ever will - it isn't a bug to fix, it's what "restore the conversation" means and doesn't mean.
+That gap is normal. No amount of resuming makes the transcript authoritative about disk state. Anything that must survive whichever session opens next (money stored as integer cents, how to run tests, naming conventions) belongs in durable project context such as [`AGENTS.md`](/foundations/rules/), which Codex loads into every new session. In budgetcli (the course's running example, a small self-hosted personal-finance API in Python and FastAPI), the integer-cents rule already lives there; it did not depend on you resuming yesterday's thread.
 
-That line is where this whole chapter lives. Resuming isn't Codex *remembering* you the way a colleague would - it's replaying a saved transcript into a fresh window, at a price so low it's basically free. Close that transcript without resuming it and the knowledge is genuinely gone. So anything that has to survive *no matter which session you open* - "money is integer cents, never float," the category list, the test command - doesn't belong in a chat you might or might not resume. It belongs in [`AGENTS.md`](/foundations/rules/), where every future session reads it for free, whether you remember to resume or not. We'll write exactly that file two chapters from now; for today, notice the gap it fills.
+## When not to resume
 
-## The flip side
+Resuming is cheap when you are **continuing the same line of work**. Its failure mode is habit: opening yesterday's thread for a unrelated question because it is convenient. Unrelated turns still occupy the window and steer the model. Resume when the task genuinely continues; [start clean](/course/codex/sessions-context/reset/) when it does not.
 
-Resuming is the cheapest context you'll ever buy: a whole window of hard-won understanding, restored exactly, in place of the 113-token approximation you'd have typed from memory. But the same convenience has a failure mode that sets up the next two lessons.
-
-Because resuming is so easy, you'll be tempted to do it out of habit even when the new task has nothing to do with the old one - drag yesterday's migration into today's *unrelated* tangent just because the session is right there. That's not continuity, it's clutter, and clutter isn't cheap the way resuming itself is: every unrelated turn you drag forward is real conversation the window now has to carry. The discipline is to resume when you're genuinely *continuing*, and to start clean when you're not.
-
-Right now, though, you're squarely continuing - and the next decision in the migration is a real fork. There are two reasonable ways to build the categorisation engine, and you can't tell which is better on paper. So instead of betting on one, you'll [build both side by side](/course/codex/sessions-context/fork/).
+When the next step is to **compare two implementations** from the same starting point without mixing designs in one thread, use [/fork](/course/codex/sessions-context/fork/) instead of stuffing both approaches into the resumed session.

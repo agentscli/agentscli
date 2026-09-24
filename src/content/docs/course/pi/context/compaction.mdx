@@ -1,21 +1,37 @@
 ---
 title: "How Pi compacts a long session"
-description: "Two defaults already claim more than a quarter of your window before a line gets read. What triggers compaction, what survives, and what it doesn't solve."
-sidebar:
-  label: "Compaction · the trigger and the summary"
+description: "On a 128K window, two defaults put more than a quarter of it beyond compaction's reach. What triggers compaction, what survives, and what it doesn't solve."
 ---
 
 import ContextSimulator from '../../../../../components/interactive/ContextSimulator.tsx';
 
-With the accent-search fix landed, you turn to the bigger job: rewriting `stash`'s readability extractor so it stops mangling the two sites you found, without breaking the dozens of sites it already handles fine. That means reading the current extractor, the test fixtures for every site it's been tuned against, and a long back-and-forth trying candidate heuristics - exactly the kind of long session the last lesson showed you can run headlong into a full window.
+One decision from the dedup work is already committed in `stash/db.py` (`stash` is the course's running example, a small FastAPI feed reader); one debt from it still stands. The decision: `save_article` inserts with `ON CONFLICT(link) DO NOTHING`, under a unique index on `articles.link`. The debt is that neither piece can run yet. SQLite refuses to create a unique index while duplicate rows violate it, and an `ON CONFLICT(link)` clause with no matching index is an error before anything executes - so until `stash.db` is cleaned up, the fix is code on disk, not behavior in the service.
 
-Before you watch that happen, sit with two numbers Pi spends without asking, before a single line of the extractor gets read. **16,384 tokens** - reserved for the model's own reply. Off the table before it writes a word. **20,000 tokens** - the slice of conversation Pi refuses to summarize away, no matter how full the window gets. The floor nothing touches. Add them and you're at 36,384 tokens already spoken for. On a round 128K-token window (131,072 tokens - a common tier size, not a measured figure for `stash`'s actual model, which we haven't measured here), that's roughly 28% of the whole thing, gone before the rewrite even starts.
+The cleanup runs at two speeds. The migration is seconds: delete the duplicates, keeping the first row per link, then create the index. The proof is the long part. To show the constraint holds under real use, you re-sync every stored feed - twice each - and after each pass run the duplicate-count query and watch it come back empty.
+
+Pi drives the syncs, reads the responses, runs the checks, and every feed adds its fetch output and its row counts to the window. The shape of that run, illustrative - the URLs and counts are invented, the pattern is the job:
+
+```text
+feed 1  https://example.com/feed.xml
+  sync -> {"saved": 24}   sync again -> {"saved": 24}   duplicate links: none
+feed 2  https://notes.example.org/atom.xml
+  sync -> {"saved": 19}   sync again -> {"saved": 19}   duplicate links: none
+feed 3  https://journal.example.net/feed
+  sync -> {"saved": 31}   sync again -> {"saved": 31}   duplicate links: none
+...
+```
+
+One property of the check first - why it can't be the endpoint's `saved` number: it counts articles *fetched*, so it reads the same whether the second sync inserted rows or not. The query is the evidence. `{"saved": 24}` twice with a flat row count is exactly what winning looks like here.
+
+Before you watch the window fill with that, sit with two numbers Pi spends without asking, before a single feed gets fetched. **16,384 tokens** - reserved for the model's own reply. Off the table before it writes a word. **20,000 tokens** - the slice of conversation Pi refuses to summarize away, no matter how full the window gets. The floor nothing touches.
+
+Add them and, in a full window, at least 36,384 tokens are beyond summarizing: 16,384 reserved for the reply, plus the 20,000 newest tokens kept verbatim. On a round 128K-token window (131,072 tokens - a common tier size, not a measured figure for `stash`'s actual model, which we haven't measured here), that's roughly 28% the cleanup can never reclaim. The reserve is unavailable from the first turn; the kept slice only fills as the session grows, and it holds exactly the recent turns you'd want kept.
 
 :::note[About the numbers]
-Two numbers in this chapter are Pi's real defaults, not invented: `reserveTokens` (16,384) and `keepRecentTokens` (20,000). The 128K window above is a declared round stand-in used for the arithmetic, not a measured figure for any specific model. The eight-turn session further down is a small toy, built to hand-trace by adding up its stated per-turn costs, not a real `stash` session.
+Two numbers in this chapter are Pi's real defaults, not invented: `reserveTokens` (16,384) and `keepRecentTokens` (20,000) ([Pi's compaction documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/compaction.md) is the source to re-check them against). The 128K window above is a declared round stand-in used for the arithmetic, not a measured figure for any specific model. The eight-turn session further down is a small toy, built to hand-trace by adding up its stated per-turn costs, not a real `stash` session - and the per-feed block above is illustrative in the other direction: the check pattern is real, the URLs and counts are invented.
 :::
 
-An hour into the extractor rewrite, the window is dense with file dumps and test output, and - without you doing anything about it - Pi condenses the thread on its own. This is compaction, and unlike a black-box "hope it does the right thing," Pi's version is documented well enough to reason about.
+Partway into the proof, the window is dense with feed XML and check output, and - without you doing anything about it - Pi condenses the thread on its own. This is compaction, and unlike a black-box "hope it does the right thing," Pi's version is documented well enough to reason about.
 
 ## When it fires
 
@@ -25,23 +41,27 @@ Compaction isn't a vague "getting full" feeling - it's a formula. Pi compacts on
 contextTokens > model.contextWindow - reserveTokens
 ```
 
-`reserveTokens` defaults to the 16,384 tokens from above, configurable in `~/.pi/agent/settings.json` or `.pi/settings.json`. Because the formula is relative to `model.contextWindow`, the actual trigger point moves with whatever model you're running; it isn't a fixed number baked into Pi itself.
+`reserveTokens` defaults to the 16,384 tokens from above, configurable in `~/.pi/agent/settings.json` or `.pi/settings.json`. Because the formula is relative to `model.contextWindow`, the actual trigger point moves with whatever model you're running; it isn't a fixed number baked into Pi itself. During a multi-turn run, Pi checks the threshold after tools finish and their results are appended, before the next assistant response starts - remember that ordering; it earns its keep near the end of this lesson.
 
 There are three reasons compaction can fire, and it's worth telling them apart:
 
-- **Threshold** - proactive, checked before a turn starts, as you approach the limit.
+- **Threshold** - proactive, checked between assistant responses, after tool results land, as you approach the limit.
 - **Overflow** - a turn actually exceeded the available space; Pi aborts that turn, compacts, then retries it with room to spare.
 - **Manual** - you asked for it directly with `/compact [instructions]`, optionally steering what the summary should emphasize.
 
 ## What survives, and what gets summarized
 
-Compaction doesn't summarize everything - it protects the most recent slice of the conversation first. That's the second number from the top: `keepRecentTokens`, defaulting to 20,000. Pi walks backward from the newest message, and everything within that budget of the end is left completely alone. Only what's older than that cut point gets condensed.
+Compaction doesn't summarize everything - it protects the most recent slice of the conversation first. That's the second number from the top: `keepRecentTokens`, defaulting to 20,000. Pi walks backward from the newest message, keeping whole messages and accumulating their token estimates until the 20,000-token budget is reached - the message that reaches the line is still kept; the walk stops there. Everything older than that cut point gets condensed.
 
-That older portion is flattened into a plain-text form - lines prefixed `[User]:`, `[Assistant thinking]:`, `[Assistant]:`, `[Tool result]:` - deliberately *not* natural dialogue. The reason is specific: a summarizer model handed something that reads like a real conversation tends to keep talking instead of describing it. Flattening it into labeled, clipped lines (tool-result text is truncated to 2,000 characters with an explicit truncation marker) keeps the summarizer in "describe this" mode instead of "continue this" mode.
+That older portion is flattened into a plain-text form - lines prefixed `[User]:`, `[Assistant thinking]:`, `[Assistant]:`, `[Assistant tool calls]:`, `[Tool result]:` - deliberately *not* natural dialogue. The reason is specific: a summarizer model handed something that reads like a real conversation tends to keep talking instead of describing it. Flattening it into labeled, clipped lines keeps the summarizer in "describe this" mode instead of "continue this" mode.
 
-What comes back is a structured summary, not a paragraph - fixed sections every time: `## Goal`, `## Constraints & Preferences`, `## Progress` (broken into Done / In Progress / Blocked), `## Key Decisions`, `## Next Steps`, `## Critical Context`. Separately, which files got read and which got modified is tracked in its own block, alphabetically sorted - so even after several rounds of compaction, Pi still knows it already read `extractor/heuristics.py` and doesn't re-read it out of amnesia.
+Your per-feed output lands in that serialization as `[Tool result]:` lines, truncated to 2,000 characters with an explicit truncation marker.
 
-That last point matters on a second compaction. Pi doesn't re-summarize from scratch and risk losing what the first summary already captured - it runs an "update" pass that preserves the existing sections, folds in new progress, and refreshes just the Progress block. Your extractor rewrite could get compacted twice in one long session without the Goal or Key Decisions sections drifting or disappearing.
+What comes back is a structured summary, not a paragraph - fixed sections every time: `## Goal`, `## Constraints & Preferences`, `## Progress` (broken into Done / In Progress / Blocked), `## Key Decisions`, `## Next Steps`, `## Critical Context`. Separately, which files got read and which got modified is tracked in its own block, alphabetically sorted - so even after several rounds of compaction, Pi still knows it already read `stash/db.py` and `stash/feeds.py` and doesn't re-read them out of amnesia. What survives is the record that they were read, not their contents - re-reading one on purpose, when current contents are needed, is normal and still spends the tokens.
+
+On this job the Progress section does real work: feeds that re-synced clean are Done items, and the feed currently mid-check is In Progress.
+
+That last point matters on a second compaction. Pi doesn't re-summarize from scratch and risk losing what the first summary captured - it runs an update pass over the existing summary, with explicit instructions to preserve what's there and to refresh **both the Progress and the Next Steps sections** based on what was accomplished. Your cleanup could get compacted twice in one long session without the Goal or Key Decisions sections drifting - the two sections that should move, move; the rest holds.
 
 ## Trace it by hand first
 
@@ -62,30 +82,34 @@ The toy session runs on a 40,000-token window - also declared, not real. Reserve
 | 2 | 3,500 | - | summarized |
 | 1 (oldest) | 3,000 | - | summarized |
 
-Turns 4 through 8 land inside the 20,000-token budget the moment turn 4 is counted, so all five stay. Turns 1 through 3 fall outside it and get flattened into the six-section summary above. The claim holds, exactly as stated - not because compaction is smart about which three turns mattered least, but because of where they happened to sit relative to the end.
+Turns 4 through 8 are kept the moment turn 4 is counted - the running total now reads 21,000, and that is how the rule works: the message that reaches the budget stays, so the kept slice can end slightly over 20,000. Turns 1 through 3 fall on the far side of the cut and get flattened into the six-section summary above. The claim holds, exactly as stated - not because compaction is smart about which three turns mattered least, but because of where they happened to sit relative to the end.
 
 Watch the same shape play out at a bigger, moving scale below - a long session filling up, the fixed overhead that never goes away, and what gets cut versus kept once the threshold hits. Before you click through: predict which category of content survives untouched and which gets cut, using the rule you just traced by hand - fixed overhead (system prompt, tool schemas, the rules file) never counts against `keepRecentTokens` because it isn't conversation; the most recent turns do; everything older than the cut point doesn't.
 
 <ContextSimulator client:visible />
 
-Confirm it: step to the `/compact` segment and check what lands in "Structured summary" against what's gone. The window size (200k) and the compact line (around 80% full) drawn here are picked for a readable bar, not Pi's real formula - the table above used the real `reserveTokens` and `keepRecentTokens`; this one trades exactness for a shape you can watch move in real time. Same mechanism, two different scales.
+Confirm it: step to the `/compact` segment and check what lands in "Structured summary" against what's gone. The window size (200k) and the compact line (around 80% full) drawn here are picked for a readable bar, not Pi's real formula - the table above used the real `reserveTokens` and `keepRecentTokens`; this one trades exactness for a shape you can watch move in real time. One more stand-in to know about: the simulator is tool-generic. Its rules segment (whose label names other tools' file conventions) stands for whatever rules file a tool loads - on Pi, that story is the next lesson's subject - and its summary block lists fewer sections than Pi's six. Same mechanism, two different scales.
 
-If you ever want to shape the summary yourself instead of trusting the default cut, you can:
+If you'd rather shape the summary yourself than trust the default cut, you can:
 
 ```text
-/compact focus on the extractor's heuristic changes, drop the test-fixture dumps
+/compact focus on which feeds re-synced clean and their duplicate counts, drop the raw feed XML
 ```
 
 ## What compaction doesn't solve
 
-Be honest about what a "structured summary" actually is: a model's best guess at what mattered, sorted into six fixed sections. A best guess can be wrong. If the real turning point in your hour of extractor work was a small detail buried in test output rather than something that fits neatly under Goal or Key Decisions, a summarizer optimizing for those six sections can drop exactly that detail, with no error message telling you it happened. **Compaction is lossy by design, not by accident** - the simulator's own summary block flags this on its own. That's not a reason to avoid it; every alternative (letting the window overflow, or retyping your own notes from memory) loses more. It's a reason to write down anything you can't afford to lose - a diff, a decision, a test result - before you let a long stretch get summarized.
+Be honest about what a "structured summary" actually is: a model's best guess at what mattered, sorted into six fixed sections. A best guess can be wrong. If the real signal in your cleanup was one feed whose second sync left a row count you didn't expect - a detail sitting in tool output older than the cut point, fitting neatly under no section heading - a summarizer optimizing for those six sections can drop exactly that detail, with no error message telling you it happened.
 
-One narrower, genuinely open edge case, worth knowing rather than being surprised by: if auto-compaction triggers right after an assistant message that itself contains tool calls, current behavior aborts immediately instead of waiting for those tool results to come back first. It's flagged in Pi's own issue tracker as unresolved - a live bug, not the general lossy-summarization risk above, and not something to build a mental model around being fixed.
+**Compaction is lossy by design, not by accident** - the simulator's own summary block flags this on its own. That's not a reason to avoid it; every alternative (letting the window overflow, or retyping your own notes from memory) loses more. It's a reason to write down anything you can't afford to lose - a per-feed verdict, a diff, a test result - somewhere that isn't the thread, before you let a long stretch get summarized.
 
-The full, uncompacted history - every turn, every tool call, before any summarization touched it - still stays on disk in the session's JSONL file, permanently. Compaction only changes what gets *sent to the model* on the next turn; `/tree` still gets you the rest of it, three compactions later, if you need to check exactly what the extractor test output actually said.
+This used to have a sharper edge, worth knowing as history rather than a live hazard: auto-compaction could fire right after an assistant message that itself contained tool calls, aborting before those tool results came back - the results existed, but the threshold check ran too early to see them. It was flagged in Pi's own issue tracker [twice](https://github.com/earendil-works/pi/issues/8833) ([8464](https://github.com/earendil-works/pi/issues/8464) is the earlier-numbered of the pair), and fixed in August 2026. Current behavior is what this chapter described above: the check runs after tools finish and their results are appended, before the next assistant response starts.
+
+The full, uncompacted history - every turn, every tool call, before any summarization touched it - still stays on disk in the session's JSONL file, permanently. Compaction only changes what gets *sent to the model* on the next turn; `/tree` (Pi's session-tree navigator) still gets you the rest of it, three compactions later, if you need to check exactly what one feed's row count actually said.
 
 ## The gap compaction can't close
 
-Compaction is genuinely good at what it does - goal, decisions, file list, recent turns, all protected on purpose. It does **not** stop you from re-explaining, in every fresh session or every fork, the things about `stash` that never change: don't touch `.env`, use `stash migrate` instead of raw SQL, the extractor's tests live in `tests/extractor/`. Compaction manages a session's *transient* memory. The durable rules - true on session 1, still true on session 40 - need a different home, one that's loaded before compaction, before forking, before any of it.
+Compaction is genuinely good at what it does - goal, decisions, file list, recent turns, all protected on purpose. It does **not** stop you from re-explaining, in every fresh session or every fork (a session branched from an earlier point), the things about `stash` that never change: `httpx` and never `requests` or `urllib`, tests run with `pytest`, pydantic models stay in `stash/models.py`, feed dates normalized on the way in.
 
-File that away as this chapter's addition to the running ledger: 16,384 and 20,000 tokens, claimed before you type a word, bought you a turn that never gets cut off mid-answer for lack of room. Pi decided both numbers; you only get a say if you go into `settings.json` and change them. [Next: write the durable rules down once, in the file Pi reads before Pi decides anything](/course/pi/context/system-md/).
+Compaction manages a session's *transient* memory. The durable rules - true on session 1, still true on session 40 - need a different home, one that's loaded before compaction, before forking, before any of it. And here's the twist that hands off to the next lesson: those rules already exist, written down in a `SYSTEM.md` at the repo root, left there by the project's original author - at a path Pi never reads.
+
+One closing account, in the terms this chapter has been keeping: 16,384 and 20,000 tokens - the reserve keeps room for the reply from the first turn; the kept slice protects the recent turns as the session grows (and when even that room runs out mid-turn, the overflow path above is the backstop, not these numbers). Pi decided both numbers; you only get a say if you go into `settings.json` and change them. [Next: write the durable rules down once, in the file Pi reads before Pi decides anything](/course/pi/context/system-md/).

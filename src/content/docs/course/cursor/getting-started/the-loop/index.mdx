@@ -1,13 +1,13 @@
 ---
 title: Understand one turn of the Cursor loop
-description: "Watch one turn close on a harmless question, so you can see how the agent reads for context before it is ever allowed to write."
+description: "Watch one turn of read-propose-review-commit close in slow motion on a small, real bug, so you can see where the agent's work lands and where your judgment does."
 ---
 
 import LoopStepper from '../../../../../../components/interactive/LoopStepper.tsx';
 
-You've met the two surfaces, and you know the Agent sidebar is where the real work happens this hour. Now watch it do one complete turn end to end - not a toy question, the actual date bug. Every task you'll ever hand the agent, from this fix to a multi-file refactor four chapters from now, runs through the same small loop: it **reads** for context, **proposes** a diff, you **review** it, and you **commit** at green. The Codex and Copilot courses drill the same four beats; what's particular to Cursor is *how* each one shows up in the sidebar - and the one that's genuinely different from a terminal agent is the review.
+The **Agent sidebar** (Cursor's chat panel, opened with <kbd>Cmd/Ctrl+I</kbd>) is where the real work happens, and every task you'll ever hand it - from a one-line fix to a multi-file refactor - runs through the same small loop: it **reads** for context, **proposes** a diff, you **review** it, and you **commit** at green. This page watches one complete turn of that loop, end to end, on a small real bug from the course's illustrative repo, `budgetcli` - a self-hosted budgeting API that imports transactions from bank CSV exports and, on some statements, records a date on the wrong day. The transcripts below are illustrative, written to show the shape of each beat; the next lesson has you run the same loop yourself. The Codex and Copilot courses on this site drill the same four beats; what's particular to Cursor is *how* each one shows up in the sidebar - and the beat that's genuinely different from a terminal agent is the review.
 
-## Read: it finds the file by meaning, not by path
+## Read: you describe the bug, it goes looking
 
 You describe the outcome in plain English, the way you'd brief a teammate. You don't name the file, because you're not sure which one it is - you inherited this repo:
 
@@ -20,12 +20,12 @@ You describe the outcome in plain English, the way you'd brief a teammate. You d
 Watch where it goes first. You never said `src/importers/csv.ts`, yet that's what it opens:
 
 ```text
-  Searched codebase "parse statement date from imported CSV row"   (semantic)
-  Grepped  Date.parse|new Date                                     (3 matches)
-  Read     src/importers/csv.ts, tests/csv-import.test.ts          (2 files)
+  Searched codebase "statement date" csv          (local index, 7 matches)
+  Grepped  Date.parse|new Date                    (2 matches)
+  Read     src/importers/csv.ts, tests/csv-import.test.ts  (2 files)
 ```
 
-That first line is the part worth slowing down on. Cursor indexes your repo into a vector database with its own embedding model - each function and class becomes an embedding that captures what the code *means*, not just the words in it - so a request phrased as "parse statement date from a CSV row" lands on the importer even though your prompt and the code share almost no literal tokens. You don't pick the search tool; the agent does. Abstract asks like yours trigger **semantic search**, exact symbols trigger grep, and a real task chains both - semantic search to find the entry point, grep to trace references, then a couple of file reads to build full context. The reason this matters on day one: on a repo you didn't write, *you* don't know where the date parsing lives either - and the agent finding it by description is exactly the help you're here for. It read the existing test too, so anything it adds matches the house style instead of inventing its own.
+Two things about that first line are worth slowing down on. First, the index it searched is local: Cursor's codebase search - **Instant Grep**, as of September 2026 - builds and queries its index on your machine, and Cursor does not upload file paths or code to build a search index, and does not store embeddings of your codebase for search ([search docs](https://cursor.com/docs/agent/tools/search)). The index that just helped the agent find your importer is an artifact on your own disk, not a copy of your repo in the cloud. Second, notice what the search keys on: the concrete nouns in your prompt - *statement*, *date*, *csv* - not a file path you were supposed to remember. You don't pick the search tool; the agent does. Broad asks like yours start with a codebase search, exact symbols get grepped, and a real task chains both - search to find candidates, reads to confirm them, grep to trace references. The reason this matters on day one: on a repo you didn't write, *you* don't know where the date parsing lives either - and the agent going to look is exactly the help you're here for. It read the existing test too, so anything it adds matches the house style instead of inventing its own.
 
 ## Propose: a diff, staged in the sidebar
 
@@ -33,8 +33,8 @@ Having read enough, it proposes. On Cursor that proposal isn't a sentence in a t
 
 ```text
   src/importers/csv.ts
-    - const txnDate = new Date(row["date"])
-    + const txnDate = parseStatementDate(row["date"])
+    - const parsed = new Date(Date.parse(`${day}/${month}/${year}`));
+    + const parsed = parseStatementDate(dateStr);
     + // parseStatementDate tries the common bank formats in order,
     + // throwing if a row matches none.
 
@@ -48,7 +48,7 @@ Two beats are done - read, then propose - and the diff is sitting in your tree a
 
 ## Review: you drive it with Keep and Undo
 
-Here is the beat that's distinct from a terminal agent, and the one worth getting right. Cursor's agent writes its edits to the files as it works, then hands you a review surface to **accept or reject** them - not a yes/no gate *before* each write, but a diff you adjudicate *after*. The review bar gives you **Keep** and **Undo** per change (and a **Keep All** / **Undo All** for the whole batch), with next-file / previous-file navigation to step through every hunk. So you read the diff before you keep it - and on inherited code holding your own money, that read is the whole point:
+Here is the beat that's distinct from a terminal agent, and the one worth getting right. Cursor's agent writes its edits to the files as it works, then hands you a review surface to **accept or reject** them - not a yes/no gate *before* each write, but a diff you adjudicate *after*. The review bar gives you **Keep** and **Undo** per change (and a **Keep All** / **Undo All** for the whole batch; exact labels as of September 2026 - the checkpoint mechanism under them is documented on the [Agent overview page](https://cursor.com/docs/agent/overview)), with next-file / previous-file navigation to step through every hunk. So you read the diff before you keep it - and on inherited code holding your own money, that read is the whole point:
 
 ```text
 > walk the importer diff - does anything touch how amounts get parsed?
@@ -65,14 +65,16 @@ Reviewing only tells you the change is *good*. It doesn't make it *safe* - until
 ```text
 > run the importer tests, and if they pass commit with a sensible message
 
-  Ran  npx vitest tests/csv-import.test.ts                          (9 passed)
+  Ran  npx vitest run tests/csv-import.test.ts                       (2 passed)
   Ran  git commit -am "Parse multiple bank date formats in CSV importer"
 ```
 
 Commit at every green checkpoint - git is the floor that doesn't vanish (you'll build this habit in [your first change](/course/cursor/getting-started/first-change/)).
 
-Before the beats become muscle memory, it's worth seeing the engine under them once in slow motion. This stepper traces a different small fix through the loop in its generic form - *gather* is your read beat, each *act* is an edit that in Cursor would land in the review bar as a red/green hunk waiting for your Keep - and the failed verify in the middle is precisely why the commit waits for green:
+## The engine under the beats, once in slow motion
+
+Before the beats become muscle memory, it's worth seeing the machinery under them once in generic form. This stepper traces a different small fix through the loop: *gather* is your read beat, each *act* is an edit that in Cursor would land in the review bar as a red/green hunk waiting for your Keep, and the failed *verify* in the middle is precisely why the commit waits for green:
 
 <LoopStepper client:visible />
 
-Read, propose, review, commit - you just watched all four close once, by hand, on a real bug. The next lesson is the same loop with the training wheels off: you'll [hand it the date bug and ship the reviewed change](/course/cursor/getting-started/first-change/) start to finish, and from here on every chapter assumes these four beats are muscle memory.
+One loose end from the stepper's closing note: everything the agent read, ran, and edited in that turn stays in its context window for the rest of the chat - later lessons cover managing what accumulates there and what it costs. The next lesson keeps the focus on the loop itself: you'll [run this same date-bug fix yourself](/course/cursor/getting-started/first-change/), start to finish, with your hands on the review and the commit - the same four beats, this time with you driving.

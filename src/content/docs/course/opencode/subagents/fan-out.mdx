@@ -1,21 +1,19 @@
 ---
 title: Fan out across the feed adapters
 description: "One thread auditing every adapter serially is slow and drowns its own context. Split the job, dispatch a worker per slice, and gate the findings it returns."
-sidebar:
-  label: "Fan-out · parallel workers"
 ---
 
 import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
 
-The timezone bug you confirmed in the RSS adapter has a nastier implication: it might be in the others too. `feedmill` carries dozens of adapters - one per source shape - and each one parses timestamps its own way, which is exactly how a bug like this hides in some and not others. So the job isn't "fix the RSS adapter," it's "audit every adapter for the same UTC-normalisation mistake and tell me which ones have it."
+A feed adapter can fail quietly: it parses a timestamp and stores the feed's local time instead of UTC, and every item from that source mis-sorts in the reading queue from then on. `feedmill` - the course's illustrative Go feed aggregator - carries one of these parser adapters per source shape, and each parses timestamps its own way, which is exactly how that slip hides in some adapters and not others. So the job isn't to fix adapters one at a time as they surface - it's "audit every adapter for the same UTC-normalization mistake and tell me which ones have it."
 
-Hand that to one thread and it grinds through the adapters in sequence - read, reason, move on, read the next - and two things go wrong at once. It's slow for no reason, because the Atom adapter's timestamps have nothing to do with the JSON adapter's. And worse, every file it reads and every line it reasons over piles up in the *same* context window, so by adapter fifteen the thread is dragging a landfill of earlier parsing code it no longer needs. The job has a shape that wants to be split: independent slices, the same check applied to each, one verdict per slice.
+Hand that to one thread and it grinds through the adapters in sequence - read, reason, move on, read the next - and two things go wrong at once. It's slow for no reason, because the Atom adapter's timestamps have nothing to do with the JSON adapter's. And worse, every file it reads and every line it reasons over piles up in the *same* context window, so by the sixth adapter the thread is dragging a landfill of earlier parsing code it no longer needs. The job has a shape that wants to be split: independent slices, the same check applied to each, one verdict per slice.
 
 ## Two tests before you split anything
 
-Fan-out is leverage on the right job and theatre on the wrong one. Two questions tell them apart.
+Fan-out is leverage on the right job and theater on the wrong one. Two questions tell them apart.
 
-**The independence test.** *If two workers finished in a different order, would the result change?* For the audit, no - whether the Atom adapter mishandles UTC depends only on the Atom adapter, never on what the JSON worker concluded. That's your licence to parallelise. The moment the answer flips to yes - a slice needs another slice's output - you don't have parallel work, you have a hidden dependency, and you should chain those parts in sequence instead.
+**The independence test.** *If two workers finished in a different order, would the result change?* For the audit, no - whether the Atom adapter mishandles UTC depends only on the Atom adapter, never on what the JSON worker concluded. (In `feedmill` the Atom adapter is `internal/adapter/normalise.go`: it takes only a parsed Atom feed, and no other adapter calls it.) That's your license to parallelize. The moment the answer flips to yes - a slice needs another slice's output, or several slices share a helper that decides their verdicts - you don't have parallel work, you have a hidden dependency, and you should chain those parts in sequence instead.
 
 **Write the merge first.** Before you spawn anything, say in one sentence how the slices come back together: *"one row per adapter - name, verdict, and the offending line if any."* If you can't state the reduction that simply, your split is wrong, not your tooling. Fan-out is an aggregation problem wearing a spawning costume - decide how the answers reduce before you scatter the questions.
 
@@ -23,42 +21,44 @@ The audit passes both. So we split it.
 
 ## Dispatch a worker per slice
 
-In OpenCode the parent agent fans work out through the **Task tool** - the same mechanism a single `@mention` uses, but here the parent calls it once per slice and the workers can run concurrently. You don't drive that by hand; you describe the partition and the per-worker brief, and the primary agent dispatches the workers.
+In OpenCode the parent agent fans work out through the **Task tool**, the delegation call the model uses to spin up a subagent - the programmatic sibling of the `@mention` you type (typing `@name` in a message invokes that subagent yourself; as of September 2026, [agents documentation](https://opencode.ai/docs/agents/)). You don't drive the Task tool yourself; you describe the partition and the per-worker brief, and the primary agent (the top-level agent you type at, such as `build`) dispatches the workers, calling once per slice so they can run concurrently.
+
+The brief names the worker it wants. Assume you've saved a small read-only subagent as `.opencode/agents/audit-worker.md` (its frontmatter is under "Cap each worker with `steps`" below); the file name becomes the agent name, so the brief can say `@audit-worker`. Without a named worker, the primary agent may pick `general`, which has full tool access:
 
 ```text
-> Audit every feed adapter under internal/adapters/ for the UTC-normalisation
-  bug we just fixed in the RSS adapter: a parsed timestamp stored without
-  converting to UTC. Fan this out - one worker per adapter, in parallel. Each
-  worker reads only its own adapter file, decides PASS or FAIL, and returns one
-  line: adapter name, verdict, and the offending line number if it fails.
-  Read only - no edits. Don't fan out wider than a handful at once.
+> Audit these six feed adapters - internal/adapter/normalise.go and,
+  under internal/feed/, rss.go, json.go, rdf.go, reddit.go, youtube.go - for the UTC-normalization
+  bug: a feed timestamp stored without being parsed and converted to UTC.
+  Fan this out - one @audit-worker per adapter, in parallel. Each worker reads only its
+  own adapter file, decides PASS or FAIL, and returns one line: adapter
+  name, verdict, and the offending line number if it fails. Read only -
+  no edits. Don't fan out wider than a handful at once.
 ```
 
-Each worker OpenCode spins up gets its **own session** - a fresh context window, its own system prompt, its own tools, possibly even its own model. That isolation is the whole point. The thirty lines the Atom worker reads to reach its verdict land in *its* window and stay there; they never mix with the JSON worker's lines and none of them enter your main thread. You asked twenty questions and you get back twenty one-line answers, not twenty piles of parsing code.
+Each worker OpenCode spins up gets its **own session** - a fresh context window, its own system prompt, its own tools, possibly even its own model. That isolation is the payoff. The lines the `rss.go` worker reads to reach its verdict land in *its* window and stay there; they never mix with the `json.go` worker's lines and none of them enter your main thread. You asked six questions and you get back six one-line answers, not six piles of parsing code. An illustrative dispatch, assuming `feedmill` has the six adapters named in the brief:
 
 ```text
-  Dispatching 6 workers (internal/adapters/) ...
+  Dispatching 6 workers ...
 
-  @audit-worker  rss.go      → PASS  (already fixed)
-  @audit-worker  atom.go     → FAIL  line 88: t stored without .UTC()
-  @audit-worker  json.go     → PASS
-  @audit-worker  rdf.go      → FAIL  line 51: time.Parse result used as-is
-  @audit-worker  reddit.go   → PASS
+  @audit-worker  rss.go        → PASS
+  @audit-worker  normalise.go  → FAIL  line 23: raw updated string stored, never parsed
+  @audit-worker  json.go       → PASS
+  @audit-worker  rdf.go        → PASS
+  @audit-worker  reddit.go   → FAIL  line 46: time.Unix(ts, 0) stored server-local, no .UTC()
   @audit-worker  youtube.go  → FAIL  line 73: feed-local offset dropped
 
   6 of 6 returned. 3 FAIL, 3 PASS.
 ```
 
+When the workers finish, their results return to the parent session, and the parent does the merge you defined up front - here, the three-column table. The reduction is trivial *because* you wrote it before you spawned. Notice what you have now and what you don't: a list of which adapters the workers flagged and where, without a single one of the file reads that produced it sitting in your context. The workers ate the journey; you got the map.
 
-When the workers finish, their results return to the parent session, and the parent does the merge you defined up front - here, the three-column table. The reduction is trivial *because* you wrote it before you spawned. Notice what you have now and what you don't: a precise list of which adapters are broken and where, without a single one of the file reads that produced it sitting in your context. The workers ate the journey; you got the map.
-
-That trade sticks better once you've counted it. Toggle this fan-out between inline and delegated and watch what actually lands in your thread in each mode - the slices are three code sweeps instead of six adapters, but the arithmetic is the audit's exactly:
+That trade sticks better once you've counted it. Toggle this fan-out between inline and delegated and watch what actually lands in your thread in each mode. The widget uses a different example: a brief and three domain sweeps before a code migration, with each sweep returning a short lead report. Read each sweep as one audit worker; the shape of the trade is the same as the audit's:
 
 <SubagentFanout client:visible />
 
 ## Cap each worker with `steps`
 
-A read-only audit worker shouldn't need many turns - open one file, reason, report. But "shouldn't" isn't "can't," and a worker that gets confused can churn turn after turn, each one an API call against your rate budget. The leash for that is `steps` on the worker's frontmatter:
+A read-only audit worker shouldn't need many turns - open one file, reason, report. But "shouldn't" isn't "can't," and a worker that gets confused can churn turn after turn, each one an API call against your rate budget. The leash for that is `steps` on the worker's frontmatter - the YAML header of its agent-definition file, here `.opencode/agents/audit-worker.md`. `mode: subagent` marks it as a worker you `@mention` or delegate to, not a top-level agent:
 
 ```yaml
 ---
@@ -67,34 +67,36 @@ mode: subagent
 model: anthropic/claude-haiku-4-5
 permission:
   edit: deny
+  bash: deny
 steps: 6
 ---
 ```
 
+The `bash: deny` line is what makes "read-only" true: `edit` covers only the edit, write, and patch tools, so without it a worker could still change a file through the shell. The "Read only - no edits" line in the brief is guidance the model usually follows; the permission map is what enforces it.
 
-`steps` caps the maximum agentic iterations a worker can take before OpenCode forces it to stop and respond with a summary of where it got - so a stuck worker degrades into "here's what I found and what's left," never an open-ended loop. (The legacy `maxSteps` field does the same thing and is deprecated; use `steps`.)
+`steps` caps the maximum agentic iterations a worker can take before OpenCode forces it to stop and respond with a summary of where it got - so a stuck worker degrades into "here's what I found and what's left," never an open-ended loop. (The legacy `maxSteps` field did the same job and is deprecated - the docs say plainly to use `steps` instead - and the `model:` ID in the example block is an illustrative catalog entry, not a verified roster ([agents documentation](https://opencode.ai/docs/agents/), as of September 2026).)
 
-The sharp edge follows from the isolation itself: because each worker is its own child session with its own budget, `steps` is best understood as a **per-worker cap, not a per-fan-out one**. Set `steps: 6` and dispatch twenty workers and the per-worker caps permit up to roughly a hundred and twenty iterations across the spread, each one a potential call. So the cap and the width can multiply - which is the practical reason to **start narrow**. Three or four workers may show useful speedup with rate-limit headroom; widen only if the slowdown is genuinely the lack of concurrency and not something else. Pairing a tight `steps` with a cheap model like Haiku on the read-only workers keeps the whole fan-out cheap even when it's wide - the audit doesn't need your most expensive model to spot a missing `.UTC()`.
-
+The sharp edge follows from the isolation itself: because each worker is its own child session with its own budget, `steps` is best understood as a **per-worker cap, not a per-fan-out one**. Set `steps: 6` and dispatch twenty workers and the per-worker caps permit up to roughly a hundred and twenty iterations across the spread, each one a potential call. So the cap and the width can multiply - which is the practical reason to **start narrow**. Three or four workers may show useful speedup with rate-limit headroom; widen only if the slowdown is genuinely the lack of concurrency and not something else. Pairing a tight `steps` with a cheap model like Haiku on the read-only workers makes each worker cheaper, but it doesn't make width free: every worker still pays its own system prompt and tool setup, so total spend grows with the number of workers. The audit doesn't need your most expensive model to spot a missing `.UTC()`.
 
 ## The findings are a proposal, not an instruction
 
-Three FAILs came back. The reflex is to immediately tell the parent "fix all three." Don't - at least not blind. The workers' verdicts are *claims*, produced in contexts you never saw, and fanning out multiplies the surface for a confident-but-wrong one. The audit's job ended at the table; applying anything is a separate, gated step you take with your eyes open:
-
+Three FAILs came back. The reflex is to immediately tell the parent "fix all three." Don't - at least not blind. The workers' verdicts are *claims*, produced in contexts you never saw, and fanning out multiplies the surface for a confident-but-wrong one. The audit's job ended at the table; applying anything is a separate, gated step you take with your eyes open. An illustrative check:
 
 ```text
 > show me the three FAIL lines in context before we change anything
 
-  • Read internal/adapters/atom.go, rdf.go, youtube.go            (3 files)
+  • Read internal/adapter/normalise.go, internal/feed/reddit.go, internal/feed/youtube.go   (3 files)
 
-  atom.go:88  - confirmed: time.Parse(...) stored directly, no .UTC().
-  rdf.go:51   - confirmed, same shape.
+  normalise.go:23 - confirmed: entry.Updated is copied as a raw string;
+                    it is never parsed to UTC.
+  reddit.go:46 - confirmed: time.Unix(ts, 0) returns server-local time;
+                 it is never converted.
   youtube.go:73 - borderline: the value is converted to UTC two lines
                   later before it's stored. Likely a false positive.
 ```
 
-There's why you gate. Two of three are real; the third is a worker that called FAIL on a pattern that's actually handled downstream. Push "fix all three" without looking and you'd have edited a correct file. The whole earlier loop - read before you edit, the edit is a proposal you approve - applies to fan-out *output* exactly as it applies to a single worker's, just multiplied: more verdicts, more surface, the same discipline. You read the findings back into the main thread, throw out the false positive, and only then dispatch the fix against the two that survive review.
+There's why you gate - and the gate has one more step. Those answers are still the agent's reading of the code. Before you accept a verdict, open each `file:line` in your editor and read the lines yourself; for `youtube.go:73`, check the conversion two lines later. If your own reading agrees, two of three are real; the third is a worker that called FAIL on a pattern that's actually handled downstream. Push "fix all three" without looking and you'd have edited a correct file. The standing discipline - read before you edit, and treat every edit as a proposal you approve - applies to fan-out *output* exactly as it applies to a single worker's, just multiplied: more verdicts, more surface, the same check. You read the flagged lines yourself, throw out the false positive, and only then dispatch the fix against the two that survive review.
 
 So the shape that works: fan out across independent, heavy slices; brief each worker to come back terse; write the merge before you spawn; cap each with `steps` and remember it multiplies by width; and treat what returns as a proposal you review, never a result you apply. That's the difference between leverage and a faster way to break things.
 
-That closes the Subagents chapter - you can isolate noisy work, shape a worker to fit, and scatter the parallel jobs across a fleet of them. Which raises the question you've been deferring since you first let a worker run unattended: a fleet of agents is a fleet of things that can touch your filesystem. Next you'll write down exactly what each one is allowed to do, per tool and per agent, and see where that guarantee stops. [Next chapter: Permissions](/course/opencode/permissions/).
+That closes the Subagents chapter - you can isolate noisy work, shape a worker to fit, and scatter the parallel jobs across a fleet of them. Which raises the question a fleet always raises: more agents means more things that can touch your filesystem. Next you'll write down exactly what each one is allowed to do, per tool and per agent, and see where that guarantee stops. [Next chapter: Permissions](/course/opencode/permissions/).

@@ -1,25 +1,28 @@
 ---
 title: "Spawn a child Pi and read its JSONL"
 description: "Pi's only multi-agent primitive: a second pi process, run headless, streaming machine-readable events. Everything else here is control flow on top of it."
-sidebar:
-  label: "Spawn · the one primitive"
 ---
 
-Here's the spoiler for this lesson, stated as a claim you can check yourself: spawn a child Pi to re-extract one article, and your own context - the one you're sitting in right now - doesn't grow by a single token. Every token the child spends, it spends in a process you never opened a window into. That's the whole trade this module is about, isolation bought for the price of a handoff, and this lesson is where you build the one primitive underneath every version of it.
+Here's the spoiler for this lesson, stated as a claim you can check yourself: spawn a child Pi to process one URL from `imports/old-saves.json`, and your own context - the one you're sitting in right now - doesn't grow by a single token. Every token the child spends, it spends in a process you never opened a window into. That's the whole trade this module is about, isolation bought for the price of a handoff, and this lesson is where you build the one primitive underneath every version of it.
 
-You already know Pi has four run surfaces - the interactive TUI you've been living in, `-p` for a single headless prompt, `--mode json` for machine-readable event output, and `--mode rpc` for driving Pi as a subprocess from any language. So far you've only used the first. The other three exist for exactly this module: they're what let one Pi process treat *another* Pi process as a tool.
+Pi has four run surfaces: the interactive TUI (the default), plus three headless ones - `-p`, the one-shot switch; `--mode json`, machine-readable event output; and `--mode rpc`, for driving Pi as a subprocess from any language. The flags stack: `-p` makes a run single-shot whatever its output mode. So far this course has only used the first surface. The other three exist for exactly this module: they're what let one Pi process treat *another* Pi process as a tool.
 
-There's no `pi.registerSubagent()`. There's `child_process.spawn("pi", [...])`, pointed at a prompt instead of a person, with its output piped somewhere you can parse. Call this the **naked spawn**: no dispatcher, no registry, no roster of typed roles - a child process and a pipe, nothing else. That's the whole primitive. Everything you'll build for the rest of this module - chains, fan-out, a verifier that checks a builder's work - is this one call, wired up in different control-flow shapes.
+There's no `pi.registerSubagent()`. Pi's author [puts sub-agents on the explicit list](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) of things Pi intentionally doesn't ship. What there is instead: `child_process.spawn("pi", [...])`, pointed at a prompt instead of a person, with its output piped somewhere you can parse. Call this the **naked spawn**: no dispatcher, no registry, no roster of typed roles - a child process and a pipe, nothing else.
+
+Everything you'll build for the rest of this module - chains, fan-out, a verifier that checks a builder's work - is this one call, wired up in different control-flow shapes.
 
 ## The call
 
-Pick one article off the re-extraction backlog and hand it to a child agent, headless:
+Pick one URL off [the import](/course/pi/subagents/) - `imports/old-saves.json`, the export of saved links this module's opener sets up - and hand it to a child agent, headless:
 
 ```text
-pi --mode json -p "Re-extract https://slow-blog.example/post-142 using
-  stash's fixed readability pipeline, via \`stash reextract <url>\`. Don't
-  touch extractor code - just re-run it and confirm the search index
-  entry updated." \
+pi --mode json -p "imports/old-saves.json holds the URLs to import. Take the
+  first one, https://notes.example.org/. Work out whether that site publishes
+  a feed: fetch the page and look for a feed link - stash/feeds.py's
+  discover() returns the URL unchanged either way, so don't lean on it.
+  If a feed exists, add a row to the feeds table and run the
+  fetch-and-parse pipeline for it, the same procedure the add-feed-source
+  skill describes. Report the rows you saved, with their published values." \
   --no-session \
   --tools read,bash \
   --thinking off
@@ -29,33 +32,39 @@ Read that flag by flag, because each one is a deliberate choice, not boilerplate
 
 - **`--mode json`** - instead of TUI chrome, stdout becomes a stream of newline-delimited JSON events: text as the model writes it, every tool call, every result, and a final event when the turn ends. This is what makes a child process legible to a parent process instead of just a wall of terminal output.
 - **`-p "<prompt>"`** - print mode. One prompt in, the agent runs to completion, then exits. No follow-up turn, no chat - you'll come back to why that matters when you build the verifier.
-- **`--no-session`** - this child is ephemeral. It doesn't need to remember this one article tomorrow; when it exits, its context goes with it. (Give it `--session <file>` instead if you *do* want it resumable - that's how a dispatcher gives each specialist persistent memory across repeated calls, and it's also what the verifier two lessons from now depends on.)
-- **`--tools read,bash`** - a narrower toolset than your own session gets. This child re-runs an existing CLI command and reads the result; it has no business with `write` or `edit`. Scoping a child's tools to exactly what its one job needs is the same instinct behind the damage-control gate you built in an earlier module - just applied per-process instead of per-rule.
-- **`--thinking off`** - this is a mechanical re-run, not a judgment call. No reasoning budget to spend.
+- **`--no-session`** - this child is ephemeral. It doesn't need to remember this one URL tomorrow; when it exits, its context goes with it. (Give it `--session <file>` instead if you *do* want it resumable - that's how a dispatcher gives each specialist persistent memory across repeated calls, and it's also what the verifier two lessons from now depends on.)
+- **`--tools read,bash`** - a narrower toolset than your own session gets. This child greps pages, runs inline Python against `stash.db` (the database of `stash`, the course's running example, a small FastAPI feed reader), and reads what came back; it has no business editing `stash`'s code, so `write` and `edit` stay out. Scoping a child's tools to exactly what its one job needs is the same instinct behind the [damage-control gate](/course/pi/rebuild-the-defaults/permissions/) (a rule file deciding which actions are off the table) - just applied per-process instead of per-rule.
+- **`--thinking off`** - this is fetch-and-match work, not a judgment call. No reasoning budget to spend.
 
-**Five flags, one deliberate choice each - nothing above is boilerplate you can skip reading.**
+Five flags, one deliberate choice each. Nothing above is boilerplate you can skip reading.
 
 ## Reading what comes back
 
-Run that from inside an extension, a script, anything with a stdout pipe, and you get a line of JSON per event. The three that matter first:
+Run that from inside an extension, a script, anything with a stdout pipe, and you get one JSON object per line, one event at a time. The three event types that matter first:
 
 ```js
 import { spawn } from "node:child_process";
-import readline from "node:readline";
 
 const child = spawn("pi", [
   "--mode", "json",
-  "-p", "Re-extract https://slow-blog.example/post-142 using stash's fixed readability pipeline via `stash reextract <url>`. Confirm the search index entry updated.",
+  "-p", "Take https://notes.example.org/ from imports/old-saves.json. Does the site publish a feed? If so, add it to stash and run the first sync. Report the rows you saved.",
   "--no-session",
   "--tools", "read,bash",
   "--thinking", "off",
 ]);
 
-const lines = readline.createInterface({ input: child.stdout });
+let buffer = "";
+child.stdout.on("data", (chunk) => {
+  buffer += chunk;
+  let newlineAt;
+  while ((newlineAt = buffer.indexOf("\n")) >= 0) {
+    const line = buffer.slice(0, newlineAt);
+    buffer = buffer.slice(newlineAt + 1);
+    if (line.trim()) handleEvent(JSON.parse(line));
+  }
+});
 
-lines.on("line", (raw) => {
-  const event = JSON.parse(raw);
-
+function handleEvent(event) {
   switch (event.type) {
     case "message_update":
       // assistant text streams in as it's generated
@@ -72,27 +81,37 @@ lines.on("line", (raw) => {
       break;
     }
   }
-});
+}
 ```
 
-That's genuinely most of it. `message_update` carries the model's own words as they stream; `tool_execution_start`/`tool_execution_end` mark every `bash` call the child makes against your one allowed command; `agent_end` fires once, when the child's turn is fully done, carrying the whole `messages[]` array for the run - you pull `stopReason` (and `usage`, if you're tracking token spend) off the *last assistant message* in that array, not off the event itself. Nothing here is Pi-specific plumbing you have to reverse-engineer - it's the same event vocabulary your own interactive session is built on, just handed to you directly on a pipe instead of rendered into a terminal UI.
+Look at how the lines get split, because the obvious way is wrong. Node's `readline` module looks purpose-built for this - a stream of lines, a line handler - and [Pi's own RPC documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md) warns against it by name. The stream is strict JSONL with LF as the only record delimiter, and `readline` is not protocol-compliant, because it also splits on U+2028 and U+2029, the Unicode line and paragraph separator characters.
 
-**Three event types are enough to read any child's mind: what it's saying, what it's doing, and how it stopped.**
+That distinction sounds exotic until you remember what's *inside* these records. U+2028 and U+2029 are legal characters in a JSON string, and JSON strings are exactly what a child streams back - model text, in `message_update` event after event. The day the model emits a line separator mid-sentence, `readline` hands your parser half a record, `JSON.parse` throws, and in an unattended run nobody sees it happen.
+
+The ten lines above are the fix the docs recommend: accumulate chunks in your own buffer, cut at each `\n` and only at `\n`, parse what you cut, keep the remainder for the next chunk. It is barely more code than `readline`, and it is correct on the input `readline` silently corrupts.
+
+Past the splitting, `message_update` carries the model's own words as they stream; `tool_execution_start`/`tool_execution_end` mark every `bash` call the child makes; `agent_end` fires once, when the child's turn is fully done, carrying the whole `messages[]` array for the run - you pull `stopReason` (and `usage`, if you're tracking token spend) off the *last assistant message* in that array, not off the event itself.
+
+Nothing here is Pi-specific plumbing you have to reverse-engineer - it's the same event vocabulary your own interactive session is built on, just handed to you directly on a pipe instead of rendered into a terminal UI.
 
 :::note[Check the payload shapes against your installed version]
 The event names above - `message_update`, `tool_execution_start`, `tool_execution_end`, `agent_end` - are stable. The finer detail of what each payload carries is the part that moves between releases, and a parser that silently reads the wrong field is exactly the failure you won't notice in an unattended run. Log one raw event before you write the code that depends on its shape.
 :::
 
 :::caution[What the naked spawn does not give you]
-The call above is a process and a pipe, nothing else. No retry if the child crashes mid-run. No timeout if it hangs on a bad `bash` command or a page that never finishes loading - you kill it yourself, or it runs until you do. No cost accounting beyond whatever you choose to read out of `usage` on the last assistant message. A dispatcher tool like Claude Code's `Task` bakes all three in for you. Raw spawn makes you decide whether you want them badly enough to build them - before you've built anything else in this module.
+The call above is a process and a pipe, nothing else. No retry if the child crashes mid-run. No timeout if it hangs on a bad `bash` command or a site that trickles bytes forever - you kill it yourself, or it runs until you do. No cost accounting beyond whatever you choose to read out of `usage` on the last assistant message.
+
+A dispatcher tool like Claude Code's `Task` gives you some of this out of the box - usage reporting is built in - and how much of the rest (run bounds, retries, hang handling, spend caps) you actually get varies by tool. Raw spawn makes you decide whether you want them badly enough to build them - before you've built anything else in this module.
 :::
 
 :::tip[Try it - predict before you run]
-Before you spawn anything, guess: how many of `stash`'s public functions do you think are missing a docstring? Write the number down - five, fifteen, whatever your gut says looking at a codebase you already half know.
+Two sentences of setup first. Run any child you spawn from a separate terminal, your own driver script, or an extension that returns only a summary - not by handing the command to your interactive session's `bash`, whose full result streams straight back into your window. Isolation is a property of where the output lands, not of the spawn itself; that is the condition under which this lesson's opening claim holds.
 
-Now spawn a child Pi with a read-only task: "list all functions in stash without docstrings," with `--tools read,bash` (no `write` - this child only looks). Watch the JSONL events stream by on stdout, then pull the count out of the `agent_end` event's final summary.
+Now, before you spawn anything, guess: of the URLs in `imports/old-saves.json`, how many look like feed URLs - a `/feed` or `/atom` path, an `.xml` or `.rss` suffix - versus saved-article URLs like `https://slow-blog.example/post-142/`? Write the split down: a hundred feeds and two hundred articles, or the other way around.
 
-Compare the two numbers. Whatever the real count turns out to be, notice what didn't happen: nothing the child read leaked back into your own context. You paid for its work entirely in its own window, and the only thing that crossed the handoff was a number.
+Now spawn a child Pi with a read-only task: "classify every URL in `imports/old-saves.json` as feed-looking or article-looking, and report the two counts," with `--tools read,bash` (no `write` or `edit` - this child only looks; note that `bash` itself can still write, so this scopes the job rather than enforcing read-only). Watch the JSONL events stream by on stdout, then pull the counts out of the final assistant message in `agent_end`'s `messages` array - the same place `stopReason` lives.
+
+Compare your split to the child's. Whatever the real numbers turn out to be, notice what didn't happen: nothing the child read leaked back into your own context. You paid for its work entirely in its own window, and the only thing that crossed the handoff was two numbers.
 :::
 
-One child, one article, one narrow toolset, output you can parse instead of a black box you have to trust. That's the naked spawn - the whole primitive, spent on the smallest possible job. The re-extraction backlog isn't one article, though - it's every saved URL from before the extractor fix, and you're not going to write this call by hand for every single one of them. [Next: chain a few of these in sequence, then fan a big batch of them out in parallel](/course/pi/subagents/chains-and-fanout/).
+One child, one URL, one narrow toolset, output you can parse instead of a black box you have to trust. That's the naked spawn - the whole primitive, spent on the smallest possible job. The import isn't one URL, though - it's every saved link in your friend's old account, and you're not going to write this call by hand for each one. [Next: chain a few of these in sequence, then fan a big batch of them out in parallel](/course/pi/subagents/chains-and-fanout/).

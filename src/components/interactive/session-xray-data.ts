@@ -7,9 +7,9 @@ import type { TrBeat, TrChoice, TrScript } from './terminal-replay';
  * tool's spelling. Encodes the reset decision from the course sessions
  * chapters (claude-code/sessions-context/compact.mdx,
  * codex/sessions-context/compact.mdx, opencode/the-tui/undo-redo-compact.mdx,
- * cursor/context/index.mdx, pi/context/sessions.mdx): every long session ends
- * in a reset - keep typing and the tool picks the moment, /compact keeps a
- * steered thread, /clear starts over with only what's on disk. Window size
+ * cursor/context/index.mdx, pi/context/sessions.mdx): this modeled long session reaches a
+ * reset - continuing triggers the simulated auto-compaction, /compact keeps a
+ * steered summary, and /clear starts a fresh conversation. Window size
  * and token counts are illustrative orders of magnitude, kept consistent with
  * context-sim-data.ts (200k window, ~17k fixed overhead).
  *
@@ -29,7 +29,7 @@ const intro: TrBeat[] = [
         { id: 'tool-defs', slot: 'a', label: 'Tool definitions', value: 12 },
         { id: 'rules', slot: 'b', label: 'Rules file (on disk)', value: 2 },
       ],
-      note: '17k spent before you type a word - system prompt, tool schemas, your rules file. The rules block is the only one you wrote.',
+      note: 'This simulation assigns 17k to system instructions, tool schemas, and project rules before the first prompt. These are assumed values.',
     },
     holdMs: 800,
   },
@@ -54,7 +54,7 @@ const intro: TrBeat[] = [
     ],
     panel: {
       add: [{ id: 'reads', slot: 'd', label: '11 file reads (full bodies)', value: 44 }],
-      note: 'Exploration lands as full file bodies, not summaries - the biggest single eater of context.',
+      note: 'These modeled reads return full file bodies. Real tools may return excerpts or truncate output; check what actually arrived.',
     },
     holdMs: 600,
   },
@@ -76,7 +76,7 @@ const intro: TrBeat[] = [
     ],
     panel: {
       add: [{ id: 'dead-end', slot: 'e', label: 'Dead-end attempt', value: 16 }],
-      note: 'The bad hypothesis is reverted in the code - but its file dumps and failed runs never leave the window.',
+      note: 'The bad hypothesis is reverted in the code - but its file dumps and failed runs remain in this modeled window until compaction.',
     },
     holdMs: 800,
   },
@@ -112,7 +112,7 @@ const intro: TrBeat[] = [
       { kind: 'agent', text: 'Re-reading src/export.ts to double-check the slice bounds…' },
     ],
     panel: {
-      note: '75% full - and it just re-read a file it has already read twice. Coherence degrades before the window is technically full.',
+      note: '75% full in this simulation, followed by a repeated read. That sequence does not prove occupancy caused the repetition.',
     },
     holdMs: 900,
   },
@@ -125,7 +125,7 @@ const choices: TrChoice[] = [
     replay: 'replay: keep going',
     verdictTone: 'bad',
     verdict:
-      'Doing nothing was also a context decision - the window just made it for you. Every long session ends in a reset; the only question is who picks the moment and what survives it. Left to the tool, the reset lands mid-task, the summary is unsteered, and the reasoning you paid 150k tokens for shrinks to a filename.',
+      'In this constructed outcome, continuing reaches automatic compaction and the summary omits useful reasoning. That can happen; it is not a guaranteed result of automatic compaction. Check what the task still needs before continuing.',
     beats: [
       {
         lines: [
@@ -151,14 +151,14 @@ const choices: TrChoice[] = [
           },
         ],
         panel: {
-          note: 'It wrote the CSV fix in that module twenty minutes ago. That is what 93% full feels like from the outside.',
+          note: 'It wrote the CSV fix in that module twenty minutes ago. Here the replay illustrates a lost decision, not a universal effect of reaching 93%.',
         },
         holdMs: 900,
       },
       {
         lines: [
           { kind: 'warn', text: 'context limit - auto-compacting mid-task…' },
-          { kind: 'sys', text: '⎿ compacted · 186k → 30k · summary written by the tool' },
+          { kind: 'sys', text: '⎿ compacted · 186k → 32k · summary written by the tool' },
         ],
         panel: {
           clearExcept: KEEP_ON_RESET,
@@ -166,7 +166,7 @@ const choices: TrChoice[] = [
             { id: 'auto-sum', slot: 'f', label: 'Auto-summary (unsteered)', value: 9 },
             { id: 'recent-a', slot: 'c', label: 'Recent turns', value: 6 },
           ],
-          note: 'The reset happened anyway - you just didn’t pick the moment, and nobody told the summariser what mattered.',
+          note: 'The modeled reset leaves 17k of standing context, a 9k summary, and 6k of recent turns: 32k total.',
         },
         holdMs: 700,
       },
@@ -178,7 +178,7 @@ const choices: TrChoice[] = [
           },
         ],
         panel: {
-          note: 'The fix you watched it reason through now survives as “edited src/export.ts”. The XLSX work restarts on a guess.',
+          note: 'The fix you watched it reason through now survives as “edited src/export.ts”. Before proceeding, the agent needs to recover the behavior from the code or a saved decision.',
         },
         holdMs: 400,
       },
@@ -190,13 +190,13 @@ const choices: TrChoice[] = [
     replay: 'replay: /compact',
     verdictTone: 'good',
     verdict:
-      'Compact is the mid-task move: same thread, out of room. You picked the moment - a clean boundary, tests green - and named what couldn’t be lost. The reflex that makes it safe: compaction is lossy, so anything that exists only in the conversation goes to disk first. The fix survived here because it was also sitting in `src/export.ts`; the version that lived purely in chat would have been flattened.',
+      'In this outcome, focused compaction keeps a useful summary. The code also preserves the fix. Save consequential decisions before compacting, then check the summary: focus instructions improve the request but do not guarantee retention.',
     beats: [
       {
         lines: [
           {
             kind: 'user',
-            text: '/compact - keep the filter-before-slice fix and which tests were failing',
+            text: '/compact keep the filter-before-slice fix and which tests were failing',
           },
           { kind: 'sys', text: '⎿ compacted · 150k → 35k' },
           { kind: 'sys', text: '  kept: goal · root cause · the fix · failing-test names · recent turns' },
@@ -208,7 +208,7 @@ const choices: TrChoice[] = [
             { id: 'steered-sum', slot: 'f', label: 'Steered summary', value: 12 },
             { id: 'recent-b', slot: 'c', label: 'Recent turns (verbatim)', value: 6 },
           ],
-          note: 'What survived is what you named. Unsteered compaction guesses at the protagonist; you told it.',
+          note: 'This illustrative summary retained the named facts. Verify that result in a real session instead of assuming the instruction guarantees it.',
         },
         holdMs: 1000,
       },
@@ -226,7 +226,7 @@ const choices: TrChoice[] = [
             { id: 're-read', slot: 'd', label: 'One re-read', value: 6 },
             { id: 'fresh-b', slot: 'c', label: 'Fresh turns', value: 4 },
           ],
-          note: 'Same thread, same understanding, a quarter of the weight. One re-read beats carrying eleven stale ones.',
+          note: 'The modeled window now holds 45k tokens. The next check is whether the summary and re-read supply the facts needed for the new test.',
         },
         holdMs: 400,
       },
@@ -238,7 +238,7 @@ const choices: TrChoice[] = [
     replay: 'replay: /clear',
     verdictTone: 'good',
     verdict:
-      'Clear is the done move: the task shipped and the next one is unrelated, so the thread is dead weight. The failure modes are directional - clear when you should have compacted and the working thread is gone; compact when you should have cleared and you’re just preserving noise more efficiently. Done → clear. Not done → compact. Either way, whatever must outlive the reset belongs on disk, not in the window.',
+      'Here the next task is unrelated, so a fresh conversation is useful. The working files remain. If work must continue after a reset, supply a checked handoff and ask the new session to read it; a fresh conversation can also be useful for an unfinished task.',
     beats: [
       {
         lines: [
@@ -247,7 +247,7 @@ const choices: TrChoice[] = [
         ],
         panel: {
           clearExcept: KEEP_ON_RESET,
-          note: 'Everything conversational is gone - and one block is still standing: the rules file, reloaded from disk every session. What’s written down is what survives a reset.',
+          note: 'The replay removes conversation blocks while keeping system instructions, tool definitions, and rules. Working files are unchanged; saved notes help only when the next session reads them.',
         },
         holdMs: 1000,
       },
@@ -265,7 +265,7 @@ const choices: TrChoice[] = [
             { id: 'brief-2', slot: 'c', label: 'New task brief', value: 1 },
             { id: 'dash-reads', slot: 'd', label: 'Fresh reads', value: 12 },
           ],
-          note: 'A clean start at 9% full - nothing from the export saga competing for the new task’s attention.',
+          note: 'The new brief and reads bring this modeled window to 30k, or 15%. The previous conversation is no longer its working context.',
         },
         holdMs: 400,
       },
@@ -274,7 +274,7 @@ const choices: TrChoice[] = [
 ];
 
 export const sessionXrayScript: TrScript = {
-  lead: 'One session, played back with its context window x-rayed. Watch what the work costs on the right; when the playback pauses, you decide what the session does next - then replay the other choices.',
+  lead: 'An illustrative session, played back with its context window x-rayed. Watch what the work costs on the right; when the playback pauses, you decide what the session does next - then replay the other choices.',
   termTitle: 'agent session - billing-app',
   panelTitle: 'the window, x-rayed',
   capacity: 200,
@@ -293,5 +293,5 @@ export const sessionXrayScript: TrScript = {
     'Tests are green, the window is three-quarters full, and more work is queued. The next thing you type decides what this session carries. Your move:',
   choices,
   footnote:
-    'Every number is an illustrative order of magnitude, and the commands answer to different names across tools - `/compact`, `/compress`, or `/summarize`; `/clear`, `/new`, or a fresh chat. The trade is the same everywhere: a reset is coming, and choosing its moment - and what survives it - is yours to keep.',
+    'Every number is an illustrative order of magnitude, and the commands answer to different names across tools - `/compact`, `/compress`, or `/summarize`; `/clear`, `/new`, or a fresh chat. The outcomes are constructed possibilities, not predictions. Choose based on the task and verify what survives.',
 };

@@ -1,44 +1,46 @@
 ---
 title: Review a plan and choose how Claude executes it
-description: "When the plan is ready, Claude asks how to proceed. Edit it yourself, send it back for changes, or approve it into the build mode that fits the work."
-sidebar:
-  label: "Approve · review, then build"
+description: "When the research is done, Claude asks how to proceed. Read the proposal like a design review, correct it while corrections are cheap, and approve it into the build mode the work deserves."
 ---
 
-The plan is on screen: require an `Idempotency-Key` header, add a table, dedupe before the gateway call, handle the in-flight case. This is the moment plan mode exists for - you're reviewing a *decision*, in plain language, before any code commits you to it. Read it like a design review, not a formality. The whole value of the mode evaporates if you rubber-stamp a plan you didn't actually check.
+Plan mode (the Claude Code setting in which the agent researches and proposes but edits nothing) ends with two things: a proposal, and a menu asking how to proceed. This page is about what to do with both. Read the proposal the way you would read a design review, because that is what it is. The whole value of plan mode lives in those two minutes of reading; rubber-stamping it turns the research pass into theater.
 
-## The approval menu
+The task is a redesign in a small TypeScript payments service: make `POST /payments` idempotent, so a client that retries a completed request is never charged twice. The defect the plan has to address is in `src/utils/idempotency.ts`: `checkIdempotency` records the client's `Idempotency-Key` as seen at first check, before the payment finishes, and `markProcessed`, the function meant to record completion, is never called. The route in `src/index.ts` does not require the header, and the six-test suite is green throughout. A research pass over that code ends with a numbered approach, illustratively: require the header, check without recording, mark after completion, add the tests the suite is missing.
 
-When the plan is ready, Claude presents it and asks how to proceed. You get a menu, and each choice does a meaningfully different thing:
+## Interrogate the proposal against the code
+
+Check the plan line by line against the source. Does it state exactly when a key is recorded, relative to the payment completing? Does it define what a request without a key deserves, a rejection or a pass-through, and argue for that choice? Does the test plan include the two questions the current suite never asks, the missing key and the failed-then-retried payment? Does any step reach outside the ticket, into rate limiting or the ledger, with a stated reason?
+
+A wrong answer here is still cheap. It is a line of text you argue with, not a diff you unpick. That asymmetry, a sentence now or a diff later, is the entire economics of planning, and it only exists if you spend the attention while the plan is still just text.
+
+## The menu at the end of planning
+
+When the plan is ready, Claude asks how to proceed. The options are documented and versioned; the current list is in the [permission-modes reference](https://code.claude.com/docs/en/permission-modes), and the block below shows their shape - illustrative, not a capture:
 
 ```text
   How would you like to proceed?
 
-  1. Approve and start in auto mode
-  2. Approve and accept edits
-  3. Approve and review each edit manually
-  4. Keep planning with feedback
-  5. No, refine with Ultraplan on Claude Code on the web
+  1. Yes, and use auto mode
+  2. Yes, manually approve edits
+  3. No, keep planning
 ```
 
-The first three are all *approve* - they differ only in **which permission mode the session drops into** once building starts, and that's a deliberate choice you should make per task:
+The first option approves the plan and drops the session into auto mode, the mode where a safety classifier reviews actions instead of you; [the autonomous lesson in Permissions & modes](/course/claude-code/permissions-modes/autonomous/) covers it. Where auto mode is unavailable, that same slot reads "Yes, auto-accept edits" and approves into accept-edits instead; with bypass enabled, it offers switching to bypass for the session. The label follows what your configuration offers, which is why the docs link sits above.
 
-- **Approve and review each edit manually** - drops you back to default, every edit prompts. The cautious choice for a change that touches money, like this one.
-- **Approve and accept edits** - edits fly, you review the diff after. Right when you trust the plan and the change is contained.
-- **Approve and start in auto mode** - hands-off with the [classifier net](/course/claude-code/permissions-modes/autonomous/) you met last chapter. For a long plan you want to walk away from.
+The second approves into manual review: the session returns to the default posture where every edit prompts. The third declines to build. The session stays in plan mode, and you say what to change. Notice what the first two have in common: a plan never just says *what* to do. Approving it also sets *how freely* it gets done, chosen at the one moment when you have the most context about the work. That is the course's **control** principle - what guides execution, enforces boundaries, or allows intervention - exercised at the moment of approval.
 
-Approving exits plan mode and switches the session to that mode, so Claude starts building immediately against the plan you just read. Notice the through-line with the last chapter: a plan doesn't just say *what* to do, it lets you set *how freely* it gets done - in one decision, at the one moment you have the most context.
+For the idempotency fix, the stakes pick the option for you. This is billing code, and billing code gets "Yes, manually approve edits": the plan is agreed, and the leash stays short while it lands. Reserve the auto-mode approval for plans you would let run unattended anyway. It is the same permission-mode choice covered in [Permissions & modes](/course/claude-code/permissions-modes/modes-ladder/), where default prompts on every edit, accept-edits lets file edits flow, and auto or bypass loosen the leash further; here that choice is made at the moment of approval.
 
-For our double-charge fix, the stakes pick themselves: this is billing code, so you choose **review each edit manually**. The plan is agreed; the leash stays short while it lands.
+Approving exits plan mode and switches the session to the mode the option describes, so building starts immediately against the plan you just read. Accepting also generates a session title from the plan's content, unless the session already has a name, a behavior the [permission-modes reference](https://code.claude.com/docs/en/permission-modes) documents. That small detail matters in [the next lesson](/course/claude-code/planning/persist/), when you go looking for this session again.
 
-## Fix the plan before you run it
+## Correct it before it runs
 
-Two options exist precisely because a plan is rarely perfect on the first pass.
+"No, keep planning" sends the research back around under the same read-only posture. You tell it what is wrong ("a missing key gets rejected, but with which status code, and does the response tell the client why?") and it revises. Rounds of revision are still free here; the code has not moved. Take as many as the change deserves.
 
-**Keep planning with feedback** sends Claude back to revise - you tell it what's wrong ("the in-flight case needs a row lock, not just a status check") and it researches and re-proposes. Iterate as many rounds as the change deserves; it's still free, still zero code.
+When the fix is small enough that describing it would take longer than typing it, press `Ctrl+G`: the proposed plan opens in your text editor, the shortcut the [permission-modes reference](https://code.claude.com/docs/en/permission-modes) documents. Change a wording, delete a step, add the missing constraint, save, and Claude proceeds against your edited version instead of its own. For a plan that is ninety percent right, this is the fastest correction there is. Do not describe the change; make it.
 
-And when the fix is small enough that you'd rather just *edit the plan yourself* than explain it, press **`Ctrl+G`** to open the proposed plan in your text editor. Change the wording, delete a step, add a constraint, save - and Claude proceeds against your edited version. It's the fastest way to correct a plan that's 90% right: don't describe the change, make it.
+One setting earns a mention if you plan often. With `showClearContextOnPlanAccept` enabled, the approval list gains one extra choice, typically first in the menu: approve the plan and clear the planning context in the same action. It is a single dedicated option, not a clear-context variant of every approve path - the setting's own description is "Show a 'clear context' option on the plan accept screen". The current behavior is in the [settings reference](https://code.claude.com/docs/en/settings-reference).
 
-One setting worth knowing if you plan often: with [`showClearContextOnPlanAccept`](https://code.claude.com/docs/en/settings) enabled, each approve option also offers to **clear the planning context first** - so the build starts on a clean window instead of carrying all the research chatter that planning generated. That ties directly into the context discipline from the [Sessions chapter](/course/claude-code/sessions-context/): the exploration was useful for *making* the plan, but it's noise once the plan exists. A small detail, but the kind that keeps long sessions sharp. *(One nicety you'll notice for free: approving a plan auto-names the session from the plan's content, unless you already named it - which matters in the next lesson, when you go to find it again.)*
+Why clear at that moment? The research chatter earned the plan, but once the plan exists it is noise that spends context window (the finite space holding the conversation and everything the agent can currently draw on) that the build will want. It is the same instinct as a deliberate `/clear`, which [Sessions & context](/course/claude-code/sessions-context/) teaches: the documented option approves the plan and clears the planning context in the same action, the research chatter around the plan rather than the plan itself.
 
-You've now got the core loop: research in plan mode, review the proposal, correct it, approve it into the right build mode. But that approved plan currently lives in *one conversation* - close the laptop or clear the context and the agreed approach is gone. For a change you might not finish today, that's a problem. [Let's put the plan somewhere it survives](/course/claude-code/planning/persist/).
+The core loop is complete: research in plan mode, review the proposal, correct it, approve it into the right build mode. But the approved plan has no documented home beyond the conversation that produced it - the docs describe no place it is stored on acceptance - and conversations get cleared, compacted, and closed. [Put the plan somewhere that survives](/course/claude-code/planning/persist/).

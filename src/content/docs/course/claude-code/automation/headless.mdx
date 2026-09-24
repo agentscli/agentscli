@@ -1,68 +1,72 @@
 ---
 title: Run Claude Code headless with the -p flag
 description: "One flag turns the interactive agent into a command-line tool you can pipe into, script around, and read the result back from."
-sidebar:
-  label: "Headless · -p, output formats"
 ---
 
 import HeadlessBuilder from '../../../../../components/interactive/HeadlessBuilder.tsx';
 
-Before any of the CI plumbing, you need the one move everything else is built on: running the agent without the chat. The first time you reach for it on the payments service, the goal is small - get the review pass to run from a script instead of from your keyboard. That single capability is what makes a nightly job or a CI check even possible, because both are just this command, fired by something other than you.
+Everything that runs unattended stands on one move: running the agent without the chat - headless, in the docs' own name for it. The goal on the payments service (the small TypeScript service this course uses as its running example) is small and concrete: get the review pass - run the tests, read the diff, judge whether anything regressed - to run from a script instead of your keyboard. A CI check and a nightly job are both just this one command, fired by something that is not you.
 
-## Print mode: the `-p` flag
+## Print mode runs the agent like a command
 
-Pass `-p` (or its long form `--print`) with a prompt and Claude Code runs **non-interactively**: it does the work, prints the result, and exits. No TUI, no back-and-forth, just a command that returns. This is documented as [headless mode](https://code.claude.com/docs/en/headless), and it's the foundation of everything in this chapter.
+Pass `-p` (long form `--print`) with a prompt and Claude Code runs non-interactively: it does the work, prints the result to stdout, and exits. No interface, no turns you take part in (a turn is one round of agent work between stops). The exit status is a real interface too - code 0 on success, non-zero when the run fails - so a calling script can branch on the outcome. The [headless docs](https://code.claude.com/docs/en/headless) call this print mode.
 
 ```bash
 claude -p "Run the payments test suite and summarize any failures" \
-  --allowedTools "Bash,Read"
+  --allowedTools "Read,Bash(npm test)"
 ```
 
-That runs to completion and writes its answer to stdout. Because it's an ordinary command-line program, it composes with everything else a shell can do - which is the point.
+That command runs to completion and writes its answer to stdout. Because it is an ordinary command-line program, it composes with everything a shell can do - pipes, cron lines, CI steps. The composability is the point.
 
-## Piping a prompt in
+## Pipe the input, shrink the blast radius
 
-Print mode reads **stdin**, so you can feed it data the way you'd feed any Unix tool. This is the cleanest way to hand the agent exactly the input you want it to look at and nothing else:
+Print mode reads stdin, so you can hand the agent data the way you would feed any Unix tool. This is the cleanest way to give it exactly the input you want reviewed:
 
 ```bash
-git diff main | claude -p "You are a reviewer. Flag any change that looks like a regression in the payments flow. Be terse."
+git diff main | claude -p "You are reviewing a payments service. Flag any change that looks like a regression in the payments flow. Be terse."
 ```
 
-Piping the diff in has a quiet benefit that matters more once permissions get strict: the agent doesn't need permission to *run* `git diff` itself, because you already ran it and handed over the output. The less the unattended agent has to reach for, the smaller its blast radius - a theme that runs straight into the [next lesson](/course/claude-code/automation/permissions/).
+Piping the diff has a quiet benefit that matters more once permissions get strict: you already ran `git diff`, so the agent needs no permission to run anything to see the changes. The less an unattended run has to reach for, the smaller its blast radius - an idea the [next lesson](/course/claude-code/automation/permissions/) builds into a posture.
 
-One limit to know: piped stdin is capped (10MB at the time of writing). For anything larger, write it to a file and point the prompt at the path instead of piping it. The cap and current behavior live in the [headless docs](https://code.claude.com/docs/en/headless).
+One limit to know before a large diff bites you: piped stdin is capped at 10MB, and crossing the cap fails the run with a clear error and a non-zero exit. For larger input, write it to a file and point the prompt at the path instead of piping it. Both behaviors are documented in the [headless docs](https://code.claude.com/docs/en/headless).
 
-## Reading the result back: `--output-format`
+## Read the verdict back with --output-format
 
-A script that can't read the answer is useless. The `--output-format` flag controls how the result comes back, and it takes three values ([headless docs](https://code.claude.com/docs/en/headless)):
+A script that cannot read the answer is decoration. The `--output-format` flag controls the shape of what comes back, with three values ([headless docs](https://code.claude.com/docs/en/headless)):
 
-- `text` - the default; plain prose, fine for a human reading a log.
-- `json` - a structured object with the answer in a `result` field plus metadata: `session_id`, cost, usage. This is what you parse in a script.
-- `stream-json` - newline-delimited JSON events as they happen, for when you want to stream tokens or watch a long run live.
+- `text` - the default. Plain prose, fine for a human reading a log.
+- `json` - one structured object with the answer in a `result` field plus metadata: `session_id` and cost details. This is what a script parses.
+- `stream-json` - newline-delimited JSON events as the run happens, for dashboards and long jobs. The docs pair it with `--verbose`, and the final line is a `result` message.
 
 For automation you almost always want `json`, because it lets the calling script pull out exactly the piece it needs:
 
 ```bash
-git diff main | claude -p "Review this diff for payments regressions. Reply with FOUND or CLEAN and one line of reasoning." \
+git diff main | claude -p "Review this diff for payments regressions. Reply FOUND or CLEAN and one line of reasoning." \
   --output-format json | jq -r '.result'
 ```
 
-That `jq -r '.result'` is the whole trick to making the agent a *step in a pipeline* rather than a thing you read. The JSON also carries the `session_id`, which you can capture and pass to `--resume` to continue the same conversation in a later call - useful when a loop needs the agent to build on its own earlier output.
+That `jq -r '.result'` is the whole trick for making the agent a step in a pipeline rather than a thing you read. The JSON also carries the `session_id`: capture it and pass it to `--resume` to continue that same conversation in a later call, which is how a loop builds on its own earlier output instead of starting cold each night.
+
+One discipline before you script that line: a pipeline's exit status is the last command's, so a failing `claude` hides behind a successful `jq`. Feed the line a stub CLI that exits 7 and the pipeline still reports 0 - an empty answer where the verdict should be. And a clean exit 0 is not a clean verdict: a run that completes and answers FOUND still exits 0, because the status reports the run, not the answer - the verdict rides in `.result`, so branch on the text, not the status. Scripts that branch on this line need `set -o pipefail`, or a check that `.result` came back non-empty, before treating silence as success.
+
+The widget below assembles those same choices - task, output format, permission posture (the standing decisions about what a run may do without asking) - into a command. Try the read-only posture and read the flags it adds: the allowlist and the mode are doing more work than the prompt is.
 
 <HeadlessBuilder client:visible />
 
-## When the CLI is not enough: the Agent SDK
+## When one call is not enough: the Agent SDK
 
-For a one-off script or CI command, `claude -p` is the simplest surface. For a longer-lived application, use the official **Claude Agent SDK** rather than repeatedly shelling out. Its TypeScript and Python APIs expose a programmatic `query()` loop with options for allowed tools, permission mode, maximum turns, and streamed messages. The SDK is an embeddable package, not a hosted remote executor: your application or CI job still supplies the runtime, credentials, filesystem, and network isolation.
+For a script or a CI step, `claude -p` is the simplest surface. For a longer-lived application, the official path is the **Claude Agent SDK**: TypeScript and Python packages wrapping the same agent loop, driven by a `query()` call that returns a stream of messages, with options such as `allowedTools` and permission mode. The SDK bundles the Claude Code binary and runs it in your process - your application still supplies the machine, the credentials, and the filesystem, exactly as the CLI does.
 
-Use the [SDK quickstart](https://code.claude.com/docs/en/agent-sdk/quickstart) for the current TypeScript/Python option names, and the [GitHub Actions guide](https://code.claude.com/docs/en/github-actions) for the first-party GitHub integration.
+Use the [SDK quickstart](https://code.claude.com/docs/en/agent-sdk/quickstart) for the current option names, and the [GitHub Actions guide](https://code.claude.com/docs/en/github-actions) for the first-party GitHub integration used later in this chapter.
 
-## A note on what loads
+## What a -p run loads by default
 
-By default `claude -p` loads the same context an interactive session would - your `CLAUDE.md`, project hooks, MCP servers, skills, everything in the working directory and `~/.claude`. That's convenient locally and a liability in automation: a teammate's hook or a stray MCP server can change the result, so the same command gives different answers on different machines. The [headless docs](https://code.claude.com/docs/en/headless) describe a `--bare` mode that skips hooks, skills, plugins, MCP servers, auto memory, and `CLAUDE.md`; built-in tools and default behavior still remain. Use it when a run must be reproducible, then pass the settings and tools it actually needs explicitly.
+By default, `claude -p` loads the same context an interactive session would: `CLAUDE.md`, hooks and skills (project-supplied automation and instructions), MCP servers (external tool connections), everything in the working directory and `~/.claude`. Locally that is convenient. In automation it is a liability - a teammate's hook or a stray MCP server changes the result, so the same command answers differently on different machines.
+
+The [headless docs](https://code.claude.com/docs/en/headless) describe `--bare`, which skips auto-discovery of hooks, skills, custom commands, subagents, plugins, MCP servers, auto memory, and `CLAUDE.md`; the built-in file and Bash tools remain, and you pass any needed settings explicitly. Two details matter for CI. Bare mode never reads OAuth credentials from the system keychain, so supply an API key. And the docs recommend `--bare` for scripted calls, with plans to make it the `-p` default - use it when a run must mean the same thing everywhere.
 
 :::tip[Try it]
-Run a headless prompt on your repo: `claude -p "list all TODO comments" --output-format json`. Pipe the output through `jq -r '.result'` and extract just the text. Then set `--max-turns 3` and run it again.
+Run a headless prompt on your repo - if the `claude` CLI is not installed and authenticated yet, [the getting-started chapter](/course/claude-code/getting-started/) covers that: `claude -p "list all TODO comments" --output-format json`, then pipe it through `jq -r '.result'` to extract just the text. Set `--max-turns 3` and run it again to feel the ceiling.
 :::
 
-You can now run the review from a script and read its verdict programmatically. But notice what we quietly did in every example: we handed the agent `--allowedTools` up front, or piped data so it wouldn't need a tool at all. That pre-grant is only one layer: permission mode, settings, deny rules, hooks, MCP, and automatic discovery also affect what a headless run can do. The next lesson combines those layers into a fail-closed posture.
+You can now run the review from a script and read its verdict programmatically. But every example above quietly pre-solved a problem: we allowed `Bash(npm test)` up front, or piped data in so no tool was needed at all. What happens when a headless run reaches for something it was not granted is the [next lesson's](/course/claude-code/automation/permissions/) subject, and the answer is stranger than "it fails."

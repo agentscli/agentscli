@@ -1,46 +1,45 @@
 ---
-title: Sign in and run your first prompt
-description: "Authenticate once, then resist the urge to make it build something. Your first prompt should be a question - the cheapest way to see how it reads your code."
-sidebar:
-  label: "Sign in · first prompt"
+title: Sign in and check the agent's first answer
+description: "Authenticate, ask Claude Code to locate the health route, and compare its answer with the source before asking it to edit."
 ---
 
-The REPL is waiting and your instinct is to throw the ticket at it immediately. Hold that thought for ninety seconds. There are two small steps between you and useful work, and the second one - what you choose to say first - sets the tone for how much you'll trust the tool by lunchtime.
+Before the agent can work on the health check, it needs access to a model. Before you let it change the health check, you need a reason to believe its account of the code. Those are two different checks. Signing in handles the first.
 
-## Authenticating
+On first launch, follow the browser login flow. Use the account your organization has provisioned, a supported Claude subscription, or a Console account. The free Claude plan does not include Claude Code access. Organizations using a cloud provider may supply a different setup; the [authentication guide](https://code.claude.com/docs/en/authentication) lists those paths.
 
-On a fresh install the first thing Claude Code does is get you signed in. It opens a browser, you authorize the session, and you land back in the terminal already logged in - there's nothing to copy-paste if the browser flow completes. If you're ever on a headless box where no browser can open, or you want to switch accounts later, the in-session commands handle it:
+If the browser does not open, copy the login URL offered by the terminal and open it yourself. If the browser returns a code instead of completing the callback, paste it at the terminal's login-code prompt. That can happen over SSH or in a container. Slash commands are typed at the prompt of a running Claude Code session (the [install lesson](/course/claude-code/getting-started/install/) covers launching one in your project): use `/login` to start sign-in again when needed, and `/logout` to leave the current account.
 
-```text
-/login     # start the sign-in flow (or switch accounts)
-/logout    # drop the current credentials
-```
+## Ask a question you can check
 
-That's the entire ceremony - with one prerequisite worth knowing before you hit it: Claude Code needs a paid plan (Pro, Max, Team, Enterprise, or a Console/API account). The free Claude.ai tier doesn't include it, which is the one way this step quietly stalls for a brand-new user. The current list of supported account types and provider setups lives in the [authentication docs](https://code.claude.com/docs/en/authentication) - that's the page to check if your sign-in doesn't behave. What matters for the chapter is that, once you're through it, you're at a live prompt with the agent able to act.
-
-:::caution[Troubleshooting]
-**Browser didn't open (remote/SSH sessions).** On a headless box or over SSH there's no browser to open, so the OAuth flow stalls. Use the documented `claude setup-token` flow, then set the resulting token in `CLAUDE_CODE_OAUTH_TOKEN` for that environment. Treat it like a password: do not put it in shell history, source control, logs, or an untrusted CI job.
-
-**Rate limits.** If you hit a rate-limit message mid-session, Claude Code shows the applicable reset information. Follow that time, check `/usage`, and review the current [authentication and usage docs](https://code.claude.com/docs/en/authentication) instead of assuming a fixed reset interval.
-:::
-
-## Make your first prompt a question, not a command
-
-Here's the move that separates people who trust the tool from people who get burned in the first ten minutes: **don't open by asking it to change anything.** Open by asking it to *explain*. You've just landed in an unfamiliar repo; so has the agent. A read-only question costs you almost nothing and shows you exactly how it gathers context before you ever let it write:
+With the CLI signed in and open in the project (the [install lesson](/course/claude-code/getting-started/install/) covers that setup), send this prompt before asking for any edits. The prompt and the reasoning that follows use the chapter's payments service as the worked example: an Express and TypeScript service whose routes begin in `src/index.ts`, with Vitest tests in `tests/`. If you are working in your own repository, use its paths and test command. If it has no health route, ask about another small existing handler or function and check the answer against that source in the same way; you do not need to create a health route to complete this lesson.
 
 ```text
-> what does this service do, and where are the HTTP routes defined?
-
-  ⎿ Read package.json, src/server.js, src/routes/                    (3 files)
-
-  It's a small Express API for processing payments. The entry point is
-  src/server.js, which mounts route modules from src/routes/ - there's
-  payments.js, refunds.js, and a health stub in index.js. Tests live in
-  test/ and run with `npm test` (node:test). No database; state is in-memory.
+Find the existing health-check route and the test command in this project.
+Show the relevant file paths and the route's current response.
+Explain what the health check establishes about the service.
+Do not edit files or install anything.
 ```
 
-Watch what that single turn bought you. The agent went and *read* files - you can see which ones - and came back with a map of the project: the entry point, where routes live, how tests run. You've learned the lay of the land for your ticket, and you've learned something more useful: how this agent behaves when it needs context. It reads first, then answers. That read-then-act rhythm is the thing you're really evaluating, and you got to evaluate it on a question where a wrong answer couldn't hurt you.
+This is an instruction to inspect, not a security control. The control is the permission mode: launched with `--permission-mode default` as the install lesson recommends, Claude asks before file edits and shell commands that no saved permission rule already allows, and it can still read files without asking. Read each request; this task needs only reads, so decline an edit or command request that goes beyond inspection. What you are testing here is more specific than whether the answer sounds knowledgeable: can the agent connect a claim to the file that supports it?
 
-Lead with a *write* instead - "add a health endpoint" as your very first words - and you'd be trusting a tool you've watched do nothing yet, on a codebase it hasn't shown you it understands. Cost yourself one read-only question first and that trust is earned instead of assumed.
+In the payments project, the relevant code is in `src/index.ts`; the excerpt and the reasoning below can be followed without a checkout:
 
-You now know where the routes live and how the tests run - which is exactly what you need to hand it the actual ticket. [Time to make the first real change](/course/claude-code/getting-started/first-change/).
+```typescript
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+```
+
+That excerpt is source code, not a captured Claude response. The test command comes from `package.json`, where `npm test` runs `vitest run`. Open those files yourself, or the files your own repository's answer names, and compare them with the answer. If the agent describes a `src/routes/health.ts` file that does not exist, ask it to locate the handler again. A familiar-looking project layout is not evidence of this project's layout.
+
+## What does "ok" tell you?
+
+Look at the handler once more. It returns a literal object. It does not call the payment processor, inspect the ledger, or contact an external system.
+
+Suppose payment processing were broken while this handler still answered requests. Would its response change? Nothing in these lines would make it change. A successful request establishes that this route can answer; it does not establish that a customer can complete a payment. That limit belongs beside the result, even though the endpoint is called "health."
+
+You now have enough information to sharpen the ticket - the change you are preparing to hand the agent. The monitor expects `/healthz`, but `/health` already exists. Replacing the old address could break a caller you have not investigated. Adding the new address while keeping the old one gives you a smaller, clearer change to review.
+
+The first answer has earned its value if it helped you make that decision and showed you where to verify it. You do not need a tour of every file. You need the few facts that constrain this change.
+
+[Give Claude the ticket, including the behavior that must survive](/course/claude-code/getting-started/first-change/).

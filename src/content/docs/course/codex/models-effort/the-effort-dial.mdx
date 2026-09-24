@@ -1,21 +1,19 @@
 ---
 title: Set model_reasoning_effort to match how hard the task really is
-description: "A CRUD endpoint needs none of the agent's reasoning; a rules-engine design needs all of it. Move model_reasoning_effort per task, from minimal up to xhigh."
-sidebar:
-  label: "the effort dial · think as hard as the task earns"
+description: "A category filter needs none of the agent's reasoning; the categorizer wiring needs all of it. Move model_reasoning_effort per task, from minimal upward."
 ---
 
-The first task of the day is `src/budgetcli/routes/accounts.py` - list, create, read, delete - and the codebase already has this shape twice, in `src/budgetcli/routes/transactions.py` and the resource next to it. There's no architecture to invent here, no fork to weigh: read the existing pattern, mirror it. That's exactly why it's the right task to run through every effort level Codex has - if the code ever changes shape as you turn the dial, the dial bought you nothing the pattern hadn't already answered.
+First job of the afternoon: the category filter. Open `app/main.py` and the pattern is already there - `GET /transactions` is a decorator, a two-line handler, and a call to `ledger.all()`. The ticket asks for its sibling: an optional `category` parameter that delegates to `ledger.by_category()` when set. Nothing to invent, nothing to weigh. That is exactly why it goes through the dial first - if the code ever changes shape as the effort moves, the dial bought something the pattern hadn't already answered.
 
 ## What the effort dial controls
 
-Reasoning effort is how hard the agent works a problem out *before* it answers - weighing approaches, ruling things out, planning the change - instead of answering straight off the prompt. Codex exposes it as one setting, `model_reasoning_effort`, with five levels:
+Reasoning effort is how hard the agent works a problem out *before* it answers - weighing approaches, ruling options out, planning the change - instead of replying straight off the prompt. Codex exposes it as one setting, `model_reasoning_effort`, with `medium` as its default:
 
 ```text
 minimal → low → medium → high → xhigh        # default: medium
 ```
 
-Lower means it answers faster and deliberates less; higher means it spends more of the turn thinking before it writes anything. The default sits at `medium`. (`xhigh` is the deepest level and is model-dependent - not every model exposes it. The full list of values and that caveat live in the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference); read it rather than trusting a remembered one.)
+Which levels your model actually offers is model-dependent - `xhigh` in particular is not available everywhere - so check [the config reference](https://learn.chatgpt.com/docs/config-file/config-reference) for the list your model accepts rather than trusting a remembered one.
 
 Set it for a stretch of work in `config.toml`:
 
@@ -26,124 +24,137 @@ model_reasoning_effort = "low"
 or override a single launch without touching your standing default, using `-c`:
 
 ```bash
-codex -c 'model_reasoning_effort="low"' "add a CRUD accounts endpoint \
-  following the pattern in transactions.py - list, create, read, delete"
+codex -c 'model_reasoning_effort="low"' "add an optional category query parameter \
+  to GET /transactions in app/main.py, filtering with ledger.by_category"
 ```
 
-`-c key=value` overrides any config value for that run only. Its values use Codex's TOML-style configuration syntax, so quote string values explicitly when needed.
+`-c key=value` overrides any config value for that run only. Its values parse as TOML where possible, so quote string values explicitly when needed.
 
 ## The obvious answer, planted first
 
-Before you run a single level, fix what the right answer looks like - the way you'd want a teammate to check their own work against it. Four routes: list, create, read, delete. Same shape as `src/budgetcli/routes/transactions.py`. Every amount field stays an integer number of cents, never a float. **Hold onto that.** Every level below should land there exactly, and the moment one doesn't, that's the level failing, not the endpoint being hard.
+Fix the answer before running anything, the way you'd want a teammate to check their own work against it. Three or four added lines in `app/main.py`: the `category` parameter, and a branch - `ledger.by_category(category)` when it is set, `ledger.all()` when it isn't. Same response shape as the unfiltered listing; an unknown category returns an empty list, exactly as a filtered-empty ledger should. Every level below should land there. The moment one doesn't, that is the level failing, not the endpoint being hard.
+
+Constructed comparison, labeled once for the chapter: the prompts in this chapter's blocks are yours to send; the replies are reconstructions built to show what changes between levels, never captured runs.
 
 ```text
-> add a CRUD accounts endpoint following the pattern in transactions.py
+> add an optional category query parameter to GET /transactions in
+  app/main.py, filtering with ledger.by_category
   (model_reasoning_effort = minimal)
 
-  ✎ accounts.py   - list / create / read / delete, same shape
+  • Read app/main.py
+  • Edited app/main.py (+3) - category param; by_category when set
   Done.
 ```
 
-**Matched.** No deliberation shown, because none was needed - the pattern did the reasoning before the prompt did.
+Matched, straight away. No deliberation shown because none was needed - the pattern did the reasoning before the prompt did, and `by_category` was sitting there waiting to be called.
 
 ```text
-> add a CRUD accounts endpoint following the pattern in transactions.py
+> (same prompt)
   (model_reasoning_effort = low)
 
-  read transactions.py - router, Pydantic models, the cents-as-int convention
-  ✎ accounts.py        - list / create / read / delete, same shape
-  Done. Four routes, mirrors the transactions router. Money stays integer cents.
-```
-
-**Matched.** One extra line - it read the pattern instead of guessing it - and the same four routes come back.
-
-```text
-> add a CRUD accounts endpoint following the pattern in transactions.py
-  (model_reasoning_effort = medium, the default)
-
-  read transactions.py, models.py - confirming the resource shape and the
-  cents convention
-  considering: soft-delete or hard-delete? transactions.py hard-deletes,
-  so accounts should match it
-  ✎ accounts.py - list / create / read / delete, same shape
+  • Read app/main.py
+  • Read app/services/ledger.py
+  • Edited app/main.py (+3) - same three lines
   Done.
 ```
 
-**Still matched, barely.** That "considering" line answers a question the pattern had already answered. Harmless on a file this small - but it's the first sign of the dial spending on a decision that didn't need making.
+Also matched. It read the ledger as well as the route before writing - one extra read, same answer. The cheap stops aren't sloppier here; the task simply has nothing for extra depth to find.
 
 ```text
-> add a CRUD accounts endpoint following the pattern in transactions.py
+> (same prompt)
+  (model_reasoning_effort = medium, the default)
+
+  • Read app/main.py, app/services/ledger.py
+    considering: return 404 when the category matches nothing?
+    the ledger methods return [], so [] it is
+  • Edited app/main.py (+3) - same three lines
+  Done.
+```
+
+Matched, barely. That considering line answers a question the code two lines in had already answered - handlers return whatever the ledger gives them. Harmless at this size, but it is the dial starting to spend on a decision that didn't need making.
+
+```text
+> (same prompt)
   (model_reasoning_effort = high)
 
   Thinking…
-    Should accounts support soft-delete for audit purposes? transactions.py
-    doesn't, but financial resources sometimes want the trail. Weighing
-    consistency-with-the-codebase against audit-safety before committing…
-  read transactions.py, models.py
-  ✎ accounts.py - list / create / read / delete, same shape
-  Done. (Kept hard-delete for consistency with transactions.py.)
+    Should the parameter be validated against the taxonomy in
+    categorise.py before querying? Should unknown categories 404?
+    Should this be a separate /transactions/by-category endpoint
+    instead of a query parameter? Weighing REST-purity against
+    consistency-with-the-existing-routes…
+  • Read app/main.py, app/services/ledger.py, app/models.py
+  • Edited app/main.py (+3) - same three lines
+  Done. (Kept the query parameter; matches the existing route shapes.)
 ```
 
-**Overkill.** Same four routes, now with a paragraph of deliberation over a question the task never actually raised - the codebase had already closed it.
+Overkill. Same three lines, now with a paragraph of deliberation over questions the file had already closed - every route in `app/main.py` is a decorator, a handler, and a ledger call, and none of them validates anything. The codebase answered before the model asked.
 
 ```text
-> add a CRUD accounts endpoint following the pattern in transactions.py
+> (same prompt)
   (model_reasoning_effort = xhigh)
 
   Thinking…
-    [revisits soft-delete; revisits whether the route path should be
-    "accounts" or "account"; revisits whether the response model needs a
-    computed balance field transactions.py doesn't expose]
-  read transactions.py, models.py
-  ✎ accounts.py - list / create / read / delete, same shape
+    [revisits validate-against-taxonomy; revisits the separate
+    endpoint; revisits whether by_category should take a default
+    argument; revisits pagination, which nothing in the repo does]
+  • Read app/main.py, app/services/ledger.py, app/models.py
+  • Edited app/main.py (+3) - same three lines
   Done.
 ```
 
-**Overkill, worse.** Every question it raised, the codebase had already closed. `xhigh` exists for a turn that's genuinely gnarly; this isn't one, and the four routes prove it - identical to `minimal`'s, five levels and one long "Thinking…" block later.
+Overkill, and slower. Every question it raised, the codebase had already closed. `xhigh` - where a model offers it - is for a turn that is genuinely gnarly. This isn't one, and the three lines say so, identical to `minimal`'s five stops later.
 
-**Five levels, one answer: on a task with no fork, effort past `low` buys deliberation over questions the codebase already closed - not a better answer, just a slower and pricier route to the same one.**
+**Five stops, one answer: on a task with no fork, effort past `low` buys deliberation over questions the repo already closed - a slower, pricier route to the same code.**
 
 ## The fork task asks the opposite question
 
-`src/budgetcli/categorise/rules.py` is the other kind of Monday. Years of imported transactions need tagging - groceries, rent, subscriptions - and *how* a rule matches a transaction, and what happens when two rules both claim it, has no existing pattern to copy. Substring match or merchant code? First-match-wins or most-specific-wins? Several answers are defensible, and the wrong one costs you a rewrite once other rules get built on top of it. Ground truth here isn't "does it match the file next door" - there is no file next door. It's simpler, and just as checkable: **does the level surface the conflict question at all, unprompted, before it writes any code?**
+The wiring job is the other shape. `app/services/categorise.py` holds the keyword table - `spotify` and `netflix` to entertainment, `uber` and `lyft` to transport, `whole foods` and `trader joe` to groceries, `starbucks` to dining, `amazon` to shopping, else `uncategorised`. The function's semantics are fixed: lowercase, substring, first match wins. What nothing has decided is where the hook lives - `parse_csv`, or the import route's append loop in `app/main.py` - or what a description that matches two keywords should get.
+
+There is no file next door to copy, so ground truth changes shape. It is simpler and just as checkable: **does the level surface the fork questions at all, unprompted, before it writes any code?**
 
 ```text
-> design the categorisation rules engine for budgetcli - how rules match
-  transactions, how conflicts resolve, how a user orders them
+> wire categorise() into the CSV import path so imported transactions
+  get their keyword-table category
   (model_reasoning_effort = low)
 
-  ✎ rules.py - substring match against merchant description, first rule
-    in the list wins
+  • Read app/main.py, app/services/categorise.py
+  • Edited app/main.py (+2) - in import_csv's loop, set
+    txn.category = categorise(txn.description) before append
   Done.
 ```
 
-**Underpowered.** It shipped the first workable-looking design - substring match tags "AMAZON PRIME" as groceries the moment a grocer's name happens to contain "ama" - and never surfaced that a decision was being made at all. You'd catch this in review, but only if you're reading a file you have no ground truth to check it against.
+Underpowered - and notice it isn't wrong the way a bug is wrong. The route hook works; tests would pass. What shipped is a decision that was never surfaced as one: the hook went where the prompt's phrasing leaned, and nothing in the turn asks whether `parse_csv` is the better seam, or what two matching keywords should do. You would catch it in review only if you already knew the questions.
 
 ```text
-> design the categorisation rules engine for budgetcli - how rules match
-  transactions, how conflicts resolve, how a user orders them
+> wire categorise() into the CSV import path so imported transactions
+  get their keyword-table category
   (model_reasoning_effort = high)
 
   Thinking…
-    Matching: substring is too blunt - merchant-code first, regex fallback.
-    Conflicts: two rules can match one transaction. Need a deterministic
-    tiebreak: explicit priority, first-match-wins, or most-specific-wins.
-    First-match-wins is simplest and lets the user control order directly…
+    Hook: parse_csv or the route? parse_csv is where a description
+    first becomes data; its only caller is the import route; the
+    ledger stores whatever it's handed. Hooking the route leaves
+    parse_csv returning half-labeled transactions.
+    Conflicts: "Amazon Whole Foods Market" contains two keywords.
+    The table's order is the priority - first match wins, the same
+    semantics categorise() already has.
+    Boundary: POST /transactions never passes the parse path, so
+    manual entries keep their sender's category. Deliberate.
 
-  Here's the design I propose, before I write any of it:
-  ## Matching   merchant code first, then a user-ordered list of regex rules
-  ## Conflicts  first match wins; the user's ordering *is* the priority
-  ## Why        deterministic, debuggable, no hidden ranking the user can't see
+  Before I write it - one import line and one category= argument
+  in parse_csv's Transaction call, plus tests for the table hits
+  and the uncategorised fallback. Proceed?
 ```
 
-**Matched.** The deliberation this lesson called overkill on the accounts endpoint is the entire value here - it found the conflict question on its own and proposed an answer instead of guessing one. One honest caveat before you relax: matched means it bothered to weigh alternatives, not that the design is correct. A proposed design is still a proposal - you review it the same way you'd review the code, not less.
+Matched. The deliberation that was overkill on the filter is the entire value here - it found both fork questions on its own, answered them from the code's own shape, and named the boundary the wiring leaves alone. One honest caveat: matched means it weighed the alternatives, not that the design is correct. A proposal is still a proposal. You review it the same way you'd review code, not less.
 
-Call this **earned depth**: the amount of reasoning you pay for should equal the ambiguity the task actually contains, and nothing past that. `low` on the accounts endpoint wasn't lucky - the task had no ambiguity to find, so there was nothing extra depth could earn. `low` on the rules engine wasn't unlucky either - the ambiguity was there whether or not the level went looking for it, and `low` didn't look. Same dial, same direction of travel, opposite verdict, because the two tasks aren't the same shape.
+Call this earned depth: the reasoning you pay for should equal the ambiguity the task contains, and nothing past it. `low` on the filter wasn't luck - the task had no ambiguity to find. `low` on the wiring wasn't bad luck either - the fork was there whether or not the level went looking, and it didn't look. Same dial, same direction of travel, opposite verdict, because the two tasks aren't the same shape.
 
-For a single unusually hard turn inside an otherwise normal session, you don't have to commit to a setting - `xhigh` on one `-c` override gives that one prompt the deepest gear and leaves your default alone. Reach for it on the turn that's genuinely gnarlier than the rules engine above; `high` already found this one.
+For one unusually hard turn inside an otherwise normal session, a `-c` override reaches the deepest gear without touching your default - `xhigh` where your model offers it (the same model-dependent list from the top of the page). Reach for it on a turn gnarlier than the wiring above; `high` already found this one.
 
 ## Effort is not the same dial as the model
 
-One thing to keep straight: **reasoning effort and model choice are independent.** Effort is *how hard* a given model thinks; the model is *which brain* is doing the thinking. Every trace above held the model fixed and only moved effort. The next lesson holds effort fixed at the level each task just earned - `low` for the endpoint, `high` for the rules engine - and moves only the model, on the same two tasks, to prove the two knobs really don't move together.
+Keep the two knobs straight: effort is *how hard* a given model thinks; the model is *which brain* does the thinking. Every trace above held the model fixed and moved only effort - so on the wiring task, the verdicts so far are really about effort on one unnamed brain. The next lesson holds effort fixed at the level each task just earned - `low` for the filter, `high` for the wiring - and moves only the model, on the same two tasks.
 
-You've now run the accounts endpoint and the rules engine through all five effort levels on one model. [The next stop is the other knob - which model answers at all.](/course/codex/models-effort/switch-models/)
+You have run both jobs through the effort dial on one model. [The next stop is the other knob - which model answers at all.](/course/codex/models-effort/switch-models/)

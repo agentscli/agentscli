@@ -1,50 +1,57 @@
 ---
 title: "Feed the agent input inline with ! and @"
-description: "Stop describing things to the agent when you can hand it the real thing - a command's output with !, an exact file with @."
-sidebar:
-  label: "Inline · ! @ paste"
+description: "Stop describing things to the agent when you can paste the real thing - a command's live output with !, an exact file with @."
 ---
 
 import CommandExpander from '../../../../../components/interactive/CommandExpander.tsx';
 
-Watch yourself work for an hour and you'll notice how much of the friction is in *getting things in front of the agent*. You describe a failing test instead of showing it. You type a path from memory and fumble the casing. You try to explain what a broken layout looks like in words. Every one of those is a place where you could be handing Claude Code the exact thing instead of an approximation - and the inline input moves are how you do it without breaking stride.
+The agent can only work from the facts you give it, and the cheapest facts to give are the ones already on your screen. Say a test run in the payments service - the small TypeScript example this course uses - just failed on the duplicate-payment path. The naive move is to describe it: "The tests are red, something about duplicates." A description is lossy: the agent guesses, re-runs what you already ran, and spends a turn recovering facts that were sitting in your terminal a second ago. This lesson is the pair of moves that hand over the real thing instead.
 
 ## ! - your shell, not the agent's
 
-You already met the `!` prefix back in [permissions](/course/claude-code/permissions-modes/rules/), where it earned its place as the move that needs *no* permission prompt: a line that starts with `!` runs in **your** shell, immediately, and drops its output into the conversation. That's you running the command, not the agent asking to - so there's nothing to approve.
+A line that starts with `!` runs in your shell, immediately, without going through Claude. The [interactive-mode reference](https://code.claude.com/docs/en/interactive-mode) is explicit: shell mode doesn't require Claude to interpret or approve the command, and the command plus its output land in the conversation context. That makes it the one way to run a shell command with no permission round-trip - file edits and most shell commands the agent runs itself go through the permission system, but `!` is you typing in your own shell, with the transcript watching. ([The permissions rules lesson](/course/claude-code/permissions-modes/rules/) shows where `!` sits among the approval rules.)
 
-What that lesson left for here is how much leverage it gives you day to day. The payments tests are flaking; rather than ask the agent to run them and wait, you look yourself and hand it the result:
+The test suite is the natural example. Rather than ask the agent to run the tests and wait for permission round-trips, you look yourself and hand it the result. The shape of a failing run looks like this - an illustrative, trimmed vitest output; your own run prints your own state:
 
 ```text
 > !npm test 2>&1 | tail -20
 
-  ⎿ FAIL test/idempotency.test.js - expected one charge, got two
-    (output added to context)
+  ⎿  FAIL  tests/payments.test.ts > processPayment > rejects duplicate idempotency keys
+     AssertionError: expected promise to be rejected with "duplicate payment",
+     but it was fulfilled.
+     Test Files  1 failed (1)
 
-> a retried request is still double-charging. the dedupe check is racing. fix it.
+> that's the duplicate-payment path - the test expects processPayment to
+  reject a confirmed duplicate and it doesn't. read the test and the
+  processor, find why the rejection is missing, and fix it.
 ```
 
-Two small things the [interactive-mode docs](https://code.claude.com/docs/en/interactive-mode) add that are worth banking. First, `!` commands have their own **history-based autocomplete** - type a partial command and press `Tab` to complete it from previous `!` commands in this project, so the gnarly `npm test … | tail` only gets typed once. Second, you can **paste** a chunk of text that starts with `!` into an empty prompt and it drops into shell mode automatically, the same as if you'd typed the `!`. To leave shell mode without running anything, press `Escape` or `Backspace` on the empty `!` prompt.
+One behavior is worth knowing before it surprises you, because it has a version cutoff: since v2.1.186, once shell output lands in the transcript Claude responds to it as if you had sent a prompt, and that response is billed like one. Before v2.1.186, shell mode always added the output to context without a response. Under today's default, the exchange above is one step longer than it reads: Claude answers the pasted failure the moment it lands, and your typed directive then steers that reply. If you want output recorded without commentary, set `respondToBashCommands` to `false` in `settings.json` (yours at `~/.claude/settings.json`, or the project's at `.claude/settings.json`) and the agent stays quiet until you speak.
 
-The instinct to build: when you find yourself *narrating* a fact to the agent - "the test fails with a 500", "git status is dirty" - stop and `!` it instead. A described fact is lossy; a pasted one is ground truth.
+Two smaller things the [docs](https://code.claude.com/docs/en/interactive-mode) add that are worth banking. `!` commands have their own history autocomplete: type a partial command and press `Tab` to complete it from previous `!` commands in the current project, so the `npm test … | tail` incantation gets typed once. And pasting text that starts with `!` into an empty prompt enters shell mode automatically. To leave it without running anything, press `Escape` or `Backspace` - or `Ctrl+U` - on the empty prompt.
+
+The instinct to build: when you catch yourself *narrating* a fact to the agent - "the suite fails on the duplicate test", "git status is dirty" - stop and `!` it instead. A described fact is lossy; a pasted one is ground truth.
+
+`!` also has a sibling prefix in the same keystroke family. Typing `/` expands a named command: `/security-review src/auth.ts` reads the file that defines it, substitutes your argument, and sends the assembled prompt to the model - the same mechanism behind every skill (a folder of instructions the agent loads when the task matches; the [skills chapter](/course/claude-code/skills/) covers building them). The widget traces one expansion, end to end, for an illustrative command; its other tabs show how far the same keystroke idea travels across tools.
 
 <CommandExpander client:visible />
 
-## @ - point at exact files and folders
+## @ - point at exact files
 
-The companion to `!` is `@`. Type `@` anywhere in your prompt and Claude Code opens **file-path autocomplete**, per the [same docs](https://code.claude.com/docs/en/interactive-mode) - start typing a name and it completes against your project tree, so you reference the real path instead of one you half-remember:
+The companion prefix is `@`. Type it anywhere in your prompt and Claude Code opens file-path autocomplete, per the [interactive-mode docs](https://code.claude.com/docs/en/interactive-mode): start typing and it completes against your project tree, so the reference is the real path rather than one you half-remember. An illustrative prompt from the payments service, pointing at the rate limiter's async method - the one place in that file where a read and a write sit across an `await`, so two callers can interleave:
 
 ```text
-> the race is in @src/payments/charge.ts - compare it to how @src/payments/refund.ts
-  guards against duplicates and apply the same pattern
+> the race is in @src/payments/rate-limiter.ts - allowAsync reads
+  the window, awaits, then writes. compare it with the synchronous allow()
+  in the same file and reshape it the same way.
 
-  ⎿ Read charge.ts, refund.ts
+  ⎿ Read rate-limiter.ts
 ```
 
-Two reasons this beats typing a path inline. It's *exact* - no guessing whether the file is `charge.ts` or `charges.ts`, no wrong directory. And it's a deliberate signal: `@`-mentioning a file tells the agent *this is in scope, read it* without you having to write "go look at" around it. You can mention a directory the same way to point it at a whole area. It pairs naturally with `!`: `!` shows the agent the dynamic state of the world, `@` anchors it to the static files that state came from.
+Two reasons this beats typing a path inline. It is *exact* - no guessing between `rate-limiter.ts` and `ratelimiter.ts`, no wrong directory. And it is a deliberate signal: `@` tells the agent *this is in scope, read it* without a "go look at" clause around it. It pairs naturally with `!`: shell output shows the agent the dynamic state of the world, and `@` anchors it to the static files that state came from.
 
 :::tip[Try it]
-Use `!` to run a shell command inline (e.g., `! git log --oneline -5`). Then use `@` to attach a specific file to your next prompt. Notice how both keep you in the session without switching windows.
+From any repo with a test suite, run `! npm test 2>&1 | tail -5` and watch the output land in the session. Then start a prompt with `@src/` and accept a completion. Notice both keep you in the session - no window switch, no permission prompt.
 :::
 
-Those two moves cover getting *text* in - live output and exact files. But plenty of problems don't live in text at all, and plenty of prompts need more than one line. [That's the next lesson](/course/claude-code/daily-workflow/images-and-multiline/): pasting images straight in and writing structured, multi-line prompts.
+Those two moves cover getting *text* in: live output and exact files. Two input shapes remain. Some problems are not text at all, and some prompts need more than one line. [That's the next lesson](/course/claude-code/daily-workflow/images-and-multiline/).

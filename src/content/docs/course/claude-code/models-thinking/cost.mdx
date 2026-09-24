@@ -1,62 +1,87 @@
 ---
 title: Dial model, thinking, and speed per task to control cost
-description: "Spend the capable model and deep reasoning where the context is genuinely hard, pull both back when the work goes mechanical, and know when to buy speed."
-sidebar:
-  label: "cost & speed · spend on purpose"
+description: "Spend the capable model and deep reasoning where the context is genuinely hard, pull both back when the work goes mechanical, and know when to buy speed with /fast."
 ---
 
 import ModelEconomy from '../../../../../components/interactive/ModelEconomy.tsx';
 
-The race is fixed, the copy tweak shipped hours ago, and if you scroll back through the afternoon you can see the two dials moving in opposite directions across a single session - light-and-shallow for the error string, capable-and-deep for the ledger bug. That's not two settings you stumbled into; it's the actual skill this chapter teaches: **treating model and reasoning as a per-task spend, not a session-wide default you set once and forget.** This last lesson is about making that a habit, and about the one case where you deliberately pay *more*.
+Model and effort are two dials, and they do not have to move together. Treating them as a per-task spend - rather than a session-wide default you set once and forget - is the habit this lesson builds, plus the one case where you deliberately pay *more*: buying speed. The running example, the payments service (the small TypeScript service this course uses as its running example), makes the range concrete: the duplicate-payment string rewrite in `src/payments/processor.ts` is mechanical; the `allowAsync` race in `src/payments/rate-limiter.ts` is genuinely hard. The dials should sit at opposite ends for those two tasks, and move as the work changes.
 
 ## Two independent dials
 
-It helps to see clearly that you've been turning two separate knobs, and they don't have to move together:
+It helps to see clearly that you have been turning two separate knobs:
 
 - **Model** - which brain answers. Capable for hard reasoning, lighter and faster for mechanical work. Set with [`/model`](/course/claude-code/models-thinking/switch/).
-- **Effort / thinking** - how hard that brain reasons before it acts. Up for ambiguity, down for the obvious. Set with [`/effort`](/course/claude-code/models-thinking/thinking/) and the thinking toggle.
+- **Effort** - how hard that brain reasons before it acts. Up for ambiguity, down for the obvious. Set with [`/effort`](/course/claude-code/models-thinking/thinking/) (that page lists the levels; its thinking toggle is the on/off switch for extended thinking, not a third dial).
 
-The cost map across the four corners is the whole point - and it's better run than read. Here's a lumpy day with both dials live on every task:
+Every task lands somewhere on this grid, and the matched corner depends on the task. Here is a day with both dials live on every item - the multipliers are illustrative ratios, not prices, and the redo-tax corners assume an underpowered hard task fails twice before you escalate:
 
 <ModelEconomy client:visible />
 
-The diagonal is where most people lose money. Running the capable model at high effort on a rename is paying top dollar for a task with one obvious answer. Running deep effort on a light model is spending thinking tokens a weaker brain can't fully cash. You want the *matched* corners: cheap-and-shallow for mechanical work, expensive-and-deep for the genuinely hard problem - and you want to move between them as the work changes, which on a lumpy day like this one is often.
+Two leaks account for most of the waste. The expensive corner pinned by habit: the capable model at high effort grinding through renames, paying its premium per token (tokens are the units of text the provider processes and bills) for diffs the light model produces identically. And the cheap corner on a hard problem, which is worse than it looks - an underpowered run on the race flails, produces a plausible wrong fix, and you escalate to the big model anyway, paying for the attempt and the redo. Overpaying burns money linearly; underpowering burns it and leaves you where you started.
+
+You want the corner that matches the work - cheap and shallow for the mechanical, expensive and deep for the genuinely hard - and you want to move between them as the work changes.
 
 ## What the tiers cost relative to each other
 
-Exact per-token prices and usage multipliers move, so avoid teaching a fixed ratio between tiers. Use the current [Claude pricing page](https://claude.com/pricing) and the usage information shown by your plan/provider when budgeting:
+Exact per-token prices and usage multipliers move, so do not budget from a fixed ratio between tiers. Use the current [Claude pricing page](https://claude.com/pricing) and the usage information shown by your plan or provider:
 
-| Tier | Budgeting guidance | Best for |
-|------|--------------------|----------|
-| Haiku or a lighter available model | Check current pricing | Renames, formatting, simple lookups |
-| Sonnet or a balanced available model | Check current pricing | Multi-file features, code review |
-| Opus or a stronger available model | Check current pricing | Architecture, concurrency bugs, planning |
+| Tier | Relative cost | Best for |
+|------|---------------|----------|
+| Haiku or a lighter available model | Cheapest per token | Renames, formatting, simple lookups |
+| Sonnet or a balanced available model | Middle | Multi-file features, code review |
+| Opus or a stronger available model | Most expensive per token | Architecture, concurrency bugs, planning |
 
 The practical lesson is stable even when the numbers move: choose the least expensive model that reliably handles the task, and verify the current price before budgeting anything real.
 
 ## When speed is the thing you're buying
 
-There's a third lever that isn't about capability at all - it's about *latency*. Some sessions are interactive in a way where waiting hurts: live debugging, rapid iteration where you're firing a prompt every thirty seconds and the agent's response time is the bottleneck. For those, Claude Code has **fast mode**, toggled with `/fast`:
+There is a third lever, and it is not about capability at all - it is about *latency*. Some sessions are interactive in a way where waiting hurts: live debugging, rapid iteration where you fire a prompt every thirty seconds and the response time is the bottleneck. For those, Claude Code has **fast mode**. It runs the same model at a higher cost per token in exchange for lower latency, with quality held constant:
 
 ```text
-/fast                # toggle fast mode on (or off again)
+/fast            # toggle fast mode on (or off again)
+/fast on         # set it explicitly
+/fast off
 ```
 
-Fast mode is model- and provider-specific; where available, it trades higher cost for lower latency. The exact tradeoff and availability are documented in [fast-mode](https://code.claude.com/docs/en/fast-mode), so check there before you lean on it. The judgment is narrow and worth stating plainly:
+Before leaning on it, know its current shape - it is narrower than the effort dial, and these facts move, so treat the [fast-mode reference](https://code.claude.com/docs/en/fast-mode) as the source of truth:
 
-- **Worth it** - interactive, latency-sensitive work where *your* waiting time is the expensive resource. Rapid iteration, live debugging with a deadline.
-- **Not worth it** - long autonomous runs, CI, batch jobs, anything you walk away from. There, nobody's waiting on latency, so you'd be paying the speed premium for nothing.
+- **Model availability.** Fast mode is supported on Opus 5 and Opus 4.8 only. It is not available on Sonnet, Haiku, or other models - and notice that the tier table above steers exactly the mechanical, latency-sensitive work toward those lighter models. On them, fast mode is simply not an option; the light model's ordinary speed is what you have.
+- **Billing.** For subscription users, fast mode draws from usage credits only - it is not included in plan rate limits, and it draws from credits even when you have remaining plan allowance. Console and API organizations pay per token with the rest of their API usage instead.
+- **Organization policy.** Fast mode is disabled by default for Team and Enterprise organizations; an Owner has to enable it before anyone in the org can use it.
 
-A practical note from the docs worth carrying: switching into fast mode mid-conversation re-prices the whole context at the faster rate, so if you know a session wants speed, turn it on at the *start* rather than flipping it on partway through. And fast mode stacks with the other dials - a lower effort level on top of fast mode is maximum speed for straightforward interactive work.
+Where it is available, the judgment of when it is worth it is narrow and worth stating plainly:
+
+- **Worth it** - interactive, latency-sensitive work where *your* waiting time is the expensive resource: rapid iteration, live debugging against a deadline.
+- **Usually not worth it** - long autonomous runs, batch jobs, anything where nothing downstream depends on completion time. The test is not whether you are watching; it is whether anyone or anything waits on the answer. A nightly summary with no deadline buys nothing from the premium; the same summary gating a morning deployment has elapsed time worth pricing against the charge.
+
+Two mechanics from the docs worth carrying. Enabling fast mode mid-conversation re-prices the whole context (the conversation and instructions the model can currently draw on) - the first fast-mode request pays the uncached input price for the entire conversation. Cached input normally bills at a lower rate when the provider can reuse its prior processing; this one-time charge is the existing context billed at the full rate instead, once per conversation, so toggling fast mode off and on again does not repeat it. That re-price is one bounded cost that grows with the context you have already built: negligible on a fresh conversation, a real line item on a long one. So when you know from the start a session will be interactive, turning fast mode on early avoids it. And fast mode stacks with the effort dial; the docs' own phrasing is "use fast mode with a lower effort level for maximum speed on straightforward tasks".
 
 ## The discipline, stated once
 
-Strip away the commands and this chapter is a single context-engineering move. You already learned to spend the *context window* on purpose in Sessions & context - watch it, fill it with signal, reclaim it before it bloats. Model and thinking are the same instinct aimed at the agent's *effort*: spend the capable model and deep reasoning where the context is genuinely hard - the race no one could solve by pattern-matching - and pull both down the moment the work goes mechanical. The gap this whole site is about is the agent's missing context; the cost lever is making sure you pay for *closing* that gap on the hard problems, not for over-powering the easy ones.
+Strip away the commands and this chapter is one move in the course's cost vocabulary: what a task consumes is a decision you make, not a constant. The agent's *context* - the information it can draw on for a response: instructions, files, tool results, the conversation itself - is finite, and its capacity is the context window. [Sessions & context](/course/claude-code/sessions-context/) teaches governing that window the same way: watch it, fill it with signal, reclaim it before it bloats. Model and effort are the same instinct aimed at the agent's *reasoning*: spend the capable model and deep reasoning where the problem is genuinely hard, like a race that punishes pattern-matching, and pull both down the moment the work goes mechanical.
 
-Do that by reflex and a lumpy day costs what it should: pennies on the copy tweak, real budget on the ledger bug, and nothing wasted on the diagonal between them.
+Do that by reflex and a mixed day costs what it should: the light model's rate on the string edit, real budget on the race, and nothing spent powering work that never needed it.
 
-## Where this goes next
+## Run it on tomorrow's queue
 
-Everything so far has been *one* agent, with one model and one reasoning budget, working a task in front of you. That's the base case - and it has a ceiling. When a job is genuinely big, or when one noisy step (reading a giant log, churning through a test suite) would flood the very context window you just learned to guard, the next move isn't a bigger gear on a single agent. It's *more agents*: pushing that noisy work into an isolated context of its own, and fanning a hard problem out across parallel workers that each carry their own window and report back a summary.
+The discipline is only real if you can run it cold. Here is a four-ticket queue on the payments service (the first two reuse this chapter's examples) - for each, pick the model, the effort, and whether fast mode earns its premium, before reading the verdicts:
 
-That's the whole idea of [Subagents](/course/claude-code/subagents/) - and it's where the course goes next.
+1. Reword the `"duplicate payment"` error to name the idempotency key.
+2. Design the fix for the `allowAsync` race, where a confident wrong patch costs an hour of unpicking.
+3. The nightly CI job that runs the suite and posts a failure summary - nobody watches it run, and nothing depends on receiving the summary sooner.
+4. Rapid iteration on a flaky test, you firing a prompt every thirty seconds against a deadline.
+
+The verdicts. The error reword is mechanical: light model, low effort, no premium worth paying on a one-shot edit. The race is the chapter's argument in one ticket - capable model, effort up, because the reasoning is what separates the real interleaving that causes the race from a plausible wrong patch.
+
+The CI job is work you walk away from, and with no deadline waiting on its summary, fast mode buys nothing anyone needs sooner; the model need only be capable enough to summarize honestly.
+
+The flaky-test sprint is the one ticket where your waiting is the expensive resource, and the verdict depends on what the debugging actually needs. If each retry is a trivial edit and only the latency hurts, stay on the light model and take its ordinary speed: paying the Opus rate plus the fast-mode premium to shave seconds off trivial edits is the overpaying leak in a new coat. If the flakiness needs real diagnosis, take Opus with fast mode on and the effort the diagnosis needs - the reasoning is the work, your waiting is the expensive resource, and that is exactly the combination fast mode exists for.
+
+## When one agent is not enough
+
+Everything so far has been one agent - one model, one reasoning budget, working a task in front of you. That base case has a ceiling. When a job splits into parts that can run separately, or when one noisy step such as reading a giant log or churning through a test suite would flood the context window with output the main conversation does not need, the next move is not a bigger gear on a single agent.
+
+It is *more agents*: pushing the noisy work into an isolated context of its own, and fanning a separable problem across parallel workers that each carry their own window and report back a summary. Delegation has its own bill - extra usage, and coordination you must review - so it earns its place when the work genuinely separates or the noise genuinely drowns, not merely because a task is large.
+
+That is the whole idea of [Subagents](/course/claude-code/subagents/), and it is where the course goes next.

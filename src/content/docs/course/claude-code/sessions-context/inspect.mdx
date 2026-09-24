@@ -1,55 +1,48 @@
 ---
 title: Inspect the context window with /context and /usage
-description: "\"The agent's getting dumber\" is a symptom, not a diagnosis. Turn it into a number with /context and /usage."
-sidebar:
-  label: "/context · /usage"
+description: "Separate context occupancy from usage limits, and investigate a repeated question without assuming a full window is its cause."
 ---
 
 import ContextSimulator from '../../../../../components/interactive/ContextSimulator.tsx';
 
-By Thursday afternoon the session has been running, on and off, since Monday morning, and Claude Code has started to feel *off*. It forgot a naming convention it was happily following yesterday. It re-read a file it had already read twice. Its answers have gone a little vague, a little generic. The easy story to tell yourself is that the model is having a bad day - that you've somehow used it up.
+Take a hypothetical case from the course's running example, a small Express + TypeScript payments service. The task was to add `GET /healthz` beside the existing `GET /health`, with both returning the same response, because existing callers use the old address and a new monitor uses the new one. You return from comparing two designs for that change and the agent asks which address must remain compatible. That question can be useful: perhaps you never told this session. Or it may repeat a decision already made here. Before blaming the size of the conversation, check which conversation you are in and whether the decision was ever supplied to it.
 
-Almost always, that story is wrong, and the real cause is mechanical. A model doesn't get tired; its context window gets *full*. Four days of turns, file dumps, and command output have piled up until the signal you care about - this afternoon's task - is a thin layer floating on a deep pool of stale history, and the agent is splitting its attention across all of it. "Getting dumber" is what a saturated window feels like from the outside. But it stays a vague feeling, and you stay stuck guessing at fixes, until you can actually *see* the window.
-
-## Reading the gauge
+Then inspect the resource you are worried about. Both commands are typed at the prompt of a running Claude Code session, open in any repository of yours ([the install lesson](/course/claude-code/getting-started/install/) covers installing, signing in, and launching with `claude`). Run them separately:
 
 ```text
-/context        # what's in the window right now, broken down by category
-/usage          # where you stand against your plan and rate limits
+/context
 ```
-
-`/context` is the one that ends the guessing. It lays the window out as a budget, split into the things competing for it - the system prompt, the tool definitions, any connected [MCP](/foundations/mcp-servers/) servers, your `CLAUDE.md`, and the conversation itself - and shows you what each is spending:
 
 ```text
-> /context
-
-  Context window: 142k / 200k tokens (71%)   # illustrative example
-
-  ████████░░  System prompt + tools     18k    9%
-  ███░░░░░░░  MCP servers (3)           22k   11%   ← postgres, github, puppeteer
-  ██░░░░░░░░  CLAUDE.md                  6k    3%
-  ████████████████████████  Conversation        96k   48%
-  ░░░░░░░░░░  Free                      58k   29%
+/usage
 ```
 
-In one screen the vague feeling becomes two specific facts. The **conversation** is nearly half the window - four days of accumulated thread, exactly as you'd guess. And there are **three MCP servers** loaded, one of which, `puppeteer`, has nothing to do with this week's API work but is still spending eleven thousand tokens on its tool definitions before you type a single word. You weren't imagining the haze; you're looking at its two sources.
+`/context` shows the current context usage and a breakdown of what occupies it. `/usage` reports usage information appropriate to the account, including session token statistics (tokens are the units in which model input and output text are measured and billed) and, for supported subscriptions, plan usage. Their current displays are described in the [command reference](https://code.claude.com/docs/en/commands) and [usage guide](https://code.claude.com/docs/en/costs#using-the-usage-command).
 
-## What the readout teaches you to notice
+## Ask which limit you have reached
 
-The first lesson hiding in that breakdown is that **MCP servers can cost tokens at rest.** Tool names and server metadata are present, while full tool definitions are usually deferred by tool search when supported. Providers, gateways, and unsupported models can load definitions up front. `/context` is how you catch the tax; the fix is to connect only what the task in front of you needs, and disconnect the rest.
+Context occupancy is about the material available for the current interaction. Usage accounting concerns work performed and the limits or costs associated with it. A small active context does not imply unused plan allowance. A large active context does not, by itself, explain a rate-limit message.
 
-The second is that **a single careless read can dominate.** Ask the agent to "read the whole config module" and a four-thousand-line file lands in context entire. If `/context` shows the conversation lurching upward right after one read, that's usually the culprit - and the habit that prevents it is pointing the agent at the specific function with [`@file`](/course/claude-code/daily-workflow/inline-input/) rather than turning it loose on the whole thing.
+Suppose the session has room for more context but the account reports a usage limit. Compacting the conversation (replacing its detailed history with a shorter summary) will not undo consumption already recorded. Conversely, buying more allowance does not establish that the agent has the missing compatibility requirement. These problems require different evidence and different responses.
 
-And mind the difference between the two commands, because they answer different questions and have different fixes. `/context` is *how full is this conversation's window* - a problem you solve by compacting, clearing, or dropping a server. `/usage` is *how much of my plan or rate limit have I burned* - a different ceiling entirely, one no amount of compacting will move. Diagnosing a full window as a hit rate limit (or the reverse) sends you fixing the wrong thing.
+Record what your own displays say. This lesson does not assign every reader a 200k-token window or invent a terminal breakdown that looks like a measured run. Model, configuration, and product behavior determine the actual display.
 
-## From feeling to gauge
+## Inspect what deserves the space
 
-The real shift this lesson is after isn't a command, it's a stance. An opaque "context just fills up" breeds superstition - restarting at random, blaming the model, developing little rituals. The moment the window has a gauge, the right move is usually obvious from the numbers: conversation too big, compact it; switching tasks, clear it; a server you're not using, drop it. You stop guessing and start reading.
+Look for material that is large relative to its usefulness for this task. A long test log may contain one consequential assertion. An earlier implementation discussion may still explain a decision you need. Size alone does not tell you which to discard.
 
-You can rehearse that reading without burning a real week. Step through this simulated session and watch the window fill - the overhead that's there before you type, the spike when a whole file lands, what survives when the thread gets compacted:
+For the health patch, the useful question is whether the context still makes the contract and current state recoverable: both addresses and their shared response, whichever implementation you selected, relevant tests, and unresolved failures. A discarded design may deserve one sentence explaining why it was rejected rather than its entire exploratory exchange.
+
+Tool context also varies. MCP tool definitions are the descriptions of tools that connected external servers make available to the agent, and each loaded definition occupies context. Current Claude Code can defer them until they are needed; it is inaccurate to assume every connected server always loads every schema. The [context-management explanation](https://code.claude.com/docs/en/how-claude-code-works#when-context-fills-up) describes that behavior. Read your actual breakdown before removing a tool the task still needs.
+
+The simulator below uses a deliberately simplified 200k-token window and an illustrative threshold at which the simulated session would compact. Its eager-loaded MCP example is one possible setup, not a prediction of your Claude session. The numbers teach how categories add up; they do not measure intelligence or establish a universal point where answers worsen.
 
 <ContextSimulator client:visible />
 
-So make `/context` a reflex at **phase boundaries** - finished a feature, about to start the next - not just a panic button for when things already feel broken. Caught early, a filling window is one command away from fixed. Caught late, you've already spent an afternoon getting worse answers for no reason, which is roughly where this Thursday has left you.
+Without the widget, the relationship is the same: instructions, loaded tools, conversation, file excerpts, and results all occupy context. Adding a large result leaves less room for other material. Summarizing can reduce occupancy while losing detail. Whether the remaining detail is sufficient is a separate check.
 
-The numbers are clear: the conversation is the problem, and you're not done with the task, so you can't just throw it away. What you need is to keep everything that matters about this week's work and shed everything that doesn't - [in place, without losing the thread](/course/claude-code/sessions-context/compact/).
+## Choose a response to the evidence
+
+If you resumed the wrong session, [the resume lesson](/course/claude-code/sessions-context/resume/) shows how to recover the right conversation. If the compatibility decision was never stated, supply it. If you have moved to a different task, start a new conversation with the evidence that task needs. If you are continuing this task and carrying too much detail, prepare a summary.
+
+A repeated question is worth investigating; it is not a diagnosis. Verify the cause you can observe before choosing a remedy. [The next lesson preserves the health task's essential state while reducing what the session has to carry](/course/claude-code/sessions-context/compact/).

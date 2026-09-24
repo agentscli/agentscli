@@ -1,61 +1,65 @@
 ---
-title: Make your first real change with Claude Code
-description: "Hand it the ticket in plain English and watch the read→edit→verify loop. The agent proposes, you approve - you're never not in the loop."
-sidebar:
-  label: "First change · read→edit→approve"
+title: Add a health endpoint without breaking the existing one
+description: "Give Claude Code a bounded change, preserve the existing route, and distinguish a passing health test from a passing project."
 ---
 
 import LoopStepper from '../../../../../components/interactive/LoopStepper.tsx';
 
-Now the actual ticket: *add a health-check endpoint and a test for it.* You know from the last lesson that routes live in `src/routes/` and tests run with `npm test`, but here's the thing - you don't need to feed it any of that. You describe the outcome you want in the same words you'd use with a teammate, and let the agent do the legwork of finding the files. This lesson is about watching *how* it does that, because the rhythm you see here is the rhythm of every task you'll ever give it.
+The task is bounded: the service already answers `/health`, and the ticket is to add `GET /healthz` alongside it (the [previous lesson](/course/claude-code/getting-started/authenticate/) located the existing handler). Ask for the additional `/healthz` address. The project is the course's payments service: an Express and TypeScript app whose routes begin in `src/index.ts`, with payment code under `src/payments/` and Vitest tests in `tests/`, run with `npm test`. Use it if your course host supplies it. Otherwise read this lesson as a walkthrough, or adapt the task to a disposable Express project you own, substituting its test command, paths, and baseline; the [chapter introduction](/course/claude-code/getting-started/) describes the project and both options. Begin from an unchanged working copy, and run `npm test` in a separate terminal to record the baseline before Claude edits anything.
 
-## Describe the outcome, not the steps
+The shipped payments fixture currently starts with six passing tests. Save your actual result rather than trusting that count: it is the comparison you will need when the agent later says it has finished. Claude cannot see that other terminal, so put the result where the session can use it: paste the summary and any failure names into the conversation before you send the ticket, or save the output to a file in the project and ask Claude to read it. The ticket below refers to "the baseline we recorded", and that comparison works only if the before-change result is in the session's context.
 
-```text
-> add a GET /healthz endpoint that returns 200 with {"status":"ok"},
-  and a test that hits it and checks the status and body
-```
+## Give the ticket an edge
 
-Notice what you didn't say. You didn't name the file to edit, didn't paste the existing route code, didn't spell out the test framework. You stated the *what* and left the *how* to the agent - and watched it work the problem the same way you would:
+Send this prompt in the session that inspected the route:
 
 ```text
-  ⎿ Read src/routes/index.js, src/server.js, test/payments.test.js   (3 files)
+Add GET /healthz to this payments service. It must return HTTP 200
+with the JSON body {"status":"ok"}.
 
-  I'll add the route to src/routes/index.js (where the health stub already is)
-  and a test to test/health.test.js matching the node:test style I see in the
-  existing tests.
+Keep GET /health working with the same response. Do not change payment,
+ledger, or rate-limiting behavior, and do not add a runtime dependency.
 
-  ⏵ Edit src/routes/index.js
-    + router.get('/healthz', (req, res) => {
-    +   res.status(200).json({ status: 'ok' })
-    + })
+Add HTTP-level tests for both health routes in tests/health.test.ts.
+Use the project's existing test runner. If making the app importable
+requires separating it from server startup, explain that change.
 
-  Apply this change? (y/n)
+Run the new tests and the full suite. Compare full-suite failures with
+the baseline we recorded. Report what passed and what remains failing.
+Do not commit yet.
 ```
 
-It read the relevant files *first* - including an existing test, so the new test would match the house style instead of inventing its own. Then it told you its plan in one sentence before touching anything. Then it stopped and asked. That pause is not a formality; it's the leash. By default Claude Code proposes an edit and waits for your `y` before it writes to disk, so there's a checkpoint between the agent's intent and your filesystem on every single change. You approve the route, it moves to the test, asks again, and then does the thing that actually closes the ticket - it runs the test itself:
+The preservation requirement matters as much as the new endpoint. Without it, a rename could satisfy the first sentence and still break an existing caller. The test requirement matters too: a function returning an object is not evidence that an HTTP request reaches the right handler.
 
-```text
-  ⏵ Edit test/health.test.js          → Apply? y
+This prompt gives the agent a result to produce and boundaries to respect. It leaves room for implementation judgment, including one complication visible in the current source: `src/index.ts` creates the Express app and starts listening on port 3000 in the same file.
 
-  ⏵ Run  npm test
-    ⎿ tests 7 passed, 0 failed
+## Watch the first unexpected change
 
-  Done. Added GET /healthz returning {"status":"ok"} and a passing test.
+An HTTP test needs an application it can exercise. Importing the current entry point also starts the server. The agent may therefore propose moving application construction into `src/app.ts` and leaving server startup in `src/index.ts`.
+
+That is more than adding a route, but it can be justified by the test. Read the proposed extraction: existing routes and middleware should retain their order and behavior. A new payment abstraction, dependency upgrade, or unrelated cleanup has a different justification and belongs outside this ticket.
+
+If a test reports `EADDRINUSE`, check whether importing the entry point started a server on a port already in use. Separate app construction from startup and make the test close any server it opens. Do not keep retrying against an unexplained listener; you could be testing yesterday's process.
+
+Permission prompts may appear as Claude requests edits or commands. Their frequency depends on the session's permission mode - the setting that decides which actions run without asking - and saved rules. Use `/permissions`, typed at the prompt of the running session, to inspect those rules, and review the scope of any approval you grant. An approval allows an operation; it does not certify the resulting code. See the [permission reference](https://code.claude.com/docs/en/permissions).
+
+## Ask the tests a precise question
+
+After the agent creates the test file, run the checks yourself from another terminal in the project:
+
+```bash
+npm test -- tests/health.test.ts
+npm test
 ```
 
-## The rhythm under all of it
+The focused run should exercise both addresses through HTTP, checking status 200 and the JSON body. Inspect the test to confirm it does that. The full run tells you whether the wider suite passes or how its failures compare with the baseline. Neither command has a universal expected test count, and this walkthrough does not substitute an invented transcript for your result.
 
-Strip away the specifics and every task the agent does has the same three-beat shape: it **reads** to gather the context it needs, it **acts** by proposing edits or commands, and it **checks** its own work - here, by running the tests. Read, act, check. When a task goes well it's because all three beats happened; when one goes wrong it's usually because a beat got skipped - it acted without reading enough, or it edited without checking. Learning to *see* those three beats is most of what makes you good at driving an agent, and you just watched a clean instance of all three.
+If the health tests pass but the full suite regresses from the recorded baseline, the narrow result is not enough: the new behavior has coverage, but the project is not ready. Investigate any new failure before accepting the change. Do not let the agent delete a failing assertion to improve its summary.
 
-If you want to watch the beats one at a time, here's another small fix traced through the same loop - step through it and notice which beat each move belongs to:
+This is the feedback loop in miniature: inspect enough to form a hypothesis, make a bounded change, then use the result to decide what to inspect next. The following widget shows a separate, illustrative login example. Its files and timings are simulated; follow how a failed check sends the agent back into the work.
 
 <LoopStepper client:visible />
 
-The other thing to bank from this lesson: **you were in the loop the whole time, by default.** Nothing hit your disk that you didn't approve, and nothing ran that you didn't see. That asking-first behavior is a setting, not a law of nature - you can loosen it to let the agent run on a longer leash, or tighten it to lock specific things out entirely - and an entire later chapter is about tuning exactly that. For your first change, the default is perfect: maximally cautious, fully visible.
+The stepper's closing note - every tool result from the loop stays in the window - does not refer to the next lesson. It points at [what fills the context window and what that costs](/course/claude-code/sessions-context/), a later chapter of the course.
 
-:::tip[Try it]
-Open a session in your own repo and ask Claude to make a small change. Before you accept, run `git diff` and read every hunk. If anything surprises you, ask Claude to explain that specific line before you approve.
-:::
-
-The tests are green and the ticket looks done. But "the agent says it passed" is a claim, not a guarantee - and it's your name going on the commit. [Before you trust it, read what it actually wrote](/course/claude-code/getting-started/review/).
+Your health check is simpler than that example, but the same question closes both: what did the verification actually establish? Keep the test output beside the diff. [The next lesson uses both to decide whether the change is ready](/course/claude-code/getting-started/review/).

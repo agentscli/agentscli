@@ -1,88 +1,98 @@
 ---
 title: "Peer-to-peer coms - and the honest 'is this worth it?' test"
 description: "Let two leads swap a fact directly instead of routing it through you as a wire - then run the honest test for whether that peer channel, and the whole team, earns its keep."
-sidebar:
-  label: "Coms · peer-to-peer, and when it earns its keep"
 ---
 
-Every fix so far in this module has traded one coordination cost for another - leads traded seven messages for three plus their own overhead, expertise traded a rediscovery cost for a small file. This chapter's fix is the last trade, and it's the one where the spoiler is the whole point: the `lang`-field handshake below will pass every count of the honest test that closes this chapter. Watch *how* it passes - that's what tells you what a peer channel that shouldn't get built looks like.
+Every fix so far in this module has traded one coordination cost for another: [the orchestration lesson](/course/pi/teams/orchestration/) traced leads (spawned `pi` processes that plan one domain's work and dispatch workers, but never edit a file themselves) trading seven coordination messages for three lead reports plus their own overhead, and the expertise lesson traded a rediscovery cost for a small file. This chapter's fix is the last trade, and it's the one where the spoiler is the whole point: the `word_count` handshake below passes an honest five-count test - the one that closes this chapter - as a light local channel, one exchange between two leads on one machine. The same idea built as an always-on hub fails that test. Holding those two forms apart is what tells you what a peer channel that shouldn't get built looks like.
 
-Here's the fact from the last lesson's expertise file, working itself out in real time: the new extractor starts returning a `lang` field on every row - something the old one never produced. The extraction lead learns this the moment its first worker comes back. The index lead needs to know it *before* it reindexes a single row, or it reindexes against a shape that's about to change again underneath it.
+Here's the fact from the last lesson's expertise file, working itself out in real time: the rebuilt extractor derives a `word_count` from the article body `readability-lxml` pulls out, and the `Article` model carries it - a field the old title-slice never produced. The extraction lead learns the concrete row shape the moment its first worker lands the rebuilt `extract_meta`. The storage lead needs to know it *before* it re-processes a single stored row, or it re-processes the whole backlog against a shape that's about to change again underneath it.
 
 ## Count the hops before you build anything
 
-Guess first: route that fact through the hierarchy you already built, and count the hops between the extraction lead learning it and the index lead acting on it. Extraction lead sends its finding up to you - hop one: `send`, then you `await` the message and read it. You relay it down to the index lead - hop two: another `send`, another `await` on the index lead's end. Two hops, two sends, two reads, and you personally did the relaying at both ends even though you made no decision at either one. You're not coordinating. You're a wire.
+Guess first: route that fact through the hierarchy you already built, and count the hops between the extraction lead learning it and the storage lead acting on it. Extraction lead sends its finding up to you - hop one: `send`, then you `await` the message and read it. You relay it down to the storage lead - hop two: another `send`, another `await` on the storage lead's end.
 
-Now the peer path. Extraction lead calls `list`, sees the index lead is live, and `send`s the fact directly. Index lead `await`s, gets it, `send`s back an ack. One hop. You read neither message unless you go looking for them.
+Two hops, two sends, two reads, and you personally did the relaying at both ends even though you made no decision at either one. You're not coordinating. You're a wire.
+
+Now the peer path. Extraction lead calls `list`, sees the storage lead is live, and `send`s the fact directly. Storage lead `await`s, gets it, `send`s back an ack. One hop. You read neither message unless you go looking for them.
 
 ## The mechanism - still no new primitive
 
-Same as the jump from spawn to teams, this isn't a new capability bolted onto Pi's core; it's the same idiom, applied bidirectionally. Coms exposes the same four verbs you just traced with:
+Same as the jump from spawn to teams, this isn't a new capability bolted onto Pi's core; it's the same idiom, applied bidirectionally. Coms exposes the same four verbs the hop-count above used:
 
 - **list** - discover which peers are live right now, and their rough context usage.
 - **send** - fire a prompt at a named peer, get an acknowledgment back once it's queued.
 - **get** - check for a reply without blocking.
 - **await** - block until a reply arrives or a timeout passes.
 
-The custom coms extension this lesson sketches would use a local transport: a small socket per agent (a Unix socket, or a named pipe on Windows), discovered through a per-project registry of small files the extension itself writes and prunes. Pi core does not ship these four verbs, and this course does not provide the complete extension; treat the transport description as an implementation plan. Leads on separate machines or in separate sandboxes are a further extension of the same idiom, with a dedicated hub process to run and secure and distinct tool names. That's real infrastructure, not a free upgrade. Don't reach for it until you actually have leads that can't share a filesystem.
+The custom coms extension this lesson sketches would use a local transport: a small socket per agent (a Unix socket, or a named pipe on Windows), discovered through a per-project registry of small files the extension itself writes and prunes. Pi core does not ship these four verbs, and this course does not provide the complete extension; treat the transport description as an implementation plan.
 
-The delivery idiom underneath is one you've already used: an inbound prompt arrives as a follow-up message that forces a new turn - the same `pi.sendMessage(..., {deliverAs: "followUp", triggerTurn: true})` call that delivered a background subagent's result back in the last chapter. And there's no separate "reply" tool to remember to call - when the receiving agent's turn ends, the extension reads its own last assistant message straight off its session history and ships that back as the reply automatically, so "the agent forgot to answer" isn't a failure mode you have to guard against.
+Leads on separate machines or in separate sandboxes are a further extension of the same idiom, with a dedicated hub process to run and secure and distinct tool names. That's real infrastructure, not a free upgrade. Don't reach for it until you actually have leads that can't share a filesystem.
+
+The delivery idiom underneath is one you've already met: `pi.sendMessage(..., { triggerTurn: true })` is the same primitive the tilldone nudge used in [the task-discipline lesson](/course/pi/rebuild-the-defaults/task-discipline/) to force a stalled agent back to work. Here it gains `deliverAs: "followUp"`, so an inbound prompt waits for the receiving lead to finish its current tool calls rather than steering it mid-stream - a lead asked to hold its re-processing shouldn't be interrupted out of the middle of one.
+
+And there's no separate "reply" tool to remember to call: when the receiving agent's turn ends, the extension reads its own last assistant message straight off its session history and ships that back as the reply automatically, so "the agent forgot to answer" isn't a failure mode you have to guard against.
 
 ```text
-[extraction-lead → index-lead]
-  row shape changed: every row now carries `lang`. reindex against the
-  new shape, not the old one - don't start until you've confirmed this.
+[extraction-lead → storage-lead]
+  row shape changed: every extracted row now carries word_count, derived
+  from the article body. pages with no server HTML carry nothing. add the
+  column and the model field before your re-process worker runs - don't
+  start until you've confirmed this.
 
-[index-lead → extraction-lead]
-  ack. holding the reindex until the extractor migration finishes on the
-  last three sites, then running against `lang`-inclusive rows only.
+[storage-lead → extraction-lead]
+  ack. column and Article field land first, then the re-process runs
+  against word_count-carrying rows only. empty stays empty - no zeros.
 ```
 
-One send, one ack, done. Notice what's missing compared to the hierarchical path: nobody above these two leads made a decision, because nobody above them needed to.
+One send, one ack, done. What's missing compared to the hierarchical path: nobody above these two leads made a decision, because nobody above them needed to.
 
 ## The one thing you must build in on purpose: an end condition
 
-A hierarchy has a natural end-state built in - a worker returns, the call is over. A flat peer channel doesn't; two agents messaging each other have no structural reason to ever stop, and a sloppy prompt on either end can turn one useful handshake into an endless back-and-forth. The concrete guard is a hop counter on every message - each envelope carries a count, and the transport refuses to forward a message past a fixed limit. It's a blunt instrument, but it's the difference between "one lead tells another a fact" and a runaway loop burning tokens on both sides until someone notices.
+A hierarchy has a natural end-state built in - a worker returns, the call is over. A flat peer channel doesn't; two agents messaging each other have no structural reason to ever stop, and a sloppy prompt on either end can turn one useful handshake into an endless back-and-forth. The concrete guard is a hop counter on every message - each envelope carries a count, and the transport refuses to forward a message past a fixed limit.
+
+It's a blunt instrument, but it's the difference between "one lead tells another a fact" and a runaway loop burning tokens on both sides until someone notices.
 
 ## What a hop counter doesn't fix: leads that disagree
 
-Everything traced above assumes the clean case - one fact, one direction, one ack. Real domains interact messier than that. Say the index lead had already started planning its reindex around the old, `lang`-less shape by the time the extraction lead's message arrives - now the two leads don't just need to exchange a fact, they need to reconcile two decisions that were made independently, on a shared boundary neither one owns alone. The four verbs above move a message; they don't arbitrate a disagreement. Nothing in `list`/`send`/`get`/`await` decides whose plan wins when two leads' domains touch the same row shape and land on different conclusions about it. That's still your job, routed back up the hierarchy you supposedly bypassed - which means peer coms removes hops for facts that only inform, and quietly hands you back the ones that need a decision. Know which kind you're building for before you wire the channel.
+Everything traced above assumes the clean case - one fact, one direction, one ack. Real domains interact messier than that. Say the storage lead had already started planning the re-process around the old six-field `Article` shape by the time the extraction lead's message arrives - now the two leads don't just need to exchange a fact, they need to reconcile two decisions made independently, on a boundary neither one owns alone: the `Article` model in `stash/models.py` (`stash` is the course's running example, a small FastAPI feed reader), which the storage lead maintains and the interface lead's `GET /articles` returns wholesale.
+
+The four verbs above move a message; they don't arbitrate a disagreement. Nothing in `list`/`send`/`get`/`await` decides whose plan wins when two leads' domains touch the same model and land on different conclusions about it. That's still your job, routed back up the hierarchy you supposedly bypassed - which means peer coms removes hops for facts that only inform, and quietly hands you back the ones that need a decision. Know which kind you're building for before you wire the channel.
 
 ## Is this actually worth it? The honest test
 
 Everything in this lesson is easy to over-apply - a peer channel is a fun thing to build, and "my agents talk to each other" sounds like progress whether or not it is. Before you wire one up for real, ask honestly:
 
-1. **Does the fact actually change what the other side does?** The `lang` field genuinely changes the index lead's plan - it passes. If a lead just wants to *share* something interesting with no bearing on the other's next move, that's a status update, not a reason for a peer channel.
-2. **Could the orchestrator relay it just as well?** For one message, once, routing through you costs you two hops of attention and nothing else. That's not expensive enough to justify standing up and securing a whole comms layer over. The channel earns its keep when the relay would happen *often enough*, or *urgently enough*, that your attention is the actual bottleneck.
-3. **Can you name the end condition before you send the first message?** "Index lead acks once, done" is a real end condition. If you can't state one in a sentence, you don't have a peer exchange - you have the start of a loop.
+1. **Does the fact actually change what the other side does?** The `word_count` field genuinely changes the storage lead's plan - it passes. If a lead just wants to *share* something interesting with no bearing on the other's next move, that's a status update, not a reason for a peer channel.
+2. **Could the orchestrator relay it just as well?** For one message, once, honestly yes - routing it through you costs two hops of attention and nothing else, and conceding that is part of running this test honestly. What this count catches is the recurring case: when exchanges like this happen *often enough*, or *urgently enough*, that your attention is the actual bottleneck - each relayed exchange interrupts you at both ends, and a peer send never does. A one-shot handshake clears this count only conditionally: at exactly one exchange, the relay would have been fine, and the channel starts earning its build the moment facts like this one recur.
+3. **Can you name the end condition before you send the first message?** "Storage lead acks once, done" is a real end condition. If you can't state one in a sentence, you don't have a peer exchange - you have the start of a loop.
 4. **Does the cost scale with you in mind?** Cost here runs roughly with agent count times how many times a message bounces back and forth - cheap for two leads trading one fact, expensive fast for a five-agent debate that keeps going. Know which one you're building before you commit to it.
 5. **Is the infrastructure proportionate to how often this actually happens?** A running hub process, tokens to secure it, peers to register - that's real ongoing cost. For a single once-per-migration handshake between two leads on one machine, the lightweight local version is proportionate. A standing, always-on hub is worth it only if you're actually running a persistent multi-agent setup often enough to amortize it.
 
-Run stash's `lang`-field handshake through that list honestly and it passes on every count: it changes a real plan, it's a single exchange with a clean end, and a local socket-based call is cheap enough that building it costs less than the two hops of your attention it would otherwise take. That's the bar. A three-agent standing debate channel you build because the pattern exists and it looked good in a demo does not automatically clear it - and most of the time, it doesn't need to.
+Run the `word_count` handshake through that list honestly and it passes in its light local form: it changes a real plan, it's a single exchange with a clean end, its cost stays flat whether the migration trades one fact or five, and the light local form is proportionate to a once-per-migration exchange. Count 2 is the one it clears only conditionally, and the concession is the lesson: at one exchange, relaying through you would honestly have done. The channel earns its build when facts like this recur - each recurrence is two hops of your attention the relay would cost, and the peer send costs none. That's the bar. A three-agent standing debate channel you build because the pattern exists and it looked good in a demo does not automatically clear it - and most of the time, it doesn't need to.
 
 ## The verdict on the whole team, not just the channel
 
-This chapter's test was written for one peer handshake. Point it at everything this module built, because that's the verdict this module actually owes you: the orchestrator, the three leads, the seven workers, the expertise files, and the peer channel, together, on a migration whose total reading material would have fit in one context window with room to spare.
+This chapter's test was written for one peer handshake. Point it at everything this module built, because that's the verdict this module actually owes you: the orchestrator, the three leads, the seven workers, the expertise files, and the peer channel, together, on a migration whose total reading material - 11 files, 241 lines, as the module's own traces counted them - would have fit in one context window with room to spare.
 
-The trace says the answer isn't a flat yes or a flat no. The lead layer earns its keep for *this* migration specifically because the domains are both multiple and individually wide enough to need more than one worker each - drop to one or two workers per domain and the honest answer in the last chapter was that a flatter, two-tier version would have done the same job for less ceremony. The expertise files earn their keep cleanly and don't scale down well either way: fourteen wasted worker-spawns against one written line is not a close call, for a lead that will see its domain again. The peer channel earns its keep in exactly the form the test above passed - one handshake, one local socket, one hop counter - and would flip to a net cost the moment it grew into a standing hub nobody's using often enough to amortize. Here's that last part as its own ledger row, on purpose, because this module is the one that's allowed to show a line where the cost outruns the buy:
+The trace says the answer isn't a flat yes or a flat no. The lead layer earns its keep for *this* migration specifically because the domains are both multiple and individually wide enough to need more than one worker each - drop to one or two workers per domain and the orchestration lesson's own honest answer applies: a flatter, two-tier version would have done the same job for less ceremony.
 
-| Layer | What it costs | What it buys | Who decided |
-|---|---|---|---|
-| Lead (tool-surface locked to `dispatch_agent` only) | one more agent's own overhead, per domain, on top of every worker beneath it | a report count that stays flat as workers scale - 3 reports whether each lead runs 2 workers or 8 | you |
-| Expertise file, one per lead | a small markdown file the lead re-reads every spawn; nothing if nobody curates it | zero repeated worker-spawns rediscovering a fact the lead already paid to learn once | the lead, curated by hand - never auto-logged |
-| Peer channel (coms), light local form, one handshake | a hop counter, a small local transport, one exchange | two relay hops removed for a fact that actually changes the other lead's plan | you, per exchange - gated by the honest test above |
-| Peer channel, standing hub, always-on | a running process, credentials to secure it, peers to register and keep current | readiness for exchanges that, on a migration this size, mostly never come | nobody - this is the row where the cost outruns the buy |
+The expertise files earn their keep cleanly and don't scale down well either way: fourteen wasted worker-spawns against one written line - the before-and-after [the expertise lesson](/course/pi/teams/expertise/) traced - is not a close call, for a lead that will see its domain again.
 
-Same roster, same close look:
+The peer channel earns its keep in exactly the form the test above passed - one handshake, one local socket, one hop counter, with count 2's concession noted - and would flip to a net cost the moment it grew into a standing hub nobody's using often enough to amortize.
 
-| Lead | Domain | Expertise file | Skills |
-|---|---|---|---|
-| Extraction lead | `src/stash/extract/`, `app/worker.py` | `.pi/agents/expertise/extraction-lead.md` | `onboard-content-source` |
-| Index lead | full-text search rebuild | `.pi/agents/expertise/index-lead.md` | - |
-| Interface lead | web UI + CLI rendering | `.pi/agents/expertise/interface-lead.md` | - |
+Put the whole module's pricing in one place, because this is the module that's allowed to show a line where the cost outruns the buy:
+
+- **A lead** - tool-surface locked to `dispatch_agent` only (the one tool it gets: spawn a worker with a prompt) - costs one more agent's own overhead per domain, on top of every worker beneath it, and buys a report count that stays flat as workers scale: three reports whether each lead runs two workers or eight. Your trade.
+- **An expertise file** - a small markdown file your dispatch code pastes into the lead's prompt at every spawn, curated by hand, never auto-logged - costs one file's worth of curation and buys zero repeated worker-spawns rediscovering a fact the lead already paid to learn once. Also your trade.
+- **A peer channel in its light local form** - a hop counter, a small local transport, one exchange - costs that small build and removes two relay hops for a fact that actually changes the other lead's plan, gated each time by the honest test above.
+- **A peer channel as a standing, always-on hub** - a running process, credentials to secure it, peers to register and keep current - buys readiness for exchanges that, on a migration this size, mostly never come. That last line is deliberately priced with no buyer: nobody should build it here, because on this migration it would be a cost with no payoff to balance it.
+
+The roster is unchanged from [the expertise lesson's table](/course/pi/teams/expertise/#what-the-roster-looks-like-now): three leads, three expertise files, one skill.
+
+And the migration itself is done: `readability-lxml` wired into `extract_meta` for real, every stored row re-processed through the storage lead's upsert on [the context chapter's](/course/pi/context/) unique index, `word_count` set where a body was found and left empty where no server HTML ever arrived, `GET /articles` answering with the richer shape, suite green. The README can truthfully advertise a readability extractor now.
 
 **The right amount of team, for most of what you'll actually do to `stash`, is smaller than it's tempting to build - but for this specific migration, the trace says the team you built earns almost all of what it cost.** Build the fourth row above and it wouldn't have.
 
 ## What you've assembled
 
-Rules, config, extensions, gates, skills, subagents, and now a team - orchestrator, leads that never touch a file, workers underneath them, expertise files that make the leads better over time, and a peer channel you only reach for when the test above actually passes. You have every layer this course has handed you. Nobody has added up the bill. [Next: pull all of it into one coherent harness, and judge honestly where Pi belongs in your day](/course/pi/daily-workflow/).
+Rules, config, extensions, gates, skills, subagents, and now a team - orchestrator, leads that never touch a file, workers underneath them, expertise files that make the leads better over time, and a peer channel you only reach for when the test above actually passes. You have every layer this course has handed you. Nobody has added up the bill for all of it together. [Next: pull all of it into one coherent harness, and judge honestly where Pi belongs in your day](/course/pi/daily-workflow/).

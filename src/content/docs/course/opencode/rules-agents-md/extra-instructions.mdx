@@ -1,13 +1,11 @@
 ---
 title: Point feedmill's AGENTS.md at more instruction files
 description: "Your conventions are too long to live inline in AGENTS.md, and OpenCode never resolves an @path import. List the extra files in the instructions field instead."
-sidebar:
-  label: "instructions · extra rule sources"
 ---
 
-`feedmill`'s `AGENTS.md` started tight - the UTC rule, the rate-limit rule - but it's filling up. Every feed source has its own shape: the Atom parser tolerates a missing `updated` element one way, the JSON-feed parser handles `date_published` another, and there's a page of hard-won notes about which upstreams lie about their encoding. You've written all of that down once, in `docs/feed-formats.md`, and you don't want to paste it into `AGENTS.md` - it's three screens long and it would bury the two rules that actually need to be read on every turn.
+In `feedmill`, the course's illustrative Go feed aggregator, the `AGENTS.md` started tight - the UTC rule, the rate-limit rule - but it's filling up. Every feed source has its own shape: Atom items take their timestamp from `updated`, JSON Feed items prefer `date_published` and fall back to `date_modified`, and the linkblog fixtures carry their own decoding note. You've written all of that down once, in `docs/feed-formats.md` (assume feedmill has this file; any long conventions doc of your own works the same way), and you don't want to paste it into `AGENTS.md` - it grows with every source you add, and it would bury the two rules that actually need to be read on every turn.
 
-So you do the thing your fingers already know how to do. You drop a reference into `AGENTS.md`:
+So you do the thing your fingers may already know how to do. You drop a reference into `AGENTS.md`:
 
 ```markdown
 ## Feed parsing
@@ -15,66 +13,70 @@ So you do the thing your fingers already know how to do. You drop a reference in
 See @docs/feed-formats.md for per-source conventions.
 ```
 
-If you've come from Codex or Claude Code, that `@path` is muscle memory - both of them expand an `@`-prefixed path inline, pulling the referenced file into context automatically. So you write the rule, ask for a parser change, and watch the agent get the per-source detail wrong anyway:
+If you've come from Claude Code, that `@path` is muscle memory - CLAUDE.md expands an `@`-prefixed path inline, out of the box, pulling the referenced file into context automatically ([Claude Code memory documentation](https://code.claude.com/docs/en/memory), as of September 2026). So you write the rule, ask `build` (OpenCode's default coding agent) for a parser change, and watch it stall or guess on the per-source detail anyway. An illustrative exchange:
 
 ```text
+build ›
 > add handling for the new "linkblog" feed - its conventions are in the docs
 
-  • Read AGENTS.md, internal/fetch/atom.go   (2 files)
+  • Read internal/parse/atom.go   (1 file)
 
   I don't see a linkblog format described. AGENTS.md mentions a
   docs/feed-formats.md but I haven't read it. Want me to open it?
 ```
 
-The agent read `AGENTS.md`, saw the literal text `@docs/feed-formats.md`, and treated it as exactly that - literal text. It did not go open the file. **OpenCode does not parse `@path` imports.** That `@` syntax has no special meaning inside `AGENTS.md`; the reference sits there as a string the model can read but the tool never acts on. Codex and Claude Code expand it; OpenCode doesn't, and a habit that's invisible everywhere else fails silently here - the rule *looks* wired up, and only a wrong answer tells you it wasn't.
+The agent had `AGENTS.md` in its context, saw the literal text `@docs/feed-formats.md`, and treated it as exactly that - literal text. It did not go open the file. **OpenCode does not automatically parse `@path` references inside `AGENTS.md`** - the docs say it plainly: "opencode doesn't automatically parse file references in AGENTS.md" ([rules documentation](https://opencode.ai/docs/rules/), as of September 2026). That `@` syntax has no special meaning here; the reference sits as a string the model can read but the tool never acts on. A habit another tool honors invisibly fails silently in OpenCode - the rule *looks* wired up, and only a stalled or wrong answer tells you it wasn't.
 
 ## Wire the file in through `instructions`, not `@`
 
-The right place to list extra rule sources isn't `AGENTS.md` at all - it's the `instructions` field in `opencode.json`. It takes an array of paths, and OpenCode loads every one of them into the rules layer alongside `AGENTS.md` on every turn:
+The right place to list extra rule sources isn't `AGENTS.md` at all - it's the `instructions` field in `opencode.json`, OpenCode's config file at the project root. It takes an array of paths, and OpenCode loads every one of them into the rules layer (the instruction text OpenCode puts in the model's context on every turn) alongside `AGENTS.md` - "All instruction files are combined with your AGENTS.md files" ([rules documentation](https://opencode.ai/docs/rules/), as of September 2026) - in context from the first message of every session. A relative path resolves against the directory you start OpenCode in and each parent up to the repo root, so the entry below, added to your existing `opencode.json`, works from anywhere inside feedmill ([`instruction.ts` at v1.18.32](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/session/instruction.ts), as of September 2026):
 
-```jsonc
-// opencode.json
+```json title="opencode.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["docs/feed-formats.md"]
 }
 ```
 
-That's the whole fix. `AGENTS.md` stays the lean two-rule file it should be; the long per-source reference lives in its own doc where it's easy to read and edit; and `opencode.json` is the seam that joins them. Now re-run the same task and the detail is there before you ask:
+`AGENTS.md` stays the lean two-rule file it should be; the long per-source reference lives in its own doc where it's easy to read and edit; and `opencode.json` is the seam that joins them. Now re-run the same task and the detail is there before you ask. The edit below waits for approval only because this repo's `opencode.json` also sets `agent.build.permission.edit` to `ask`, the gate [the first-change lesson](/course/opencode/getting-started/first-change/) sets up; out of the box, `build`'s edits land without asking ([permissions documentation](https://opencode.ai/docs/permissions/), as of September 2026). An illustrative exchange:
 
 ```text
+build ›
 > add handling for the new "linkblog" feed - its conventions are in the docs
 
-  • Read AGENTS.md, docs/feed-formats.md, internal/fetch/atom.go   (3 files)
+  • Read internal/feed/json.go   (1 file)
 
-  Per docs/feed-formats.md, linkblog feeds are JSON-feed with a
-  non-standard date field and declare UTF-8 but sometimes ship
-  Latin-1. I'll decode defensively and parse the timestamp to UTC.
+  Per docs/feed-formats.md, linkblog items follow the JSON Feed rules:
+  prefer date_published, fall back to date_modified, and reject an item
+  with neither. The fixture is UTF-8, and any decoding rule stays beside
+  its regression fixture. I'll reuse JSONItem.PublishedAt for the UTC
+  timestamp.
 
-  ⏵ Edit internal/fetch/linkblog.go
+  ⏵ Create internal/feed/linkblog.go
+  Permission required
+    Allow once   Allow always   Reject
 ```
 
-It read `docs/feed-formats.md` on its own this time - not because you mentioned it in the prompt, but because `instructions` pulls it into the rules layer the same way `AGENTS.md` is pulled. The conventions are in force from the first message of every session, exactly like the rules you wrote inline, just kept in a file of their own.
+The conventions were already in its context this time - not because you mentioned them in the prompt, but because `instructions` puts `docs/feed-formats.md` into the rules layer the same way `AGENTS.md` gets there. No read of `docs/feed-formats.md` was needed; the file arrives exactly like the rules you wrote inline, just kept in a file of its own.
 
 ## One glob beats a growing list
 
 The `instructions` field accepts glob patterns, not only literal paths - which matters the moment you have more than one extra source. `feedmill` is heading toward a `docs/feeds/` directory with a file per format family: `atom.md`, `json.md`, `rss.md`. Rather than naming each one and editing `opencode.json` every time you add a feed type, match them all:
 
-```jsonc
-// opencode.json
+```json title="opencode.json"
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["docs/feeds/*.md"]
 }
 ```
 
-A new `docs/feeds/microformats.md` is now picked up automatically - write the doc, no config edit. This is the same trick monorepos use to gather a `packages/*/AGENTS.md` from every sub-package in one line. The glob is the maintainable form; reach for it whenever the list would otherwise grow.
+A new `docs/feeds/microformats.md` is now picked up automatically - write the doc, no config edit. This is the same trick monorepos use to gather a `packages/*/AGENTS.md` from every sub-package in one line. The glob is the maintainable form, but it has a cost that grows with it: every match loads on every turn, so each doc you add makes every turn larger. Use it while most turns need the files and they stay short. When each file serves only some tasks, point at it in prose instead, as the last section shows.
 
-The `instructions` field even reaches past your own repo: an entry can be a remote URL, and OpenCode fetches it into the rules layer alongside the local files - handy for a shared house style you keep in one place and point every project at. Remote fetches carry a 5-second timeout, so keep anything load-bearing local and treat the remote pull as a convenience, not a dependency.
+The `instructions` field even reaches past your own repo: an entry can be a remote `https://` URL, and OpenCode fetches it into the rules layer alongside the local files - handy for a shared house style you keep in one place and point every project at. Remote fetches carry a 5-second timeout, so keep anything load-bearing local and treat the remote pull as a convenience, not a dependency ([rules documentation](https://opencode.ai/docs/rules/), as of September 2026).
 
 ## When you genuinely can't pre-list it
 
-`instructions` is the answer when you know up front which files carry the rules. Sometimes you don't - the relevant doc depends on which feed source the task touches, and pre-loading all of them on every turn would just burn context. For that case the fallback is plain prose: tell the agent *in* `AGENTS.md` to go read the file when it's relevant, in ordinary language rather than `@` syntax.
+`instructions` is the answer when most turns need the files. Sometimes they don't - the relevant doc depends on which feed source the task touches, and pre-loading all of them on every turn would just burn context. For that case the fallback is plain prose: tell the agent *in* `AGENTS.md` to go read the file when it's relevant, in ordinary language rather than `@` syntax.
 
 ```markdown
 ## Feed parsing
@@ -83,6 +85,6 @@ When adding or changing a feed parser, read the matching file under
 docs/feeds/ first (e.g. docs/feeds/json.md for JSON feeds).
 ```
 
-That instruction the agent *does* act on, because it's a directive it understands - "read this file when X" - not an import directive it's expected to expand. The difference is the whole lesson: OpenCode won't resolve a path for you, but it will follow an instruction to go read one. So either list the file in `instructions` and have it loaded for you, or write the prose and have the agent fetch it on demand. What never works is the middle thing - an `@path` that looks like both and is neither.
+That instruction the agent *can* act on, because it's a directive it understands - "read this file when X" - not an import directive it's expected to expand. It is guidance, not a load: the model usually follows it, but nothing makes it open the file. If a task skips the file and gets the detail wrong, move that file into `instructions`. The difference is the whole lesson: OpenCode won't resolve a path for you, but the model will usually follow an instruction to go read one. So either list the file in `instructions` and have it loaded for you, or write the prose and have the agent fetch it on demand. What you can't rely on is the middle thing - an `@path` that looks like both and is neither: OpenCode never loads it, and it stays text the model may or may not act on.
 
-Your rules now span a clean `AGENTS.md` plus a set of focused docs, all loaded on every turn through one config field. That's the rules layer fully built. Notice what it costs, though: every one of those files rides along on every turn, whether the turn needs it or not. The next layer is the exact inverse - a procedure the agent loads *only* when the job calls for it, so a long onboarding routine can be one fetch away without sitting in the window all day. [Next chapter: Skills](/course/opencode/skills/).
+Your rules now span a clean `AGENTS.md` plus a set of focused docs, all in context on every turn through one config field. Notice what it costs: every one of those files rides along on every turn, whether the turn needs it or not. The next chapter is the exact inverse - a procedure the agent loads *only* when the job calls for it, so a long onboarding routine can be one fetch away without sitting in the window all day. [Next chapter: Skills](/course/opencode/skills/).

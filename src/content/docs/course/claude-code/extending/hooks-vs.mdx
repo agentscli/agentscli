@@ -1,34 +1,44 @@
 ---
 title: Why a hook is stronger than a rule or a permission
-description: "A rule asks the model; a permission asks it too. A hook asks no one - it's deterministic code on the rail. Knowing which guarantee you need is the skill."
-sidebar:
-  label: "Hooks · vs rules & permissions"
+description: "A rule asks the model; a permission asks the harness. A command hook asks no one - code on the rail. Knowing which guarantee you need is the skill."
 ---
 
 import GuaranteeLadder from '../../../../../components/interactive/GuaranteeLadder.tsx';
 
-You've now governed the agent three ways across this course, and the ledger gate you just built sits apart from the other two in a way worth making explicit - because reaching for the wrong one gives you a guarantee weaker than you think you have. Lay them side by side:
+Claude Code gives you three ways to govern what an agent does: a **rule** (a line in `CLAUDE.md` or `.claude/rules/` that the model reads), a **permission** (an allow or deny entry in `settings.json` that the harness - Claude Code itself, rather than the model - evaluates), and a **hook** (a handler that runs at a fixed moment in the agent's lifecycle). They are not three strengths of the same thing, and reaching for the wrong one leaves you holding a guarantee weaker than you think. Lay the three side by side and ask of each: who checks, and when?
 
-- A **rule** (project memory, an `AGENTS.md` line) is *context*. It tells the model what's true and what you want, and the model factors it into its decisions. It lives in the context window, which means it can be compacted out, drowned by a long session, or simply not weighed heavily enough on a given turn.
-- A **permission** (an allow or deny rule) is *Claude Code enforcement*. It's stronger than a rule - a [deny rule is a wall](/course/claude-code/permissions-modes/deny/) while the permission layer is active. But it governs the *tools* the agent may invoke. It answers "may the agent call this?" - not "is the content of this specific commit acceptable?"
-- A **hook** is *deterministic, model-independent code*. It doesn't advise the model and doesn't sit in the context window at all. It runs on the rail at a lifecycle event, inspects the actual payload, and decides in plain shell. The model's reasoning, its mood, its remaining context budget - none of it is in the loop.
+The running example is a small TypeScript payments service whose `CLAUDE.md` says to use integer cents and never floating point for currency, and whose `src/payments/ledger.ts` counts the money. [The gate lesson](/course/claude-code/extending/hooks-gate/) builds a `PreToolUse` hook that refuses any commit touching that ledger file unless a test changed too; this page explains why that had to be a hook.
 
-The sharpest way to feel the difference: a rule depends on the model following context, while a permission is evaluated by Claude Code against the requested tool and input. **A hook can inspect the lifecycle payload and enforce a richer condition.** That's why the ledger guarantee had to be a hook. "No ledger change without a test" isn't a fact to remember (a rule) and it isn't a tool to forbid (a permission) - `git commit` is a tool you obviously *do* allow. It's a *condition on the content* of a specific action, checked deterministically at the moment that action is attempted.
+## A rule is context, and context is weighed
 
-Stress-test the difference yourself. Four constraints, three homes each - and a clock, because the whole point is that what holds while you watch isn't what holds at 2am:
+A **rule** - the lines in `CLAUDE.md`, an entry in `.claude/rules/` - is *context*. It tells the model what is true and what you want, and the model weighs it. Compaction (Claude Code summarizing a long conversation to reclaim window space) does not delete your project-root `CLAUDE.md` or unscoped rules files; they are re-injected from disk after a compaction pass ([documented here](https://code.claude.com/docs/en/context-window)). What *can* drop out is the finer-grained material: a rule scoped to specific paths, or a `CLAUDE.md` nested deeper in the tree, stays summarized away until a matching file is read again.
+
+And independently of compaction, weighing is the model's job. A rule present in context can still lose the turn to a strong prior, and the example repo shows it in one file. The cents rule sits in the window while `src/payments/processor.ts` computes the fee-inclusive total, `amount * 1.029`, in floating point (the fee is `amount * 0.029`; the total adds it to the amount). The rule is loaded, in full, and the code floats anyway.
+
+## A permission is a harness wall around a class of action
+
+A **permission** - an allow or deny rule - is *Claude Code enforcement*. It is evaluated by the harness against the requested tool and input, not by the model - stronger than context: a [deny rule is a wall](/course/claude-code/permissions-modes/deny/) while the permission layer is active. But its question is "may the agent call this?" It governs tools and input classes, and cannot ask "is the content of this specific commit acceptable?" - `git commit` is a tool you allow, so it waves commits through regardless of content.
+
+## A command hook enforces a condition on the real action
+
+A **command hook** is deterministic, model-independent code on the rail - the fixed machinery around the model, not the model itself. It does not advise the model and does not sit in the context window. It fires at the lifecycle event, inspects the actual payload - the staged files, the command string - and decides in plain shell. The model's reasoning, its remaining context budget, none of it is in the loop.
+
+The word *command* is doing work in that sentence. Hooks have five handler types - `command`, `http`, `mcp_tool`, `prompt`, `agent` - and the last two hand the decision to a Claude model, for when you want judgment instead of a guarantee; the [hooks reference](https://code.claude.com/docs/en/hooks) catalogs all five. The ledger gate is a command hook because its whole value is that no model, anywhere, decides whether it fires or what it sees.
+
+That is why "no ledger change without a test" had to be a hook. It is not a fact to remember - that is a rule, and `CLAUDE.md` already remembers it. It is not a tool to forbid - that is a permission, and `git commit` must stay allowed. It is a *condition on the content* of a specific action, checked deterministically at the moment that action is attempted.
+
+Stress-test the difference yourself. Four constraints, three homes each - and a clock, because what holds while you watch is not what holds unattended. The ladder is a concept model, not vendor data: rule cells fail when the rule is outweighed, permission cells hold for a named class of action, hook cells hold on the condition itself - and the clock's compacted state stands for attention drift and for the path-scoped or nested rules that compaction does summarize away, not for deletion of your project-root rules file, which compaction re-injects from disk:
 
 <GuaranteeLadder client:visible />
 
-## A decision rule
+## The decision rule
 
-So which do you reach for? The test is about what kind of guarantee the situation demands:
+So which do you reach for? The test is what kind of guarantee the situation demands:
 
-- **State a preference or a fact** the agent should weigh - "we use pnpm," "the auth module is fragile, be careful." That's a [rule](/course/claude-code/rules-memory/). You want the model *informed*, and you accept that it's the model deciding.
+- **State a preference or a fact** the agent should weigh - "we use pnpm," "the auth module is fragile, be careful." That's a [rule](/course/claude-code/rules-memory/). You want the model *informed*, and you accept that the model decides.
 - **Forbid a whole class of action** - never read `secrets/`, never touch prod config. That's a [permission deny](/course/claude-code/permissions-modes/deny/). You want a wall around a *tool or a path*, no judgment involved.
-- **Enforce a condition that no instruction can be trusted to hold, checked against the real action** - no ledger commit without a test, no push to `main` that skips CI, format every file on write. That's a **hook**. You want a guarantee that survives a forgetful agent and a 2am session.
+- **Enforce a condition that no instruction can be trusted to hold, checked against the real action** - no ledger commit without a test, no push to `main` that skips CI, format every file on write. That's a **command hook**. You want a guarantee that survives a forgetful agent and an unattended session.
 
-Put plainly: rules and permissions shape what the agent *may do*; a hook enforces what *must be true* regardless of what the agent does. The first two trust the agent inside the lines you draw. The hook doesn't need to trust it at all.
+Put plainly: rules and permissions shape what the agent *may do*; the gate enforces what *must be true* regardless of what the agent does (a rule is context; permissions and hooks are control). A rule relies on the agent's judgment; a permission walls off a named class but leaves an allowed action's content unexamined; the command hook checks the action itself.
 
-That last property - *runs regardless, with nobody in the loop* - is exactly why hooks become load-bearing the moment you stop watching the agent work. We've built the gate while sitting at the terminal; its real value shows up when you're not there. Hold that thought.
-
-For now, you've assembled the whole kit: the agent has **reach** (MCP into the database and the board), and it has a **gate** (the ledger hook that can't be talked past). But all of it lives in *your* `.claude/` directory, on *your* machine. Your teammates have none of it. The last move in this chapter is turning this hand-built setup into something you can [hand over as a single unit](/course/claude-code/extending/plugins-bundle/).
+A gate like the ledger hook lives in your repo's `.claude/` directory, beside any MCP servers you registered (external-tool connections) and any skills you wrote (task playbooks). On a second machine none of it exists until someone copies files and rewires them by hand. The last move of this chapter is turning a hand-built setup into something you can [hand over as a single unit](/course/claude-code/extending/plugins-bundle/).

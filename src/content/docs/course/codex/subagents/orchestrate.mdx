@@ -1,91 +1,114 @@
 ---
-title: Light orchestration - gate every hand-off and merge worktree branches sequentially
+title: "Light orchestration - gate every hand-off and merge worktree branches sequentially"
 description: "Parallel workers each on their own branch still have to come home. Gate every hand-off with a read-only reviewer, then merge the branches back one at a time."
-sidebar:
-  label: "Orchestrate · gate and merge"
 ---
 
-You now have several workers grinding through the money refactor, each walled off in its own [worktree](/course/codex/subagents/worktrees/), each producing a branch - `money/parse`, `money/store`, `money/report`. The fan-out got the work *done in parallel*. What it didn't do is bring it back together, and the last two lessons both flagged a debt still sitting unpaid: fan-out doesn't divide your wall-clock time by the number of workers, because the merge tail runs one at a time no matter how wide the fan-out was. This lesson pays that debt with real turns, not another claim. Orchestration here is not a workflow engine, it's three habits - gate every hand-off, decide the merge before you scatter, and bring the branches home one at a time through a gate. Get those right and the parallelism you built pays off without a half-finished branch quietly poisoning `main`.
+Two diffs and a verdict are sitting outside `main`. The fan-out got the hardening done in parallel; nothing has come back. That is the debt the last two lessons kept flagging: fan-out does not divide your wall-clock time by the worker count, because the merge tail runs one gate at a time no matter how wide the fan-out was. This lesson pays the debt in counted turns.
 
 ## Orchestration is the aggregation step, made real
 
-Back in the [fan-out lesson](/course/codex/subagents/fan-out/) the rule was: *write the aggregation first* - be able to say in one sentence how the slices come back together before you spawn anything. Orchestration is that sentence turned into an actual procedure. For the recategorisation it was cheap - "concatenate the change-logs, sum the per-category counts" - because the workers only produced *data*. The money refactor is harder, because the workers produced *code*, and code doesn't reduce by concatenation. It reduces by merge, and merges can conflict, and a passing test on one branch tells you nothing about the other three. So the aggregation step grows teeth: a review gate on each branch and a sequential merge, not a free-for-all.
+Back in the [fan-out lesson](/course/codex/subagents/fan-out/) the rule was: *write the aggregation first*. Orchestration is that sentence turned into a procedure. For the audit it was cheap - concatenate the verdicts - because the workers produced data. The hardening produced code, and code does not reduce by concatenation: it reduces by merge, merges can conflict, and a green suite on one branch says nothing about the next one. So the reduce step grows teeth - a review gate per branch, and a merge order fixed in advance.
 
-You can run this orchestration from your main Codex thread - it stays the coordinator, dispatching workers and reading back their summaries - or you can describe the whole reduce step to the agent and have it drive. As with spawning in the [delegate lesson](/course/codex/subagents/delegate/), the mechanism is prompt-driven: you describe the procedure in prose and Codex coordinates the workers. The exact flags it exposes for this shift between releases, so pin specifics to the [official Codex reference](https://learn.chatgpt.com/docs) rather than scripting a flag you haven't confirmed. The plain `git` commands below are the durable, verifiable part; lean on those.
+The order comes straight from that plan and the one dependency the projection built in: `money/parse` first, because `money/tests` asserts the new parse; reversed, `main` would sit red between merges. `money/wire` cleared its verification and carries no diff, so nothing of it merges - its verdict gets recorded and its worktree comes down. You can drive all of this from your main thread; as ever, the spawning is prompt-driven, and the plain `git` below is the durable, verifiable part.
 
 ## Gate each hand-off with a read-only reviewer
 
-The cheapest way for parallel work to go wrong is for a worker to *think* it's done when it isn't - tests green on a path it didn't exercise, an `amount` left as a float in a corner it didn't touch. The fix is a separate set of eyes before any branch is allowed to merge: a **read-only reviewer**.
+The cheapest way for parallel work to go wrong is a worker believing it is done - a float left alive on a path it never exercised, a pin that asserts the old behavior. The fix is a separate set of eyes before anything merges: a reviewer. Here is how one is actually made, because the obvious tool is wrong: `--sandbox` is a session-launch flag - it sets the session you start, not any one child. Subagents inherit the parent's sandbox by default.
 
-This is where the [approvals & sandbox](/course/codex/approvals-sandbox/) two-axis model earns its keep one more time. A reviewer is a subagent run under `--sandbox read-only` - it can read every file on the branch and run the tests, but it cannot edit, cannot push, cannot touch the network. Its only output is a verdict:
+A read-only reviewer next to writing workers is a **custom agent file**: a small TOML file under `.codex/agents/` for project scope, or `~/.codex/agents/` for your own machine. It needs a name, a description, and developer instructions; the optional keys include `sandbox_mode`, which is where the fence gets pinned. Workers spawned without a file keep inheriting the coordinator.
 
-```text
-> Review the money/parse branch as read-only. Confirm every amount is parsed
-  to integer cents per AGENTS.md, that no float path survived, and that the
-  money tests pass. Return PASS or FAIL with the specific files and line
-  ranges behind a FAIL. Do not edit anything.
+```toml
+# .codex/agents/reviewer.toml - illustrative shape
+name = "reviewer"
+description = "Reads a branch and returns a PASS/FAIL verdict against the repo rules; never edits."
+developer_instructions = """
+You review; you do not fix. Read the diff, check every hunk against
+AGENTS.md and the parse-path rule, and return PASS or FAIL with
+file:line evidence for a FAIL.
+"""
+sandbox_mode = "read-only"
 ```
 
-Two things make this a *gate* and not a rubber stamp. First, the reviewer is a different context from the worker that wrote the code - it didn't talk itself into the change, so it's not invested in it passing. Second, it's read-only by construction, so a reviewer can never "helpfully" fix what it found and merge its own opinion in; a FAIL goes back to the writing worker, the gate stays a gate. You run one reviewer per branch, and a branch that comes back FAIL does not advance to the merge - it goes back for another pass first.
+Now correct the capability list, because read-only is narrower than it sounds. The reviewer can read every file on the branch, answer questions, and run no-write probes - that is what the fence admits. What it cannot reliably do is run the test suite: `pytest` writes `.pytest_cache` and bytecode caches, and a read-only fence is exactly the wrong shape for that. Under `never` there is no asking at all. So the reviewer reads and rules; running the suite stays with you.
 
-**Every branch pays for one review turn before it's allowed anywhere near `main`, and that turn doesn't run in parallel with the other branches' reviews either - one reviewer, one verdict, one branch at a time.**
+That division is the gate's design, not a limitation to route around. You, the coordinator, run a posture where `pytest` is ordinary - the `budget-build` profile from the approvals chapter lets in-workspace test runs flow - while the reviewer runs a deliberately narrower one. The verdict and the test run are different instruments, kept in different hands. Its only output is a verdict:
+
+```text
+> Review the money/parse branch as the reviewer agent. Confirm the
+  amount parse converts decimal strings to integer cents with no float
+  anywhere on the path, per the AGENTS.md money rule and the parse-path
+  rule. Return PASS or FAIL with file:line for any FAIL. Do not edit,
+  do not merge, do not run the suite.
+```
+
+Two things make this a gate rather than a rubber stamp. The reviewer is a different context from the worker that wrote the change - it never talked itself into it. And its fence is pinned in its own agent file, so it cannot helpfully fix what it found and fold its opinion into the branch: a FAIL goes back to the writing worker, full stop.
+
+**Every branch pays one review turn before it goes near `main`, and those review turns run one at a time - one reviewer, one verdict, one branch.**
 
 ## Merge sequentially, and price the tail you were promised
 
-It's tempting, once three branches all come back PASS, to merge all three at once. Don't. Parallel *editing* was safe because worktrees isolated the files; parallel *merging* is not, because every merge after the first lands on a `main` the previous merge already changed. Bring them home one at a time, and re-test between each - a sequential gated merge:
+It is tempting, once everything comes back PASS, to merge it all at once. Do not. Parallel editing was safe because worktrees isolated the files; parallel merging is not, because every merge after the first lands on a `main` the previous merge already changed. Bring the branches home one at a time, and re-test between each:
 
 ```bash
-# start clean
+# start from the trunk of your local repo
 git switch main
-git pull --ff-only
 
-# branch 1: merge, then prove main still passes before going on
+# slice 1: the fix, then prove main is still green
 git merge --no-ff money/parse
-pytest            # the gate - green or you stop here and fix
-
-# only if that gate passed, branch 2
-git merge --no-ff money/store
 pytest
 
-# and finally branch 3
-git merge --no-ff money/report
+# slice 2: the pin - after the fix by design; reversed, main sits red
+git merge --no-ff money/tests
 pytest
+
+# money/wire carried a verdict, not a diff: record it,
+# remove its worktree, nothing to merge
+git worktree remove ../budgetcli-wire
 ```
 
-Now count what that actually cost, in the same turns instrument this course has been keeping since chapter 1. Three branches, one review-gate turn each, one merge-and-test turn each: six turns, run strictly one after another, because git only merges into one `main` at a time and the `pytest` gate has to see each merge in isolation to tell you which one broke something. That's the number the fan-out lesson told you to remember. Fan out to three workers instead of one and the *reading and classifying* front genuinely runs in parallel - that part of the win is real. This six-turn tail does not shrink to match it, and it never will: it scales with how many branches you have to bring home, not with how many workers produced them. Widen the fan-out to six workers on six slices next time and the parallel front gets no slower - but the tail doubles, to twelve turns, because there are now twelve gates to clear one at a time.
+The diff that came home in `money/parse` is one line plus an import - the entire real fix under all that machinery, the projection's honesty in miniature:
+
+```python
+# app/importers/csv.py, after money/parse
+from decimal import Decimal
+
+amount_cents = int(Decimal(row["amount"]) * 100)
+```
+
+`Decimal` reads the decimal string exactly, the multiply by 100 is exact too, and `int()` truncates nothing that was ever fractional. The pin from `money/tests` feeds `0.29` through the parser and asserts `29` - the truncation the float parse used to commit, finally impossible.
+
+Now count what that cost, in the same turns instrument as ever. Three slices, three review turns - `money/parse`, `money/tests`, and `money/wire`'s verification read - then two merge-and-test turns for the two branches carrying diffs. Five turns, strictly one after another, because git merges into one `main` at a time and the `pytest` gate must see each merge in isolation to tell you which one broke something.
+
+That is the number the fan-out lesson told you to remember. Fan the editing out to six workers and the parallel front gets no slower - but the tail grows toward twelve serial turns, six reviews plus six merge gates, because there are now twelve gates to clear one at a time. Reviews scale with slices; merge gates scale with diff-carrying slices; neither scales with anything parallel.
 
 **Fan-out buys you parallel work. It never buys you a parallel merge.**
 
-The `pytest` line between each merge is the whole point beyond the turn count, too. Branch two might pass in isolation and still break once branch one's changes are underneath it - two independently-correct money refactors can disagree about a shared helper. Testing after *every* merge means that when something breaks, you know exactly which merge broke it, because only one thing changed. Merge all three at once and a red suite tells you only that *one of three* is wrong, which is the diagnostic position you went to all this trouble to avoid.
+The `pytest` line between merges is the point beyond the count. The pin might pass against the fix and still disagree with something on the wire path - two independently correct changes can conflict where they meet. Testing after every merge means that when something breaks, you know exactly which merge broke it, because only one thing changed. Merge everything at once and a red suite tells you only that one of three is wrong.
 
-If a merge conflicts, that's not a failure of the orchestration - it's the orchestration doing its job, surfacing the one place two slices genuinely overlapped. Resolve it in your main thread (or hand the conflict to a worker with the conflicting hunks as its brief), re-run the gate, then continue down the list.
+If a merge conflicts, that is not the orchestration failing - it is the orchestration surfacing the one place two slices genuinely overlapped. Resolve it in your main thread, or hand the conflict to a worker with both hunks as its brief, re-run the gate, and continue down the list.
 
 ## Clean up, then step back
 
-Once a branch is merged and the suite is green, its worktree has done its job. Tear it down the way the [worktrees lesson](/course/codex/subagents/worktrees/) set up - `git worktree remove` per merged slice, `git worktree prune` to clear any registrations whose directories are gone - so the next fan-out starts from a clean board rather than inheriting a yard full of stale trees.
+Once a branch is merged and the gate is green, its worktree has done its job. Tear down the way the [worktrees lesson](/course/codex/subagents/worktrees/) set up - `git worktree remove` per slice, `git worktree prune` for registrations whose directories are gone - so the next fan-out starts from a clean board.
 
-Step back and look at the shape you just ran, because it's the same shape every time, regardless of the task:
+Step back and look at the shape you just ran, because it is the same shape every time, regardless of the task:
 
-1. **Decide the reduce step first** - how do the branches come back together, in one sentence.
-2. **Fan out** independent, heavy slices into isolated worktrees.
+1. **Decide the reduce step first** - how the branches come back together, in one sentence, including the order.
+2. **Fan out** independent slices into isolated worktrees.
 3. **Gate each hand-off** with a read-only reviewer that returns a verdict, not an edit.
-4. **Merge sequentially**, re-testing between each, so a break names its own cause and the tail's cost stays honest.
+4. **Merge sequentially**, re-testing between merges, so a break names its own cause.
 5. **Tear down** the worktrees so the next run starts clean.
 
-That's light orchestration: no engine, no framework, just a coordinator thread, a review gate, and `git` used carefully. It scales from three branches to thirty without changing shape - only the queue, and the turns it costs, get longer.
+That is light orchestration: no engine, no framework - a coordinator thread, a reviewer pinned by an agent file, and `git` used carefully. It scales from three branches to thirty without changing shape. Only the queue, and the serial turns it costs, get longer.
 
-## The chapter's row in the ledger
+## What recurs, and what does not
 
-Score the whole chapter the way every chapter since [the first change](/course/codex/getting-started/first-change/) has been scored - tokens, turns, blast radius, recurrence. Here are the first two rows again, abbreviated, with this chapter's row added:
-
-| Move | Tokens | Turns | Blast radius | Recurs? |
-|---|---|---|---|---|
-| Read-only question | ~3,900 est. | 1 | None | No |
-| Fix the CSV date bug | ~2,100 est. (csv.py alone) | 4 | Money-adjacent, briefly drifted into the amount field | Partly - the fix holds, the habit doesn't |
-| Delegate + fan out the recategorisation; worktree + gate the money refactor | ~900 est. returned to parent (3 subagent summaries at ~300 each); 58,860 spent reading, isolated per worker, never enters this window | ~9 (2 to delegate and receive the recategorisation; 1 to fan out and dispatch the refactor; 6 sequential review-and-merge turns to bring the three branches home) | Money-handling code across `src/budgetcli/importers/csv.py`, `src/budgetcli/models.py`, and `src/budgetcli/categorise/rules.py`, edited by three parallel workers at once - walled off in separate worktrees, then merged one at a time through a review gate before any of it reaches `main` | Partly - the recategorised data and the merged code hold, because they're committed. The procedure that produced them - scoping a reviewer, gating each merge by hand - isn't written down anywhere yet, so you re-drive every step of it the next time `budgetcli` needs a parallel refactor |
-
-That last cell splits the same way the first chapter's did: the *artifact* recurs cleanly, because git doesn't forget a commit. The *procedure* does not, because nothing about "delegate this, fan that out, gate the merge, tear down the trees" lives anywhere Codex reads by default. You just ran five deliberate steps by hand, and you'll narrate the same five steps again the next time this repo needs a parallel refactor, and the time after that.
+Score the chapter's output honestly. The edits hold: git does not forget commits, the truncation pin feeds `0.29` through and asserts `29`, and the parse path is float-free for good. The procedure does not hold on its own: nothing about "sweep, fan out, worktree, gate, merge, tear down" lives anywhere Codex reads by default. You just ran five deliberate steps by hand, and you would narrate the same five again for the next parallel job, and the time after that.
 
 **A procedure you repeat with the same steps every time is exactly the thing you should stop re-explaining and start packaging.**
 
-And the running scenario has a procedure begging for exactly that treatment: every bank's CSV export is shaped differently, and onboarding a new one is the same sequence of moves each time - read the format, extend the importer, add the test, verify the money rule held. [That's the next chapter - Skills](/course/codex/skills/): turning a procedure you keep narrating into one the agent invokes itself.
+And the repo now holds a procedure begging for exactly that treatment. Every bank's CSV lands in a different shape, and every import is the same sequence: read the format, extend the importer, add the pin, check the money rule.
+
+State of the repo as this chapter closes (the course's labeled continuation; the companion ships the pre-hardening state): the parse path in `app/importers/csv.py` converts decimal strings to integer cents through `Decimal` - no float anywhere on it, the rules chapter's proposal made real code - and the suite is green at ten: nine from before, plus the new pin.
+
+Those money paths are exactly the paths a later chapter puts a deterministic gate around, and replays end to end. [The next chapter is Skills](/course/codex/skills/): what if a procedure you keep narrating could fire itself on recognition?

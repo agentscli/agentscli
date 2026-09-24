@@ -117,9 +117,9 @@ export const adlCells: Record<string, Cell> = {
       'Refactoring a shared library, in git: every edit is one `checkout` from undone, so let the edits flow - but the downstream consumers make the review non-negotiable, and any command that publishes or migrates is worth a pause. Cheap to undo is not the same as cheap to have shipped.',
   },
   'undoable/outward': {
-    rung: 'ask-all',
+    rung: 'auto-edit',
     reading:
-      'Editing deploy config or infrastructure code in git is the trap cell: the file is version-controlled, the apply is not. Reverting the edit doesn’t un-provision what it created. Gate the step where the tracked change becomes an outward action - that step is the real move, not the edit.',
+      'Editing deploy config or infrastructure code in git is the trap cell: the file is version-controlled, the apply is not. Reverting the edit doesn’t un-provision what it created. Let the edits flow, but gate the step where the tracked change becomes an outward action - the apply is a command, and that command is the real move, not the edit.',
   },
   'costly/local': {
     rung: 'auto-edit',

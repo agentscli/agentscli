@@ -1,71 +1,46 @@
 ---
 title: Create a custom agent
-description: "A custom agent is one Markdown file - .agent.md - naming a persona, scoping its tools, pinning how it behaves. Here's where it lives and four ways to make one."
-sidebar:
-  label: "Create · .agent.md & /create-agent"
+description: "A custom agent is one Markdown file - .agent.md - naming a persona, scoping its tools, pinning how it behaves. Where it lives, the frontmatter, and four ways to make one."
 ---
 
-Before you can build a reviewer for `shared-lib`, you need to know the shape of the thing you're building. A custom agent is just a Markdown file. The body is the persona's instructions - plain prose telling it who it is and how to work - and the frontmatter is the configuration that gives it tools, a model preference, and the right to call other agents.
+A custom agent is just a Markdown file. The body is the persona's instructions - plain prose telling it who it is and how to work - and the frontmatter is the configuration that gives it tools, a model preference, and the right to call other agents.
 
 ## Where the file lives
 
-Custom agents are `.agent.md` files in your repo's `.github/agents/` directory. Drop a file named `library-reviewer.agent.md` there and Copilot picks it up as an agent you can summon. If you keep agents somewhere else - or want a personal set outside any repo - the `chat.agentFilesLocations` setting tells Copilot where else to look.
+Workspace custom agents are `.agent.md` files in your repo's `.github/agents/` directory, or equally in `.claude/agents/` - both are documented workspace locations. Drop a file named `library-reviewer.agent.md` in either and Copilot picks it up as an agent you can summon. For a personal set that follows you across repos, the user-level locations are `~/.copilot/agents/` and `~/.claude/agents/`. (An older setting, `chat.agentFilesLocations`, could point Copilot at extra directories, but it is deprecated and works only with Copilot's older engine; put files in the supported directories instead.) Locations, the rename, the field list, and the current tool identifiers are per the [VS Code custom agents documentation](https://code.visualstudio.com/docs/agent-customization/custom-agents), verified September 2026 - if a tool name in an example below is ever rejected, that page and the tool list it links are the source of truth.
 
 :::note[Renamed from chat modes]
-If you've seen `.chatmode.md` files or docs referring to "custom chat modes," that's the old name. Custom chat modes were renamed to **custom agents**, and the file extension changed to **`.agent.md`**. The concept is the same; only the name moved. Use `.agent.md` - that's the one thing in this chapter most likely to bite you if you follow an older guide.
+If you have seen `.chatmode.md` files or docs referring to "custom chat modes," that is the old name. Custom chat modes were renamed to **custom agents**, and the extension changed to **`.agent.md`**. The concept is the same; only the name moved. Use `.agent.md` - that is the detail most likely to bite you if you follow an older guide.
 :::
 
 ## What the frontmatter controls
 
-The YAML frontmatter is where a custom agent stops being a note-to-self and becomes a configured persona. The fields you'll reach for:
+The YAML frontmatter is where a custom agent stops being a note-to-self and becomes a configured persona. The fields you will reach for:
 
-- **`description`** - what this agent is for, in one line. This is also how Copilot decides when the agent is a good fit, so write it for a reader who's choosing between agents.
-- **`name`** - the agent's display name in the dropdown and when you invoke it.
-- **`tools`** - an array of tool and MCP names the agent is allowed to use. This is how you *scope* an agent: a read-only investigator gets a narrow list; a builder gets more. Leaving something off the list is how you keep an agent from doing it.
-- **`model`** - which model the agent prefers. It takes either a single model name or a prioritized array, so you can express a fallback order. (We won't pick a model here - that's a later chapter, and the names churn. The mechanism is what matters: one name, or a list tried in order.)
-- **`agents`** - the subagents this agent is allowed to call. List them by name, or use `*` to allow all of them. This is the field that turns a solo agent into a coordinator - you'll lean on it heavily two lessons from now.
-- **`handoffs`** - in supported IDE flows, agents this one can hand off to as a sequential workflow. Copilot cloud agent on GitHub.com does not currently support this property.
-- **`user-invocable`** - a boolean, defaulting to `true`, that controls whether *you* can summon the agent directly. Set it `false` for an agent meant only to be called by another agent, never picked from the dropdown.
-- **`hooks`** - a preview field for attaching hooks to the agent's lifecycle.
+- **`description`** - what this agent is for, in one line. This is also how Copilot decides when the agent is a good fit, so write it for a reader choosing between agents.
+- **`name`** - the display name in the dropdown and when you invoke it.
+- **`tools`** - an array of tool and tool-set names (and MCP servers, via `"<server>/*"`) the agent is allowed to use. This is how you *scope* an agent: a read-only investigator gets a narrow list; a builder gets more. Leaving something off the list is how you keep an agent from doing it - and when a [prompt file pinned to an agent](/course/copilot/prompt-files/wire-it/) also declares a `tools` set, the prompt's list wins for that invocation.
+- **`model`** - which model the agent prefers: a single name or a prioritized array expressing a fallback order. The names churn with the product, so the mechanism matters more than any specific string; the [Models chapter](/course/copilot/models/) covers choosing.
+- **`agents`** - the subagents this agent may call. List them by name, use `*` to allow all, or `[]` to allow none - and note the `agent` tool must also be in `tools` for delegation to work (the [subagents lesson](/course/copilot/custom-agents/subagents/) covers the pair). This is the field that turns a solo agent into a coordinator.
+- **`handoffs`** - suggested next steps this agent offers: after it answers, it can render buttons that hand the conversation to the next agent (the GitHub.com cloud agent - Copilot working on GitHub rather than in your editor - does not support this property). Covered in the [handoffs lesson](/course/copilot/custom-agents/handoffs-plan/).
+- **`user-invocable`** - a boolean, defaulting to `true`, controlling whether *you* can summon this agent directly. Set it `false` for an agent meant only to be called by another agent, never picked from the dropdown.
+- **`hooks`** - a preview field that runs automatic actions at the agent's lifecycle points, such as before a tool runs.
 
-You won't fill in every field for every agent. A focused reviewer might set only `description`, `name`, and `tools`. A coordinator adds `agents`. The point is that each field maps to a decision you'd otherwise have to make - and re-explain - in chat.
+You will not fill in every field for every agent. A focused reviewer might set only `description`, `name`, and `tools`. A coordinator adds `agents`. Each field maps to a decision you would otherwise make - and re-explain - in chat.
 
-Here's what a complete file looks like - the reviewer you'll build next lesson:
-
-```markdown title=".github/agents/library-reviewer.agent.md"
----
-name: library-reviewer
-description: Reviews proposed changes to shared-lib for breaking changes against existing consumers.
-tools:
-  - read
-  - glob
-  - grep
-model: claude-sonnet-4-20250514
----
-
-You are a reviewer for a shared library that roughly twelve services depend on.
-
-Your one rule: additive changes are acceptable, breaking changes are not. You may approve new exports, new optional parameters, and new event types. You must flag anything that renames, removes, tightens, or changes the return shape of existing exported surface.
-
-When you find a breaking change:
-1. Name exactly which exported symbol is affected.
-2. Explain what downstream consumers would break.
-3. Suggest the additive alternative that achieves the same goal without breaking existing callers.
-
-Read the diff or plan you are given. Search the codebase for context when you need it. Do not edit files - your job is judgment, not implementation.
-```
+The [next lesson](/course/copilot/custom-agents/a-reviewer/) shows a complete file: a `library-reviewer` that sets only `name`, `description`, and a read-only `tools` list.
 
 ## Four ways to make one
 
-You don't have to author the file by hand from a blank buffer. There are four routes, and they suit different moods:
+You do not have to author the file from a blank buffer:
 
-1. **The agents dropdown** in the Chat view - the same place you switch modes lets you create a new custom agent.
-2. **`/agents`** - type it in chat to manage and create agents.
-3. **Command Palette → "Chat: New Custom Agent"** - the menu route, which scaffolds the file for you.
-4. **`/create-agent`** - a conversational generator. You describe the persona you want in plain language and it writes the `.agent.md` for you, frontmatter and all.
+1. **The agents dropdown** - the Chat view's role picker (Ask, Plan, and Agent) - can create a new custom agent.
+2. **`/agents`** - typed in chat, to manage and create agents.
+3. **Command Palette, "Chat: New Custom Agent"** - the menu route, which scaffolds the file.
+4. **`/create-agent`** - a conversational generator: describe the persona in plain language and it writes the `.agent.md`, frontmatter and all.
 
 :::tip[Try it]
-Create a `.agent.md` file for a code reviewer in your repo and scope its `tools` to read-only - `read`, `glob`, `grep`. Open the agent and ask it to review a recent change you made. Notice how the persona shapes the response: it should judge, not rewrite, and it should never offer to edit a file because you didn't give it the tool to.
+Create a `.agent.md` for a code reviewer in your repo and scope its `tools` to read-only - the `read` and `search` tool sets. Ask it to review a recent change you made. Notice how the persona shapes the response: it should judge, not rewrite, and it should never offer to edit a file, because you did not give it the tool to.
 :::
 
-For your first agent, `/create-agent` is the gentle on-ramp: describe the reviewer you want and let it draft the file, then read what it produced and tighten it. That's exactly what we'll do next - except the persona we describe is a specific one, with rules that protect twelve consumers. [Next: a reviewer for the shared library](/course/copilot/custom-agents/a-reviewer/).
+For a first agent, `/create-agent` is the gentle on-ramp: describe the reviewer, read what it produced, tighten it. That is exactly what the next lesson does - with a persona whose rules protect a dozen consumers. [Next: a reviewer for the shared library](/course/copilot/custom-agents/a-reviewer/).

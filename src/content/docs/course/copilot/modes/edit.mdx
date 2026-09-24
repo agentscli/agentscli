@@ -1,32 +1,36 @@
 ---
-title: Edit - a scoped change
-description: "Edit mode edits exactly the files you name and nowhere else. When you already know where the work goes, that boundary is a feature, not a limitation."
-sidebar:
-  label: "Edit · a scoped change"
+title: Scoped edits in Agent mode
+description: "When you already know which files change, name them in the request and keep the Agent run bounded. The successor of the old Edit mode, with the same review discipline."
 ---
 
-Ask mode told you the first concrete step: `shared-lib` needs a way to express that an order exceeds the approval threshold, and its audit helper needs to record an approval event. You know which files. You know roughly what the change is. This is no longer exploration - it's a defined, bounded edit. **Edit mode** is built for precisely this.
+Some changes are fully defined before they start. You know the two files involved, you know roughly what each needs, and the only question is getting the edit done cleanly without anything else shifting around it. You do not need an agent to *discover* the work - you need it to *stay inside* the work. In Copilot that is not a separate mode; it is a technique inside **Agent**, and this page is how to run it.
 
-## What Edit mode is
+This is a standalone technique drill, not a change carried into the next lesson. If you apply it to a checkout, commit it on a disposable branch or restore the starting state before continuing. The Plan lesson deliberately starts from the unbuilt threshold-and-event task so you can review its approach before any code exists.
 
-In Edit mode, *you* set the scope. You add a specific set of files to the working set, describe the change you want, and Copilot applies edits **across exactly those files and no others**, returning them as review-ready diffs. The defining trait is the boundary: you've drawn a fence around where Copilot is allowed to work, and it stays inside it.
+:::note[This used to be Edit mode]
+Older versions of VS Code had a built-in Edit mode that applied changes to a set of files you picked in a working set. As of September 2026 that mode has been removed and its behavior folded into Agent (this surface reorganized during the year; the [Copilot documentation overview](https://code.visualstudio.com/docs/copilot/overview) is the entry point to current pages). Naming the files in your request is the current way to get the same effect; the dropdown no longer offers Edit.
+:::
 
-That's the difference from the more autonomous mode you'll meet next. Agent mode decides for itself which files are relevant and may touch a dozen of them. Edit mode does what you scoped, where you scoped it. When you already know where a change belongs - and in `shared-lib`, where any stray edit could ripple into a dozen consumers, you very much want to know - that constraint is exactly what you want.
+## Name the files in the request
 
-## Using it on the shared-lib change
+The mechanism is the request itself. Switch the [agents dropdown](/course/copilot/modes/) in the Chat view to Agent and name both the files and the boundary:
 
-Open `shared-lib`. From your Ask-mode tracing you know the two files involved: the validation helper that should gain a threshold check, and the audit helper that should learn a new event type. Add those files to the Edit working set, and describe the change:
+> Edit only `src/validation/threshold.ts` and `src/audit/events.ts` in shared-lib, the library other services import (about a dozen consumers). Add a function to the validation helper that returns whether an order amount is at or above a configurable approval threshold. Add a new event type to the audit helper for an approval being requested. Match the existing style of each file. Do not edit any other files.
 
-> Add a function to the validation helper that returns whether an order amount is at or above a configurable approval threshold. In the audit helper, add a new event type for an approval being requested. Match the existing style of each file.
+Three parts of that request are doing real work. Naming the files tells Agent where the work lives, so it does not go hunting across a dozen importers. "Match the existing style" carries your conventions into the first draft - and is a preview of the [Rules chapter](/course/copilot/rules/), where you write that down once instead of repeating it. "Do not edit any other files" states the boundary in words.
 
-Two things to notice. First, you named the files - Copilot isn't guessing where this goes, you told it, and it won't wander into the twelve consumers. Second, "match the existing style of each file" is doing real work on a brownfield library where consistency is everything. It's also a preview of the **Rules** chapter: rather than repeating that instruction every time, you'll soon write the conventions down once so Copilot's first draft already conforms.
+Be honest about what that last sentence is: **guidance, not enforcement.** A named-file request shapes what the agent does, and it is usually followed, but it is still an instruction the model reads, not a fence the tool enforces. The enforcement side of Copilot lives elsewhere - permission levels and tool approvals, covered in the [Permissions chapter](/course/copilot/permissions/). That split is the control principle in miniature: an instruction expresses a constraint, a permission enforces one. What makes a scoped edit dependable is the combination: a clearly bounded request, then a review that checks the boundary held.
 
-## Review is still the job - more so here
+## Review it as a bounded diff
 
-Edit mode returns diffs, file by file, and the discipline from your first change applies with extra weight, because this is `shared-lib`. A change here doesn't just have to be *correct* - it has to be **compatible**. The questions sharpen:
+Because you named the files, the review is unusually easy: the diff should be confined to files you can list from memory. On a shared library - code other services import - that check matters most, and three questions cover it:
 
-- **Did it stay in scope?** Only the two files you added should have changed. A shared library is the last place you want a surprise edit.
-- **Did it change a signature the consumers depend on?** Adding a *new* function is safe; altering an existing one that a dozen services call is how you break a release. Read for it.
-- **Does it actually match each file's idiom?** You asked it to. Confirm it did.
+- **Did it stay in scope?** Files outside your list should not appear in the diff. If one does, that is the finding to look at first, before you judge any of the content.
+- **Did it change a signature existing consumers depend on?** Adding a new function is safe for existing consumers; altering one that a dozen services call is how a release breaks. Read specifically for it.
+- **Does it match each file's idiom?** You asked it to. Confirm it did, or the edit will read as foreign at review time.
 
-Edit mode gives you the scoped change cleanly. But notice its boundary cuts both ways: it edited the files, and stopped. It didn't run the tests. It didn't check whether those dozen consumers still compile against the new version. For a change this small you can do that yourself - but when a task is big enough that you *want* the agent to build, test, and self-correct across many files without you naming each one, you've reached the edge of Edit mode and the start of the next one. [Next: Agent - hand off the whole task](/course/copilot/modes/agent/).
+If something is off, do not start over - say so in the same conversation ("keep the existing event-naming style in events.ts") and it revises.
+
+## Know where the technique ends
+
+A narrowly scoped request usually produces the edits and not the rest of Agent's loop: it has no reason to run the test suite or check whether downstream consumers still compile unless you asked, so do not assume it did. On a small change you can do both yourself, and for a library change you should: run the tests, and search the consuming repos for imports of the changed symbols before you ship. When a task grows past the point where you want the agent to build, verify, and self-correct across as many files as it takes, the scoped technique has ended and the full handoff begins. [Next: Agent - hand off the whole task](/course/copilot/modes/agent/).

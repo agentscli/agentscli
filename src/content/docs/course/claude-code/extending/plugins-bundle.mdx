@@ -1,62 +1,67 @@
 ---
 title: Bundle your setup into a plugin
-description: "Your setup is scattered across four places. Fold the database connection, the ledger gate, and the PR ritual into one installable plugin."
-sidebar:
-  label: "Plugins · bundle the setup"
+description: "Your setup is scattered across four places. Fold the MCP servers, the ledger gate, the wrap-up skill, and the auditor subagent into one installable plugin."
 ---
 
 import PluginPacker from '../../../../../components/interactive/PluginPacker.tsx';
 
-Everything you've built across this course works - and all of it is scattered across your `.claude/` directory and your home config. The MCP servers for the database and the board. The `ledger-needs-test.sh` hook and its `settings.json` wiring. The PR-ritual skill from the [skills chapter](/course/claude-code/skills/). A new engineer joining the payments team gets none of it. To bring them up to your setup, they'd have to copy files from four places and hope they got the wiring right. That's the problem a **plugin** solves: it folds all of those pieces into one named, versioned, installable unit.
+A working agent setup for one repository ends up scattered across four places. Take the small TypeScript payments service this course uses as its example, after the earlier lessons have equipped it. Two MCP servers - connections that let the agent query external systems, `db` for the team's staging Postgres and `jira` for the ticket board, both a constructed scenario standing in for a real team's systems - sit in your MCP config, the project's `.mcp.json`. A `PreToolUse` hook that refuses any commit touching `src/payments/ledger.ts` unless a test changed too lives as `ledger-needs-test.sh` in the repo's `.claude/hooks/` directory, with its wiring in `.claude/settings.json`. A `finish-pr` skill (a `SKILL.md` procedure the agent runs to wrap up a branch) sits in `.claude/skills/`, and a read-only `ledger-auditor` subagent (a delegated worker defined in a markdown file) sits in `.claude/agents/`. A new engineer joining the team gets none of it unless they copy files from several places and get the wiring right by hand. The [skills](/course/claude-code/skills/) and [subagents](/course/claude-code/subagents/) chapters build the last two pieces, if you want them in full; this page needs only their names and locations.
 
-A plugin can bundle every extension type you've met - **commands, skills, agents, hooks, and MCP servers** - plus a few you haven't. Install the plugin and you get the whole set at once; the database connection, the ledger gate, and the PR ritual arrive together, already wired.
+A **plugin** solves the scatter. It folds everything into one named, versioned, installable unit - skills, agents, hooks, and MCP servers together. Install the plugin and the whole set arrives at once, already wired. One boundary to know before you start: a plugin does not carry rules. A `CLAUDE.md` at the plugin root is not loaded as project context - the course's **context** principle, what information is available when the agent decides, gives an install no always-in-view channel - so persistent instructions ship as skills.
 
-## The shape of a plugin
+## The manifest and the directory contract
 
-A plugin is a directory. The manifest at **`.claude-plugin/plugin.json`** is recommended when you need explicit metadata or identity; components in their default locations can work without a manifest. Everything else is convention: named directories at the plugin *root* that Claude Code knows to look in. The manifest is small:
+A plugin is a directory. The manifest at **`.claude-plugin/plugin.json`** is technically optional when components sit in their default locations, but you want it: it carries the plugin's identity and version.
 
 ```jsonc
-// payments-kit/.claude-plugin/plugin.json
 {
   "name": "payments-kit",
-  "description": "Database + Jira reach, the ledger-needs-test gate, and the PR ritual for the payments service",
+  "description": "Database + board reach, the ledger-needs-test gate, and the wrap-up ritual for the payments service",
   "version": "1.0.0"
 }
 ```
 
-The `name` becomes the plugin's namespace - its skills install as `/payments-kit:<skill>`, which is why two plugins can ship a skill of the same name without colliding. The `version` matters for updates: bump it and your team gets the new release.
+The `name` becomes the plugin's namespace: its skill installs as `/payments-kit:finish-pr`, which is why two plugins can ship a skill of the same name without colliding. The `version` matters for updates - installed users get a new release when that string changes.
 
-Around that manifest, you drop your existing pieces into the directories the plugin format expects. The mapping from your scattered `.claude/` setup is almost mechanical:
+Around the manifest, your scattered pieces drop into the directories the plugin format expects. The mapping from your current setup is almost mechanical:
 
 ```text
 payments-kit/
 ├── .claude-plugin/
 │   └── plugin.json          # the manifest (the ONLY thing inside .claude-plugin/)
 ├── skills/
-│   └── pr-ritual/
-│       └── SKILL.md         # the PR-ritual skill, lifted as-is
+│   └── finish-pr/
+│       └── SKILL.md         # the wrap-up skill, lifted as-is
 ├── hooks/
-│   └── hooks.json           # the ledger gate's PreToolUse config
-├── .mcp.json                # the db + jira server definitions
-└── agents/                  # any subagents you want to ship
+│   ├── hooks.json           # the ledger gate's PreToolUse config
+│   └── ledger-needs-test.sh
+├── agents/
+│   └── ledger-auditor.md    # the read-only auditor from the subagents chapter
+└── .mcp.json                # the db + jira server definitions
 ```
 
-Two details save real grief here. First - and the docs flag this as the single most common mistake - only `plugin.json` goes *inside* `.claude-plugin/`. The `skills/`, `hooks/`, `.mcp.json` all sit at the plugin **root**, not under `.claude-plugin/`. Second, the hook config moves from your `settings.json` into a dedicated **`hooks/hooks.json`**, but the JSON itself is identical - the same `PreToolUse` block you wrote in the gate lesson, copied across unchanged. The full directory contract and manifest schema are on the [plugins docs page](https://code.claude.com/docs/en/plugins).
+Two details save real grief. First - and the reference is explicit about this - only `plugin.json` goes *inside* `.claude-plugin/`. The `skills/`, `hooks/`, `agents/` directories and the `.mcp.json` file all sit at the plugin **root**. Second, the hook config moves out of your `settings.json` into a dedicated **`hooks/hooks.json`**, and the JSON inside is the same `hooks` object the [gate lesson](/course/claude-code/extending/hooks-gate/) writes into settings - the `PreToolUse` block copies across with one exception: the hook command, changed below. (If you are starting without a hook block of your own, the gate lesson writes the one to copy.) The full directory contract and manifest schema are on the [plugins reference](https://code.claude.com/docs/en/plugins-reference).
+
+The packer below shows the same layout for five tools, so you can see which directories each expects; the Claude Code tab is the tree above plus a slash-command piece this plugin doesn't fold:
 
 <PluginPacker client:visible />
 
 <aside>
-Inside a plugin, refer to bundled files with `${CLAUDE_PLUGIN_ROOT}` rather than `$CLAUDE_PROJECT_DIR`. When the gate hook lived in your repo it pointed at the project; as a shipped plugin it must point at wherever the plugin got installed, which `${CLAUDE_PLUGIN_ROOT}` resolves to. It's a one-line change to the hook command, and it's what makes the gate portable to a machine that isn't yours.
+Inside a plugin, refer to bundled files with `${CLAUDE_PLUGIN_ROOT}` rather than `$CLAUDE_PROJECT_DIR`. In the repo, the hook command pointed at the script through `$CLAUDE_PROJECT_DIR`, which resolves to the *project* root; a shipped plugin must point at wherever the plugin got *installed*, which is what `${CLAUDE_PLUGIN_ROOT}` resolves to. It is a one-line change to the hook command - write it inline and quote it, `"${CLAUDE_PLUGIN_ROOT}/hooks/ledger-needs-test.sh"` - and it is what makes the gate portable to a machine that isn't yours.
 </aside>
 
-## Test it before you ship it
+The `.mcp.json` at the plugin root carries the `db` and `jira` definitions in the same shape `claude mcp add --scope project` writes to a project's `.mcp.json`. A project's own `.mcp.json` triggers an approval prompt before first use, because a cloned repo should never auto-connect your agent to someone else's servers ([the scope lesson](/course/claude-code/extending/mcp-scope/) covers that rail). A plugin's `.mcp.json` does not go through that rail: the plugin *is* the reviewed unit, and installing it is the approval - the course's **control** principle, what guides execution, enforces boundaries, or allows intervention, with the approval moved from connection time to install time. The [plugins reference](https://code.claude.com/docs/en/plugins-reference) documents the behavior directly: plugin MCP servers start automatically when the plugin is enabled, with no per-server prompt.
 
-You don't have to publish anything to try the plugin - load it straight from disk with `--plugin-dir`:
+## Run it from disk before anyone ships it
+
+You do not have to publish anything to try the plugin. Load it straight from disk:
 
 ```bash
 claude --plugin-dir ./payments-kit
 ```
 
-That session runs as if the plugin were installed: the database and Jira tools appear, the ledger hook arms, the PR ritual shows up under `/payments-kit:pr-ritual`. As you tweak the plugin, `/reload-plugins` picks up changes without a restart. This is the tightening loop - get the bundle behaving exactly like your hand-built setup before anyone else touches it.
+That session runs as if the plugin were installed: the database and board tools appear, the ledger hook arms, and `finish-pr` shows up under `/payments-kit:finish-pr`. As you tweak the plugin, `/reload-plugins` picks up changes without a restart. `--plugin-dir` loads the plugin for the duration of that session without installing it, so you can develop against the bundle and nothing lands in your installed set until you choose to install. This is the tightening loop: get the folder behaving exactly like your hand-built setup before anyone else touches it.
 
-What you've got now is the entire payments-service agent configuration as *one folder* - reach, gate, and ritual, manifested and versioned. It runs on your machine from a flag. The last step is making it run on your *team's* machines from a single command, which is what a [marketplace](/course/claude-code/extending/plugins-marketplace/) is for.
+One attribution caveat: the repo's originals - the MCP config, the `.claude/settings.json` hook wiring, the `.claude/skills/` and `.claude/agents/` copies - stay active alongside the plugin, so the tools appearing and the hook firing prove nothing by themselves; the namespaced `/payments-kit:finish-pr` is unmistakably the plugin's, and for the rest the clean check is to temporarily retire the originals and rerun the command - anything that disappears is something you have not folded yet, and retiring them is what the fold is for.
+
+What you have now is the entire payments-service agent configuration as *one directory* - reach, gate, and ritual, manifested and versioned, running from a single flag. The last step is making it run on your *team's* machines from a single command, which is what a [marketplace](/course/claude-code/extending/plugins-marketplace/) is for.

@@ -1,4 +1,8 @@
-import { defineCollection, z } from 'astro:content';
+import { defineCollection } from 'astro:content';
+// Zod comes from `astro/zod` rather than `astro:content`: Astro 7 deprecates the
+// `astro:content` re-export, and Starlight's own schema types are built against
+// the `astro/zod` instance, so sharing it keeps the extended types assignable.
+import { z } from 'astro/zod';
 import { glob } from 'astro/loaders';
 import { docsSchema } from '@astrojs/starlight/schema';
 import { blogSchema } from 'starlight-blog/schema';
@@ -18,17 +22,23 @@ export const collections = {
       // they are written as claims. `seoTitle` and `seoDescription` are the
       // search surface, written the way a reader would phrase the query. Both
       // are optional and fall back to their on-page counterpart.
+      //
+      // The blog fields are added with `.extend()`, not `.and()`. Starlight
+      // 0.42 narrowed the schemas its `extend` option accepts to objects and
+      // unions of objects, so an intersection still validates at runtime but
+      // resolves to the bare docs schema in types, which drops `date` and the
+      // SEO fields from `entry.data`.
       extend: (context) =>
-        blogSchema(context).and(
-          z.object({
-            seoTitle: z.string().max(70).optional(),
-            seoDescription: z.string().max(160).optional(),
-          }),
-        ),
+        blogSchema(context).extend({
+          seoTitle: z.string().max(70).optional(),
+          seoDescription: z.string().max(160).optional(),
+        }),
     }),
   }),
   toolInstructions: defineCollection({
     loader: glob({ pattern: '**/*.mdx', base: './src/content/tool-instructions' }),
-    schema: z.object({}).passthrough(),
+    // Zod 4 deprecates `.passthrough()`; `looseObject` is the replacement for
+    // an object schema that keeps unknown keys.
+    schema: z.looseObject({}),
   }),
 };

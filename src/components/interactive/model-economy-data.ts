@@ -166,7 +166,7 @@ export const mdeTasks: MdeTask[] = [
     id: 'fork',
     label: 'the design fork',
     cadence: 'hard · once',
-    text: 'Choose how rule conflicts resolve in the categorisation engine - several defensible designs, one gets built on.',
+    text: 'Choose how rule conflicts resolve in the categorization engine - several defensible designs, one gets built on.',
     count: 1,
     size: 8,
     hard: true,

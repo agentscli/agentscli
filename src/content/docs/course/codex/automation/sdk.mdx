@@ -1,45 +1,54 @@
 ---
 title: Reach for the Codex SDK when exec runs out of room
-description: "codex exec is one prompt, one result, one exit code. Learn the test for when a job has outgrown that shape - and this chapter's worst blast-radius reading."
-sidebar:
-  label: "Codex SDK · when to leave exec"
+description: "codex exec is one prompt, one result, one exit code - and it remembers more than you'd think. Learn the test for when a job has outgrown that shape, and this chapter's worst blast-radius reading."
 ---
 
-Everything so far - the report, the transaction check, both of them reproducible - ran through the same shape: one prompt in, one result out, one exit code a calling script reads. That shape has carried this entire chapter, and for most automation it's all you'll ever need. Here's the tension this last lesson turns on: the fence and the brief this chapter spent three lessons pinning down both assume the run is one call with one verdict. The moment a job needs real branching logic between stages, that trust model doesn't shrink gracefully to fit shell glue, and it doesn't scale up on its own either - something has to replace the shell.
+Everything so far - the report, the transaction check, both reproducible - ran through the same shape: one prompt in, one result out, one exit code a calling script reads. That shape carried this entire chapter, and for most automation it's all you'll ever need. The tension in this last lesson: the fence (the sandbox-and-approval posture pinned at launch) and the brief (the written task specification the run executes) both assume the run is one call with one verdict.
+
+The moment a job needs real branching logic between stages, that trust model doesn't shrink gracefully to fit shell glue - something has to replace the shell.
 
 ## The one-call test
 
-`codex exec` is stateless per call and composes through the shell: chain runs with `&&`, branch on exit codes, pipe output between them. That works cleanly right up to the point where the logic *between* the stages gets real. Picture `budgetcli`'s check growing up: recategorise the new transactions, then *if* anything crossed a budget, draft an alert; *if* a test failed, open a fix and re-run only the affected suite; gate each stage on the previous one actually producing the artefact it promised, not just exiting zero. Chain three stages like that with plain `&&` and you already have three places where the whole job dies silently in the wrong way, because a stage can fail shut on its *own* terms - exit zero - while producing an artefact the next stage trusts blindly. Fail shut, the trick from two lessons back, only protects the boundary of a single call. It has nothing to say about what happens *inside* a chain of them.
+`codex exec` is non-interactive and script-friendly: chain runs with `&&`, branch on exit codes, pipe output between them. And it carries more between calls than you might expect: a run persists its session rollout files unless you pass `--ephemeral`, and `codex exec resume --last` continues the most recent run from the same directory (both verified against Codex CLI 0.155.1; see the [CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli)).
 
-The heuristic: **if the job fits in a shell script, keep it in `codex exec`.** The moment you're writing more than a few stages with real conditional logic between them - typed handoffs, a trace you can read after the fact for *why* the run took the path it did - you've outgrown the CLI, and that's when the SDK earns its setup cost.
+The docs' own example is a two-stage pipeline - triage in one call, then resume with "fix the race conditions you found." So the shell can carry *state* between calls. What the shell can't carry is *logic*.
+
+Picture the check on `budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI) growing up: recategorize the new transactions, then *if* anything crossed a budget, draft an alert; *if* a test failed, open a fix and re-run only the affected suite; gate each stage on the previous one actually producing the artifact it promised, not just exiting zero.
+
+Chain three stages like that with plain `&&` and you have three places where the job dies silently in the wrong way - a stage's own check can pass, exit zero, while the artifact it produced is wrong for the next stage that trusts it blindly.
+
+Fail shut - stop and exit non-zero rather than continue when something needed is unavailable, [the posture `codex exec` defaults to](/course/codex/automation/headless/) - protects the boundary of a single call. It has nothing to say about what happens *inside* a chain of them.
+
+The heuristic: **if the job fits in a shell script, keep it in `codex exec`.** You can also drive `exec` calls from your own program - the CLI is an ordinary subprocess - but at that point you are parsing exit codes and stdout to reconstruct what happened, and that is exactly the line: the moment a host program owns branching between stages - typed handoffs, a trace you can read after the fact for *why* the run took the path it did - the SDK earns its setup cost by exposing the thread lifecycle as structured events instead of terminal output to scrape.
 
 ## What the SDK buys, and doesn't
 
-The **Codex SDK** is the programmatic interface for controlling coding-focused Codex threads from server-side TypeScript or Python - the thing you reach for when an application needs more control than a one-shot shell command:
+The **Codex SDK** is the programmatic interface for controlling coding-focused Codex threads from server-side TypeScript or Python. Underneath, it drives the local Codex app server over JSON-RPC - the same integration surface that replaced the retired `codex mcp-server`. What it buys:
 
-- **Programmatic lifecycle control.** Start a thread, run a prompt, continue it, or resume it later, without parsing terminal output.
-- **Application integration.** Put Codex inside a server-side CI service, an internal tool, or a larger engineering workflow, while keeping the coding task itself inside Codex.
+- **Programmatic lifecycle control.** Start a thread, run a prompt, continue it, resume it later by thread ID - without parsing terminal output.
+- **Application integration.** Put Codex inside a server-side CI service, an internal tool, or a larger engineering workflow, while the coding task stays inside Codex.
 - **A real thread boundary.** Keep related turns together when they need shared context; start a new thread when the task should begin clean.
 
-It is not a workflow engine, and it doesn't hand you typed handoffs, quality gates, or a trace for free - those still belong in your surrounding application, validated with ordinary program logic. For broader multi-agent orchestration, where Codex is one specialist among several, the official guidance is to run Codex CLI as an MCP server and orchestrate it with the Agents SDK - and every process you launch that way still owes you the same explicit [approvals-and-sandbox](/course/codex/approvals-sandbox/) posture this chapter has been building.
+It is not a workflow engine. It doesn't hand you typed handoffs, quality gates, or a trace for free - those still belong in your surrounding application, validated with ordinary program logic.
+
+One correction worth carrying, because older guidance is still easy to find: for multi-agent orchestration, where Codex is one specialist among several, the official pattern used to be running the CLI as an MCP server and orchestrating it with the Agents SDK. That path is retired - `codex mcp-server` was deprecated in August 2026 and removed from the CLI in 0.154.0 (verified firsthand: the subcommand no longer exists in the installed 0.155.1; check yours with `codex mcp-server --help` falling through to the generic banner) - and new work points at the app server and this SDK instead.
+
+Every process you launch that way still owes you the same explicit [approvals-and-sandbox](/course/codex/approvals-sandbox/) posture this chapter has been building.
 
 :::note
-The current docs list the TypeScript package [`@openai/codex-sdk`](https://learn.chatgpt.com/docs/codex-sdk) for Node 18+ and the Python package `openai-codex` for Python 3.10+. Method signatures are versioned API surface - check the [official SDK docs](https://learn.chatgpt.com/docs/codex-sdk) before pinning symbols. This lesson teaches the decision to cross over, not a listing that will drift out from under it.
+The current docs list the TypeScript package [`@openai/codex-sdk`](https://learn.chatgpt.com/docs/codex-sdk) for Node 18+ and the Python package `openai-codex` for Python 3.10+. Method signatures are versioned API surface - check the official SDK docs before pinning symbols. This lesson teaches the decision to cross over, not a listing that will drift out from under it.
 :::
 
-Two cheaper tools usually win before the SDK does. If the workflow is a linear sequence the agent just follows - no branching, do this then this then this - that's a [Skill](/course/codex/skills/), not a pipeline; you already have that pattern from the CSV-onboarding skill. And if it's a single self-contained task, however involved, it's still a `codex exec` call - the report and the transaction check both live here, and most of your automation will too. **Reach for the SDK for programmatic thread control or embedding Codex in another service. Reach for the Agents SDK only when you're orchestrating Codex as one specialist inside something bigger. Keep the deterministic checking in your own application either way - no SDK turns a model's reply into a verdict on its own.**
+Two cheaper tools usually win before the SDK does. If the workflow is a linear sequence the agent just follows - no branching, do this then this then this - that's a [Skill](/course/codex/skills/), not a pipeline; you already have that pattern from the CSV-onboarding skill. And if it's a single self-contained task, however involved, it's still a `codex exec` call - the report and the transaction check both live here, and most of your automation will too.
 
-## The chapter's row
+**Reach for the SDK for programmatic thread control or embedding Codex in another service. Keep the deterministic checking in your own application either way - no SDK turns a model's reply into a verdict on its own.**
 
-Every chapter keeps score on the same four questions from [the loop](/course/codex/getting-started/the-loop/): tokens, turns, blast radius, recurrence. Picking the ledger back up from where chapter one left it, abbreviated:
+## What unattended work costs, honestly
 
-| Move | Tokens | Turns | Blast radius | Recurs? |
-|---|---|---|---|---|
-| Read-only question ("what does this do") | ~3,900 est. | 1 | None - nothing written | No |
-| Fix the CSV date bug | ~2,100 est. (csv.py alone; real total runs higher) | 4 | Money-adjacent - meant to touch only the date field, briefly drifted into the amount field | Partly |
-| *(chapters two through eight each add a row here, not reproduced in this lesson)* | | | | |
-| Automate the report and the transaction check (`codex exec`, sandboxed, unattended) | ~5,120 est. (rules.py alone, read fresh every run; real total runs higher) | 1, from outside - the only count a calling script can even see | Everything the sandbox and approval flags allow, for as long as nobody reads what came out - the widest reading this course gives that column | Yes - and now the recurrence itself is automatic, which is the entire win and the entire risk, in one word |
+Set the chapter's one number-free comparison down plainly. Every earlier move in this course had a human somewhere close enough to catch a wrong turn before it went far - a diff read, a pause answered. The unattended report and check do not. The fence and the brief and the exit code narrow *what* can go wrong and *how loud* it fails; none of them put a person back between apply and the consequence, because that person is the exact thing this chapter removed. And the recurrence itself is automatic - the run happens on schedule whether or not anyone reads what came out, which is the entire win and the entire risk in one word.
 
-Read that blast-radius cell twice. Every earlier row in this course had a human somewhere close enough to catch a wrong turn before it went far - a diff read, a pause you answered. This row doesn't. The fence and the brief and the exit code narrow *what* can go wrong and *how loud* it fails; none of them put a person back between apply and the consequence, because that person is the exact thing this chapter removed. That's not a flaw to patch out - it's the honest price of the win in the row above it. Automation doesn't lower the stakes. It just moves who's watching.
+That's not a flaw to patch out - it's the honest price of the win. Automation doesn't lower the stakes. It moves who's watching.
 
-That closes automation, and very nearly the week. `budgetcli` now produces its own report and checks its own transactions, unattended, reproducibly, with the sandbox and approval discipline carrying the weight that used to sit on you watching a screen. What's left is to make the whole rest of this week's toolkit - the profiles, the prompting reflexes, the editing habits - into something you reach for without assembling it from scratch each time. That's [the final chapter](/course/codex/daily-workflow/).
+That closes automation, and with it the learning half of this course. `budgetcli` now produces its own report and checks its own transactions, unattended, reproducibly, with the sandbox and approval discipline carrying the weight that used to sit on you watching a screen. The honest gaps are named too: the CI workflow written but never run, the report a constructed chore, the one stage no exit code covers.
+
+Every piece of the toolkit is now learned. The question left is whether the reflexes fire without you assembling them from scratch each time. That is [the final chapter](/course/codex/daily-workflow/).

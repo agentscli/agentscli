@@ -1,72 +1,84 @@
 ---
 title: Make permissions hold when no one is there to approve
-description: "Interactive runs lean on you to answer the prompt. Headless runs can't - so pre-approved allow rules and deny rules become the entire safety story."
-sidebar:
-  label: "Headless permissions · dontAsk, allow, deny"
+description: "Headless runs have no human to answer a prompt. Learn what actually happens when a call is denied, and build the refuse-by-default posture that keeps unattended runs honest."
 ---
 
-Here's where the discipline from earlier in the course stops being optional. The moment your review pass runs from a script instead of your keyboard, the friendly `y/n` prompt has no one to answer it - and what happens at that prompt is the difference between a run that finishes and a run that either hangs, dies, or quietly does too much. Everything you learned in [Permissions & modes](/course/claude-code/permissions-modes/) was rehearsal for this.
+A headless run has no human at the keyboard. Take the review command as it stands for the payments service (the small TypeScript service this course uses as its running example) - `claude -p "Run the payments test suite and summarize any failures"` - and ask the question the whole chapter turns on: what happens when the run reaches for something it was not pre-granted? Interactively, the answer is a prompt and a keystroke. In `-p` there is no keystroke, and what happens instead is not what most people guess.
 
-## The prompt has nowhere to go
+## A denied call does not stop the run
 
-In an interactive session, when the agent wants to run a command outside its allow rules, it stops and asks you. Headless, there is no "you." So what does the prompt do? The honest answer is: nothing good. An action the run isn't pre-authorized for doesn't pause politely - in `-p` mode the run aborts when it hits something it can't get approval for. That's actually the *safe* failure: a dead job is better than a job that waved itself through. The job of this lesson is to make sure the run has exactly the permissions it needs so it finishes for the right reason, and nothing more so it can't be turned against you.
+Start from a documented fact: a `-p` run begins in the same default mode as an interactive session, so anything outside your allow rules still wants approval. There is simply no one to ask. From there you get one of two outcomes - which one depends on whether a permission host is in the loop - and neither is a clean failure that stops the job.
 
-There are two layers, and you want both.
+The usual one: the blocked call is denied with no prompt, and the run continues - the [permission-modes docs](https://code.claude.com/docs/en/permission-modes) are explicit that Claude Code does not stop the run. The model receives the denial and adapts. It answers from what it can reach, or declares the task complete. The process then exits 0 - the [headless docs](https://code.claude.com/docs/en/headless) define the non-zero exit codes as run-level failure, so refused calls do not touch the status - and exit 0 reads as success to every script around it.
 
-## Layer one: grant exactly what the job needs
+The shape of that failure, in an illustrative transcript with invented particulars:
 
-The narrow tool to use is `--allowedTools` - a list of tools, or specific commands, the run may use without asking. You saw it in the [last lesson](/course/claude-code/automation/headless/); now it's load-bearing. The same [permission rule syntax](/course/claude-code/permissions-modes/rules/) you used interactively applies, including command-level scoping:
+```text
+$ claude -p "Run the payments test suite and summarize any failures"
+I reviewed the tests in tests/. They cover the duplicate-payment check
+and the ledger. Nothing is failing.
+$ echo $?
+0
+```
+
+Nothing ran. `Bash(npm test)` was never granted, the denial came back quietly, and the model summarized the test files instead of executing them. The one-line summary and the exit code both look healthy to the cron wrapper. That is the failure to fear most: not a crash, but a verdict shaped like a success.
+
+The other outcome is easier to spot and uglier to watch: the run waits. Wire in a permission host - an MCP tool (a small external program Claude Code can call) passed with `--permission-prompt-tool`, per the [headless docs](https://code.claude.com/docs/en/headless) - and a permission request now sits with that host; with no host, the request is simply denied, but a host that never answers leaves it sitting, and the job stalls until something external kills it. In CI that something is `timeout-minutes`. Either way you learn nothing: one silence prints a confident summary, the other prints nothing at all.
+
+The fix for both is the same: stop asking, and decide in advance. Three layers do that.
+
+## Allow exactly what the job does
+
+The narrow instrument is `--allowedTools`, the flag that pre-approves exactly the tools and commands it lists ([the headless lesson](/course/claude-code/automation/headless/) uses it in passing; here it is load-bearing). The [rule syntax](/course/claude-code/permissions-modes/rules/) from the permissions chapter applies unchanged, including command-level scoping:
 
 ```bash
 git diff main | claude -p "Review this diff for payments regressions." \
   --allowedTools "Read,Bash(npm test),Bash(git diff *)"
 ```
 
-`Bash(npm test)` pre-approves the suite; `Bash(git diff *)` pre-approves inspection. `--allowedTools` does not remove unlisted tools by itself, so pair it with `--permission-mode dontAsk`, `--tools`, and deny rules as appropriate. The trailing ` *` is prefix matching - note the space, which keeps `git diff *` from also matching `git diff-index`. This is the [rules lesson](/course/claude-code/permissions-modes/rules/) doing exactly what it was built for, except now there's no human backstop if you scope it too loosely.
+`Bash(npm test)` pre-approves the suite; `Bash(git diff *)` pre-approves inspection. Mind the space before the `*` - it is part of the rule, which is why `git diff *` does not also match `git diff-index`. The [permissions reference](https://code.claude.com/docs/en/permissions) shows the same spacing keeping `ls *` from matching `lsof`.
 
-The general rule for unattended runs: **pre-approve the boring, specific things the job actually does, and nothing broad.** A blanket `Bash(*)` on a machine you can't watch is how a hijacked run runs anything it likes.
+One caution that matters more here than it ever did interactively: `--allowedTools` grants, it does not restrict. Unlisted tools are not removed, so a broad entry like `Bash` hands the run every shell command, with no human backstop behind it. Pre-approve the boring, specific things the job actually does, and nothing broad.
 
-## Layer two: a mode that denies by default
+## dontAsk refuses instead of prompting into the void
 
-Allow rules say what's permitted. But what about everything you *didn't* list? Interactively, that prompts. Headless, you want a baseline that's decisive instead of hanging - and that baseline is **`dontAsk` mode**.
+Allow rules say what is permitted. For everything unlisted, default mode wants to prompt - the exact behavior that failed twice above. `--permission-mode dontAsk` replaces the prompt with refusal: every tool call that would otherwise prompt is auto-denied, and the session never waits for input. The [permission-modes docs](https://code.claude.com/docs/en/permission-modes) describe it for exactly this use, CI pipelines and restricted environments.
 
-`dontAsk` auto-denies every tool call that would otherwise prompt. Only actions matching your `permissions.allow` rules and the built-in read-only command set can run; anything else is refused outright, no prompt, no wait. That makes the run **fully non-interactive** - exactly what a CI pipeline or a nightly job needs. You set it with the flag, and it pairs naturally with your allow list:
+Denial is not the whole mode, and the exceptions are worth knowing precisely. A `dontAsk` run still executes everything that needs no approval in default mode - file reads inside the working directories, read-only Bash commands from the built-in safe set Claude Code maintains (the [permissions reference](https://code.claude.com/docs/en/permissions) documents the set) - plus your `permissions.allow` rules and calls approved by a `PreToolUse` hook.
 
-```bash
-claude -p "Run the payments suite and report regressions" \
-  --permission-mode dontAsk \
-  --allowedTools "Read,Bash(npm test),Bash(git diff *)"
-```
+That last path deserves a pause: a `PreToolUse` hook - a handler wired to a fixed moment in the agent's lifecycle, one that fires just before a tool call and can approve, deny, or block it ([the hooks lesson](/course/claude-code/extending/hooks-gate/) builds one that refuses ledger commits without a test) - is a decision made in advance, which is exactly what an unattended run wants. Your deterministic gates keep working when nobody is watching.
 
-The mental model: `--allowedTools` is the guest list, `dontAsk` is the bouncer who turns away everyone not on it without coming to find you first. `dontAsk` is set via the `--permission-mode` flag and is documented in the [permission-modes reference](https://code.claude.com/docs/en/permission-modes); it never appears in the interactive `Shift+Tab` cycle precisely because it's built for scripts, not sessions.
+A few things are denied even when an allow rule matches them: explicit `ask` rules (entries that demand a prompt even when another rule would allow), the built-in `AskUserQuestion` tool, MCP tools marked as requiring user interaction, and `rm` or `rmdir` against a small built-in set of critical paths. And `dontAsk` never appears in the interactive `Shift+Tab` cycle; you set it with the flag, because it is built for scripts, not sessions.
 
-This is the right tool for our job. Resist the temptation to reach instead for `--dangerously-skip-permissions` (bypass mode) just to make the prompts go away - as you saw [when we covered going hands-off](/course/claude-code/permissions-modes/autonomous/), bypass removes the safety checks entirely and belongs only inside a throwaway container. For a CI job touching your real repo, `dontAsk` plus a tight allow list is the combination that's both non-interactive *and* contained.
+Resist the tempting shortcut of `--dangerously-skip-permissions`. Bypass mode skips most prompts but not all - explicit `ask` rules, interaction-required tools, critical-path `rm`, and blocking hooks can still stop a call - and everything else executes immediately, including writes to paths that approval normally guards ([the permissions-modes chapter's bypass lesson](/course/claude-code/permissions-modes/autonomous/) has the full picture). It belongs in a throwaway container, not a job touching your repo. `dontAsk` plus a tight allow list is the combination that is both non-interactive and contained.
 
-## Layer three: the wall that can't be loosened
+## Deny rules hold in every mode
 
-There's one more piece, and it's the one that lets you sleep. Allow rules and modes describe what the run *may* do. A [deny rule](/course/claude-code/permissions-modes/deny/) describes what it may *never* do while the permission layer is active. `bypassPermissions` is an explicit exception, so do not use it as a security boundary in unattended work:
+The third layer is the wall. A [deny rule](/course/claude-code/permissions-modes/deny/) is not a prompt softened into refusal; it blocks the call outright. The current [permission-modes docs](https://code.claude.com/docs/en/permission-modes) state it plainly: deny rules block in every mode, including `bypassPermissions`. That is the layer that survives a teammate later "fixing" a stuck job by flipping it to bypass:
 
-```jsonc
-// .claude/settings.json
+```json title=".claude/settings.json"
 {
   "permissions": {
     "deny": [
       "Read(./.env)",
-      "Read(./secrets/**)",
-      "Edit(./config/production.*)"
+      "Read(./secrets/**)"
     ]
   }
 }
 ```
 
-A `Read` deny means a secret can't enter the agent's context at all while permission checks are active. That is useful, but it is not the entire defense: use `--bare` or explicit project configuration, least-privilege credentials, network isolation, and OS sandboxing for unattended work. This is the [deny lesson](/course/claude-code/permissions-modes/deny/) graduating from good hygiene to one layer of a defense-in-depth posture.
+A `Read` deny holds in every mode - but it gates the Read tool, not the filesystem. `cat .env` through any allowed shell rule reads exactly the bytes the deny just protected, and a broad `Bash` grant reopens every path the deny closed. Wall the shell side too - deny rules take the same `Bash(...)` patterns - and keep the standing defenses that live outside the permission system: least-privilege credentials, no secrets on the runner at all, `--bare` or explicit settings for reproducibility, and network isolation.
 
-## The shape of a safe unattended grant
+## The posture the rest of the chapter runs on
 
-Put the three layers together and you have the permission posture every job in the rest of this chapter will use:
+Put the three layers together and you get a fail-closed posture - fail-closed meaning anything not explicitly granted is refused. The call never executes; the model adapts around the refusal, and the run can still complete and still exit 0, which is why the grant list has to be complete and the posture has to be tested. The grant every job ahead will use:
 
-- **Deny rules** wall off the paths a leak or overwrite would actually hurt - set once, hold always.
-- **`dontAsk`** makes the run refuse-by-default instead of hang-by-default.
-- **A tight `--allowedTools`** opens just the specific commands the job needs to finish.
+- **Deny rules** wall off the paths a leak or overwrite would actually hurt - set once, hold in every mode.
+- **`dontAsk`** makes the run refuse by default instead of prompting into the void.
+- **A tight `--allowedTools`** opens exactly the specific commands the job needs to finish.
 
-High floor, low ceiling - the exact posture you built interactively, now with the human removed and the rules carrying the full weight. With this in place, you can hand the run to a machine and trust it to fail closed. The first machine we'll hand it to is [GitHub's, on every pull request](/course/claude-code/automation/ci/).
+Test the posture before you trust it. The nightly job ahead must run the full wrap-up - `npm test`, `npm run lint`, `npm run build` - inspect the tree, and open an issue on failure. Its grant is `Read`, `Grep` for the tree inspection, `Bash(npm test)`, `Bash(npm run lint)`, `Bash(npm run build)`, `Bash(git status *)`, and `Bash(gh issue create *)` to open the issue: seven entries, each boring and specific.
+
+Now spot the flaw in a teammate's one-liner that uses `--allowedTools "Bash"` and default mode. Every shell command is pre-approved, and anything Bash cannot do gets silently denied or hangs. Two failures, one line - which is the fail-closed machinery working exactly as designed, aimed at the wrong grant list.
+
+With the posture set, the first machine to hand it to is [GitHub's, on trusted pull requests](/course/claude-code/automation/ci/); the next lesson also explains why fork contributions need a separate secret-safe path.

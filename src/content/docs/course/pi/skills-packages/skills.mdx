@@ -1,137 +1,253 @@
 ---
-title: "Write the content-source-onboarding procedure as a SKILL.md"
-description: "A Skill is markdown, not code: frontmatter tells Pi when to load it, the body tells it what to do. Write one for stash and it stays free until it's relevant."
-sidebar:
-  label: "Skills · SKILL.md"
+title: "Write the add-feed-source procedure as a SKILL.md"
+description: "A Skill is markdown, not code: frontmatter tells Pi when to load it, the body tells it what to do. Write one for stash and it stays nearly free until it's relevant."
 ---
 
 import SkillAnatomy from '../../../../../components/interactive/SkillAnatomy.tsx';
 
-Every time a teammate wants `stash` to save from a source it doesn't handle yet, you've been doing the same five things by hand: look at a sample page from the new source, work out what its markup does to the readability extractor, write a small adapter, register it with the fetch worker, run it against a real URL and check the article text came out clean instead of full of nav cruft. You've re-explained that procedure to Pi twice now, typing out the same steps in slightly different words each time. That's the tell. When you catch yourself re-narrating a multi-step routine instead of just naming it, it's time to write it down once - and this time the right format for "write it down" isn't TypeScript.
+The two extensions you wrote for `stash` (the course's running example, a small FastAPI feed reader) got you gates that hold whether the model likes it or not.
+Here's the clearest thing in `stash` that isn't that kind of problem. Every time a
+new feed source shows up - a teammate's blog, a newsletter, a podcast feed - you run
+the same procedure: confirm the source actually serves a feed, fetch a sample and
+read the raw XML (namespace first, then link shape - the same inspection [the core
+chapter](/course/pi/the-core/) walked you through), check `fetch_feed` against it, extend it with a test if the shape defeats
+it, sync, then confirm the rows came out right. You've narrated those steps to Pi
+more than once now, typing roughly the same instructions in slightly different words
+each time. That's the tell. When you catch yourself re-narrating a multi-step
+routine instead of just naming it, it's time to write it down once - and this time
+the right format for "write it down" isn't TypeScript.
 
 ## Skill and extension are different layers
 
-An extension - what you built in the last two modules - is a TypeScript module that registers a tool, a command, or a hook through the `ExtensionAPI`. It's code: it can enforce, block, compute, reach out to the fetch worker directly. A Skill is the layer below that. It's markdown with a bit of YAML on top, and it can't do anything an extension couldn't already do more directly - a Skill has no execution semantics of its own beyond "here are the instructions, go follow them" (though its body can absolutely tell the agent to run a script that ships alongside it). What a Skill buys you instead is that *you* can write one without touching TypeScript, and that it stays nearly free in context until the moment it's actually relevant.
+An extension - what you built across Modules 5 and 6 - is a TypeScript module that
+registers a tool, a command, or a hook through the `ExtensionAPI`. It's code: it can
+enforce, block, compute, reach into `stash.db` directly. `stash-tools.ts` shells out
+to Python; `damage-control.ts` vetoes tool calls before they run. A Skill is the
+layer below that. It's markdown with a bit of YAML on top, and it can't do anything
+an extension couldn't already do more directly - a Skill has no execution semantics
+of its own beyond "here are the instructions, go follow them" (though its body can
+absolutely tell the agent to run a script that ships alongside it). What a Skill
+buys you instead is that *you* can write one without touching TypeScript, and that
+it stays nearly free in context until the moment it's actually relevant.
 
-**An extension enforces; a Skill only informs.** Reach for a Skill when the job is a procedure worth naming, not a rule that has to hold on every tool call.
+**An extension enforces; a Skill only informs.** Reach for a Skill when the job is
+a procedure worth naming, not a rule that has to hold on every tool call.
 
-That second part is worth planting a number against before you see the file. Once you do, count two things in it: the words between the two `---` frontmatter markers, and the words below the second one. Here they are: **62 words of frontmatter, 186 words of body - exactly three times as long.** At startup, Pi only ever pays for the first number. Whether it pays for the second depends entirely on whether your request matches the description. That's the mechanism worth understanding before you write one: **progressive disclosure**. At startup, Pi scans every Skill it can find and pulls only two fields - `name` and `description` - into the system prompt. The rest of the file, and anything else in the Skill's directory, stays on disk. Only when your request matches a Skill's description does Pi reach for its `read` tool and pull in the full body.
+That second part is worth planting a number against before you see the file. Once
+you do, count two things in it: the words between the two `---` frontmatter markers,
+and the words below the second one. Here they are: **61 words of frontmatter, 225
+words of body - just over three and a half times as long.** At startup, Pi only ever
+pays for the first number. Whether it pays for the second depends entirely on
+whether your request matches the description.
+
+That's the mechanism worth understanding before you write one: **progressive
+disclosure**. At startup, Pi scans every Skill it can find and pulls only two
+fields - `name` and `description` - into the system prompt. The rest of the file,
+and anything else in the Skill's directory, stays on disk. Only when your request
+matches a Skill's description does the agent reach for its `read` tool and pull in
+the full body.
 
 ## The file structure
 
 A Skill is a directory with one required file inside it:
 
 ```text
-onboard-content-source/
+add-feed-source/
 ├── SKILL.md          (required)
 ├── scripts/
 ├── references/
 └── assets/
 ```
 
-`scripts/`, `references/`, and `assets/` are optional siblings - a helper script the body tells Pi to run, a longer reference doc, a template file to copy. None of it loads until the body of `SKILL.md` actually points at it. For the onboarding procedure, a single `SKILL.md` covers it; you reach for the subdirectories only once a Skill's instructions genuinely outgrow one file.
+`scripts/`, `references/`, and `assets/` are optional siblings - a helper script the
+body tells Pi to run, a longer reference doc, a template file to copy. None of it
+loads until the body of `SKILL.md` actually points at it. For the feed procedure, a
+single `SKILL.md` covers it; you reach for the subdirectories only once a Skill's
+instructions genuinely outgrow one file.
 
-Pi looks for Skill directories in several places, checked in order:
+Pi looks for Skill directories in several places:
 
-1. `~/.pi/agent/skills/` and `~/.agents/skills/` - global, yours across every project
-2. `.agents/skills/` - discovered by walking up from your current directory to the repo root
-3. `.pi/skills/` and `.agents/skills/` in the project itself
-4. a `skills/` directory (or `pi.skills` key) inside an installed package - the subject of the [packages lesson](/course/pi/skills-packages/packages/)
-5. a path passed with `--skill <path>`
-6. a `skills` array in `settings.json`
+1. **Global** - `~/.pi/agent/skills/` and `~/.agents/skills/`, yours across every
+   project
+2. **Project** - `.pi/skills/` and `.agents/skills/`, the latter walked from your
+   current directory up to the git root (or the filesystem root outside a repo);
+   both load only after the project is trusted
+3. **Packages** - a `skills/` directory or `pi.skills` entries in an installed
+   package's `package.json` - the subject of the
+   [packages lesson](/course/pi/skills-packages/packages/)
+4. **Settings** - a `skills` array in `settings.json`, taking files or directories
+5. **CLI** - a path passed with `--skill <path>`, repeatable
 
-Since this procedure is `stash`-specific - it references the fetch worker and the readability extractor by name - it belongs in the repo, in `.pi/skills/` or `.agents/skills/`, committed so anyone who clones `stash` gets it too. **A dozen Skills sitting in that directory cost you the price of one - whichever one actually fires.**
+[Pi's skills documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md) lists those locations without promising a strict order. The only precedence
+rule that actually exists is for collisions: two Skills with the same name from
+different places warn, and Pi keeps the first one it found - so keep names
+unique across your sources rather than relying on which one lands first.
+
+Since this procedure is `stash`-specific - it names `fetch_feed`,
+`tests/test_feeds.py`, and the `feeds` table - it belongs in the repo, in
+`.pi/skills/` or `.agents/skills/`, committed so anyone who clones `stash` gets it
+too. **A dozen Skills cost a dozen short descriptions at startup - their
+bodies stay free until one fires.**
 
 ## Frontmatter: the label Pi reads before it opens the box
 
-Here's the whole Skill:
+Here's the whole Skill, at `.pi/skills/add-feed-source/SKILL.md`:
 
 ```text
-// .pi/skills/onboard-content-source/SKILL.md
 ---
-name: onboard-content-source
+name: add-feed-source
 description: >-
-  Onboard a new content source into stash's fetch worker when a URL from
-  an unfamiliar site or platform isn't extracting cleanly - nav/ads
-  leaking into the article text, or the extractor returning empty
-  content. Use when the user wants to add support for a new site, wire
-  up a new source, or fix a source that's extracting badly.
+  Wire a new feed source into stash when a feed URL isn't syncing or
+  parses to nothing - a teammate's blog, a newsletter's Atom link, an
+  unfamiliar RSS URL. Use when the user wants to add a feed, check
+  whether a site serves one, or debug a feed that saves no rows or
+  loses dates and links.
 ---
 
-Follow these steps when a source needs onboarding or repair. Ask for a
-real sample URL from the source if one isn't already in the request -
-do not guess at a site's markup.
+Follow these steps when a feed source needs wiring up. Ask for the
+feed's URL if the request doesn't name one - never guess where a site
+keeps its feed.
 
-1. Fetch the sample URL and inspect the raw HTML structure around the
-   article body: what wraps the real content, what wraps nav/ads/related
-   links.
-2. Check whether the current extractor already gets close. If it's
-   leaking specific boilerplate (a cookie banner, a related-posts
-   block), that's usually a targeted selector fix, not a new adapter.
-3. If the site's shape is different enough to need its own path, write
-   a small source adapter under the extractors directory, following the
-   structure of the existing ones.
-4. Run the adapter against the sample URL. Confirm the stored article
-   text has no leftover nav/ads and no missing paragraphs.
-5. Confirm the new entry is searchable: check it shows up in a full-text
-   search for a distinctive phrase from the article body.
-6. Report back a short diff of raw HTML vs. extracted text so the user
-   can eyeball the extraction before it goes live for everyone.
+1. Confirm the source serves a feed: fetch the URL and check the body
+   for a feed or rss root, not an HTML page. stash's discover() exists
+   for this but returns the URL unchanged on both branches today -
+   read the body yourself.
+2. Inspect the raw XML before touching code. Is the root element
+   namespaced, the way Atom almost always is? Is each entry's link a
+   child element with href, not an attribute on the entry?
+3. Check fetch_feed against a sample entry. It handles namespaced
+   Atom with link child elements; an RSS feed (item, pubDate) defeats
+   it and is the usual reason to extend.
+4. Only if the shape defeats it, extend fetch_feed and pin the new
+   behavior with a test in tests/test_feeds.py, following the
+   existing SAMPLE fixture.
+5. Add the feed to the feeds table (there is no endpoint for this -
+   one sqlite3 insert) and sync it: POST /feeds/{id}/sync, or the
+   resync_feed tool. Confirm the saved rows: published parsed to a
+   real date, link non-empty, no duplicates after a second sync.
+6. Report the diff of what changed - code, test, and new row counts -
+   before calling the source live.
 ```
 
-Count it yourself if you want to check the number planted above: 62 words above the second `---`, 186 in the six numbered steps below it, 248 total. Three-quarters of this file's words never reach the system prompt unless a real request matches the description first.
+Count it yourself if you want to check the numbers planted above: 61 words between
+the two `---` markers, 225 in the steps below the second one, 286 total. More than
+three-quarters of this file's words never enter your context unless a real request
+matches the description first.
 
-Only two fields are required, and they're the only two doing any work at Skill-selection time:
+Only two fields are required, and they're the only two doing any work at
+Skill-selection time:
 
-- **`name`** - 1 to 64 characters, lowercase letters, numbers, and hyphens only. Unlike the plain Agent Skills standard, Pi doesn't require this to match the directory name - a deliberate deviation, so a shared skills repo can be reused across several tools without renaming folders to suit each one.
-- **`description`** - up to 1024 characters, and it's the entire trigger surface. Pi's system prompt carries this string for every Skill it knows about; when your request semantically matches it, the Skill fires. Notice the description above names the *situation* ("a URL from an unfamiliar site isn't extracting cleanly") rather than just an action - that's what lets it match "hey can we add support for this newsletter site" without you ever typing the Skill's name.
+- **`name`** - 1 to 64 characters, lowercase letters, numbers, and hyphens only (no
+  leading, trailing, or doubled hyphens). Unlike the plain Agent Skills standard,
+  Pi doesn't require this to match the directory name - a deliberate deviation, so
+  a repo whose folders already satisfy the stricter tools drops into Pi unchanged
+  (some of those tools still demand the match; Pi just declines to add its own
+  demand on top).
+- **`description`** - up to 1024 characters, and it's the entire trigger surface.
+  Pi's system prompt carries this string for every Skill it knows about; when your
+  request semantically matches it, the Skill fires. The description above names the
+  *situation* ("a feed URL isn't syncing or parses to nothing") rather than just an
+  action - that's what lets it match "hey, can we add this newsletter's feed?"
+  without you ever typing the Skill's name.
 
-A handful of optional fields round out the spec: `license`, `compatibility` (environment requirements), `metadata` (arbitrary key/value), `allowed-tools` (a pre-approved tool list for this Skill), and `disable-model-invocation` - set that last one and the Skill drops out of the system prompt entirely, invocable only by hand. None of them change whether the Skill can fire; they change how much you trust it to fire on its own.
+A handful of optional fields round out the spec: `license`, `compatibility`
+(environment requirements), `metadata` (arbitrary key/value), `allowed-tools` (an
+experimental pre-approved tool list for this Skill), and `disable-model-invocation`
+- set that last one and the Skill drops out of the system prompt entirely,
+invocable only by hand.
 
-**Two fields decide whether the Skill fires at all; everything else just narrows how much you trust that decision.**
+**Two fields drive selection; `disable-model-invocation` removes a Skill from the
+prompt outright, and the rest carry metadata or permissions.**
 
 ## Invoking it
 
 Once it's saved, you can call it directly:
 
 ```text
-> /skill:onboard-content-source
-> /skill:onboard-content-source https://example-newsletter.com/p/some-post
+> /skill:add-feed-source
+> /skill:add-feed-source https://example.com/feeds/atom.xml
 ```
 
-or just describe the problem and let the description do the matching:
+Anything after the command rides along with the skill's content, appended as a
+`User:` line. Or just describe the problem and let the description do the matching:
 
 ```text
-> stash is choking on this Substack link, the article text has the
-  subscribe-box and comments mixed into it
+> this newsletter's feed synced but stash saved zero rows - can you
+  wire it up properly?
 ```
 
-Either way Pi's `read` tool is what actually loads the body - you can watch that happen in whatever context view you built two modules back. The `/skill:` slash-command surface itself is a toggle: `enableSkillCommands` in `settings.json` controls whether the explicit `/skill:name` form exists at all, separate from whether the model can invoke a Skill on its own recognition.
+Either way Pi's `read` tool is what actually loads the body - you can watch that
+happen in whatever context view you built in [the observability
+lesson](/course/pi/the-core/see-the-context/). The docs are honest about a
+wrinkle worth knowing here: models don't always load the body on their own
+recognizance, and `/skill:name` is the documented way to force it. The `/skill:`
+slash-command surface itself is a toggle: `enableSkillCommands` in `settings.json`
+controls whether the explicit `/skill:name` form exists at all, separate from
+whether the model can invoke a Skill on its own recognition.
 
-Here's the shape of a `SKILL.md`, and where it sits relative to how other agents handle the same idea. `name` and `description` are required everywhere - no surprise there, that's the trigger. Before you click through: guess which field only three of the five tools support - the one that lets you say "never fire this on your own," full stop.
+Here's the shape of a `SKILL.md`, and where it sits relative to how other agents
+handle the same idea. `name` and `description` are the two fields every tool in that matrix
+reads; most require them outright (Pi does - it refuses to load a skill with no
+description), so treat both as required in any file you want portable. Before you click through: guess which field
+only three of the five tools support - the one that lets you say "never fire this
+on your own," full stop.
 
 <SkillAnatomy client:visible />
 
-Three of five: Claude Code, Cursor, and Copilot all read `disable-model-invocation`. Codex reaches the same outcome through a sidecar file instead (`policy.allow_implicit_invocation: false`), and OpenCode has no documented equivalent at all - a Skill you write for OpenCode can't be told to sit fully manual.
+Three of five: Claude Code, Cursor, and Copilot all read
+`disable-model-invocation`. Codex reaches the same outcome through a sidecar file
+instead (`policy.allow_implicit_invocation: false`), and OpenCode has no documented
+equivalent at all - a Skill you write for OpenCode can't be told to sit fully
+manual.
 
 ## What's actually out there
 
-Pi didn't invent this format. `SKILL.md` is the same Agent Skills standard Claude Code and Codex CLI read, and Pi's own maintainers publish a landing point for it: `badlogic/pi-skills` on GitHub, billed explicitly as compatible with Claude Code and Codex too. That's the same portability the name-doesn't-have-to-match-folder deviation exists for - one skills repo, reused across tools without renaming a single folder. Worth a look before you write one from scratch: someone may already have onboarded the exact content-source shape you're staring at.
+Pi didn't invent this format. `SKILL.md` is the same Agent Skills standard Claude
+Code and Codex CLI read, and Pi's own maintainers publish a landing point for it:
+[`badlogic/pi-skills`](https://github.com/badlogic/pi-skills) on GitHub, billed explicitly as compatible with Claude Code
+and Codex too. That's the same portability the name-doesn't-have-to-match-folder
+deviation exists for - one skills repo, reused across tools without renaming a
+single folder. Worth a look before you write one from scratch: its shelves hold web
+search, browser automation, Google APIs, and transcription, and one of those may be
+the procedure you were about to write by hand.
 
 ## The security line, same as any code you didn't write
 
-The docs are blunt about this, and it's worth taking at face value: a Skill's body is instructions the model will follow, and it can tell Pi to run arbitrary scripts sitting right next to it in `scripts/`. Installing someone else's Skill - which the [next-but-one lesson](/course/pi/skills-packages/packages/) is entirely about - deserves the same read-before-you-trust caution you'd give an extension. A Skill being "just markdown" doesn't mean it's inert.
+The docs are blunt about this, and it's worth taking at face value: a Skill's body
+is instructions the model will follow, and it can tell Pi to run arbitrary scripts
+sitting right next to it in `scripts/`. Installing someone else's Skill - which the
+[next-but-one lesson](/course/pi/skills-packages/packages/) is entirely about -
+deserves the same read-before-you-trust caution you'd give an extension. A Skill
+being "just markdown" doesn't mean it's inert.
 
 :::tip[Try it]
-Write a SKILL.md for a repeatable procedure in stash - "add a new feed source" is a good one. Start a fresh session and describe the situation without naming the skill. If it fires, check that progressive disclosure worked: the body loaded only when your request matched the description, not at startup.
+The file exists now, so test the trigger, not the body. Start a fresh session and
+describe the situation without ever naming the skill - "can you add this podcast's
+feed to stash?" If it fires, progressive disclosure worked: the body loaded only
+when your request matched the description, not at startup. Then try a request that
+shouldn't match - a question about `stash.db`, say - and watch the body stay on
+disk.
 :::
 
 ## What a Skill can't do
 
-Name the cost this format creates before you move past it: a Skill can't force anything. It fires when the model's read of your request matches the description, and that's a judgment call, not a guarantee - too broad a description and it fires on something adjacent but wrong; too narrow and it silently doesn't fire on the exact case you wrote it for. There's no way to tell a Skill "always run this check before touching the database," the way the damage-control gate two modules back holds on every single `tool_call` whether the model likes it or not. If a `stash` chore needs that kind of unconditional enforcement, a Skill is the wrong layer - you're back to a hook. What a Skill buys you is cheap, on-demand instructions for a procedure. What it can't buy you is certainty that the procedure runs at all.
+Name the cost this format creates before you move past it: a Skill can't force
+anything. It fires when the model's read of your request matches the description,
+and that's a judgment call, not a guarantee - too broad a description and it fires
+on something adjacent but wrong; too narrow and it silently doesn't fire on the
+exact case you wrote it for. There's no way to tell a Skill "always run this check
+before touching `stash.db`," the way the damage-control gate one module back holds
+on every single tool call whether the model likes it or not. If a `stash` chore
+needs that kind of unconditional enforcement, a Skill is the wrong layer - you're
+back to a hook. What a Skill buys you is cheap, on-demand instructions for a
+procedure. What it can't buy you is certainty that the procedure runs at all.
 
-| Layer | What it costs | What it buys | Who decided |
-|---|---|---|---|
-| Skill | Frontmatter only (62 words here) at startup; the body (186 words) loads only if a request matches | Removes re-typing a five-step procedure by hand every time a new source shows up | You wrote the description; the model decides when it matches |
+That is the Skill's whole price-and-payoff story: frontmatter only (61 words here)
+at startup, the 225-word body loading only if a request matches, and no more
+re-typing the feed-onboarding procedure by hand every time a new source shows up.
+You wrote the description; the model decides when it matches.
 
-Two lighter no-code layers are worth the same five minutes each - a shortcut for the prompt you type often, and a theme for the terminal you're staring at all week. Neither one tries to fire on its own the way this Skill does. [Next: templates and themes](/course/pi/skills-packages/templates-themes/).
+Two lighter no-code layers are worth the same five minutes each - a shortcut for
+the prompt you type often, and a theme for the terminal you're staring at all week.
+Neither one tries to fire on its own the way this Skill does.
+[Next: templates and themes](/course/pi/skills-packages/templates-themes/).

@@ -1,17 +1,15 @@
 ---
 title: Pre-approve safe commands and run shell inline
 description: "Accept-edits frees your edits but not your shell. Add an allow rule so the agent stops asking about the commands you trust - and run your own inline with !."
-sidebar:
-  label: "Allow rules · ! shell"
 ---
 
 import ApprovalLedger from '../../../../../components/interactive/ApprovalLedger.tsx';
 
-With the rename done, the next task is to harden the new `capturePayment` path with a few more tests, and that means the agent runs `npm test` over and over as it iterates. In accept-edits mode the edits fly, but every single test run still stops and asks - because accept-edits deliberately doesn't cover arbitrary shell commands. The mode was a *bulk* loosening; what you want now is a *surgical* one: silence this one trusted command and nothing else.
+Some prompts arrive so often that answering them stops being a safety check and becomes a reflex. Continue the rename from the preceding permission pages, where `processPayment` in the course's payments service became `capturePayment`: you ask the agent to harden the `capturePayment` path in `src/payments/processor.ts` with more tests under `tests/`. It writes a test, runs `npm test`, reads the failure, edits, runs `npm test` again, and so on. In **acceptEdits** mode (the permission mode that auto-applies file edits inside your working directory; [the mode-ladder lesson](/course/claude-code/permissions-modes/modes-ladder/) shows how to cycle into it) the edits fly, but every test run still stops and asks, because acceptEdits deliberately does not cover arbitrary shell commands. The mode was a *bulk* loosening. What you want here is a *surgical* one: silence this one trusted command and nothing else.
 
 ## An allow rule retires a repeated prompt
 
-A permission rule moves a specific action from **ask** to **allow** permanently, written into your settings so it survives restarts. The quickest way to create one is at the moment the prompt appears - Claude Code offers to remember your answer:
+An **allow rule** is a settings entry that moves one specific action from ask to allow within its configured scope. The quickest way to create one is at the moment the prompt appears; Claude Code may offer to remember your answer. Illustrative exchange:
 
 ```text
   ⏵ Run  npm test
@@ -24,10 +22,9 @@ A permission rule moves a specific action from **ask** to **allow** permanently,
   ✓ Added allow rule: Bash(npm test). Won't ask again.
 ```
 
-From here on, `npm test` runs silently in any mode - the agent can lean on your test suite as a feedback loop without interrupting you for permission each lap. The rule lands in your settings file under a `permissions.allow` list, so you can also write it by hand or commit it to share with the team:
+From here on, `npm test` runs without a new prompt wherever the rule applies. Inspect the `/permissions` command (typed in the session) to see which settings file, yours or the project's, owns the rule. You can also write a project rule by hand and commit it so the team shares it:
 
-```json
-// .claude/settings.json
+```json title=".claude/settings.json"
 {
   "permissions": {
     "allow": ["Bash(npm test)", "Bash(npm run build)"]
@@ -35,25 +32,25 @@ From here on, `npm test` runs silently in any mode - the agent can lean on your 
 }
 ```
 
-The discipline that keeps this safe is to **allow narrowly**. `Bash(npm test)` is a precise, low-risk command and a fine thing to silence. A blanket `Bash(*)` that green-lights *any* shell command is how you hand the agent an unsupervised root shell - exactly the thing the permission system exists to prevent. Allow the specific commands you'd run a hundred times without thinking; leave everything else to prompt. *Rule patterns support more than exact strings - prefixes, arguments, and tool-specific forms - and the current syntax lives in the [permissions docs](https://code.claude.com/docs/en/permissions).*
+The discipline that keeps this safe is to **allow narrowly**. `Bash(npm test)` is a precise, low-risk command and a fine thing to silence. A blanket `Bash(*)` that green-lights *any* shell command hands the agent an unsupervised shell, exactly the thing the permission system exists to prevent. Allow the specific commands you would run a hundred times without thinking, provided they are reversible rather than destructive; leave everything else to prompt. Rule patterns support more than exact strings - prefixes, arguments, and tool-specific forms - and the current syntax lives in the [permissions docs](https://code.claude.com/docs/en/permissions).
 
-Where that discipline actually gets tested isn't the rule you write calmly into a settings file - it's the prompt that arrives mid-flow, after a streak of easy yeses. The session below walks into exactly that moment; when playback pauses, the prompt is yours, and each answer edits a different amount of standing policy.
+Where that discipline gets tested is not the rule you write calmly into a settings file. It is the prompt that arrives mid-flow, after a streak of easy yeses. The session below walks into exactly that moment: routine prompts, a narrow grant for the test command, then a destructive command arriving on the same reflex. When playback pauses, the prompt is yours, and each answer changes your standing policy by a different amount - allow-once not at all, since it covers only that single command run; a wildcard "always allow" outlives the moment, and deny-and-redirect is the cheapest correction. The session is generic, labels included: the replay presumes the acceptEdits posture this page opened with, so its in-repo edits run without asking, and the Claude Code spelling of its commands is the `Bash(...)` form above.
 
 <ApprovalLedger client:visible />
 
 ## Running shell yourself, inline with `!`
 
-There's a neighbor to this worth knowing, because it solves a related friction: sometimes *you* want to run a command and put its output in front of the agent - check what's failing, look at `git status`, see a directory listing - without leaving the session or waiting for the agent to do it. In the CLI, prefix a line with `!` and it runs in your shell immediately, with the result dropped into the conversation:
+There is a neighbor to this worth knowing, because it solves a related friction. Sometimes *you* want to run a command and put its output in front of the agent - check what is failing, look at `git status`, list a directory - without leaving the session or waiting for the agent to do it. In the CLI, prefix a line with `!` and it runs in your shell immediately, with the result dropped into the conversation. Illustrative:
 
 ```text
 > !npm test 2>&1 | tail -20
 
-  ⎿ FAIL test/capture.test.js - expected 200, got 500
+  ⎿ FAIL tests/payments.test.ts - expected 200, got 500
     (output added to context)
 
 > that 500 is the bug - the capture path is missing the auth header. fix it.
 ```
 
-That `!` is *you* running the command, not the agent asking to - so there's no permission prompt at all; it's your shell, your call. It's the fastest way to feed the agent a concrete fact instead of describing it, and it pairs naturally with allow rules: you reach for `!` when you want to look yourself, and allow rules for when you want the agent to stop asking about the looking it does on your behalf. *(This inline `!` is a CLI feature; the graphical editor extension doesn't carry it - run such commands in the integrated terminal there instead.)*
+That `!` is *you* running the command, not an agent tool call waiting for permission, so no allow rule is involved. It is the quickest way to put concrete output in the conversation. The inline `!` is a CLI feature; other clients may require their integrated terminal.
 
-You've now loosened the leash about as far as is comfortable while still reviewing the direction: edits auto-apply, trusted commands run silently, and you can drop in a command whenever you want. Which makes this the right moment to do the opposite - because the next task touches a secrets directory, and "loose by default" is precisely when you need something the agent *cannot* do, no matter how relaxed the rest of the session gets. [Time to lock it out](/course/claude-code/permissions-modes/deny/).
+With edits auto-applied, trusted commands running silently, and a way to drop in a command whenever you want, the leash is about as loose as is comfortable while you still review the direction. That is precisely when you need the opposite move: something the agent *cannot* do, however relaxed the rest of the session gets. [Lock the secrets out with a deny rule](/course/claude-code/permissions-modes/deny/).
