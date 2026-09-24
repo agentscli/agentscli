@@ -86,7 +86,7 @@ export const mmtTools: MmtToolSpec[] = [
     scopes: {
       session: {
         code: '/model',
-        how: 'Lists the available models; the pick applies to the rest of the conversation.',
+        how: 'Lists the available models; Enter (or `/model <alias>`) saves the pick as your default - press `s` to switch for this session only.',
       },
       launch: {
         code: 'ANTHROPIC_MODEL={model} claude',

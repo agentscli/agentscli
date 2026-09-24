@@ -1,57 +1,54 @@
 ---
 title: Choose between a skill, a slash command, and a subagent
-description: "Three ways to package work: a skill the agent invokes on recognition, a command you trigger, a subagent with its own context. Match the tool to the job."
-sidebar:
-  label: "Choose · skill vs command vs subagent"
+description: "Three ways to package work: a skill the agent invokes on recognition, a command you trigger, a subagent with its own context. Match the container to the job."
 ---
 
 import SkillEconomy from '../../../../../components/interactive/SkillEconomy.tsx';
 
-You've now built a procedure the agent runs by itself. But "package some work and reuse it" describes three different tools in Claude Code, and reaching for the wrong one is a common way to fight the grain. This lesson is the decision: when the `finish-pr` ritual is genuinely a *skill*, and when the next thing you want to package is really a slash command or a subagent instead.
+*Package some work and reuse it* describes three different tools in Claude Code, and reaching for the wrong one is a common way to fight the grain. A **skill** is a folder with a `SKILL.md` that the agent invokes itself when your request matches its description. A **slash command** is a procedure you trigger by typing `/name`. A **subagent** is a separate worker with its own context window. This lesson is the decision: which container a given piece of work actually wants, and when the answer is *rules* or *neither*.
 
-## The same file, two ways to fire
+The worked case is a branch wrap-up in a small TypeScript payments service (the example this course returns to). It lives at `.claude/skills/finish-pr/SKILL.md`, its description names the moment a change is done or a PR is ready, and its body runs four steps and stops on the first failure: `npm test`, a check that any bug fix names its regression test, `npm run lint`, `npm run build`. The [create lesson](/course/claude-code/skills/create/) shows the full file.
 
-Start with the one that trips people up, because in Claude Code a skill and a custom slash command are now *the same underlying thing*. Custom commands were merged into skills - a file at `.claude/commands/finish-pr.md` and a skill at `.claude/skills/finish-pr/SKILL.md` both create `/finish-pr` and run the same way. The [skills page](https://code.claude.com/docs/en/skills) documents the merge.
+## One file, two ways to fire
 
-So the distinction isn't *two formats* - it's *two ways the same thing can fire*:
+Start with the confusion the interface itself creates: custom slash commands and skills are the same underlying thing now. Custom commands were merged into skills - a file at `.claude/commands/deploy.md` and a skill at `.claude/skills/deploy/SKILL.md` both create `/deploy` and work the same way, and the [skills page](https://code.claude.com/docs/en/skills) documents the merge. So the distinction is not two formats; it is two ways the same file can fire:
 
-- **As a skill** - the agent reads the `description`, recognizes the situation, and invokes it *itself*. That's what we built: you say "this is ready" and the ritual runs.
-- **As a command** - you type `/finish-pr` and it runs *because you said so*, full stop. The agent never decides.
+- **As a skill** - the agent reads the `description`, recognizes the situation, and invokes it *itself*. You say *this is ready* and the wrap-up runs.
+- **As a command** - you type `/finish-pr` and it runs *because you said so*. The agent never decides.
 
-Every skill can be invoked by hand with its `/name`; that's the command behavior, always available as a fallback. The real choice is whether you *also* want the agent to fire it on its own. You make a skill command-only by adding one frontmatter flag - `disable-model-invocation: true` - which takes it off the agent's automatic menu. The decision rule:
+By default both are available: you can invoke any skill as `/name`, and Claude can load it when the conversation matches. Two frontmatter flags carve that up, and they are not mirror images.
 
-- **Let the agent invoke it** when running it at the wrong moment is *harmless* - checks, summaries, lookups, regenerating something. Keep `finish-pr` command-only because this example writes `CHANGELOG.md` and may run formatting fixes: add `disable-model-invocation: true`, or split the read-only checks from the mutating steps.
-- **Make it command-only** when running it at the wrong moment is *expensive or irreversible* - anything that deploys, pushes, sends a message, or spends money. You don't want the agent deciding your code "looks ready" and shipping it.
+`disable-model-invocation: true` makes the skill yours alone - it leaves the listing, the skill menu the agent browses each session, cannot fire on recognition, and runs only when you type the command. `user-invocable: false` goes the other way: the skill disappears from the `/` menu and `/name` will not run it, while Claude can still load it when a task matches. That one is for background knowledge never meant to be an action.
 
-If `finish-pr` ended in `git push` and *opened the PR*, you'd flip it to command-only - the checks can fire on recognition, but the act of shipping should wait for you to type the command.
+The working rule is about mistiming. Let the agent invoke a skill when running it at the wrong moment is harmless - checks, summaries, lookups, regeneration. Make it command-only when a mistimed run is expensive or irreversible: deploys, pushes, messages, spending.
 
-## When the job wants a subagent instead
+`finish-pr` sits near the line: its lint step makes edits, but edits a diff can carry. The day you append the shipping act - `git push`, opening the PR - splitting beats flipping. `disable-model-invocation: true` on `finish-pr` itself would silence the checks along with the ship. Keep `finish-pr` model-invoked, and move the irreversible act to a command-only companion - `ship-pr` with the flag set - so the checks fire on recognition while the ship waits for `/ship-pr`.
 
-The third tool is the one from the [last chapter](/course/claude-code/subagents/), and it answers a different question entirely. A skill or command is *a procedure* - a fixed set of steps you want run. A [subagent](/course/claude-code/subagents/) is *a context* - an isolated window where the agent does open-ended work without polluting your main thread.
+## When the job wants its own window
 
-The tell is whether the work is a **known routine** or an **open investigation**:
+The third tool answers a different question. A skill or command is *a procedure* - a fixed set of steps you want run. A subagent is *a context* - a separate window where open-ended work happens without filling yours, defined by a markdown file in `.claude/agents/` that names its tools and instructions. The tell is the shape of the work:
 
-- **Known routine** → skill/command. The four wrap-up steps never change. You're not asking the agent to *figure out* what to do; you're handing it a script. That's a skill.
-- **Open investigation** → subagent. "Trace every place the charge amount gets mutated and report back" has no fixed steps, generates a pile of intermediate reading you don't want in your main context, and ends in a summary. That's a subagent.
+- **Known routine** -> skill or command. The four wrap-up steps never change. You are not asking the agent to figure anything out; you are handing it a script.
+- **Open investigation** -> subagent. *Trace every place a charge amount is computed and report the disagreements* has no fixed steps, generates a pile of intermediate reading you do not want in your window, and ends in a summary. That is delegation, and the [subagents chapter](/course/claude-code/subagents/) covers it in full.
 
-The two aren't rivals - they compose. A skill can be told to *run in a forked context*, so a heavy procedure does its noisy work in isolation and returns only a summary, exactly the way a subagent does. That's a skill borrowing the subagent's context isolation; the mechanics are on the [skills page](https://code.claude.com/docs/en/skills). The point isn't to memorize the overlap - it's to start from the right question.
+The two compose rather than compete. A skill can set `context: fork` in its frontmatter to run in a forked subagent context, so a heavy procedure does its noisy work in isolation and returns only its result - a skill borrowing the subagent's window, with the mechanics on the [skills page](https://code.claude.com/docs/en/skills). The point is not to memorize the overlap; it is to start from the right question.
 
 ## The three-way test
 
-When you're about to package something, ask in this order:
+When you are about to package something, ask in this order:
 
-1. **Is it a fixed procedure, or open-ended work?** Open-ended, context-heavy, ends in a report → [subagent](/course/claude-code/subagents/). A fixed set of steps → skill, and read on.
-2. **Should the agent run it on its own, or only when I say so?** Harmless if mistimed → skill (model-invoked, fires on recognition). Expensive or irreversible → command-only (`disable-model-invocation: true`).
-3. **Is it actually a *fact*, not an action at all?** "Always format money as cents," "our API returns errors in this shape" - that's not a procedure the agent *runs*, it's context it should *hold*. That belongs in [rules](/course/claude-code/rules-memory/), not a skill.
+1. **Is it a fixed procedure, or open-ended work?** Open-ended, context-heavy, ends in a report -> [subagent](/course/claude-code/subagents/). A fixed set of steps -> skill, and read on.
+2. **Should it fire on recognition, or only when I say so?** Harmless if mistimed -> model-invoked skill. Expensive or irreversible -> command-only (`disable-model-invocation: true`).
+3. **Is it a fact rather than an action?** *Money is integer cents*, *errors come back in this shape* - that is not a procedure the agent runs, it is knowledge it must already hold while writing any code. Facts belong in [rules](/course/claude-code/rules-memory/).
 
-That third one is the quiet mistake: cramming a standing fact into a skill body, where it only loads when the skill fires, instead of into the rules file where it's always in view. Rules are what the agent *knows*; skills are what it *does*; subagents are *where* it does the heavy stuff. Keep those three straight and you'll almost always reach for the right one.
+The third is the quiet mistake: a standing fact crammed into a skill body, where it loads only in the sessions where the skill fires. Rules are what the agent knows; skills are what it does; subagents are where the noisy doing happens. Keep those three straight and the packaging question mostly answers itself.
 
-That fact-or-action call is ultimately a token economy, and you can run it yourself. A rule is loaded in full into every session; a skill costs a small always-visible menu line and loads its body only when it fires; a plain prompt costs nothing until the moment you need it. Four pieces of knowledge, three homes each - see what the wrong home costs:
+Under the test sits one economy, and you can run it yourself. A rule is loaded in full into every session. A skill pays a menu line every session and loads its body only when invoked. A plain prompt costs nothing until the moment you need it - and then again every time after that - which is why a one-off's answer is *neither*: just say it. Four pieces of knowledge, three possible homes; see what the wrong one costs:
 
 <SkillEconomy client:visible />
 
-## Where this leads
+## The edge of what a skill can reach
 
-Skills close a real gap: the agent now owns the procedures you used to narrate, firing them when the situation calls. But a skill can only orchestrate what the agent can already reach - your files, your shell, the commands on your machine. The moment the ritual needs to touch a system *outside* the repo - file a ticket, query the production database, post to a channel - or needs a check that runs *every time, deterministically*, no matter what the agent decides, you've reached the edge of what a skill alone can do.
+Skills close a gap: the agent owns the procedures you used to narrate, and fires them when the situation calls. But a skill only orchestrates what the agent can already reach - your files, your shell, the commands on your machine. `finish-pr` runs `npm test` and `npm run build` because you can. The moment the ritual must file a ticket, query the production database, or post the summary - or must fire deterministically, whatever any model decides - you have reached the edge of what a skill can do.
 
-That's the next chapter. **[Extending Claude Code](/course/claude-code/extending/)** gives the agent reach into external systems with MCP servers, deterministic gates that fire on their own with hooks, and a way to ship a whole setup - skills, rules, servers, and gates together - as one installable unit with plugins. Skills taught the agent your procedures; next you give it new things to do them *to*.
+That edge is where the [extending chapter](/course/claude-code/extending/) lives, in three moves. *Reach*: MCP servers connect the agent to external systems. *Gates*: hooks put a deterministic check on the agent's own tool calls. *Ship*: plugins bundle a whole setup into one installable unit. One fact to carry with you, straight from the [plugin reference](https://code.claude.com/docs/en/plugins-reference): a plugin bundles skills, agents, hooks, and MCP servers - not rules. A `CLAUDE.md` at a plugin's root is not loaded as project context; persistent instructions ship as skills, and the [create lesson](/course/claude-code/skills/create/) walks one end to end.

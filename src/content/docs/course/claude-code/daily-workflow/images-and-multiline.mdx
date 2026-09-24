@@ -1,42 +1,48 @@
 ---
 title: "Paste images and write multi-line prompts"
-description: "A screenshot carries detail your words would flatten, and a structured prompt beats five accidental ones. Both go straight into the input, no files on disk."
-sidebar:
-  label: "Images & multi-line"
+description: "A screenshot carries detail your words would flatten, and a structured prompt beats a chain of accidental ones. Both go straight into the input, no files on disk."
 ---
 
-The [last lesson](/course/claude-code/daily-workflow/inline-input/) covered getting *text* into the session - live output with `!`, exact files with `@`. Two kinds of input still don't fit that shape: things that aren't text at all, and prompts that need more than one line. Both are daily friction if you handle them wrong - saving screenshots to disk to describe a path, or firing a structured spec as five accidental turns. Both have a clean inline move.
+`!` and `@` - [the inline prefixes](/course/claude-code/daily-workflow/inline-input/) that land shell output and exact file references in the conversation - get text into the agent. Two everyday inputs do not fit that shape. One is a failure you can see but cannot easily copy: a stack trace in a teammate's screenshot, a garbled terminal you photographed rather than retried. The other is a prompt with structure - a spec, a few numbered constraints - that you cannot type line by line without each line firing as its own turn. Both have a clean inline move, verified against the [interactive-mode reference](https://code.claude.com/docs/en/interactive-mode).
 
-## Pasting images straight in
+## A screenshot goes in as an image
 
-Some problems don't live in text at all - a misrendered receipt page, a chart that's wrong, a screenshot of a stack trace from a teammate's terminal. You don't have to save those to disk and describe the path. Copy the image to your clipboard and paste it directly into the prompt: on most setups that's `Ctrl+V` (note: **not** the terminal's usual `Cmd+V` paste, which won't carry the image - though iTerm2 maps `Cmd+V`, and Windows/WSL use `Alt+V`). Claude Code inserts an `[Image #N]` chip at the cursor so you can refer to it in place:
+Copy an image to your clipboard and paste it directly into the prompt. On most setups that is `Ctrl+V` - notably *not* the terminal's usual paste: on a Mac, `Cmd+V` pastes text into the terminal and generally will not carry an image, except in iTerm2, which maps `Cmd+V` for image paste. On WSL, both `Ctrl+V` and `Alt+V` are bound; use `Alt+V` if your terminal intercepts `Ctrl+V`. If a paste lands as plain text instead of an image, the full key table is in the [interactive-mode reference](https://code.claude.com/docs/en/interactive-mode). The paste inserts an `[Image #N]` chip at the cursor, so you can refer to the image positionally inside the sentence you are writing.
 
-```text
-> the payments dashboard renders this for refunded orders [Image #1] -
-  the badge should say "Refunded", not "Paid". it's in @src/components/StatusBadge.tsx
-```
-
-The exact paste binding is one of the more platform-dependent shortcuts, so if it doesn't take, the [interactive-mode reference](https://code.claude.com/docs/en/interactive-mode) lists the per-terminal keys. But the habit is the point: a screenshot carries detail your words would flatten, and the agent reads it.
-
-## Writing more than one line
-
-The last bit of inline friction is the Enter key. By default `Enter` submits, which is exactly wrong when you want to write a prompt with structure - a few bullet points, a short spec, a snippet pasted between sentences. You don't want each line firing off as its own turn.
-
-The portable way to add a newline without submitting is `\` then `Enter` - a backslash at the end of the line, which works in every terminal. There's also `Ctrl+J`, which inserts a newline with no configuration at all, `Option+Enter` where the terminal sends Option as Meta, and a plain `Shift+Enter` once set up. If `Shift+Enter` doesn't, running `/terminal-setup` installs the binding for the common editors. The full per-terminal matrix is in the [interactive-mode docs](https://code.claude.com/docs/en/interactive-mode); pick whichever one your fingers will remember.
+Here is an illustrative prompt with one image in it - a picture of last night's failing CI run:
 
 ```text
-> here's what the idempotency middleware needs to do: \
-  - read the Idempotency-Key header \
-  - if we've seen it and the charge finished, return the stored result \
-  - if we've seen it but it's still in flight, return 409 \
-  - if it's new, proceed and record the key \
-  write it as express middleware in @src/payments/middleware/
+> this [Image #1] is last night's failing run - read the failure and tell
+  me whether it's the allowAsync race in @src/payments/rate-limiter.ts or
+  a test that drifted
 ```
 
-That's a real spec the agent can build against, written as one prompt instead of five accidental ones.
+A screenshot carries detail your words would flatten: exact strings, file names, counts, the shape of the stack. The agent reads the image itself, not your summary of it. One honest caveat: when you have the *text*, paste the text - `!` output is searchable and exact where a re-photographed terminal is neither. Reach for the image when the thing is genuinely visual, or when the picture is all you have.
+
+## Write a spec as one turn, not line by line
+
+The last inline friction is the Enter key. By default `Enter` submits, which is exactly wrong when the prompt needs structure - a few bullets, a short spec, a snippet quoted between sentences. You want a newline without a submission.
+
+The two zero-configuration methods work everywhere: `\` then `Enter`, and `Ctrl+J`. `Option+Enter` works where your terminal passes Option as Meta, which macOS terminals need configured. `Shift+Enter` is native in iTerm2, WezTerm, Ghostty, Kitty, Warp, Apple Terminal, and Windows Terminal. In VS Code, Cursor, Zed, and older Alacritty, run `/terminal-setup` once in the host terminal and it writes the binding into the terminal's own config; in gnome-terminal and JetBrains terminals `Shift+Enter` is not available at all - use `Ctrl+J`. The full matrix lives in the [terminal configuration guide](https://code.claude.com/docs/en/terminal-config).
+
+Pasting, meanwhile, is already safe: a multi-line block lands in the prompt as one draft rather than firing line by line. The Enter problem only bites when you are typing.
+
+The thing to write this way is a real spec, and the payments service - the small TypeScript example this course returns to - has one waiting. Its dedup check records an idempotency key before the payment finishes, so a retry after a *failed* payment is wrongly rejected as a duplicate ([the planning chapter](/course/claude-code/planning/) traces that defect in full). Here is the fix shaped into a single prompt, an illustrative rendering of that design:
+
+```text
+> implement the idempotency fix: \
+  - a missing Idempotency-Key must not be deduped silently - reject it \
+  - checkIdempotency must not mark a key as seen; only markProcessed may \
+  - a retry after a *failed* payment must be accepted, not rejected \
+  - keep the "duplicate payment" error for confirmed duplicates \
+  files: @src/utils/idempotency.ts and @src/payments/processor.ts \
+  write the regression tests in tests/payments.test.ts before changing code
+```
+
+Four constraints, a file list, and a test-first order - one turn, one response. Typed line by line, each of those lines would have fired as its own prompt, with the agent improvising around a fragment of the spec.
 
 :::tip[Try it]
-Take a screenshot of anything on your screen and paste it into the prompt with the image binding for your terminal - watch the `[Image #1]` chip appear. Then write a two-line prompt using `\` + `Enter` and submit it as a single turn.
+Take a screenshot of anything on your screen and paste it with your terminal's image binding - watch the `[Image #1]` chip appear. Then write a two-line prompt with `\` + `Enter` and submit it as a single turn.
 :::
 
-With images and structured prompts going in cleanly, *getting things in* is solved. The next set is about what happens once you're in flight: how to ask a question, catch up, or reuse a command without breaking the thread you're working in. [That's staying in flow](/course/claude-code/daily-workflow/staying-in-flow/).
+With images and structured prompts going in cleanly, *getting things in* is solved. The next set of moves is about what happens once you are in flight: asking a question, catching up, or reusing a command without breaking the session you are working in. [That's staying in flow](/course/claude-code/daily-workflow/staying-in-flow/).

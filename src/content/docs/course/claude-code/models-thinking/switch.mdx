@@ -1,65 +1,88 @@
 ---
 title: Switch models with /model to match the task
-description: "A copy tweak doesn't need your most capable model. Drop a gear with /model - the picker, session versus default, and when a heavier model earns its cost."
-sidebar:
-  label: "/model · pick the right brain"
+description: "A one-string error-message rewrite needs a light model, not the most capable one. Switch with /model, know what is saved across sessions and what lasts only for this one, and confirm the change with /status."
 ---
 
 import ModelMatcher from '../../../../../components/interactive/ModelMatcher.tsx';
 
-The first job of the day is the smallest one you'll do all week: a charge-failure error message reads like a stack trace to the customer, and someone wants it rewritten to plain English. That's one string in one file. There is no architecture here, nothing to reason about, no design fork - and running your most capable model at full reasoning to rephrase a sentence is paying for a brain you don't need. The right move is to drop a gear before you even start, and the command for that is `/model`.
+Some tasks cannot use a capable model's depth. In `src/payments/processor.ts` - part of a small TypeScript payments service this course uses as its running example - the duplicate check ends with `throw new Error("duplicate payment")`: a message written for whoever wrote the code, not for whoever trips over it. The task is to rewrite it so a caller who retries with the same `Idempotency-Key` learns what happened and what to do next.
+
+That is one string in one file: no architecture, no design fork, nothing to reason about. Running your most capable model to rephrase a sentence is paying for a brain the task cannot use, so drop a gear before you start. The command, typed at the prompt of a running Claude Code session, is `/model` (if you have never started one, [the install lesson](/course/claude-code/getting-started/install/) covers that setup).
 
 ## Two ways to switch
 
 `/model` controls which model answers you. Two forms, depending on whether you already know what you want:
 
 ```text
-/model                 # open the picker - arrow through the options, see what each is for
-/model <name>          # switch straight to a known tier, no picker
+/model                 # open the picker - arrow through the options
+/model <alias>         # switch straight to a known alias, no picker
 ```
 
-Run `/model` with no argument to inspect the models available to your account, or pass an alias/full model name to switch immediately. Either way the change is live for your *next* prompt; the status area shows which model is currently active so you can confirm at a glance. The exact aliases, providers, and context-window options live in the [model-config docs](https://code.claude.com/docs/en/model-config) and change as new models ship, so prefer the live picker over memorizing IDs.
+One behavior surprises people, and it is worth getting right early: both forms *save the choice as your default for new sessions*, the same as picking a row in the picker and pressing `Enter`. The switch you want for a one-off is different - open the picker, move to the row, and press `s` to apply it *to this session only*, leaving the default untouched. The [model-config reference](https://code.claude.com/docs/en/model-config) documents all of this, and the aliases change as new models ship, so prefer the live picker over memorized IDs.
 
-For the copy tweak, drop to a lighter, faster model and let it do the mechanical thing:
+The picker lists rows by model name, not by capability labels. The built-in lineup is aliases - `default`, `fable`, `opus`, `sonnet`, `haiku`, plus variants with a larger context window (more of the conversation visible at once) and a few special-purpose aliases the picker describes when you need them - each row carrying a short description. The list below is illustrative, not captured; your roster depends on plan and provider, and which row is the capable one is a question the row descriptions answer, not the order they appear in. A row without a note in the illustration simply carries none:
 
 ```text
 > /model
   ◇ pick a model
-    › most capable    - hard reasoning, complex changes
-      balanced        - daily coding
-    ▸ fast & light    - simple, mechanical tasks      ← this one
-
-> rewrite the charge-failure error message in src/routes/charges.js
-  to read as plain customer-facing English. don't change the status code.
-
-  ⏵ Edit src/routes/charges.js   ✓ applied
-  Done. "ERR_CHARGE_DECLINED: gateway 402" → "We couldn't complete this
-  payment. Your card wasn't charged - please try a different card."
+    › Default
+      Fable
+      Opus       complex reasoning
+      Sonnet     daily coding tasks
+      Haiku      fast, simple tasks        ← this one
 ```
 
-Same edit you'd have gotten from the heavy model, a fraction of the cost and latency, and nothing lost - because there was nothing here that needed the bigger brain.
+For the error string, take the fast row and hand it the mechanical job. An illustration of the exchange - not a captured run; your picker and your test output are your own:
+
+```text
+> in src/payments/processor.ts, rewrite the "duplicate payment" error
+  message so it tells the caller what happened and what to do next.
+  Keep the phrase "duplicate payment" at the start of the message so
+  the existing test assertion still matches. Then run the tests.
+
+  ⏵ Edit src/payments/processor.ts
+  -    throw new Error("duplicate payment");
+  +    throw new Error(
+  +      "duplicate payment: this idempotency key was already used. The " +
+  +        "first request completed or failed after recording the key - " +
+  +        "do not retry with the same key."
+  +    );
+
+  ⏵ npm test
+  ✓ all tests pass
+```
+
+One detail in that prompt is doing real work: a test in `tests/payments.test.ts` pins this exact wording with `.rejects.toThrow("duplicate payment")`, and a string assertion like that matches by substring. Extending the message keeps the suite green. Replace the phrase, and the duplicate-key test fails on the wording - the recovery is to update the assertion to the new message, not to revert the copy. A string edit is mechanical; the pinned assertion is the part that bites.
+
+The hedged wording is earned, not decorative: this service records a key at first check, before the payment finishes, so a duplicate rejection cannot tell the caller the original request succeeded. An error message should not promise more than the code knows. ([The planning chapter](/course/claude-code/planning/) traces that defect in full, if you want the whole investigation.)
+
+To confirm which model answered, run `/status`, or configure a [status line](https://code.claude.com/docs/en/statusline) that shows it - there is no always-on display of the active model by default.
+
+The same judgment generalizes past this one tool. The widget below maps a handful of task shapes to a tier (a rough capability class: light, balanced, flagship) and a switch mechanism per tool; it covers five tools, and for readers who delegate to subagents (separate workers that can carry their own model) it includes a per-subagent pin. The full tool-by-tool comparison lives in [Foundations: model selection](/foundations/model-selection/). The task mapping is editorial, the commands come from each tool's current docs:
 
 <ModelMatcher client:visible />
 
 ## Session switch, or new default
 
-Switching with `/model` changes the active model for the current session. To make a model the default for new sessions, configure the `model` setting or the documented environment/configuration mechanism.
+The `s` key is the one-off: this session, default unchanged. When a choice *should* persist, be deliberate about the layer. `/model <alias>` or `Enter` in the picker writes the `model` field in your user settings - your default, every new session. The same key in a project-level `settings.json` (the repo's `.claude/settings.json`, committed with the code) pins it for the team, and the `ANTHROPIC_MODEL` environment variable steers a single launch, which is what scripts and CI want. The [model-config reference](https://code.claude.com/docs/en/model-config) owns the current field names and which layer wins when more than one is set.
 
-For a one-off copy tweak inside a session that's mostly heavier work, use `/model <alias>` and leave the default unchanged. If you want the choice to persist, set the documented `model` configuration deliberately. The picker UI and exact controls can change; use [model-config](https://code.claude.com/docs/en/model-config) as the source of truth.
+Switching mid-conversation has a tax worth knowing before you flip back and forth. Each model keeps its own prompt cache - conversation input the provider has already processed and re-bills at a discount when it is reused - so a switch means the next request, in the docs' words, "reads the entire conversation history with no cache hits": the whole thread reprocessed at full input price.
 
-One thing the picker warns you about, and it's the small tax on switching: changing model mid-conversation means the next response re-reads the whole thread without the cached context it had built up under the old model. On a short session that's nothing. On a long, heavy one it's a real re-read cost - a reason to pick your gear *early* rather than flip back and forth every few prompts.
+Per the docs, Claude Code asks you to confirm the switch while the cache is still warm, which is your cue that this costs something; the [prompt-caching reference](https://code.claude.com/docs/en/prompt-caching) has the details. On a short session the tax is negligible. On a long, heavy one it is a real reason to pick your gear early.
 
 ## When the heavier model earns it
 
-So if light is cheaper and faster, why ever run the capable one? Because the copy tweak is the easy half of the day. The trade is always the same shape:
+If light is cheaper and faster, why ever run the capable one? Because mechanical edits are only part of any real day. The trade is always the same shape, and it is the course's **capability**-versus-**cost** trade in miniature: a stronger model buys reasoning depth, and depth is only worth paying for when the task has something to reason about.
 
-- **Mechanical, scoped, one obvious answer** - a rename, a copy edit, a format change, boilerplate you could describe in a sentence. A lighter model does it well and you keep the cost down. This is most of the day.
-- **Ambiguous, cross-cutting, more than one reasonable approach** - the kind of problem where a wrong guess costs you an hour of unpicking. Here the capable model's deeper reasoning isn't a luxury; it's the thing that stops the agent confidently building the wrong design. The cost is real but the re-work it prevents is more expensive.
+- **Mechanical, scoped, one obvious answer** - a rename, a copy edit, a format change. A lighter model does it just as well, and this is most of any real day.
+- **Ambiguous, cross-cutting, several reasonable approaches** - the kind of problem where a confident wrong guess costs an hour of unpicking. Here the capable model's deeper reasoning is not a luxury; it is what stops the agent from building the wrong design beautifully.
 
-The test is the one you already used for plan mode: *would you hand this to a junior without a second thought, or would you want your sharpest engineer on it?* Junior-obvious work gets the light model. The problems that need your sharpest engineer get the capable one - and you're about to meet exactly that kind of problem.
+A useful test: *would you hand this to a junior without a second thought, or would you want your sharpest engineer on it?* Junior-obvious work gets the light model. The problems that need your sharpest engineer get the capable one.
+
+One check before you switch up, though: if the agent is failing because it never had a fact you know - a private acceptance criterion, a constraint that lives in your head - a stronger model does not recover it. Supply that context first; switch up when the agent has the facts and still cannot reason through them.
 
 :::tip[Try it]
-Give Claude a mechanical task (rename a variable across files) on the default model. Then switch to a stronger model with `/model` and ask a design question about the same codebase. Notice the difference in response depth.
+Give Claude a mechanical task on your default model - rename a variable across files. Then open `/model`, press `s` on a row stronger than your default, session-only so the default survives the experiment (if you already run the top row, press `s` on a lighter one and compare in the other direction), and ask a design question about the same codebase. Compare the depth of the two answers, then press `s` on your usual row to return.
 :::
 
-Because the copy tweak is shipped, and the next item in the queue is the concurrency bug in the charge ledger. That one is not a string edit. Switching *up* to the capable model is the right first move - but on a problem this gnarly, the model alone isn't enough. You want it to *think harder before it acts*. [That's the next dial.](/course/claude-code/models-thinking/thinking/)
+Model is one dial. How hard the model thinks before it acts is the second, and on a genuinely hard problem - a concurrency bug in a rate limiter, say - switching up is the right first move but not the last one: you also want the agent reasoning harder before it edits. [That second dial is next.](/course/claude-code/models-thinking/thinking/)

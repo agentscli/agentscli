@@ -1,54 +1,55 @@
 ---
 title: Repo-wide instructions with copilot-instructions.md
 description: "One file, always on, at the root of the repo. Write down the conventions Copilot kept missing so its next draft starts from them instead of guessing."
-sidebar:
-  label: "Repo-wide · copilot-instructions.md"
 ---
 
-Start with the bluntest instrument, because it's also the one that's supported everywhere. A single file, `.github/copilot-instructions.md`, sitting at the root of the repo. It's **always on** - Copilot reads it on every request in that repo, in every mode, with no setting to flip and no glob to match. One file, repo-wide, no ceremony. It's supported across every surface Copilot runs in, from VS Code to JetBrains to GitHub.com to the cloud agent, which makes it the natural place for the conventions that should *never* be guessed.
+Start with the bluntest instrument, because it is also the one supported everywhere: a single file, `.github/copilot-instructions.md`, scoped to the whole repo. It is **always on** - Copilot loads it on every chat request in that repo, in every role (Ask, Plan, and Agent: Copilot's built-in chat modes); as of September 2026 there is no setting to flip and no glob to match. The file shapes chat requests; nothing in the current documentation extends it to inline completions. Repository instructions are supported across the surfaces Copilot runs on - the IDEs, chat on GitHub.com, code review, and the cloud coding agent (the async Copilot that works on GitHub without your editor) - per [GitHub's custom instructions documentation](https://docs.github.com/en/copilot/reference/custom-instructions-support), as of September 2026. That breadth is what makes it the natural home for conventions that should *never* be guessed.
 
 ## Write down what Copilot kept getting wrong
 
-Open `orders-service` and think back to the corrections you kept re-typing. That's your raw material - not a style guide written from scratch, but the specific things Copilot missed that you had to fix by hand. For this repo, that was roughly:
+The raw material for this file is not a style guide written from scratch; it is your correction history. Think back through the fixes you kept re-typing into chat. On the two packages this course follows - `orders-service`, the illustrative order-management API your squad owns, and `shared-lib`, the internal library it imports - the recurring corrections were concrete: `any` types slipping into strict TypeScript, imports missing the `.js` extension the ES modules need, floating-point math on money the codebase keeps in integer cents, and endpoints answering with ad-hoc shapes instead of JSON and standard status codes.
 
-- The sort idiom. When Copilot fixed the recent-orders ordering in chapter one, it reached for a different sort pattern than the rest of the codebase used, and you nudged it back. The repo has a convention; state it.
-- How endpoints are structured - where validation runs, where the audit call goes, what an endpoint looks like when your squad writes one.
-- That this service consumes `shared-lib` for validation, auth, and audit, and shouldn't reinvent those helpers locally.
+Create `.github/copilot-instructions.md` and write those down as plain, direct instructions. When both packages live in one repo, one file covers them both:
 
-Create the file at `.github/copilot-instructions.md` and write those down as plain, direct instructions:
+```markdown title=".github/copilot-instructions.md"
+# Copilot Instructions
 
-```markdown
-# Copilot instructions - orders-service
+These rules apply to both `shared-lib` and `orders-service`.
 
-This is an order-management API (TypeScript/Node) owned by the Platform squad.
-It consumes `shared-lib` for input validation, auth/permission checks, and audit logging.
+## General
 
-## Conventions
-- Sort collections using the existing sort helper in `src/lib/sort.ts`. Do not
-  inline ad-hoc comparators.
-- Every endpoint validates its input with the `shared-lib` validation helpers
-  before doing any work. Never hand-roll validation.
-- Emit audit events through the `shared-lib` audit helper, not by logging directly.
-- New endpoints follow the structure in `src/routes/` - validate, authorize,
-  act, audit, respond, in that order.
+- TypeScript strict mode. No `any` types.
+- Use ES module imports with `.js` extensions.
+- Prefer named exports over default exports.
 
-## Don't
-- Don't reformat or reorganize files you weren't asked to change.
-- Don't duplicate helpers that already exist in `shared-lib`.
+## Money
+
+- All monetary values are integer cents.
+- Never use floating point for currency math.
+
+## API conventions
+
+- Return JSON for all responses.
+- Use standard HTTP status codes (401, 404, 422, 500).
+- Authenticate via `x-api-key` header.
+
+## Testing
+
+- Run tests with `npm test`.
+- Every bug fix needs a regression test.
+- Tests must pass before merging.
 ```
 
-Notice what this *isn't*. It's not a restatement of the TypeScript handbook or generic clean-code advice - Copilot already knows that, and padding the file with the obvious only dilutes the parts that matter. It's the handful of things specific to *this* repo that Copilot got wrong and a teammate would have caught in review. That's the bar, and the [last lesson](/course/copilot/rules/good-rules/) is entirely about holding to it.
+Notice what this *is not*: not a restatement of the TypeScript handbook or generic clean-code advice. Copilot already knows that, and padding the file with the obvious only dilutes the parts that matter. The bar is the handful of things specific to *this* repo that Copilot got wrong and a teammate would have caught in review. Even this short file has a line near that edge - "Tests must pass before merging" is closer to team policy than to a correction Copilot needed. Holding that bar is the subject of the [last lesson in the chapter](/course/copilot/rules/good-rules/).
 
 ## See it work
 
-With the file in place, give Copilot a task you'd have had to hand-hold before - say, "add an endpoint that lists pending approvals" - and read the first draft. The sort should already use the helper. The validation should already route through `shared-lib`. The audit call should already be there. You're not correcting style anymore; you're reviewing logic, which is where your attention is actually worth something.
+With the file in place, give Copilot a task you would have hand-held before - say, "add an endpoint that lists pending approvals" - and read the first draft. The route should already authenticate through the `x-api-key` header and answer in JSON with a standard status code. Any money should already be integer cents. The imports should already carry `.js` extensions. You are no longer correcting style; you are reviewing logic, which is where your attention is actually worth something.
 
-When a draft still drifts, that's not a failure of the mechanism - it's feedback on the file. Add the missing convention and move on. Over a week the file converges on the handful of rules that actually keep your drafts mergeable.
-
-## One file, then what
+One distinction to keep honest: the file is *loaded* into context on every request, but whether the model *obeys* every line every time is not a guarantee. Instructions are guidance, not enforcement - the enforced boundaries in Copilot live in permission levels, covered in the [Permissions chapter](/course/copilot/permissions/). So when a draft still drifts, treat it as feedback on the file's wording: sharpen or add the convention and move on. Over an illustrative week or two of daily use, the file converges on the handful of rules that actually keep drafts mergeable.
 
 :::tip[Try it]
-Write three rules in `.github/copilot-instructions.md` for your repo: one about naming, one about error handling, one about test style. Open a fresh chat and ask for a small feature without mentioning the rules. Check whether Copilot's first draft already follows all three - if it misses one, that's a rule that needs sharper wording.
+Write three rules in `.github/copilot-instructions.md` for your repo: one about naming, one about error handling, one about test style. Open a fresh chat and ask for a small feature without mentioning the rules. Check whether the first draft follows all three; if it misses one, that rule needs sharper wording.
 :::
 
-The repo-wide file is the floor, and for many repos it's enough. But you have a second repo with its own conventions, and - if you've taken another course on this site - you may already have written exactly the convention file Copilot needs, under a different name. That's the next lesson, and it's the best part of this chapter. [The bridge - AGENTS.md and CLAUDE.md](/course/copilot/rules/the-bridge/).
+The repo-wide file is the floor, and for many repos it is enough. But there is a good chance you already have a convention file under a different name - written for a different agent - and the next lesson is the best news in this chapter: Copilot may read it as-is. [The bridge - AGENTS.md and CLAUDE.md](/course/copilot/rules/the-bridge/).

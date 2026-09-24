@@ -1,24 +1,22 @@
 ---
 title: Undo a bad run and outlast the context window
 description: "A run edited three files you didn't want touched and the thread is nearing the context limit. Step it back with /undo, and let compaction handle the length."
-sidebar:
-  label: "In-session state · undo / compact"
 ---
 
 import SessionXray from '../../../../../components/interactive/SessionXray.tsx';
 
-Two things go wrong on a long day inside the TUI, and they go wrong in opposite directions. The first is too much change: you hand the agent a loose instruction - "tidy up the JSON feed parser" - and it takes you at your word, editing three files when you only wanted one touched, the other two now carrying changes you never asked for. The second is too much *thread*: you've been driving the same session for hours across half a dozen feed parsers, and the context window is filling up under you, the model about to start forgetting the early decisions that still matter. Both are recoverable without leaving the session. This lesson is the two moves that recover them.
+Two things go wrong in a long session, and they go wrong in opposite directions. The first is too much change: you hand the agent a loose instruction - "tidy up the JSON feed parser" in `feedmill`, the course's illustrative Go feed aggregator - and it takes you at your word, editing three files when you only wanted one touched, the other two now carrying changes you never asked for. The second is too much *thread*: you've been driving the same session through half a dozen feed parsers, and the context window is filling up under you, the model about to start forgetting the early decisions that still matter. Both are recoverable without leaving the session. This page is the two moves that recover them.
 
 ## Step a run back with `/undo`
 
-You asked for a tidy-up and got a sprawl. Before you do anything else, see the damage:
+You asked for a tidy-up and got a sprawl. Before you do anything else, see the damage. `git diff --stat` lists every file the run touched, straight from Git; asking the agent gets you the same list in its own words - an illustrative exchange:
 
 ```text
 > show me everything you changed in that last run
 
-  | Edit  parser/json.go        (the change you wanted)
-  | Edit  parser/atom.go        (you did not ask for this)
-  | Edit  parser/dedupe.go      (or this)
+  | Edit  internal/feed/json.go      (the change you wanted)
+  | Edit  internal/parse/atom.go     (you did not ask for this)
+  | Edit  internal/dedupe/hash.go    (or this)
 ```
 
 The wrong move here is to start patching: "okay, revert the atom.go change, leave json.go." That stacks a correction on top of a mistake and gives the agent two confusing edits to reason about instead of one clean slate. The right move is to throw the whole run away and re-ask. That's what `/undo` is for:
@@ -27,60 +25,56 @@ The wrong move here is to start patching: "okay, revert the atom.go change, leav
 > /undo
 
   ⏺ reverted 3 file changes from the last message
-  ⏺ parser/json.go, parser/atom.go, parser/dedupe.go restored
+  ⏺ internal/feed/json.go, internal/parse/atom.go,
+    internal/dedupe/hash.go restored
 ```
 
-`/undo` removes the most recent user message and everything that followed it - the agent's responses *and* the file changes it made on disk. It does this through Git: OpenCode tracks the edits from each exchange and rolls them back as a unit, which is why `/undo` only works in a project that's a Git repository. `feedmill` is one, which is the whole reason this is safe. The default keybind is `<leader>u` (the leader is `Ctrl+X` out of the box, so `Ctrl+X` then `u`), or you can type the command.
+`/undo` removes the most recent user message and everything that followed it - the agent's responses *and* the file changes it made on disk. It does this through Git: OpenCode tracks the edits from each exchange and rolls them back as a unit, which is why `/undo` only works in a project that's a Git repository (`feedmill` is one, which is the whole reason this is safe). The default keybind is `<leader>u` (the leader is `ctrl+x` out of the box, so `ctrl+x` then `u`), or you can type the command (as of September 2026; [TUI documentation](https://opencode.ai/docs/tui/)).
 
 Now you're back where you stood before the bad run, all three files clean, and you re-describe the work more tightly - name the file, scope it down:
 
 ```text
-> just the JSON feed parser in parser/json.go - only the date-coercion
-  block. don't touch the other parsers.
+> just the JSON feed parser in internal/feed/json.go - only the
+  date-coercion block. don't touch the other parsers.
 ```
 
-If you undo one step too far - you reverted the sprawl but realize the json.go edit was actually the one you wanted to keep - `/redo` walks it forward again, restoring both the message and the file changes you just undid. Its default keybind is `<leader>r`. Think of `/undo` and `/redo` as a single cursor you slide back and forth over the recent history of the session.
+If you undo one step too far, `/redo` walks it forward again, restoring the message and the file changes you just undid. It restores the run as a unit, just as `/undo` removed it: redo the sprawl and all three edits come back, not only the json.go one. If the json.go edit was the one you wanted, the narrow re-ask above is the cleaner route; the alternative is to redo and then `git restore` the two files you didn't ask for, which also discards any uncommitted work of your own in them. Its default keybind is `<leader>r` (as of September 2026; [TUI documentation](https://opencode.ai/docs/tui/)). Think of `/undo` and `/redo` as a single cursor you slide back and forth over the recent history of the session.
 
-:::caution[`/undo` reaches back one exchange, not across the session]
-`/undo` steps back over recent messages, not a whole afternoon of tangled work. For anything you've already proven good, the real floor is a Git commit - `/undo` is the shallow safety net, `git commit` is the deep one. OpenCode's current documentation says snapshots are enabled by default and that undo can restore file changes when snapshots were captured successfully; it also notes that disabling snapshots removes UI rollback. Treat undo as your fast first reach, but verify the files actually reverted (`git status`, or re-run "show me everything you changed") before you trust it on a destructive run.
+:::caution[`/undo` is a shallow safety net]
+Each `/undo` steps back one more user message, taking that message's responses and file changes with it, so undoing past a good exchange throws the good exchange away too (as of September 2026; the undo command in [OpenCode's TUI source](https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/index.tsx)). It is built for the last few messages, not a whole afternoon of tangled work. For anything you've already proven good, the real floor is a Git commit - `/undo` is the shallow safety net, `git commit` is the deep one. The file rollback rides on OpenCode's snapshot system: snapshots are enabled by default, and if you turn them off (`"snapshot": false` in `opencode.json`) the documentation warns that agent "changes cannot be rolled back through the UI" (as of September 2026; [config documentation](https://opencode.ai/docs/config/)). Treat undo as your fast first reach, but verify the files actually reverted (`git status`, or re-run "show me everything you changed") before you trust it on a destructive run.
 :::
 
 ## Let the thread compact itself
 
 The other failure mode is quieter. You don't hit a wall with a bang; the session just gets long. Six parsers deep, the agent has read dozens of files, run the test suite a handful of times, and all of that tool output is still sitting in the context window taking up room. Left alone, you'd eventually overflow the model's context and the run would break mid-task.
 
-OpenCode handles this for you. It watches the token count, and when the conversation is about to overflow the model's context window it makes a summarization call - replacing the detailed history with a concise summary and pruning the old tool output to reclaim space. Your messages are replayed after the summary so the thread keeps flowing; from where you sit, the session just keeps going, lighter than it was.
+OpenCode handles this for you. It watches the token count, and when the conversation is about to overflow the model's context window it makes a summarization call - replacing the detailed history with a concise summary, then replaying the turn that triggered the compaction so the thread keeps flowing. From where you sit, the session just keeps going, lighter than it was. Automatic compaction is on by default (`compaction.auto`, default `true`); a separate opt-in lever, `compaction.prune` (default `false`), additionally strips old tool output to reclaim more space, and `compaction.reserved` tunes the token buffer the mechanism keeps in reserve (as of September 2026; [config documentation](https://opencode.ai/docs/config/)). An illustrative rendering of the automatic moment:
 
 ```text
   ⏺ context window near limit - compacting…
-  ⏺ summarized 142 messages; pruned tool output; continuing
+  ⏺ summarized 142 messages; continuing
 ```
 
-To feel why the *moment* of compaction matters - and what an unsteered summary does to work that lives only in the thread - watch a session hit the same wall with its context window x-rayed. The commands wear generic names; in OpenCode the manual move is `/compact` and the automatic one is the branch where you just keep typing:
+To feel why the *moment* of compaction matters - and what an unsteered summary does to work that lives only in the thread - watch a session in an unrelated repo hit the same wall with its context window x-rayed. The commands wear generic names; in OpenCode the manual move is `/compact`, the automatic one is the branch where you just keep typing, and the fresh start is `/new` - which the TUI lists with the alias `/clear` and binds to `ctrl+x n` (as of September 2026; [TUI documentation](https://opencode.ai/docs/tui/)). One difference from the widget: its `/compact` takes a focus instruction, while OpenCode's `/compact` takes none and always writes the fixed template described below (as of September 2026; the compact command in [OpenCode's TUI source](https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/index.tsx)):
 
 <SessionXray client:visible />
 
-What's worth understanding is *what* the summary keeps, because that's the contract you're trusting your multi-day refactor to. OpenCode compacts onto a **fixed structured template** - goal, constraints, progress, key decisions, next steps, critical context. You don't steer it with per-call instructions the way you might nudge a summary in another tool; the structure is the deal. The practical upshot for `feedmill`: a decision you made early - "we standardized all feed timestamps to UTC before dedupe" - survives compaction *if it reads as a key decision or a constraint*. So the way you make compaction safe isn't to fight it; it's to state the load-bearing decisions clearly as you go, so they land in the slots the template keeps rather than getting buried in tool noise that gets pruned.
+What's worth understanding is *what* the summary keeps, because that's the contract you're trusting a long refactor to. OpenCode writes the summary onto a fixed template, defined in its source as `SUMMARY_TEMPLATE`, with five sections: `## Objective`, `## Important Details`, `## Work State` (subdivided into Completed / Active / Blocked), `## Next Move`, and `## Relevant Files` (as of September 2026; [compaction.ts in the OpenCode repository](https://github.com/anomalyco/opencode/blob/dev/packages/core/src/session/compaction.ts)). You don't pick the sections per call; the structure is the deal. The practical upshot for `feedmill`: a decision you made early - "we standardized all feed timestamps to UTC before dedupe" - survives compaction if it lands in `## Important Details`, which is where constraints, decisions, and facts belong, or shows up in the `## Work State` record of what's completed and what's still active. So the way you make compaction safe isn't to fight it; it's to state the load-bearing decisions clearly as you go, so they land in the slots the template keeps rather than getting buried in tool noise that the summary collapses.
 
 ## Turn it off when you need the raw thread
 
 Automatic compaction is the right default, but it's a default, and sometimes you want the unsummarized history. The case where this bites in `feedmill`: you're debugging *why* one Atom feed's dedupe is dropping legitimate items, and the answer is in the exact sequence of what the agent tried three steps back - the specific timestamps, the raw tool output, the dead ends. A summary that compresses "investigated dedupe, ruled out timestamp collision" is exactly the detail you can't afford to lose. For that session you want the raw thread, and you'd rather hit the context ceiling and deal with it deliberately than have it silently summarized out from under you.
 
-Disable it for a single run with the environment variable:
+The documented switch is the config key you already met: set `compaction.auto` to `false` and automatic compaction stops chasing the token count ([config documentation](https://opencode.ai/docs/config/), as of September 2026). Flip it back when the forensic session is done:
 
-```bash
-OPENCODE_DISABLE_AUTOCOMPACT=1 opencode
-```
-
-Or turn it off persistently in config:
-
-```jsonc
-// opencode.json
+```json title="opencode.json"
 {
   "compaction": { "auto": false }
 }
 ```
 
-With auto-compaction off you keep every message verbatim - and you also own the consequence: a long enough thread *will* overflow, and you'll need to start a fresh session or compact it yourself before it does. When you want to compress on your own terms, the manual `/compact` command (alias `/summarize`, default keybind `<leader>c` - so `Ctrl+X` then `c`) runs the same summarization on demand. That's the trade. Leave auto on for the long building sessions where continuity matters more than any single detail; turn it off for the short, forensic ones where the raw history *is* the work, and reach for `/compact` when you decide it's time.
+For a single run without touching config, the CLI documentation lists an environment variable, `OPENCODE_DISABLE_AUTOCOMPACT` (a boolean, "Disable automatic context compaction"), so `OPENCODE_DISABLE_AUTOCOMPACT=1 opencode` starts OpenCode with automatic compaction off (as of September 2026; [CLI documentation](https://opencode.ai/docs/cli/#environment-variables)). It lasts only as long as that process; the config key is the one to use when every session in the repo should keep its raw thread.
 
-Between these two moves you can run a session hard without fear in either direction: `/undo` and `/redo` slide a bad run back and forth a step at a time, and automatic compaction keeps a multi-day thread alive past the point a raw transcript would have broken. That's the in-session state under control. Next, a different way to split a session's *intent* - outlining read-only before you let it write: [Tab between plan and build](/course/opencode/the-tui/plan-build-toggle/).
+With auto-compaction off you keep every message verbatim - and you also own the consequence: a long enough thread *will* overflow, and you'll need to start a fresh session or compact it yourself before it does. When you want to compress on your own terms, the manual `/compact` command (alias `/summarize`, default keybind `<leader>c` - so `ctrl+x` then `c`; as of September 2026, [TUI documentation](https://opencode.ai/docs/tui/)) runs the same summarization on demand. That's the trade, and it is a **context** decision: the summary decides which parts of the history the agent still has to think with, so you choose between a lighter thread and an exact one. Leave auto on for the long building sessions where continuity matters more than any single detail; turn it off for the short, forensic ones where the raw history *is* the work, and reach for `/compact` when you decide it's time.
+
+Between these two moves you can run a session hard without fear in either direction: `/undo` and `/redo` slide a bad run back and forth a step at a time, and automatic compaction keeps a long-running thread alive past the point a raw transcript would have broken. That's the in-session state under control. Next, a different way to split a session's *intent* - outlining in an agent that cannot edit before you let it write: [Tab between plan and build](/course/opencode/the-tui/plan-build-toggle/).

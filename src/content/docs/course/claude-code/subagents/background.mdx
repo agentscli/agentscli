@@ -1,48 +1,55 @@
 ---
 title: Run long subagents in the background and keep working
-description: "Foreground subagents block until they finish; background ones run while you carry on. How to send work to the background, and how to check on or stop it."
-sidebar:
-  label: "Background · Ctrl+B"
+description: "Background subagents run while you carry on; their permission prompts reach you by name, their questions cannot. Send work off-thread and keep control with /tasks."
 ---
 
-The audits so far were quick enough that watching them finish cost you nothing. But the next slice isn't: you want a subagent to run the full integration suite against the reconcile job and report which ledger writes break under load - minutes of churning, not seconds. Sitting and watching a progress spinner for that is dead time. This is where the foreground-versus-background distinction earns its place.
+Some jobs are too long to watch. Take a pre-change pass over a codebase: the full test suite, lint, build, and a fresh audit sweep over everything you are about to disturb. On the small Express plus TypeScript payments service this course uses as its example (`npm test` runs six tests; `npm run dev`, `npm run build`, and `npm run lint` are the other scripts), that pass is quick. On a repo ten times the size, the same brief is a coffee break. The mechanics of not watching are identical at either size.
 
-## Two ways a subagent runs
+A **background subagent** is a [subagent](/course/claude-code/subagents/) (a worker with its own context window that returns a summary) that runs while you keep working in the foreground. This lesson is about that second mode: how to send work there, what can and cannot reach you while it runs, and how to check on it or stop it.
 
-Every subagent runs one of two ways, and the difference is simply whether it blocks you:
+## Foreground blocks; background does not
 
-- **Foreground** subagents block the main conversation until they finish. Everything so far has been foreground - you spawned the worker and waited. Permission prompts pass straight through to you as they come up.
-- **Background** subagents run concurrently while you keep working in the main thread. They report back when done, but they don't hold you hostage in the meantime.
+The documented distinction is whether the main conversation waits. Foreground subagents block until they finish. Background subagents run concurrently while you keep working, and their results reach Claude as a completion notification in a later turn; ask about progress in between, and Claude reports the subagent is still running.
 
-Claude decides which to use based on the task, but you can force the issue. Ask for it in words, or use the shortcut - **Ctrl+B** backgrounds a running task. Both are documented under [run subagents in foreground or background](https://code.claude.com/docs/en/sub-agents#run-subagents-in-foreground-or-background).
+Claude Code picks the mode, and the current lean is toward background. In an interactive session, subagents typically run in the background already (fork mode, a session setting that keeps spawned subagents in the background and lets Claude hand one the whole conversation so far instead of a fresh start, is on by default there). Even where fork mode is off, background is the default, with Claude moving a subagent to the foreground when it needs its result before continuing.
+
+Two levers stay yours regardless. **Ctrl+B** pushes a running task into the background, and where fork mode is off you can ask in words for background or foreground. Both are documented under [run subagents in foreground or background](https://code.claude.com/docs/en/sub-agents#run-subagents-in-foreground-or-background).
+
+Ask for the pass and you are back at the prompt immediately. The transcript line is illustrative, not captured:
 
 ```text
-> run the integration suite against the reconcile job in the background and
-  report which ledger writes fail under load
+> run the full suite, lint, and build, then a fresh audit sweep over
+  src/ and tests/, in the background. report failures with file and
+  test names, and any findings beyond the ones we already have.
 
-  ⏵ Agent (general-purpose)  reconcile load test   ▶ running in background
-
-> # your prompt is free immediately - keep going while it churns
-> meanwhile, draft the migration note for the charge path
+  ⏵ Agent (general-purpose)  suite + audit pass   ▶ running in background
 ```
 
-You're back at the prompt instantly, working on the migration note, while the load test grinds away in its own context somewhere behind you. When it finishes, its result surfaces as a message in your conversation.
+You keep drafting in the foreground while the pass churns behind you. When it finishes, the result arrives as a message in your conversation.
 
-## The catch: background subagents can't ask you anything
+## Prompts reach you; questions do not
 
-There's one behavior here you must internalize, because it's the difference between a background subagent that works and one that silently stalls. A foreground subagent that hits a permission prompt asks you and waits. A background subagent **cannot** - you're off doing something else, so there's no one to answer. Per the docs, background subagents *run with the permissions already granted in the session and auto-deny any tool call that would otherwise prompt.* If one needs to ask a clarifying question, that call fails and the subagent carries on without the answer.
+Older guides describe background subagents as silently non-interactive: work that hits a permission prompt just gets denied and carries on short. That was the behavior before v2.1.186, and it is worth naming because you will still read it presented as current. It is not. When a background subagent reaches a tool call that needs permission, Claude Code surfaces the prompt in your main session and names the subagent asking.
 
-The practical consequence: background work only goes smoothly when the permissions it needs are *already* granted before you send it off. If the load test needs to run a command that isn't pre-approved, it'll get auto-denied in the background and come back having quietly skipped it. This is where the [Permissions & modes](/course/claude-code/permissions-modes/) chapter pays off - pre-approving the command patterns a background job needs is what lets it run unattended. And if a background subagent does come back short because it got denied something, the docs note the clean recovery: *start a new foreground subagent with the same task* so the prompts surface interactively and you can grant what it needs.
+Approve and it continues; press Esc and you deny that one tool call without stopping the subagent. An answer that outlives a single call applies to the whole session, including your main conversation.
 
-## Checking on it and killing it
+What still cannot happen is a clarifying question. `AskUserQuestion`, the tool Claude uses to put a multiple-choice question to you, is filtered out of every non-fork subagent's tool pool, foreground or background; a fork inherits the main conversation's exact tools instead. A subagent that hits ambiguity must resolve it from the files or finish without the answer. So the failure mode has moved rather than disappeared: not work silently skipped, but work you denied with Esc, or work that finished while you were deep in something else and missed the prompt.
 
-Background work you can't see is background work you've lost track of, so there's a panel for it. The `/tasks` command lists everything running in the background of the current session and lets you check on, attach to, or stop each one - that's the canonical control surface, documented in [run agents in parallel](https://code.claude.com/docs/en/agents#check-on-running-work). The `/agents` command's **Running** tab similarly shows live subagents and lets you open or stop them.
+The preparation is a permissions habit, restated for long jobs. Pre-approve the command patterns the job will need with an allow rule, so `npm test` runs without interrupting you; the [permissions chapter](/course/claude-code/permissions-modes/) covers writing those rules. Then write the brief so no clarifying question is ever necessary: name the paths, name the rule that governs them, and say what the report should contain.
+
+## /tasks is the control surface
+
+Work you cannot see is work you have lost track of. Seeing and stopping work you sent away is the course's **control** principle - what guides execution, enforces boundaries, or allows intervention - in its most practical form. Use `/tasks` to see running shells and subagents: press Enter on a subagent's row to open its transcript, and stop it from the same view. A finished background subagent stays listed briefly, marked done and sorted below running work. Ctrl+X Ctrl+K stops every running background subagent in the session, pressed twice to confirm, and it also turns off artifact auto-replies for the rest of the session. The keyboard reference documents these under [interactive mode](https://code.claude.com/docs/en/interactive-mode).
+
+An illustrative view, not a capture:
 
 ```text
 > /tasks
-  ▶ reconcile load test    running    4m12s    attach · stop
+  ▶ suite + audit pass    running    3m41s
 ```
 
-Attaching pulls you into the subagent's transcript to watch or steer; stopping kills it. The whole point of backgrounding was to stop watching - but `/tasks` means you never lose the ability to look, or to pull the plug if a worker is clearly off the rails and you don't want to pay for it to finish.
+Opening the row shows you the worker's transcript; stopping kills it. The point of backgrounding was to stop watching. `/tasks` means you never lose the ability to look, or to pull the plug on a worker that is clearly off the rails.
 
-You now have the full range of *how* a subagent runs: one or many, foreground or background, watched or walked-away-from. But every subagent so far has been ad hoc - you described the ledger audit fresh each time. That audit isn't a one-off; it's a job you'll run before every migration. [Next we make it reusable](/course/claude-code/subagents/custom/), so it always runs with the same tools, the same instructions, and the same shape.
+If a job comes back short, with a denied call or a step skipped after a missed prompt, do not rerun it blind. Open its transcript from `/tasks`, find the step that failed, and re-brief with the fact it lacked or the permission now granted. A rerun without that diagnosis repeats the stall and pays for the reading twice.
+
+A subagent can run alone or in parallel, in the foreground while you wait or in the background while you work, and every brief on this page has been ad hoc: typed out each time you want the audit. [Next we save it as a file](/course/claude-code/subagents/custom/) that runs the same way for everyone who pulls the repo.

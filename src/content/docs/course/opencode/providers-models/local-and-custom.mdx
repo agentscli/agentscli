@@ -1,21 +1,20 @@
 ---
 title: Drive it with a local or custom model
-description: "When a task's data can't leave your network, point OpenCode at a local Ollama or LM Studio model - or any OpenAI-compatible endpoint via a custom provider."
-sidebar:
-  label: "Local · Ollama, OpenAI-compatible"
+description: "When a task's data can't leave your network, point OpenCode at a local Ollama or LM Studio model - or any OpenAI-compatible endpoint via a custom provider. For data that can leave, Zen narrows the field to models the OpenCode team has tested."
 ---
 
-You've spent this chapter learning to put the *best* model behind each job. This lesson is about the one job where "best" isn't the constraint. `feedmill` pulls from an internal feed your employer runs - incident postmortems, customer-support digests, the kind of content that has a clear rule attached: it does not leave the corporate network. The Atom parser for that source is throwing on a malformed `<updated>` element, and your usual move - hand the failing feed body to a strong hosted model and ask it to find the bug - would mean shipping that content to Anthropic or OpenAI. For this task, that's not an option. The frontier model isn't wrong; it's just off the table.
+The rest of this chapter is about putting the *best* model behind each job. This page is about the one job where "best" isn't the constraint. `feedmill` - the course's illustrative feed aggregator - pulls from an internal feed your employer runs: incident postmortems, customer-support digests, the kind of content that has a clear rule attached. It does not leave the corporate network. The Atom parser mishandles that source's malformed `<updated>` element, and your usual move - hand the failing feed body to a strong hosted model and ask it to find the bug - would mean shipping that content to Anthropic or OpenAI. For this task, that's not an option. The frontier model isn't wrong; it's just off the table.
 
-This is exactly the wall the single-vendor tools have no answer for. Claude Code's loop runs on Anthropic's servers; Codex's runs on OpenAI's. There's no "but not for this one task" knob. OpenCode's provider-agnostic design *is* the knob: point it at a model running on your own machine, and the loop never makes a network call to anyone. Same TUI, same read-propose-approve-apply loop you already know - just a model that physically can't leak the feed.
+OpenCode's provider-agnostic design handles this case: point it at a model running on your own machine, and the model call never leaves it - no hosted API sees the feed. Same TUI, same read-propose-apply loop every OpenCode task runs (one turn of [the loop walkthrough](/course/opencode/getting-started/the-loop/) if you want it). Three edges to that guarantee, worth naming up front. First, what stays local is the *model call*. The agent's own tools - the shell it runs, the web pages it can fetch, the searches it can make - are unchanged by this block and can still move data off the machine, so if egress has to be airtight you gate the tools too, not just the model (`bash`, `webfetch`, and `websearch` are permission-map keys; [permissions documentation](https://opencode.ai/docs/permissions/), as of September 2026). Second, the session transcript goes to whichever model answers the next turn. If you switch a session that has read the private feed to a hosted model, that model receives the feed content with the rest of the thread, and `/share` (which publishes the session at a public link) would upload it too. Keep private-feed work in its own session, on the local model from start to finish. Third, OpenCode sends the session's first message to a model to write the session title. It uses `small_model` if any config you load sets one, even a hosted model, and otherwise a cheaper model from the session's provider or the session's own model. A `model` pinned on the hidden `title` agent overrides both, and one pinned on the hidden `compaction` agent receives the transcript when OpenCode compacts the session, that is, when it summarizes older turns because the context window is filling up ([config documentation](https://opencode.ai/docs/config/); [`prompt.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/prompt.ts) and [`compaction.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/compaction.ts) in source, as of September 2026). If your global config sets a hosted `small_model`, set `"small_model": "ollama/qwen2.5-coder"` in this project's config too. If any config you load pins a hosted `model` on `title`, `compaction`, or a subagent the session may call, such as `explore`, override that `model` with the local one under `agent` in this project's config.
 
 ## Point OpenCode at a local model
 
-If you've connected providers from the catalog before, this looks almost identical, because local runtimes are *in* the catalog. Ollama and LM Studio both ship preloaded among OpenCode's 75+ providers - they're just providers whose endpoint happens to be `localhost`. The cleanest way to wire one is a `provider` block in `feedmill`'s `opencode.json`. For Ollama running its default server:
+If you've connected providers from the catalog before, this looks almost identical, because local runtimes are *in* the catalog. Ollama and LM Studio both ship among OpenCode's 75+ providers (as of September 2026; [providers documentation](https://opencode.ai/docs/providers/)) - they're just providers whose endpoint happens to be `localhost`. The cleanest way to wire one is a `provider` block in the `opencode.json` at `feedmill`'s root - the same shape the docs use for their own Ollama example:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
+  "permission": { "edit": "ask" },
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
@@ -54,39 +53,43 @@ Three things to notice. The `npm` field points at `@ai-sdk/openai-compatible` - 
 }
 ```
 
-With the block saved and Ollama serving the model, select it for the session the way you select any other - `provider/model`, where the provider is the key you named in the block:
+With the block saved and Ollama serving the model, select it for the session the way you select any other - `provider/model`, where the provider is the key you named in the block. An illustrative picker (hosted rosters change, so read yours live):
 
 ```text
 > /models
 
   anthropic/claude-sonnet-4-5
   openai/gpt-5.2
-  ollama/qwen2.5-coder          ← your local model, no slash-syntax exception
+  ollama/qwen2.5-coder          ← your local model, same provider/model form
   ❯ select a model for this session
 ```
 
-Now hand it the private feed. The loop is unchanged - it reads the parser, proposes a fix, waits for your approval - except every token stays on your machine:
+Now hand it the private feed. The loop is unchanged - it reads the parser, proposes a fix, applies it - except every token it exchanges with the model stays on your machine. The approval prompt in the exchange below appears only because this `opencode.json` also sets `"permission": { "edit": "ask" }`; by default the `build` agent (OpenCode's default agent) applies edits without asking ([set up on the first-change page](/course/opencode/getting-started/first-change/)). `feedmill`'s repo has no private feed in it, so save your own sample as `testdata/incidents.xml` first. The paths below follow `feedmill`'s illustrative layout. An illustrative exchange:
 
 ```text
-> ollama/qwen2.5-coder is driving now. the Atom parser in
-  internal/parse/atom.go panics on the internal-incidents feed -
-  it's the <updated> element. read the failing sample in
-  testdata/incidents.xml and find the bug. do not summarize the feed
-  body back to me, just the fix.
+> ollama/qwen2.5-coder is driving now. items from the internal-
+  incidents feed land with an empty Published value - it's the <updated>
+  element. I saved a sample to testdata/incidents.xml. read it and find
+  the bug. do not summarize the feed body back to me, just the fix.
 
-  ⏵ Read internal/parse/atom.go, testdata/incidents.xml          (2 files)
+  ⏵ Read internal/parse/atom.go, internal/adapter/normalise.go,
+         testdata/incidents.xml                                  (3 files)
 
-  The feed emits <updated></updated> with no text node. parseTime is
-  called on the empty string and returns a zero-value error the caller
-  doesn't check, so a later .Format panics. I'll treat an empty
-  <updated> as "use <published>" and guard the nil path.
+  The feed emits <updated></updated> with no text node and carries its
+  time in <published>. AtomEntry has no Published field, so Normalise
+  copies the empty Updated string straight through. I'll add a
+  Published field to AtomEntry and fall back to it when <updated> is
+  empty.
 
   ⏵ Edit internal/parse/atom.go
 
-  Apply this change? › Yes / No
+  Permission required
+    Allow once   Allow always   Reject
 ```
 
-A local model won't reason like a frontier one - it may need a tighter prompt and a closer read of its diff, and for a subtle bug you might still escalate. But for *this* bug, on *this* feed, "runs on a model that can't see the network" is the requirement that outranks raw capability. OpenCode let you satisfy it without leaving the session.
+If the local model answers but never calls a tool, or its tool calls fail, the usual cause is Ollama's context window truncating OpenCode's prompt. The [providers documentation](https://opencode.ai/docs/providers/) advises raising `num_ctx` in Ollama, starting around 16k to 32k (as of September 2026).
+
+A local model won't reason like a frontier one - it may need a tighter prompt and a closer read of its diff, and for a subtle bug you might still escalate to another local or internal model. But for *this* bug, on *this* feed, "runs on a model that can't see the network" is the requirement that outranks raw capability. You trade some **capability** for **control** over where the data goes, and OpenCode let you make that trade with one config block.
 
 ## Reach an arbitrary endpoint with a custom provider
 
@@ -112,13 +115,13 @@ Local runtimes are one case of a more general escape hatch. Maybe the private mo
 }
 ```
 
-Same `@ai-sdk/openai-compatible` package, same `options` shape - you've just added an `apiKey`, and the `{env:INTERNAL_LLM_KEY}` syntax pulls it from the environment so the secret never lands in a file you might commit. Reference it as `internal/llama-3.3-70b`, exactly the `provider/model` pattern you've used all chapter. The provider key (`internal`) is whatever you named the block; the slash separates it from the model id. There is no special case here - a local Ollama, an internal gateway, and Anthropic are the same shape of thing to OpenCode, which is the entire point of the design.
+The `npm` field is the piece that matters here: it names the integration package OpenCode talks through, and `@ai-sdk/openai-compatible` is the one for an OpenAI-compatible endpoint that serves `/v1/chat/completions`. A provider or model that uses `/v1/responses` needs `@ai-sdk/openai` instead, and an endpoint that isn't OpenAI-compatible needs a different package again - the [providers documentation](https://opencode.ai/docs/providers/) covers the integration packages (as of September 2026). Same `options` shape otherwise - you've just added an `apiKey`, and the `{env:INTERNAL_LLM_KEY}` syntax pulls it from the environment so the secret never lands in a file you might commit. Reference it as `internal/llama-3.3-70b`, exactly the `provider/model` pattern used throughout OpenCode. The provider key (`internal`) is whatever you named the block; the slash separates it from the model id. There is no special case here - a local Ollama, an internal gateway, and Anthropic are the same shape of thing to OpenCode, which is the entire point of the design.
 
-## Let Zen choose when 75 is too many
+## Let Zen narrow the field
 
-The opposite problem from "I must use this one private model" is "I don't want to choose at all." The catalog is enormous, and most of those models are mediocre at driving an agent. For the *non*-private feeds - the public RSS and JSON sources where data residency isn't a concern - you don't want to benchmark seventy-five options to find the few that hold up under a real coding loop.
+The opposite problem from "I must use this one private model" is "I don't want to research the whole catalog." The catalog is enormous, and most of those models are mediocre at driving an agent. For the *non*-private feeds - the public RSS and JSON sources where data residency isn't a concern - you don't want to benchmark models from 75+ providers to find the few that hold up under a real coding loop.
 
-That's what **Zen** is. OpenCode Zen is a curated, vetted shortlist - models the OpenCode team tested and tuned specifically for the agent loop, served through a single gateway so you get one key instead of ten accounts. You reference a Zen model as `opencode/<model>`:
+That's what **Zen** is. OpenCode Zen is a curated list - models the OpenCode team has tested and verified with OpenCode - served through a single gateway so you get one key instead of ten accounts. Zen narrows the field; it does not pick for you, so you still choose one model from its list. It is pay-as-you-go: you are charged per request, at prices listed per million tokens (as of September 2026; [Zen documentation](https://opencode.ai/docs/zen/)). To get access, sign in at [opencode.ai/auth](https://opencode.ai/auth), add billing details, and copy your API key, then run `/connect` in the TUI, pick OpenCode Zen, and paste the key. You reference a Zen model as `opencode/<model>`. An illustrative picker - the roster changes, so read yours live:
 
 ```text
 > /models
@@ -131,10 +134,10 @@ That's what **Zen** is. OpenCode Zen is a curated, vetted shortlist - models the
 
 ```json
 {
-  "model": "opencode/qwen3.7-max"
+  "model": "opencode/gpt-5.5"
 }
 ```
 
-The `opencode/` prefix is the tell: it's not a provider you wired up, it's the curated set, reached through Zen's gateway. Think of it as the inverse of the custom-provider work above. The custom block is for when you know *exactly* which endpoint you must hit and OpenCode should get out of the way. Zen is for when you'd rather trust a vetted default than make the call yourself. `feedmill` wants both, on different feeds: the locked-down internal source pinned to a local model that can't leak it, and the public-feed work running on whatever Zen says is currently good - with the freedom to switch between them mid-session, which is the muscle this whole chapter built.
+The `opencode/` prefix is the tell: it's not a provider you wired up, it's the curated set, reached through Zen's gateway. The JSON above also shows the top-level `model` field, which sets the model new sessions start from. With that default, switch a new session to the local model before the private feed enters it. Think of it as the inverse of the custom-provider work above. The custom block is for when you know *exactly* which endpoint you must hit and OpenCode should get out of the way. Zen is for when you'd rather choose from a vetted list than research the catalog yourself. `feedmill` wants both, on different feeds: the locked-down internal source pinned to a local model that can't leak it, and the public-feed work running on a model you picked from Zen's list - in separate sessions, so the private feed's transcript never reaches a hosted model.
 
-You can now reach any model that exists - one on your laptop, one behind your VPN, or a curated pick you didn't have to research - and keep the private feed on a model that never touches the wire. That closes the providers-and-models chapter: you've gone from one vendor's assumption to a tool where the model is just another thing you configure per job. So far, though, every one of those moves cost you a trip through a menu. Next you'll learn to drive the interface itself - the leader key, the plan/build toggle, and the session juggling that turn the TUI from a chat box into something your hands know without looking. [Next chapter: the TUI](/course/opencode/the-tui/).
+You can now reach any model that exists - one on your laptop, one behind your VPN, or a pick from a curated list you didn't have to build - and keep the private feed on a model that never touches the wire. That closes the providers-and-models chapter: you've gone from one vendor's assumption to a tool where the model is just another thing you configure per job. So far, though, every one of those moves cost you a trip through a menu. Next you'll learn to drive the interface itself - the leader key, the plan/build toggle, and the session juggling that turn the TUI from a chat box into something your hands know without looking. [Next chapter: the TUI](/course/opencode/the-tui/).

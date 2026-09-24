@@ -1,55 +1,63 @@
 ---
 title: "Skills"
-description: "You keep re-explaining the same five-step bank import to Codex. Count what that costs, then write the procedure down once as a Skill it runs on its own."
+description: "The five import steps get re-narrated by hand every time a bank lands. Write them down once as a Skill Codex runs on recognition."
 ---
 
-The last chapter fixed a leak: a subagent's search stayed inside its own window, and only the finding it produced came back to your thread, so a thousand-row sweep never crowded the context that has to hold your actual task. That solved *how much you carry*. It did nothing for *how much you repeat* - and repeating is where this chapter's slice of the villain lives. Codex starts every turn knowing nothing about `budgetcli` that it hasn't just read, and a multi-step procedure is exactly the kind of knowledge that can't be read off the code, because it was never written into the code at all. It lives in your head, and every time the job comes up again, it has to travel from your head into the chat window - by hand, from scratch.
+Some work you do with a coding agent is a procedure you keep narrating: every time a bank's export lands in the course's example repo, the same import steps travel from your head into the chat window by hand - which column is the date, which the amount, how cents come out of the decimal string, where the importer goes, what proves it worked. The file is always different. The steps never are. And a new session starts cold to them, because they are written down nowhere the agent reads.
 
-Here's the tension the rest of the chapter turns on: a procedure Codex invokes for itself, against one you retype every time it's needed. The token cost barely differs between the two. What differs is *who has to remember it* - and whether that's still your job in six weeks.
+This chapter is about writing a procedure down once so the agent runs it *on recognition* - noticing the situation and loading the steps itself, without you naming anything.
 
-Quick check before you build anything: search your own project's chat history for an instruction longer than two sentences that you've typed, close to verbatim, more than once. Found one? You already own this chapter's problem, in your own repo, right now. If you genuinely can't find one yet, the habit you're about to build still pays off the first time you do - skim ahead to the [decision lesson](/course/codex/skills/vs/) and come back once you've hit it.
+Quick check before you build anything: search your own project's chat history for an instruction longer than two sentences that you have typed, close to verbatim, more than once. Found one? You already own this chapter's problem, in your own repo, right now. If nothing turns up yet, the habit still pays the first time one does - skim the [decision lesson](/course/codex/skills/vs/) and come back once you have hit it.
 
-## The procedure you keep re-typing
+## The procedure you keep re-narrating
 
-You're still living in `budgetcli`. The import path works for the two banks your friend wired up before handing the project over - but you have accounts at others, and every one of them exports its transaction history in a slightly different shape. Different column headers. Dates as `MM/DD/YYYY` in one file, `YYYY-MM-DD` in another. One bank splits debits and credits into two columns; another uses a single signed amount. And the money - always the trap - arrives as a decimal string that has to become an integer number of cents, `budgetcli`'s storage rule, never a float.
+Ground truth first: `budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI) imports one format today. `app/importers/csv.py` is the repo's one importer, built for the CSV shape the project shipped with - ISO dates, a single decimal amount column, a description. It works, the suite pins it, and the money path through it runs on `Decimal`. What it does not do is accept any other bank's idea of a CSV.
 
-Onboarding a new bank is the same job every time, even though the file is always different:
+Constructed scenario, labeled once for the chapter: the fourth bank, its differently shaped export, and the sample file `data/newcard.csv` are this course's defined teaching scenario. Nobody has run it. It is a definition, not a log, and every turn count in this chapter belongs to it.
 
-- read a sample of the export and work out which column is the date, the amount, the description
-- map those columns onto `budgetcli`'s transaction fields
-- normalise the date to the project's stored format
-- convert the decimal amount to integer cents, getting the rounding right
-- write a small importer for that bank's shape and run it against the sample
+Onboarding a new format is the same job every time, even though the file is always different:
+
+- read a sample of the export, identify the date, amount, and description columns, and note the formats - date shape, a single signed amount column or separate debit and credit columns, any thousands separator
+- map the columns onto `budgetcli`'s transaction fields and normalize the dates to the stored ISO format
+- convert each amount to integer cents without passing through a float
+- write a small importer under `app/importers/`, following the one that exists
+- run it against the sample, show parsed rows back for confirmation, and pin the conversion
 
 Five steps, unchanged from bank to bank. What changes is only ever the file in front of you.
 
 ## What re-narrating costs, counted honestly
 
-You already have `AGENTS.md` and a saved [approval profile](/course/codex/approvals-sandbox/profiles-for-trust/) from earlier chapters, so the float-cents bug from chapter one doesn't come back - that rule is a standing fact, loaded every session regardless of what you're doing today. What isn't written down anywhere is the *procedure* itself. So watch what a cold bank import costs even with the rules and the profile already in place, narrated fresh because nothing on disk remembers you've done this before:
+Plenty is already written down. `AGENTS.md` - about 115 estimated tokens - loads into every session and holds the standing rules: integer cents, never floats; ISO 8601 dates. The [saved profile](/course/codex/approvals-sandbox/profiles-for-trust/) has the trust posture pre-decided. With those in place, the bare-repo mistakes do not happen. What no file holds is the procedure itself, so watch what a cold import still costs, narrated fresh:
 
 1. You describe the job in plain English. Codex reads the sample and reports its column guesses.
-2. It asks which column holds the amount - this bank splits debits and credits into two columns, unlike the two banks it's already seen, and nothing in your description mentioned that wrinkle because you forgot until it asked.
-3. You answer; it proposes the full mapping and the conversion; you say go ahead.
-4. It writes the importer and runs it against the sample - and mis-parses this bank's amount format, because the general "integer cents" rule in `AGENTS.md` never spelled out *this* bank's thousands separator. That's not the float bug back again; it's a fresh procedural miss the standing rule was never written to catch.
-5. You catch it reviewing the sample rows, correct it, and it fixes the conversion.
+2. It asks which column holds the amount - this bank splits debits and credits into two columns, and nothing in your description mentioned that wrinkle, because you forgot it until asked.
+3. You answer; it proposes the mapping and the conversion; you say go ahead.
+4. It writes the importer and runs the sample - and mis-parses this bank's amounts, because the standing cents rule never spelled out this bank's thousands separator. Not the float bug back again; that path runs `Decimal` and is pinned. A fresh procedural miss no standing rule was written to catch.
+5. You catch it reviewing the parsed rows, correct it, and it fixes the conversion.
 6. It reruns against the sample, the rows check out, and you confirm and commit.
 
-**Six turns. Every bank, cold, forever - because the five steps live in your head, and your head gets asked to produce them from scratch every single time.**
+**Six turns, every bank, cold, forever - because the five steps live in your head, and your head gets asked to produce them from scratch every single time.**
 
-## The claim this chapter is going to earn
+Where the six sits: it is the defined scenario with the rules file and the saved profile already in place, measured against a plain prompt - the combination, not either piece alone. This chapter's job is the last step of that stack.
 
-The number this chapter is actually built to reach, and it's the "one skill" piece of the number the whole course opened with: wire this procedure up as a Skill, and the same job, on the same kind of unseen bank, drops from six turns to two. Not a rounding difference - a third of the cost, and the thousands-separator miss doesn't happen at all, because the step that catches it is now written down at the exact point it bites instead of living in your memory. You'll watch that exact two-turn run happen for real two lessons from now, and you'll be able to count the turns yourself against the six above.
+## The claim this chapter is built to earn
+
+Add the skill this chapter writes, and the same defined scenario puts the job at two turns: you describe the situation in your own words, Codex recognizes it, and the body that already knows the steps - including the thousands-separator check - runs before your second message. A third of the six-turn cost, and the separator miss never happens, because the step that catches it is written at the exact point it bites.
+
+You will watch that two-turn run two lessons from now, as a labeled reconstruction you can count against the six above. It is the scenario's measurement, not a captured log - the same honesty rule as every number in this course.
 
 *(Every number in this chapter follows the two estimators from [the first chapter](/course/codex/getting-started/) - ten tokens per line of code, four characters per token for prose - against the same 200,000-token window.)*
 
 ## What a Skill actually is
 
-A Skill is a directory with a `SKILL.md` file inside it. The frontmatter says *when* to use it; the body says *what to do*. Codex keeps every Skill's description in view, and the moment your request matches one, it pulls in the full instructions and follows them - no procedure re-pasted, no shape re-explained. You can still name a Skill explicitly when you want to; the new thing is that it can fire on recognition, without you naming it at all. Skills are documented on the [Codex Skills page](https://learn.chatgpt.com/docs/build-skills); this chapter walks the whole arc on one concrete procedure.
+A Skill is a directory with a `SKILL.md` file inside it. The frontmatter says *when* to use it; the body says *what to do*. At session start Codex builds an initial skills list carrying each skill's name, description, and path, and keeps that list in context - capped at roughly two percent of the context window, or 8,000 characters when the window is unknown. On this course's arithmetic, two percent of 200,000 tokens is 4,000.
 
-Across the next three lessons:
+The cap has a shape worth knowing before your catalog grows. When many skills are installed, Codex shortens descriptions first; for very large catalogs it omits some skills from the list entirely, with a warning. One skill of ours costs about ninety estimated tokens against that four-thousand budget, so none of this bites yet. And when a request matches a description, Codex reads the full instructions and follows them - no procedure re-pasted, no shape re-explained.
 
-- [Author the Skill](/course/codex/skills/create/) - the directory, the `SKILL.md`, the frontmatter and body - and build the bank-import procedure end to end in `.agents/skills/`.
-- [Make it fire at the right time](/course/codex/skills/trigger/) - meet the trick this chapter is named for, watch the six turns above collapse to two, and tune the field that decides whether the Skill fires.
+You can still name a Skill explicitly when you want to; the new thing is that it can fire on recognition, without you naming it at all. Skills are documented on the [Codex Skills page](https://learn.chatgpt.com/docs/build-skills); this chapter walks the whole arc on one concrete procedure:
+
+- [Author the Skill](/course/codex/skills/create/) - the directory, the `SKILL.md`, the frontmatter and body - and build the import procedure end to end in `.agents/skills/`.
+- [Make it fire at the right time](/course/codex/skills/trigger/) - meet recognition, watch the six turns above collapse to two, and tune the field that decides whether the Skill fires.
 - [Know when a Skill is the wrong tool](/course/codex/skills/vs/) - Skill vs `AGENTS.md` rule vs a plain prompt, run on the same job, with a verdict for each.
 
-By the end, importing a new bank is something Codex owns, not something you narrate. **Start by giving the procedure a home Codex can find on its own.**
+By the end, importing a new format is something Codex owns, not something you narrate. **Start by giving the procedure a home Codex can find on its own.**

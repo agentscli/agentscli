@@ -1,58 +1,73 @@
 ---
-title: Git worktrees for conflict-free parallel edits on the money refactor
+title: "Git worktrees for conflict-free parallel edits on the money hardening"
 description: "Two agents in one directory don't just merge-conflict - one reads the other's half-written file and believes it. Give each worker its own git worktree."
-sidebar:
-  label: "Worktrees · conflict-free edits"
 ---
 
-The recategorisation fanned out cleanly because the workers only read shared files - the cost you paid was a tripled orientation read, not a corrupted result. The money-handling refactor is the harder case: every place in `budgetcli` that parses, stores, sums, or formats money needs the same treatment - integer cents, never floats - and you'd like several agents working on different parts at once. The trouble is that the moment two agents edit the same working tree, the problem isn't merge conflicts. It's worse, and it doesn't announce itself the way a conflict does.
+The audit fanned out safely because every worker only read. The hardening changes files, and it changes them through this chapter's constructed projection - so before any command runs, the label deserves its full statement.
+
+Here it is: the audit's findings list holds one violation and one coverage gap, because that is all this repo has. Ten files, two thousand tokens - a serial fix in your main thread would be the honest choice. We run the parallel procedure anyway, as the labeled projection: the same findings list at the size where it has a fix per path, three workers, three branches. The parallelism is projected. The edits that land through it are real.
 
 ## The failure you're actually preventing
 
-Picture two workers in one directory. Worker A is halfway through rewriting `money.py`, the file saved in an inconsistent state mid-edit. Worker B, working on a path that imports it, reads that file *right now* - and reasons over a half-written version that never existed in any commit and never will. The result is a non-deterministic, unreproducible failure even though the two tasks were logically independent. Worse, it doesn't fail loudly: no merge conflict, no red flag, just a test that breaks somewhere downstream, hours later, with a diff that no longer matches what's actually on disk - which costs you exactly the diagnostic turns this course keeps a running count of, chasing a bug that isn't where the evidence says it is.
+Picture two workers in one directory. Worker A is halfway through rewriting `app/importers/csv.py` - the file saved mid-edit, one function converted, the next still on the float. Worker B, whose slice touches the route that calls the importer in `app/main.py`, reads that file right now and reasons over a half-written state that never existed in any commit and never will. No conflict marker fires. B simply believes what it read.
 
-Most explanations of worktrees lead with "avoid merge conflicts." The real hook is sharper: **without isolation, an agent reads its sibling's half-saved file and believes it.** Agents make this worse than humans do - they don't pause to notice something looks wrong, they auto-iterate on the bad state, and they can't attribute a passing test to the right branch.
+The result is a non-deterministic, unreproducible failure - a test that breaks somewhere downstream, later, with a diff that no longer matches what is on disk. It costs you exactly the diagnostic turns this course keeps counting, chasing a bug that is not where the evidence points. Most explanations of worktrees lead with merge conflicts. The sharper hook is belief: **without isolation, an agent reads its sibling's half-saved file and believes it.**
 
-A git **worktree** fixes exactly this. One repository, but multiple checked-out working directories - each with its own branch, its own index, its own files on disk - all sharing the same underlying object database and history. Add one and you get three guarantees: file-level isolation (B can't see A's unsaved edits), index isolation (each has its own staging area), and a branch lock (git refuses to check out a branch that's already checked out elsewhere, so workers can't clobber each other's branch pointer). And it's cheap - `git worktree add` returns near-instantly because nothing is re-downloaded; the object database is shared. A clone, by contrast, re-fetches everything and hides each worker's commits until a push.
+Agents make this worse than humans do. They do not pause because something looks off; they auto-iterate on the bad state, and they cannot attribute a passing test to the right branch. Humans trip over the same problem - they just mutter about it first.
 
-## Use a managed worktree when available; otherwise point Codex at a Git worktree
+A git **worktree** fixes exactly this. One repository, multiple checked-out working directories - each with its own files on disk, its own index, its own branch - all sharing the same object database and history. Three guarantees: file isolation (B cannot see A's unsaved edits), index isolation (each has its own staging area), and a branch lock (git refuses to check out a branch already checked out elsewhere).
 
-Some Codex surfaces provide a managed worktree workflow, while the CLI workflow in this lesson keeps the mechanics explicit. A worktree is a directory that Git made, and the CLI integration point is "run in this directory." If your surface exposes `/worktree`, it can create the isolated working context for you; otherwise, make the worktrees with plain Git and point each worker at one:
+And it is cheap. `git worktree add` returns near-instantly because nothing is re-downloaded; the object database is shared. A clone, by contrast, re-fetches everything and hides each worker's commits until a push.
+
+## Use a managed worktree when available; otherwise point Codex at a git worktree
+
+Some surfaces manage this for you: the app exposes a `/worktree` command that runs the chat in a new Git worktree, and where you have that, an isolated working context is one command away. The CLI workflow below keeps the mechanics explicit instead - because a worktree is just a directory Git made, and the integration point is "run this agent with that working directory."
+
+The projection's three slices, on real files:
+
+- `money/parse` - `app/importers/csv.py`: the fix. Replace the float parse with a float-free conversion, per the parse-path rule [the rules chapter](/course/codex/rules/not-a-boundary/) proposed.
+- `money/wire` - `app/main.py` + `app/services/categorise.py`: the cleared path. Verify that amounts pass through the route and the categorizer untouched; expected to produce no diff.
+- `money/tests` - the suite under `tests/`: the pin. Add the regression test for the truncation case the audit flagged as a coverage gap.
 
 ```bash
-# one worktree + branch per slice of the money refactor
-git worktree add ../budgetcli-parse   -b money/parse
-git worktree add ../budgetcli-store   -b money/store
-git worktree add ../budgetcli-report  -b money/report
+# one worktree + branch per slice of the projection
+git worktree add ../budgetcli-parse -b money/parse
+git worktree add ../budgetcli-wire  -b money/wire
+git worktree add ../budgetcli-tests -b money/tests
 ```
 
-**Three worktrees, three branches - hold that count. The next lesson's merge tail is priced by exactly this number, not by how many workers produced it.**
+**Three worktrees, three branches - hold that count. The merge tail two lessons from now is priced by exactly this number, not by how many workers produced it.**
 
-Then each worker runs against its own directory. Codex takes a working-directory flag for this - point each agent at one worktree so its edits land on that branch and nowhere else:
+One honesty note about that split. In ordinary practice a fix and its test land together on one branch; here they are separated so the merge order and the review gate have real work to do - the pin asserts the parse, so the two branches are related and ordered. That dependency is the projection's one deliberate exaggeration, and the orchestration lesson pays it off.
+
+Then each worker runs against its own directory:
 
 ```bash
-codex --cd ../budgetcli-parse  "convert all amount parsing to integer cents per AGENTS.md"
+codex --cd ../budgetcli-parse "convert the amount parse in app/importers/csv.py
+to integer cents without a float, per the parse-path rule in AGENTS.md;
+keep the suite green"
 ```
 
-The flag is `--cd`, short form `-C` - it sets the agent's working directory before the run starts (see the [Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli)). The principle is the durable part: whatever isolation you build - worktree, separate clone, container - it reduces to *spawn the agent with this working directory*. That's a clean composability story. Codex's stance is "use plain git, point us at the path," and it composes with everything.
+The flag is `--cd`, short form `-C`: set the working directory for the agent before it starts processing your request, per the [Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands). The placement matters twice - the worker's edits land on that branch and nowhere else, and its sandbox fence is drawn around that directory, so a `workspace-write` worker can write its own tree and not the others.
 
-One small convenience for the scripts: `git -C <path> ...` runs a git command inside a worktree without changing your shell's current directory, which keeps a fan-out script readable when it's juggling several.
+The durable principle underneath: whatever isolation you build - worktree, separate clone, container - it reduces to *spawn the agent with this working directory*. Codex's stance is "use plain git, point us at the path," and that composes with everything you already run.
+
+One convenience for the scripts: `git -C <path> ...` runs a git command inside a worktree without changing your shell's directory, which keeps a fan-out script readable when it is juggling several. The workers need no help finding their own checkout - they were launched there.
 
 ## The isolation a worktree does *not* give you
 
-This is the part most teams learn the hard way, so learn it here, honestly, right after the win above. A worktree isolates **code state** - files, index, branch pointer. It does nothing for **execution state**, and that's a separate, harder problem that agents make worse. Three workers in three worktrees still share:
+This is the part most teams learn the hard way, so learn it immediately after the win. A worktree isolates **code state** - files, index, branch pointer. It does nothing for **execution state**, and agents make that gap worse. Workers in three worktrees still share everything that lives outside their directories:
 
-- **Ports.** All three try to bind `localhost:8000` for the test server; two fail or, worse, hit the wrong instance.
-- **Databases.** Concurrent migrations against one shared dev database corrupt the schema for everyone - and for `budgetcli`, a money app, a corrupted ledger schema is not a small thing.
-- **Env and dotenv.** A shared `.env` bleeds one worker's config into another's run.
-- **Shared caches and a shared root `node_modules` / install dir** - outside any worktree, so outside its isolation.
+- **Ports.** Every worker that smoke-tests the API starts `uvicorn app.main:app`; the first binds `localhost:8000`, the rest fail or - worse - pass against the wrong instance. Give each tree its own port.
+- **Env and dotenv.** A shared `.env` at the repo root bleeds one worker's configuration into another's run. One `.env` per worktree, or none.
+- **Shared caches and tool state** - the virtualenv, `~/.cache`, anything installed outside the tree - sits outside every worktree, and therefore outside every isolation.
 
-The fix is **per-worker namespacing**: a unique port range per worktree (`BASE_PORT=$((8000 + TASK_INDEX * 100))`), a per-worktree database file or per-branch schema, a per-worktree `.env`, container names prefixed with the task ID. The rule of thumb: anything that lives *outside* the working directory is not isolated by the worktree, and you have to isolate it yourself.
+Notice what is absent from that list: a database. The ledger in `budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI) is in-memory - `app/services/ledger.py` holds a list - so today there is no shared schema to corrupt. The moment the repo grows a SQLite file or a data directory, that entry writes itself, and on a money app it is the entry that hurts most. The rule: anything that lives outside the working directory is not isolated by the worktree; you isolate it yourself.
 
-And one distinction worth its own sentence, because it connects straight to the [approvals & sandbox chapter](/course/codex/approvals-sandbox/): **runtime isolation is not security isolation.** A worktree (and the port/DB namespacing above) prevents *accidental* cross-contamination between cooperating agents. It does nothing against untrusted code, prompt injection, or a container escape. For your own money data the real guardrail is still the kernel-level sandbox and network-off defaults from that chapter, layered underneath. Worktrees keep honest workers from tripping over each other; they don't make a hostile worker safe.
+And one distinction worth its own sentence, straight back to the [approvals & sandbox chapter](/course/codex/approvals-sandbox/): **runtime isolation is not security isolation.** A worktree prevents accidental cross-contamination between cooperating agents. It does nothing against untrusted code, prompt injection, or a hostile worker - those belong to the kernel-level sandbox, network off, fence narrow, layered underneath. Worktrees keep honest workers from tripping over each other; they do not make a hostile one safe.
 
 ## Clean up so they don't pile up
 
-Stale worktrees don't corrupt anything, but they accumulate working-file copies and eat disk. Two habits keep it tidy: `git worktree remove` when a slice is merged, and `git worktree prune` to clear registrations whose directories are already gone. In a CI or scripted run, wrap teardown in a `trap '... ' EXIT` so the worktrees get cleaned up even when a worker fails or the run is interrupted - guaranteed teardown is the difference between a self-hosted runner that stays healthy and one that slowly fills with abandoned trees.
+Stale worktrees do not corrupt anything, but they accumulate working-file copies and eat disk. Two habits keep it tidy: `git worktree remove` when a slice has come home, and `git worktree prune` to clear registrations whose directories are already gone. In a scripted run, wrap teardown in a `trap '...' EXIT` so the trees are cleaned up even when a worker fails - guaranteed teardown is the difference between a runner that stays healthy and one that slowly fills with abandoned trees.
 
-You now have several workers editing the money refactor in parallel, each safely walled off in its own tree, each producing a branch - the fan-out, minus the cost the last lesson flagged and didn't yet pay: three branches still have to come home. [That's the last lesson - light orchestration](/course/codex/subagents/orchestrate/), and it's where "the merge tail doesn't divide by the worker count" stops being a claim and turns into a number.
+You now have three workers on the hardening, each walled off in its own tree, each producing a branch or a verdict - the fan-out, minus the cost the last lesson flagged and did not yet pay: everything still has to come home. [That is the last lesson - light orchestration](/course/codex/subagents/orchestrate/), where the merge tail stops being a claim and turns into counted turns.

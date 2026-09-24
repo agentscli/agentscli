@@ -1,18 +1,15 @@
 ---
 title: Juggle and resume sessions
-description: "A second feed breaks while you're mid-fix on the first. Switch sessions instead of tangling two threads, then carry today's context forward with --continue."
-sidebar:
-  label: "Sessions · list, resume, fork"
+description: "A second feed breaks while you're mid-fix on the first. Switch sessions instead of tangling two threads, then carry the work forward with --continue, --session, and --fork."
 ---
 
-You're three turns deep into fixing `feedmill`'s Atom parser - the agent has read `internal/parse/atom.go`, you've approved one edit, and you're about to look at the failing test - when the cron alert fires: a second feed is now coming back empty, and it's a JSON feed, a completely different code path. Your instinct is to just type the new problem into the same prompt. Don't. The thread you're in is loaded with Atom context - the file the agent read, the plan it proposed, the half-applied fix - and pouring an unrelated JSON-feed investigation on top of it muddies both. The agent starts reasoning about one problem with the other's context still in the window, and you lose the clean thread you'd want to come back to.
+You're three turns deep into fixing `feedmill`'s Atom parser. `feedmill` is the course's illustrative Go feed aggregator, and this thread is about the `internal/parse/atom.go` code path mishandling feeds' `<updated>` dates. The agent has read the file, you've approved one edit, and you're about to look at the failing test. Then a second fire starts: a JSON feed is now coming back empty, and it's a completely different code path. Your instinct is to just type the new problem into the same prompt. Don't. The thread you're in is loaded with Atom context - the file the agent read, the plan it proposed, the half-applied fix - and pouring an unrelated JSON-feed investigation on top of it muddies both. The agent starts reasoning about one problem with the other's context still in the window, and you lose the clean thread you'd want to come back to. That is the **context** principle in its most practical form: what the agent decides with is whatever sits in the session's window, so the session is the unit you keep clean.
 
-OpenCode keeps each line of work in its own **session**, and the whole point of living in the TUI is that switching between them is a two-key move - no terminal tabs, no losing your place.
+OpenCode keeps each line of work in its own **session**, and the whole point of living in the TUI (OpenCode's full-screen terminal interface) is that switching between them is a two-key move - no terminal tabs, no losing your place.
 
 ## A clean context for the second fire
 
-Open the session list with the leader key followed by `l` - by default that's `ctrl+x l`, which fires the `/sessions` command:
-
+Open the session list with the leader key followed by `l` - by default that's `ctrl+x l`, which fires the `/sessions` command (as of September 2026; [keybinds documentation](https://opencode.ai/docs/keybinds/)):
 
 ```text
 > [ctrl+x l]
@@ -20,39 +17,39 @@ Open the session list with the leader key followed by `l` - by default that's `c
   ╭─ Sessions ──────────────────────────────────────────────╮
   │ ● fix atom parser dropping <updated> dates    2m ago     │
   │   onboard the hckrnews json feed              1h ago     │
-  │   dedupe key collision on guid                yesterday  │
+  │   dedupe key collision on guid                2d ago     │
   ╰──────────────────────────────────────────────────────────╯
 ```
 
-That list is every session in this project, most-recent first. Your Atom fix is sitting right there at the top, frozen exactly as you left it. But you don't want to *resume* anything - you want a fresh thread for the JSON feed. Start a new session with `ctrl+x n` (the `/new` command), and you're at an empty prompt with a clean context window:
+That list (an illustrative rendering) is every session in this project, most-recent first; the filled circle marks the session you're currently in. Your Atom fix is sitting right there at the top, frozen exactly as you left it. But you don't want to *resume* anything - you want a fresh thread for the JSON feed. Start a new session with `ctrl+x n` (the `/new` command), and you're at an empty prompt with a clean context window:
 
 ```text
 > [ctrl+x n]
 
-> the hckrnews json feed started returning an empty queue this morning.
-  it parsed fine last week. find out what changed.
+> the hckrnews json feed is returning an empty queue. find out
+  what changed.
 
-  • Read internal/parse/json.go, internal/feed/registry.go      (2 files)
+  • Read internal/feed/json.go                                (1 file)
 
-  The JSON parser keys on `items[].id`, but this feed renamed that
+  JSONItem maps the item id from `id`, but this feed renamed that
   field to `objectID` in a recent format change, so every item now
   parses with an empty id and gets dropped as a duplicate of the last
   empty-id item. I'll match both field names and add a test pinning
   the new shape.
 ```
 
-Now you have two live sessions: the Atom fix and the JSON investigation, each with only its own context. When the second one reaches a stopping point, `ctrl+x l` takes you straight back to the Atom thread, picking it up mid-fix exactly where you stepped away. No re-explaining, no cross-contamination. The session list is the difference between *juggling* two problems and *tangling* them.
+That exchange is illustrative too, but the shape is the point. Now you have two live sessions: the Atom fix and the JSON investigation, each with only its own context. When the second one reaches a stopping point, `ctrl+x l` takes you straight back to the Atom thread, picking it up mid-fix exactly where you stepped away. No re-explaining, and neither conversation leaks into the other. The files are shared, though: sessions separate context, not the working tree, so the JSON thread reads and tests the same tree that holds the half-applied Atom edit. Commit or stash that edit before the second thread runs tests or writes code (as of September 2026; a session in [OpenCode's session source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts) stores its messages and a reference to the project directory, not a copy of your files). The session list is the difference between *juggling* two problems and *tangling* them.
 
-## Carry today's context to tomorrow
+## Carry a thread across a break
 
-Sessions outlive the terminal. When you close `feedmill` for the night, both threads are saved - and the next morning you don't start cold. From the CLI, `--continue` (short `-c`) drops you back into the most recent session:
+Sessions outlive the terminal. Close the TUI, the terminal window, or the whole laptop mid-work, and both threads are saved - when you come back, you don't start cold. From the CLI, `--continue` (short `-c`) drops you back into the most recent session (CLI flags as of September 2026; [CLI documentation](https://opencode.ai/docs/cli/)):
 
 ```text
 $ opencode --continue
   ↳ resuming "fix atom parser dropping <updated> dates"
 ```
 
-That's the right move when "yesterday's work" means *the last thing I touched*. But the most recent session isn't always the one you want - maybe you closed the laptop in the middle of the JSON feed but it's the Atom fix you need to finish first. Point at a specific session by id with `--session` (short `-s`):
+That's the right move when "pick up where I left off" means *the last thing I touched*. But the most recent session isn't always the one you want - maybe you stepped away in the middle of the JSON feed but it's the Atom fix you need to finish first. Point at a specific session by id with `--session` (short `-s`). The listing below is illustrative and shortens the ids; the real command prints each id in full, and that full id is what you pass in place of `<id>`:
 
 ```text
 $ opencode session list
@@ -60,38 +57,40 @@ $ opencode session list
   ses_8f2a…           onboard the hckrnews json feed           14h ago
   ses_3c91…           fix atom parser dropping <updated>       15h ago
 
-$ opencode --session ses_3c91 -c
+$ opencode --session <id>
   ↳ resuming "fix atom parser dropping <updated> dates"
 ```
 
-`opencode session` is the CLI surface for managing sessions outside the TUI - `opencode session list` prints them, and it speaks `--format json` when you want to feed the list to a script rather than read it yourself:
+`opencode session` is the CLI surface for managing sessions outside the TUI - `opencode session list` prints them, and it speaks `--format json` when you want to feed the list to a script rather than read it yourself. An illustrative rendering, with the ids shortened again:
 
 ```text
 $ opencode session list --format json
 [
-  { "id": "ses_8f2a…", "title": "onboard the hckrnews json feed",   "updated": 1749… },
-  { "id": "ses_3c91…", "title": "fix atom parser dropping <updated>", "updated": 1749… }
+  { "id": "ses_8f2a…", "title": "onboard the hckrnews json feed",   "updated": 1790… },
+  { "id": "ses_3c91…", "title": "fix atom parser dropping <updated>", "updated": 1790… }
 ]
 ```
+
+## Sessions nest, and you can walk the tree
+
+A session can have children. The subagents you'll meet later in the course - secondary agents with their own context, invoked by `@mention` - run as child sessions of yours, and the TUI gives you dedicated chords for walking that tree: `<leader>down` jumps to the current session's first child, bare `right` and `left` cycle among its children, and bare `up` climbs back to the parent (these are the `session_child_first`, `session_child_cycle`, `session_child_cycle_reverse`, and `session_parent` bindings, as of September 2026; [keybinds documentation](https://opencode.ai/docs/keybinds/)). You don't need them for plain two-thread juggling, but once delegation enters your workflow, the parent/child navigation is how you inspect what a spawned agent actually did without leaving your own thread's place in line.
 
 ## Fork when you want to try two approaches
 
 Resuming continues a thread in place - the session grows by one more turn. Sometimes that's wrong: you've got a working context built up on the Atom parser and you want to try *two* fixes from that same starting point - tolerate the malformed `<updated>` dates, versus reject the feed outright and alert - without one experiment polluting the other. That's `--fork`. Instead of continuing the session, it branches it: the accumulated context comes along, but the new turns grow in a separate thread, leaving the original untouched.
 
 ```text
-$ opencode --session ses_3c91 --fork
+$ opencode --session <id> --fork
   ↳ forked from "fix atom parser dropping <updated> dates"
 
 > instead of tolerating the bad dates, reject the whole feed and
   log a warning. let's see how invasive that is.
 ```
 
-Now you have two children of the same context, evolving independently. Try the strict approach in the fork; if it sprawls, you abandon that thread and the tolerant version in the original session is still sitting there, exactly as you left it. It's the same logic as the git-floor habit applied to *context* instead of code: cheap to branch, so you can take a bigger swing knowing the original line is safe. `--fork` works with both `--continue` (fork the latest) and `--session <id>` (fork a specific one).
-
-Two fires, two clean threads, both waiting for you tomorrow - and a way to branch either one when you're not sure which approach wins. That's the day-to-day rhythm of working in the TUI without losing your place.
+Now you have two branches from the same starting context, evolving independently. Try the strict approach in the fork; if it sprawls, you abandon that thread and the original conversation is still sitting there, exactly as you left it. A fork copies the conversation, not your files: both sessions edit the same working tree, so commit or stash before the fork writes code, and revert its edits with Git if you abandon it (as of September 2026; `Session.fork` in [OpenCode's session source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts) copies the messages into a new session in the same directory). It's the same logic you already apply to code with Git - branch cheaply, so you can take a bigger swing knowing the original line is safe - applied to *context* instead of code. `--fork` works with both `--continue` (fork the latest) and `--session <id>` (fork a specific one).
 
 :::tip[Try it]
-Start a session, make a change, exit. Resume with `--continue` and ask what you did last. Then list sessions with `opencode session list` and resume a different one by ID. Notice what context survived.
+Run `opencode` to open the TUI, start a session, make a change, exit. Resume with `--continue` and ask what you did last. Then list sessions with `opencode session list` and resume a different one by ID. Notice what context survived.
 :::
 
 Sessions pile up turns, and eventually a thread gets long enough that the context window starts to strain - or you make a change you wish you hadn't. [Next: undo, redo, and compaction](/course/opencode/the-tui/undo-redo-compact/).

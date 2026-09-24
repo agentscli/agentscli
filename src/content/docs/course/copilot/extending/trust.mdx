@@ -1,35 +1,33 @@
 ---
 title: Trust before it runs
-description: "A new MCP server is code reaching outside your editor, so review its trust and permission settings before it runs."
-sidebar:
-  label: "Trust · confirm before it runs"
+description: "A new MCP server is code reaching outside your editor. Confirm it before it starts, gate its tool calls, and know what a sandbox can and cannot constrain."
 ---
 
-You've added the `service-registry` entry to `.vscode/mcp.json`, and VS Code has noticed it. Notice what *didn't* happen: it didn't connect. An MCP server is a program - possibly one you didn't write - that's about to reach into systems outside your editor on Copilot's behalf. That's exactly the kind of thing you want a deliberate yes in front of, not a silent default.
+You have added the `service-registry` entry to `.vscode/mcp.json` ([the previous lesson](/course/copilot/extending/connect/) covers how), and VS Code has noticed it. Notice what did *not* happen: it did not connect. An MCP server (a tool service speaking the Model Context Protocol) is a program - possibly one you did not write - about to reach into systems outside your editor on Copilot's behalf. That is exactly the kind of thing that wants a deliberate yes in front of it, not a silent default.
 
 ## Confirm trust before the server starts
 
-When you add a server, or change its configuration, Copilot asks you to **confirm trust before it starts that server**. Until you do, the entry sits in the file inert. This is the same instinct as the diff-review habit from your very first change: nothing reaches outside a boundary until a human keystroke says it can. Adding the config is *describing* a connection; trusting it is *opening* it.
+When you add a server, or change its configuration, Copilot asks you to **confirm trust before it starts that server** (trust, the reset command, the sandbox keys, the client approval behavior, and the platform limits below are per the [VS Code MCP documentation](https://code.visualstudio.com/docs/agent-customization/mcp-servers), verified September 2026). Until you do, the entry sits in the file inert. This is the same instinct as the diff-review habit from [your first change](/course/copilot/getting-started/first-change/): nothing reaches outside a boundary until a human keystroke says it can. Adding the config is *describing* a connection; trusting it is *opening* it.
 
-If you ever want to revisit that decision - you've stopped using a server, or you want to re-evaluate one you trusted in a hurry - run **"MCP: Reset Trust"** from the Command Palette. It clears your trust decisions so the next start prompts you fresh. Cheap to reach for; reach for it whenever a server's behavior surprises you.
+If you ever want to revisit that decision - a server you stopped using, or one you trusted in a hurry - run **"MCP: Reset Trust"** from the Command Palette. It clears your trust decisions so the next start prompts you fresh. Cheap to reach for; reach for it whenever a server's behavior surprises you.
 
 ## Tool calls get confirmed too
 
-Trusting the server to *start* is one gate. Tool-call approval is a separate client, permission, server, and organization-policy decision. When Copilot wants to call a tool the registry exposes - say, "list the consumers of `shared-lib`" - the client may ask for confirmation, auto-approve it, or apply a sandbox or policy rule. Check the current permission state instead of assuming every call behaves identically.
+Trusting the server to *start* is one gate. Tool-call approval depends separately on the client, your permission settings, the server, and organization policy. When Copilot wants to call a tool the registry exposes - "list the consumers of this library" - the client may ask for confirmation, auto-approve it, or apply a sandbox or policy rule. Check the tools list in your chat's tool configuration instead of assuming every call behaves identically.
 
-When confirmation is enabled, it is a useful default because a tool call can have effects you didn't anticipate. But confirmation behavior is configurable, and a trusted server may still be subject to different policies in different clients.
+When confirmation is enabled, it is a useful default, because a tool call can have effects you did not anticipate. But confirmation behavior is configurable, and a trusted server may still be subject to different policies in different clients.
 
-## The sandbox: a controlled exception
+## The sandbox: a controlled exception, with limits
 
-A server entry can declare a **sandbox**, which lets its tool calls run without per-call confirmation by constraining what they're allowed to do. Two keys govern it (on macOS and Linux):
+A server entry can declare a **sandbox**, which lets its tool calls run without per-call confirmation by constraining what they are allowed to do. Two keys govern it, with a hard limit on scope: sandboxing applies only to **locally-running stdio servers** (local processes VS Code launches), is not available on Windows, and on macOS and Linux constrains filesystem writes and network domains through the sandbox rules.
 
 - **`sandboxEnabled`** - turns the sandbox on for that server.
-- **`sandbox`** - the rules the sandbox enforces: which parts of the filesystem the server may touch, and what network access it may use.
+- **`sandbox`** - the rules the sandbox enforces: which parts of the filesystem the server may WRITE to, and which network domains it may reach. The documentation's network key is `allowedDomains`, and its only filesystem key is `allowWrite` - reads are not boxed.
 
-The trade is explicit and worth understanding: you're swapping *per-call confirmation* for *up-front constraints*. A registry server that only ever makes read-only queries to one internal host is a reasonable thing to sandbox - you box it into "read these paths, reach that host, nothing else," and then let its calls run unprompted inside those walls. A server that can write or reach anywhere is one you'd think harder about before lifting the confirmation prompt.
+That stdio-only limit matters for the registry: it is an `http` server (a URL, not a local process), so it cannot be sandboxed. A sandbox candidate looks different - a local stdio server you run yourself, like a file-search helper launched with `"command": "npx"`. Box *that* into "write only under these paths, reach that host, nothing else - reads are not boxed," and its calls can run unprompted inside those walls. The trade is explicit either way: you are swapping *per-call confirmation* for *up-front constraints* - the control principle in miniature, guidance traded for a boundary - and it only works where the server is a local process the sandbox can actually contain. A server that can write anywhere, or that runs remotely, is one you think harder about before lifting the confirmation prompt; and because reads are not boxed, a local server that reads sensitive files (a `.env` reader, say) is one to keep behind per-call confirmation even sandboxed.
 
-## One thing to keep straight
+## MCP is not agent-only
 
-It's tempting to file all of this under "Agent mode," since that's where you'll watch Copilot call the registry mid-loop. Don't. **MCP isn't agent-mode-only.** The tools, resources, and prompts a server contributes are available across chat and agents - Ask can read a registry resource to answer a question, any mode can pull in a server-provided prompt. What Agent mode adds is *autonomy*: it executes those tool calls itself, in a loop, which is why the confirmation gates above matter most there. The trust model is general; it just bites hardest where Copilot is acting on its own.
+It is tempting to file all of this under "Agent," since that is where you watch Copilot call the registry mid-loop. Do not. **MCP is not agent-only.** The tools, resources, and prompts a server contributes are available across chat and agents alike - the chat roles (Ask, Plan, Agent) can read a registry resource to answer a question, any role can pull in a server-provided prompt. What the Agent role adds is *autonomy*: it executes those tool calls itself, in a loop, which is why the confirmation gates matter most there. The trust model is general; it just bites hardest where Copilot is acting on its own.
 
-You've got a trusted, optionally sandboxed server. But right now it's wired at the workspace level - every conversation in this repo can reach it. For a high-blast-radius library, that's broader than you want. [Next: scope it to one agent](/course/copilot/extending/scope/).
+You have a trusted server. But it is wired at the workspace level - every conversation in this repo can reach it. For a high-consequence library repo, that is broader than you want. [Next: scope it to one agent](/course/copilot/extending/scope/).

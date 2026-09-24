@@ -1,66 +1,57 @@
 ---
-title: Compare two approaches with branches
-description: "Two ways to do validation, and you can't tell which is better on paper. Build both off a shared checkpoint instead of betting on one."
-sidebar:
-  label: "Branch · checkpoints + git"
+title: Compare approaches with conversation branches and Git worktrees
+description: "Preserve two lines of reasoning, isolate their code changes, and compare health-route implementations from the same committed starting point."
 ---
 
-The validation layer is the last piece, and you're of two minds about it. You could lean on a schema library - declarative, batteries included, a dependency. Or you could hand-roll plain guard functions - no dependency, more code, total control. On paper it's a wash, and you've learned not to trust *on paper*. You want to see both, in your actual codebase, against your actual handlers, and then decide.
+The running example is a small Express + TypeScript payments service: routes begin in `src/index.ts`, payment code lives under `src/payments/`, and `npm test` runs the Vitest suite in `tests/`. The service registers `GET /health` in `src/index.ts`, and the health task added `GET /healthz` beside it. Both health addresses must return the same response: HTTP 200 with the JSON body `{"status":"ok"}`, with payment behavior untouched and HTTP tests for both routes in `tests/health.test.ts`. That sentence is the acceptance brief this page reuses. You can register the two paths together with one handler, or keep separate registrations that call a shared handler. For a small service, either might be reasonable. Before turning this into a general argument about abstraction, compare the actual changes each would require.
 
-The wrong way to do this is the obvious one: ask the agent to build it with the library, then say "now also try it the other way" in the same conversation. Do that and the window now holds both approaches at once, the agent starts blending them - guard functions that suspiciously resemble schema calls - and you can no longer tell which idea is which. Comparing two designs in one thread destroys the very thing you're trying to compare.
+Start with a design-only comparison in the health session, meaning the Claude Code conversation in which that task was done. If you have no such conversation, open a session in your own repository ([the install lesson](/course/claude-code/getting-started/install/) covers that), ask it for one approach to a small change first, and treat that answer as the original session's approach. Then use `/branch health-shared-handler` at the prompt to preserve the current conversation and continue a copy. The original remains available through `/resume`. The [session guide](https://code.claude.com/docs/en/sessions) describes conversation branches; the [CLI equivalent](https://code.claude.com/docs/en/cli-reference) is `claude --continue --fork-session` when resuming the most recent session.
 
-What you want is a branch: one clean starting point, two independent lines of work growing out of it.
+## Two conversations can still touch one file
 
-## Branching off a checkpoint
-
-The checkpoints from the last lesson let you restore or summarize an earlier point in the current session, but they are not a replacement for a durable branch. To preserve the original conversation, use `/branch` or `claude --continue --fork-session`; to compare code, use Git branches from a shared base commit. Start by marking the point before either approach:
+Ask the branched conversation for a proposal without edits:
 
 ```text
-> [Esc][Esc]
-  ❯ "the handlers are ready, now add validation"   ← shared starting point
-    "add zod schemas for each route"                   (the library approach grew here)
-
-  Restore: code + conversation
-
-> implement the validation as plain guard functions instead - no library,
-  explicit checks in each handler
+Compare separate health-route registrations using one shared handler
+with registering both paths together. Read the current app first.
+Keep both response contracts unchanged. Show the proposed patch and
+what the HTTP tests would need to establish. Do not write files.
 ```
 
-The first approach isn't destroyed by this; its checkpoints still hang off the tree, and you can rewind back onto that line to look at it again. For a quick "which feels right," that in-session branching is enough.
+Compare that proposal with the original session's approach. Two conversations are useful when you want to preserve their different assumptions; each keeps its own context, the information available to Claude when it decides. They are not required for every comparison, and discussing alternatives together does not inevitably confuse a model.
 
-But you're going to want these two side by side for more than a minute - to diff them, sleep on it, maybe show a teammate - and that's past what checkpoints are for. Create both Git branches from the shared base, before either approach is committed:
+More importantly, `/branch` does not create a Git branch or a separate working directory. Separate contexts do not isolate the files either conversation can then inspect or change: if both conversations edit the same checkout, they edit the same files. Preserving the first answer will not preserve the first implementation after the second overwrites it.
 
-```text
-# mark the shared starting point first
-> !git add . && git commit -m "handlers ready"
-> !git branch validation-base
+## Give each implementation its own working directory
 
-# approach A
-> !git checkout -b validation-zod validation-base
-> add zod schemas for each route
-> !git add . && git commit -m "validation via zod"
+For an implementation comparison, begin from a clean, reviewed commit from before the experimental change; if the health patch is already committed, the base is the commit before it. If the health patch is still uncommitted, preserve it first and decide which committed base the experiment should use. Do not silently omit that patch or commit failing work just to satisfy the example. Without a suitable base, keep this comparison at the proposal stage.
 
-# approach B starts from the same base, not from approach A
-> !git checkout -b validation-handrolled validation-base
-> reimplement validation as plain guard functions, no library
-> !git add . && git commit -m "validation via guard functions"
+From the repository root, the following creates two new branches and worktrees from the same `HEAD`, so the repository needs at least one commit; if your copy has no history, create the baseline commit from [the install lesson](/course/claude-code/getting-started/install/) first. Use unused names and directories:
 
-  [builds approach B on its own branch, from the identical starting point]
-
-# now compare for real, not from memory
-> !git diff validation-zod validation-handrolled -- src/validation
+```bash
+git status --short
+git rev-parse HEAD
+git worktree add -b health-direct ../payments-health-direct HEAD
+git worktree add -b health-shared ../payments-health-shared HEAD
+git worktree list
 ```
 
-Now the decision is concrete. You're reading an actual diff - lines added, dependency added, the shape of each handler under each scheme - instead of arguing two half-remembered designs in your head.
+Check the status before the creation commands; this walkthrough expects it to be clean. Do not move the base branch between those commands. [Git worktrees](https://git-scm.com/docs/git-worktree) provide separate working files while sharing repository history. They are not separate machines: ports, credentials, and external services can still be shared.
 
-## The durability line
+Open one terminal in each worktree. Check its directory, install the project's dependencies there if needed, and start a fresh Claude session with the same small acceptance brief from the top of this page: both routes answer HTTP 200 with the same JSON body, payment behavior is untouched, and both routes have HTTP tests. Give one the direct-registration approach and the other the shared-handler approach. Run the same HTTP checks in each - one at a time if the tests bind the same port. Neither result is established until those checks actually run.
 
-The thing to internalize here is *where* each kind of branch lives, because it determines how long it survives. Checkpoints are fast, session-local undo; they do not undo Git commits, branch changes, Bash side effects, or external changes. `/branch` and `--fork-session` preserve conversation state, while Git branches preserve code. Use the right primitive for the thing you need to keep.
+## Compare the patch that exists
 
-And hold the line on one conversation per approach. The whole reason this works is that each branch grew in its own focused context, uncontaminated by the other. Collapse them back into one thread to "save time" and you're right back to guard functions that think they're schemas.
+Before committing, inspect each worktree's status and diff, including untracked tests. `git diff health-direct health-shared` compares the branch tips; it will not show edits that remain uncommitted in the worktrees. That distinction matters when both branch names still point at the starting commit.
 
-## Naming the cost
+Once each result has met the project's checks and been deliberately committed, compare them:
 
-There's a quieter payoff under all this. When getting back is cheap, exploration becomes cheap - you can try an approach, diff it, and throw it away without the nagging fear that trying B means losing A. That fear is exactly what pushes people to settle for the first thing that compiles. Remove it and you'll explore more, and ship better code for it.
+```bash
+git diff health-direct health-shared -- src tests package.json
+```
 
-You pick the hand-rolled version, delete the other branch, and merge. The feature's done. But it's now Thursday afternoon, this session has been alive since Monday, and the agent has started feeling... *slower*. Vaguer. You're about to learn that the right response to "the agent's getting dumb" isn't to restart on faith - it's to [look at what's actually in its memory](/course/claude-code/sessions-context/inspect/).
+Look for the cost of the extra abstraction, the clarity of the route registrations, and whether both tests would catch a change to either response. The smallest patch is not automatically the clearest, and this lesson does not choose a winner before seeing yours.
+
+Keep any useful experiment until you have preserved the result you want. Returning to the main session, state which implementation, if any, was selected and where it exists. A conversation saying "we chose the shared handler" should not be allowed to masquerade as a merged patch.
+
+Comparing designs produces useful evidence and a fair amount of discussion. [Next, inspect what the continuing session is carrying before deciding what to keep](/course/claude-code/sessions-context/inspect/).

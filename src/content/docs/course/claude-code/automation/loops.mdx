@@ -1,29 +1,30 @@
 ---
 title: Build the nightly regression loop and fence it in
-description: "A PR review only fires when someone opens a PR. The nightly job is the other half: a headless call on a schedule, fenced so an unwatched run can't do damage."
-sidebar:
-  label: "Loops · nightly job, guardrails"
+description: "A PR review only fires when someone opens a PR. The nightly job is the other half: the same headless call on a schedule, fenced so an unwatched run cannot do damage."
 ---
 
 import NightShift from '../../../../../components/interactive/NightShift.tsx';
 
-The CI review catches what arrives in a pull request. But plenty of regressions don't - a dependency that shifted under you, a flaky test that started failing for real, drift that no single PR introduced. The fix is the second job we set out to build: a **nightly pass** that runs the whole suite against `main` while the team sleeps and leaves a flag for the first person online. This is the moment all the pieces of the chapter compose into one thing - and the moment the guardrails matter most, because a loop that runs unattended every night is a loop that gets exactly one chance to be safe.
+The CI review catches what arrives in a pull request. Most regressions do not arrive that politely: a dependency shifts underneath you, a flaky test becomes a real failure, drift accumulates without any single PR introducing it. The second job is a nightly pass - the wrap-up run against `main` while the team sleeps (the wrap-up being the end-of-change ritual: run the checks, then look at the tree), with a flag left for whoever is first online.
 
-## A loop is just a headless call with a trigger and a place to put the answer
+Be precise about what this job is for, because the cheap version is worthless. On the payments service - the course's running example, a small TypeScript repo - `npm test` is green today: six tests, six passing, while known defects are still in the code. The `allowAsync` race in `src/payments/rate-limiter.ts` (a read and a write across an `await` lets two callers past the limit) and a zero-balance reporting bug both slip past the suite. A nightly job that only runs the suite would sleep as soundly as the tests do. Its real job is the pass you would do by hand: run the checks, then review for what the checks cannot see, and report with evidence.
 
-Don't overthink what "building a loop" means. It's three parts you already have:
+## Three parts, no framework
+
+Do not overthink what "building a loop" means. It is three things you already have:
 
 1. **A trigger** that fires on a schedule instead of a keystroke.
-2. **A headless call** - the `claude -p` command from the [first lesson](/course/claude-code/automation/headless/), with the permission posture from the [second](/course/claude-code/automation/permissions/).
-3. **Somewhere for the result to land** - a log, a Slack message, an issue - so a verdict nobody's awake to read isn't lost.
+2. **The headless call** - `claude -p` with its prompt and flags, as [the headless lesson](/course/claude-code/automation/headless/) assembles it - in the fail-closed posture from [the permissions lesson](/course/claude-code/automation/permissions/): deny rules underneath, refuse-by-default mode, a tight allow list.
+3. **Somewhere for the answer to land** - an issue, a channel, a log - so a verdict nobody is awake to read is not lost.
 
-You can host the trigger anywhere a cron job lives - a server's crontab, a scheduled GitHub Actions workflow, whatever your team already runs. The agent part is identical regardless. A scheduled GitHub workflow is the least new infrastructure if you already did the [CI lesson](/course/claude-code/automation/ci/):
+Host the trigger wherever cron already lives in your team; the agent part is identical. A scheduled GitHub workflow is the least new infrastructure after the [CI lesson](/course/claude-code/automation/ci/), so that is the version below. Two platform facts worth knowing: GitHub evaluates cron in UTC, and scheduled runs can start late when runners are busy. This is configuration to write, not a run we executed:
 
 ```yaml
 name: Nightly Payments Regression
 on:
   schedule:
     - cron: "0 4 * * *"
+  workflow_dispatch:
 jobs:
   regression:
     runs-on: ubuntu-latest
@@ -31,40 +32,53 @@ jobs:
     permissions:
       contents: read
       issues: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
       - run: npm ci
       - uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: "Run the full payments test suite against main. If anything fails or looks like a regression, open a GitHub issue titled 'Nightly regression' with the details. If everything passes, do nothing."
-          claude_args: "--max-turns 15 --permission-mode dontAsk --allowedTools Read,Bash(npm test),Bash(git status *),Bash(gh issue create *)"
+          prompt: "Run the payments wrap-up: npm test, npm run lint, npm run build. Then review the tree for regressions the checks cannot catch. If anything fails or looks wrong, open a GitHub issue titled 'Nightly regression' with the evidence. If everything passes and nothing looks wrong, do nothing."
+          claude_args: >-
+            --max-turns 15
+            --permission-mode dontAsk
+            --allowedTools "Read,Grep,Bash(npm test),Bash(npm run lint),Bash(npm run build),Bash(git status *),Bash(gh issue create *)"
 ```
 
-Same action, same secret as CI - the only real change is `schedule` with a cron expression instead of `pull_request`. Run it as a raw script instead of an action and the shape is the same: a cron line calling `claude -p` with your prompt, `--permission-mode dontAsk`, and a tight `--allowedTools`, piping the result somewhere durable.
+Same action, same secret as CI. Three details differ, and each is the lesson. The `schedule` trigger with a cron line replaces `pull_request`, with `workflow_dispatch:` beside it so you can fire the job by hand before trusting the first silent night. The checkout is back because this job executes against the tree - `npm ci` installs, the suite runs - and `GH_TOKEN` hands the runner's built-in token to `gh` so the issue command can authenticate, under the `issues: write` permission. And `id-token: write` is still there: the action's default GitHub App authentication - its GitHub-side identity, separate from the API key that pays for the model - mints its token from an OIDC exchange that needs this permission, on every workflow it runs, scheduled ones included. Passing `anthropic_api_key` does not switch the App off; the documented alternative is a `github_token` input - an action input, a different thing from the `GH_TOKEN` env var that authenticates `gh` above - which this workflow does not use.
 
-## The guardrails that keep a nightly loop from biting
+The prompt spells the wrap-up out inline - run the three checks, then review the tree for what they cannot see - rather than naming a ritual from anywhere else, so the job is one plain block of configuration. ([The skills chapter](/course/claude-code/skills/) packages this same wrap-up as a `/finish-pr` skill, if your repo already carries it.) Note what it demands on failure: an issue with evidence, not an apology in a log nobody reads.
 
-An interactive run that goes wrong, you catch in seconds - you're watching. A nightly loop that goes wrong runs to completion, alone, and you find out in the morning. So the guardrails aren't polish; they're the reason the job is allowed to exist at all. Four of them carry the weight:
+`Grep` is in the allow list for exactly that review half, and it is worth seeing why it has to be. On a Linux runner the search tools are not in the default set - Claude otherwise searches through the Bash tool, which this list deliberately does not grant - and naming `Grep` in `--allowedTools` is the documented move that restores the search tools. Control shapes capability here: with the list as written, the run can find every caller of a changed path and nothing else; drop `Grep` and the "review the tree" half quietly becomes "read what was already named".
 
-- **Fail closed on permissions.** This is the [permissions lesson](/course/claude-code/automation/permissions/) cashed in. `dontAsk` plus a tight `--allowedTools` means the run can execute the suite and open an issue, and *refuse everything else by default* - there's no human to wave through the thing you didn't anticipate. Deny rules add another layer while permission checks are active; they do not make bypass mode safe.
+## Fail closed, cap it, keep it read-mostly, make it loud
 
-- **Cap the run.** `--max-turns` is a hard ceiling on how long the agent can iterate before it stops. Without it, a confused run can loop on a failing fix for hours, burning tokens and minutes with no one to interrupt it. For an unattended job, an explicit cap is non-negotiable.
+An interactive run that goes wrong is caught in seconds, because you are watching it. A nightly loop that goes wrong runs to completion alone, and you find out in the morning. The guardrails are the reason the job is allowed to exist at all. Four of them carry the weight:
 
-- **Give it read-mostly work.** The safest unattended loop is one that *observes and reports* rather than one that *changes things*. Our nightly job runs tests and files an issue - it doesn't push fixes. The more an unattended loop is allowed to mutate, the larger the radius when it's wrong. Let the night job find the problem; let a human, in the morning, approve the fix.
+- **Fail closed on permissions.** This is the [fail-closed permission posture](/course/claude-code/automation/permissions/) doing its job: `dontAsk` plus the tight allow list lets the run execute the checks and open an issue, and refuses everything else. There is no human to wave through the thing you did not anticipate, and the deny rules hold underneath in every mode. The allow list keeps its inner quotes for the same reason as the pull-request workflow: to a shell-style splitter, `npm run build` is three words.
+- **Cap the run.** `--max-turns` is a hard ceiling on iterations; `timeout-minutes` is the outer wall that kills the job even if the process misbehaves. A confused run left alone can burn the whole night otherwise.
+- **Keep it read-mostly.** The job observes and reports. It does not push fixes, so morning-you reviews the flag with the repo exactly as it was. The more an unattended loop is allowed to mutate, the larger the radius when it is wrong. Let the night job find the problem; let a human, awake, approve the fix.
+- **Make the result loud.** A regression found and never surfaced is worse than no loop, because it breeds false confidence. The prompt opens an issue on failure and stays silent on success, so silence means clean and a fresh issue means look now - but silence is only meaningful once the run is known to have happened, and a workflow that never started looks exactly like a clean pass until someone opens the Actions tab. That is what the `workflow_dispatch:` trigger is for: run the job once by hand the day you write it, before you trust the first silent night. Pick whatever channel your team actually watches.
 
-- **Make the result loud.** A regression the loop found but didn't surface is worse than no loop, because it breeds false confidence. The prompt above opens an issue on failure and stays silent on success - so silence means clean, and a fresh issue means look now. Pick whatever channel your team actually watches.
+The pattern underneath all four: an unattended loop should be narrow, capped, walled, and loud. Narrow in what it can touch, capped in how long it runs, walled off from anything a mistake would make expensive, and loud enough that its findings cannot be missed. Get those right and a nightly job is a teammate on the graveyard shift. Get them wrong and it is a robot with your credentials and all night to use them.
 
-The pattern underneath all four: an unattended loop should be *narrow, capped, walled, and loud.* Narrow in what it can touch, capped in how long it can run, walled off from anything a mistake would make expensive, and loud enough that its findings can't be missed. Get those right and a nightly job is a teammate who works the graveyard shift. Get them wrong and it's a robot with your credentials and all night to use them.
+## The fifth guardrail: done is a claim
 
-There's a fifth guardrail the four above quietly assume: that the run can tell success from failure at all. "Make the result loud" only helps if the result is *true* - and with nobody watching, the agent's own "done" is a claim, not a fact. What turns the claim into a fact is the checks the run has to get past. Watch a night's work come back nine-for-nine, then decide what the re-run has to get past:
+All four quietly assume the run can tell success from failure at all. With nobody watching, the agent's "done" is a claim, and what turns the claim into a fact is the checks the run must actually get past. The scene below is an illustrative simulation - invented numbers, no real run - of a different overnight job than this read-mostly pass: a change-making chore batch that comes back nine-for-nine (nine chores queued, nine reported done). The job differs; the trust problem is the same.
 
 <NightShift client:visible />
 
-## Where this leaves you
+Play all three endings. Shipping on the claim outsources the checks to production. Build and types are the lint-green trap: both pass, nothing exercised the behavior. The full stack retries the reds and flags the seam break honestly - a failure that lives between two services, invisible to unit tests that pass against their own mocks of the other side - and even then, the misread ticket ships green, the one defect no wired check catches. That is the standing division of labor this course ends on: the machine verifies what can be wired; the morning review verifies what cannot.
 
-Step back at what you've assembled. The same review pass you used to run by hand now runs in two places without you: on every pull request the moment it opens, and every night against `main` before anyone's awake. Both are the same headless call you learned first, wrapped in the same permission posture you learned second, fired by a trigger instead of a keystroke. That's the whole of automation - not a new capability, but the old one let off the leash, with the safety rules from earlier chapters now doing the watching you used to do yourself.
+## Where the course goes last
 
-And that's the real arc of this course nearly complete: you've gone from approving every edit by hand to trusting the agent to run all night inside walls you built. What's left isn't another primitive. The [final chapter](/course/claude-code/daily-workflow/) is about the small habits and shortcuts that compound once all of this is second nature - the difference between someone who *can* use these tools and someone for whom they've disappeared into reflex. Head to [Daily workflow](/course/claude-code/daily-workflow/).
+Step back at what you have assembled. The review pass you used to run by hand now runs in two places without you: on every trusted, same-repository pull request the moment it opens, and every night against `main` before anyone is awake. Fork pull requests need the separate secret-safe design from the CI lesson. Both jobs use the same headless call the chapter started with ([`claude -p`, a prompt, and flags](/course/claude-code/automation/headless/)), wrapped in the same three-layer posture ([deny rules, `dontAsk`, a tight allow list](/course/claude-code/automation/permissions/)), fired by a trigger instead of a keystroke.
+
+Automation turned out not to be a new capability. It is the old one with the human removed, and the watching you used to do yourself is now done by the machinery this course already built: the [permission modes](/course/claude-code/permissions-modes/) that decide when the agent must ask, the [allow rules](/course/claude-code/permissions-modes/rules/) that pre-grant exactly the boring commands, the [deny rules](/course/claude-code/permissions-modes/deny/) that hold in every mode, and the [hooks](/course/claude-code/extending/hooks-gate/) that enforce conditions no prompt could.
+
+And with whole jobs running unattended, this course has reached its widest zoom. The [final chapter](/course/claude-code/daily-workflow/) zooms all the way back in, to the keystrokes: pasting a command's output with `!`, pointing at an exact file with `@`, asking the side-question that never derails the run. The small moves that make everything behind this chapter feel like your own hands. Head to [Daily workflow](/course/claude-code/daily-workflow/).

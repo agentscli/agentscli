@@ -1,75 +1,128 @@
 ---
 title: Raise extended thinking when the problem earns deeper reasoning
-description: "A concurrency bug needs the agent to reason before it acts. Turn thinking up with /effort, reach for ultrathink on one hard turn, and know when it's wasted."
-sidebar:
-  label: "thinking · reason before acting"
+description: "A rate-limiter race needs reasoning before editing. Turn effort up with /effort, escalate one turn with ultrathink, and know when deeper reasoning is wasted."
 ---
 
-The concurrency bug is in front of you, you've switched up to the capable model, and the temptation is to describe the symptom and let it start editing. On this particular bug that's a mistake. Two requests hit the charge ledger at once, both read the same running balance, both write back their own increment, and one update silently clobbers the other - so the ledger ends up short. The fix isn't a line; it's an *interleaving* the agent has to hold in its head and reason through. This is exactly the kind of problem where you want it to **think before it acts**, and Claude Code gives you a dial for precisely that.
+Some bugs are found by lookup; others only by reasoning about an ordering. Here is the second kind, from the small TypeScript payments service this course uses as its running example. In `src/payments/rate-limiter.ts`:
+
+```ts
+  async allowAsync(key: string): Promise<boolean> {
+    const current = this.hits.get(key) ?? [];
+    await new Promise((r) => setTimeout(r, 1));
+    if (current.length >= this.maxRequests) return false;
+    current.push(Date.now());
+    this.hits.set(key, current);
+    return true;
+  }
+```
+
+The method reads the current array reference for the key - or creates a private empty array if the key is absent - then `await`s, and only then checks and writes back. Two callers that interleave at that `await` can both pass the limit check. The temptation on a bug like this is to describe the symptom and let the agent start editing; that is a mistake, because an agent that has not reasoned about the ordering can confidently patch the wrong line. On a capable model ([pick it with `/model`](/course/claude-code/models-thinking/switch/)), the next lever is how hard the model reasons before it acts.
+
+One honesty note before reasoning about it: the route in `src/index.ts` guards `POST /payments` with the *synchronous* `allow()`, which is sound. `allowAsync` is the variant waiting for the day the check needs to consult something asynchronous - and it is where the race lives. The agent has to see why one method is safe and the other is not. That is reasoning, not lookup, and Claude Code has a dial for precisely it.
 
 ## What extended thinking is
 
-Extended thinking is the reasoning the agent does *before* it answers - working the problem out internally, considering the race, ruling out approaches, before it commits to an edit. On a copy tweak that's wasted motion; there's nothing to reason about. On a concurrency bug it's the whole game, because the failure lives in the ordering and the agent that hasn't reasoned about the ordering will confidently patch the wrong line.
+Extended thinking is the reasoning the agent does *before* it answers - working the problem internally, walking the interleavings, ruling out approaches, then committing to an edit. On a one-string message tweak that is wasted motion; there is nothing to reason about. On a race it is the whole game.
 
-How much of this reasoning happens is governed by an **effort level** - higher effort means the model spends more of its budget thinking on the steps that benefit from it, lower effort means it answers faster and cheaper. For the ledger bug you want to turn that up.
+How much of it happens is governed by an **effort level**. Higher effort spends more of the budget on thinking through the steps that benefit from it; lower effort answers faster and cheaper. For this bug you want it up.
 
 ## Turning the effort up
 
-The dedicated control is `/effort`:
+The dedicated control is `/effort`, typed at the prompt of a running Claude Code session ([the install lesson](/course/claude-code/getting-started/install/) covers getting one open in a repo):
 
 ```text
-/effort              # open a slider - drag from lower to higher reasoning
+/effort              # open an interactive slider - drag from lower to higher
 /effort high         # set a level directly by name
-/effort auto         # hand the choice back to the model's default
+/effort auto         # clear your saved level, back to the model's default
 ```
 
-Run it with no argument for an interactive slider, or name a level to set it directly. You can also nudge the same slider with the left/right arrow keys from inside the `/model` picker, so choosing a model and choosing how hard it thinks happen in one place. The current level shows next to the spinner - something like "with high effort" - so you can always see which gear you're in. The exact level names and which models support which levels are documented in [model-config](https://code.claude.com/docs/en/model-config#adjust-effort-level); they vary by model, so read the slider rather than trusting a remembered name.
+You can also adjust the same slider with the left and right arrow keys while the `/model` picker is open, so choosing a model and choosing how hard it thinks happen in one place.
 
-Pointed at the ledger bug with the effort turned up, the agent does what you'd want a careful engineer to do - reason about the race *first*, then propose:
+The current level shows in the session header next to the model name - "with high effort" - and briefly in the footer when it changes, so you always know which gear you are in. Level names vary by model; read the slider rather than trusting a remembered name, and keep the [model-config reference](https://code.claude.com/docs/en/model-config#adjust-effort-level) as the source of truth.
+
+One cost note the docs are explicit about: on most models each effort level has its own prompt cache - the provider's reuse of already-processed prompt content, discounted while it holds - so changing effort mid-session recomputes the entire request, just like switching models does. Claude Code asks you to confirm while the cache is warm (while reuse is still available). Pick the level at the top of a session when you can; see the [prompt-caching reference](https://code.claude.com/docs/en/prompt-caching) for the mechanics.
+
+## The race, read at high effort
+
+Before reading the transcript below, find the interleave point yourself: the place where a second caller's execution can get between this caller's steps. The transcript's thinking block names it.
+
+Here is an illustrative exchange, not a captured one - constructed to show the shape of the reasoning (the service's limit is 100 requests per window):
 
 ```text
 > /effort high
 
-> charges sometimes come up short under load. i think two concurrent writes
-  to the ledger are racing. find the race and fix it.
+> the async rate limiter in src/payments/rate-limiter.ts can admit more
+  requests than its limit allows. find the race and propose the smallest
+  correct fix.
 
   ✻ Thinking…
-    Two requests read balance=100, both add their charge, both write back.
-    Last write wins, the other increment is lost - classic read-modify-write
-    race. Options: row-level lock on the ledger row, an atomic UPDATE … SET
-    balance = balance + ? in one statement, or an optimistic version column.
-    The atomic UPDATE is the smallest correct fix and avoids holding a lock…
+    allowAsync captures `current` before a 1ms await - that await is the
+    only place two calls interleave. On a key with no entry yet, `?? []`
+    hands each caller its own private array: each checks length 0, each
+    passes, each pushes, each set()s. Last write wins, the other pushes
+    vanish from the map, and every concurrent caller was admitted.
+    Second wound: a caller that captured before its sleep can set() a
+    stale array back over entries recorded while it slept. allow() is
+    safe because filter, check, push, set run in one synchronous block
+    and the event loop never splits it. Smallest fix keeping the await:
+    re-read the map after it, insert the empty array if missing, keep
+    check+push+set synchronous - the allow() shape.
 
-  Here's the race and the fix I propose:
+  Here is the race, and the fix I propose:
   ## The race
-  src/ledger.js reads the balance, computes, then writes - three steps,
-  not atomic. Under concurrency the read is stale by the time it writes.
+  Two wounds, one cause: state read before an await and written after
+  it. On a cold key, concurrent callers each materialize their own array
+  via `?? []`, each pass the check against their own length, and each
+  `set` clobbers the others' pushes - with the service's limit of 100,
+  a first burst all gets in and the map undercounts. The 1ms gap also
+  lets a resumed caller overwrite entries recorded while it slept.
   ## Fix
-  Replace read-modify-write with a single atomic UPDATE … [continues]
+  Re-read `this.hits` after the await, insert-if-missing, then run the
+  check, push, and set as one synchronous block - the shape `allow()`
+  already uses. Dropping the await entirely also works. [continues]
 ```
 
-That reasoning block is the agent earning its keep. It caught that the read and the write aren't atomic - the actual bug - instead of guessing at a lock and moving on.
+That reasoning block is the agent earning its keep - but "earning" is a verdict you check, not one you take from the confidence of the text. Higher effort makes real reasoning more likely; it does not guarantee it, and a plausible-sounding block can still be wrong. The reproduction below is what turns the block's central claim into something observable. The interleave point it names is the only `await`: everything before it is a snapshot, everything after runs on whatever that snapshot still points at. It caught the two real wounds - the private-array admit on a cold key, and the stale `set` across the sleep, which bites when another writer has replaced the map entry in between - and noticed *why* the synchronous `allow()` does not share them: its read, check, and write never yield the thread. The proposed fix is the smallest one that keeps the await; judge it, like any patch, by predicted behavior and tests rather than by how well it reads.
 
-### The toggle and the verbose view
+You can check the central claim yourself. The mechanism predicts that concurrent first-time callers all get in, so run three against a fresh key. If you are working in a repo with this class, save the file below as `tests/rate-limiter-race.ts` (the import matches the existing specs); if not, the class is five lines to rebuild - the constructor takes `(maxRequests, windowMs)` and keeps its history in `hits: Map<string, number[]>` of timestamps. Run it with `npx tsx tests/rate-limiter-race.ts`:
 
-Two smaller controls worth knowing. Extended thinking has a **session toggle** - `Option+T` on macOS, `Alt+T` on Windows and Linux - to turn thinking on or off for the current session without opening a menu. And by default the thinking is collapsed; press `Ctrl+O` to expand it and watch the reasoning as it happens, which is how the block above became visible. To make thinking-on your global default rather than toggling each session, set it in `/config`. The current keys and the setting name live in [model-config](https://code.claude.com/docs/en/model-config#extended-thinking) - pin to the docs, not to muscle memory, since these shift.
+```ts
+import { RateLimiter } from "../src/payments/rate-limiter.js";
+
+const limiter = new RateLimiter(2, 60_000);
+const verdicts = await Promise.all([
+  limiter.allowAsync("first-burst"),
+  limiter.allowAsync("first-burst"),
+  limiter.allowAsync("first-burst"),
+]);
+console.log(verdicts);
+```
+
+The limit is 2. Predict the print, then run it (the mechanism says `[ true, true, true ]`: every concurrent first caller gets in). Then make the same three calls against the fixed shape - re-read after the await, insert-if-missing, synchronous check and write - and watch the third caller finally get `false`.
+
+## The toggle and the verbose view
+
+Two smaller controls worth knowing. Extended thinking has a session toggle - `Option+T` on macOS, `Alt+T` on Windows and Linux - that turns it on or off without opening a menu. That is a different control from the effort level: the toggle is the on/off switch for extended thinking, while `/effort` sets how much thinking happens; the [model-config reference](https://code.claude.com/docs/en/model-config#extended-thinking) owns how the two interact on the current version. The thinking output is collapsed by default; press `Ctrl+O` to toggle verbose mode and read the reasoning as gray italic text while it happens, which is how you would watch a block like the one above unfold.
+
+To make thinking-on your global default, run `/config` and toggle thinking mode; it saves as `alwaysThinkingEnabled` in `~/.claude/settings.json`. The keys and settings live in the same [model-config reference](https://code.claude.com/docs/en/model-config#extended-thinking) - pin to the docs, not to muscle memory.
 
 ## The one-turn escalation keyword
 
-Sometimes you don't want to change a session-wide setting - you've got *one* turn that's unusually hard and you want maximum reasoning on just that prompt. Claude Code recognizes the keyword **`ultrathink`** anywhere in your message and requests deeper reasoning for that turn alone, then drops back to your normal level:
+Sometimes one turn is unusually hard and you do not want to touch a session-wide setting. Claude Code recognizes the keyword **`ultrathink`** anywhere in your message and requests deeper reasoning for that turn alone, without changing your saved effort setting - under the hood it adds an in-context instruction, and the effort level sent to the API stays the same. Because that level does not change, it also avoids the cache recompute that switching effort levels triggers:
 
 ```text
-> ultrathink about whether the atomic UPDATE still races if two charges
-  arrive on different ledger rows that both touch the same account total
+> ultrathink: if allowAsync's Map were swapped for a store where get and
+  set are separate network round trips, does the re-read-after-await fix
+  still hold, or does the await stop being the only interleave point?
 ```
 
-Be precise about this, because it's easy to assume more keywords work than do: `ultrathink` is the recognized one. Phrases like "think", "think hard", or "think more" read as ordinary English in your prompt - the agent sees them as instructions to consider, but they are **not** special escalation keywords and don't change the reasoning budget. If you want a guaranteed one-turn boost, use `ultrathink`; if you want it on for a stretch of work, raise the effort level instead. The current behavior is documented in [model-config](https://code.claude.com/docs/en/model-config#adjust-effort-level).
+Be precise here, because it is easy to assume more keywords work than do: `ultrathink` is the recognized one. Phrases like "think", "think hard", or "think more" pass through as ordinary prompt text - the agent may treat them as instructions to consider, but they do not trigger the escalation. For a one-turn escalation Claude Code recognizes, use `ultrathink`; for a stretch of work, raise the effort level. Current behavior is documented in [model-config](https://code.claude.com/docs/en/model-config#adjust-effort-level).
 
 ## When deeper reasoning is wasted
 
-The flip side is the lesson the copy tweak already taught you, now from the thinking side. Turning effort up on a mechanical task doesn't make the rename better - there's nothing to reason about, so the extra thinking tokens are pure cost and latency for an answer that was never in doubt. Deeper reasoning pays off in proportion to how *ambiguous* the problem is:
+The flip side: on a mechanical task - rewording an error message, a rename, a format change - there is nothing to reason about, so extra thinking is pure cost and latency for an answer that was never in doubt. Turning effort up does not make the rewrite better; it makes it slower and more expensive. Reasoning effort is a capability lever, and like the model choice it is paid for in cost.
 
-- **Genuinely hard** - a race condition, a subtle design decision, a bug that only shows under load - turn it up. The reasoning is what finds the real answer instead of a plausible wrong one.
-- **Mechanical and unambiguous** - copy, rename, format, boilerplate - leave it low. You're paying for thinking the task doesn't have.
+- **Genuinely hard** - a race, a subtle design decision, a bug that only shows under load. Turn it up; deeper reasoning is what gives the real answer a chance against a plausible wrong one. It still does not certify the answer, so keep the verification habit whatever the effort level.
+- **Mechanical and unambiguous** - copy, renames, formatting. Leave it low; you are paying for thinking the task does not have.
 
-That asymmetry is the whole chapter in one line: the heavy gear belongs on the hard problem, not on the workload as a whole. Which is exactly the discipline the last lesson pulls together - [matching model and reasoning per task, and knowing when raw speed is worth paying for too.](/course/claude-code/models-thinking/cost/)
+The heavy gear belongs on the hard problem, not on the workload as a whole - and both dials cost money, which is the discipline [the closing lesson pulls together](/course/claude-code/models-thinking/cost/).

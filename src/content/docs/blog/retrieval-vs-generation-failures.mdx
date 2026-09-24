@@ -34,17 +34,21 @@ Give the prompt-first reflex a fair hearing before it loses. Steel-manned: a cap
 When the agent queries your runbooks through MCP, the retrieval step is silent. The tool call returns something, the model folds it into the window, and you see only the prose at the end. The evidence the model actually reasoned over is invisible unless you log it. The first move is not a prompt. It is a probe:
 
 ```python
+import hashlib
+
 def on_mcp_tool_result(tool_name, query, result):
     log.info("retrieval", extra={
         "tool": tool_name,
-        "query": query,
+        "query_hash": hashlib.sha256(query.encode()).hexdigest()[:12],
         "chunks": [c["id"] for c in result.get("chunks", [])],
-        "raw": result.get("text", ""),
+        "payload_hash": hashlib.sha256(
+            result.get("text", "").encode()
+        ).hexdigest()[:12],
     })
     return result
 ```
 
-Log the retrieved payload verbatim, on every tool call, before the model touches it. Now the wrong answer stops being a mystery. Either the retry-policy chunk is in that `raw` blob or it is not, and that one visible fact is the difference between an afternoon spent fixing your index and an afternoon spent wordsmithing a prompt that cannot reach the bug. **You cannot debug a context window you cannot see, so the logging comes before everything else in this piece.**
+Log stable chunk identifiers and hashes on every tool call before the model touches the result. Keep raw queries and retrieved text out of routine production logs: runbook payloads can contain incident details, customer data, or credentials. For a controlled evaluation corpus, store the raw payload in an access-controlled trace with an explicit retention period, or replay the logged chunk IDs from the source when you investigate. Now the wrong answer stops being a mystery without turning observability into a second data leak. Either the retry-policy chunk is among the retrieved IDs or it is not, and that one visible fact is the difference between fixing your index and wordsmithing a prompt that cannot reach the bug. **You cannot debug a context window you cannot see, but you also should not copy the whole window into an unrestricted log.**
 
 ## Two bugs, one costume
 
@@ -78,7 +82,7 @@ Same question. Same wrong sentence, word for word. Two weeks, two different bugs
 
 ## Twenty questions, scored twice
 
-The twenty questions are the toy: small enough to count by hand, faithful to the real shape of a runbook corpus reached through search. Each question is one runbook line, one number - retry count, timeout, rate limit, payload cap, queue-depth threshold, and fifteen more. The ground truth is declared per question: the runbook's value, whether the chunk was retrieved, and whether the answer matched it. Those outcomes are invented for traceability, sized to be realistic, not measured from any real bot. Everything below is counted from them.
+The twenty questions are the toy: small enough to count by hand, faithful to the real shape of a runbook corpus reached through search. Each question is one runbook line, one number - retry count, timeout, rate limit, payload cap, queue-depth threshold, and fifteen more. The ground truth is declared per question: the runbook's value, whether the chunk was retrieved, and whether the answer matched it. Those outcomes are invented for traceability, sized to be realistic, not measured from any real bot. Everything below is counted from them. Use the same frozen question cohort in both weeks; if questions, documents, or labels change between runs, report that as a new cohort instead of attributing the delta to the retrieval fix.
 
 Week one, the baseline. Of the twenty questions, eight never get their chunk retrieved: the index has no entry for them. Twelve chunks arrive. Of those twelve, the model quotes ten correctly and contradicts two. Score it the obvious way, one blended number:
 

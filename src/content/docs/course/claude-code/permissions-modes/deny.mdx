@@ -1,22 +1,19 @@
 ---
 title: Lock the agent out with deny rules and protected paths
 description: "Some files the agent should never read or touch, no matter how loose the session. A deny rule is a hard wall - stronger than asking it nicely not to."
-sidebar:
-  label: "Deny rules · protected paths"
 ---
 
-The next change touches the billing config, and right next to it in the repo sits `.env` and a `secrets/` directory full of live API keys. You've spent this whole chapter *loosening* the leash - accept-edits on, test commands allowed - and that's exactly the condition under which a mistake gets expensive: a loose session, one careless prompt, and the agent reads a secret into its context or rewrites a credentials file. What you want here isn't caution-by-prompt. It's a wall.
+Loose sessions are where mistakes get expensive. The course's small TypeScript payments fixture does not ship secrets. For this isolated exercise, create three disposable placeholders in your own copy: `.env`, `secrets/example.txt`, and `config/production.json`. Do not put real credentials in them. If the session is already running loose - `acceptEdits` on, test commands allowed - then one careless prompt is enough for the agent to read sensitive-looking data into its context or rewrite a protected config file. What you want here is not caution-by-prompt. It is a wall.
 
 ## Telling it nicely doesn't count
 
-The tempting move is to just say it: "don't touch anything in `secrets/`." And in the moment, the agent will respect that. But a sentence in the conversation is not a guarantee - it's an instruction that lives in the context window, and the context window is a thing that gets [compacted, cleared, and resumed](/course/claude-code/sessions-context/). The boundary you stated on Monday can quietly fall out of the thread by Thursday, and now the only thing protecting your keys is the agent's memory of a request it can no longer see. For anything that actually matters, you don't want a request. You want a rule.
+The tempting move is to say it: "don't touch anything in `secrets/`." In the moment, the agent may respect that. But a sentence in the conversation is guidance, not enforcement. It lives in a context window that can be [compacted, cleared, and resumed](/course/claude-code/sessions-context/), and it competes with every other instruction in the session. For anything that matters, you want a rule.
 
 ## A deny rule is the hard wall
 
-A **deny** rule moves an action to *forbidden* - not "ask first," but "refuse" while Claude Code's permission layer is active. You write it into settings the same place as allow rules:
+A **deny rule** is a settings entry that moves an action to forbidden: not "ask first" but "refuse". You write it in `.claude/settings.json`, alongside any allow rules:
 
-```jsonc
-// .claude/settings.json
+```json title=".claude/settings.json"
 {
   "permissions": {
     "deny": [
@@ -28,7 +25,7 @@ A **deny** rule moves an action to *forbidden* - not "ask first," but "refuse" w
 }
 ```
 
-Now the wall is real:
+Now the wall is real. Illustrative exchange:
 
 ```text
 > check what database URL we use in the env file
@@ -37,12 +34,14 @@ Now the wall is real:
   If you need a value from it, paste the specific line you want me to use.
 ```
 
-Note the two verbs. `Read` deny means the file's contents can't enter the agent's context *at all* - which is the one you want for secrets, because a key the agent never reads is a key it can never leak into a log, a commit, or an API call. `Edit` deny means it can't modify the file - the one you want for production config you'll only ever change by hand. Because deny lives in settings rather than the conversation, it persists across compaction, `/clear`, and a fresh `--resume` while the permission layer is active. `bypassPermissions` is the exception: it can skip permission checks, so truly sensitive work also needs least-privilege credentials, network controls, and the [sandboxing guidance](https://code.claude.com/docs/en/sandboxing). *The full matcher syntax - globs, path scoping, which tools you can gate - is in the [permissions docs](https://code.claude.com/docs/en/permissions).*
+Delete the three placeholders when you finish the exercise. They exist only to make the deny rules observable; they are not part of the companion fixture.
+
+Note the two verbs. A `Read` deny keeps contents out of the agent's context; an `Edit` deny blocks modification. The rule lives in its settings scope, so it survives compaction and new sessions, and the current [permission-modes docs](https://code.claude.com/docs/en/permission-modes) state that deny rules block in every permission mode, including `bypassPermissions`. One limit to keep in mind: a `Read` deny gates the Read tool, not the filesystem. A shell command such as `cat .env` reaches the same bytes through whatever `Bash` rules allow, so wall the shell side with the same `Bash(...)` patterns when the secret matters. The full matcher syntax is in the [permissions docs](https://code.claude.com/docs/en/permissions).
 
 ## The walls you already have
 
-You don't start from zero here. Claude Code ships with a set of **protected paths** guarded in normal permission modes - your `.git` directory, its own `.claude` configuration, your shell startup files like `.zshrc`, your `.mcp.json`. `bypassPermissions` is the important exception and can skip those permission prompts. Your deny rules extend protection to the paths *your* project considers sacred, but truly sensitive work still needs OS-level isolation and credentials that cannot reach production.
+You do not start from zero. Claude Code ships with a set of **protected paths** guarded in normal permission modes: your `.git` directory, its own `.claude` configuration, shell startup files such as `.zshrc`, your `.mcp.json`; the current list lives in the [permission-modes reference](https://code.claude.com/docs/en/permission-modes). `bypassPermissions` is the important exception and can skip those prompts, which is one reason [the hands-off lesson](/course/claude-code/permissions-modes/autonomous/) confines it to containers. Your deny rules extend protection to the paths *your* project considers sacred. Truly sensitive work still needs defenses outside the permission system - least-privilege credentials, network controls, and the [sandboxing guidance](https://code.claude.com/docs/en/sandboxing) - because a permission rule governs what the agent may call, not what the credentials on the machine can do.
 
-This is the real shape of operating an agent well: not a single global trust level, but a high floor and a low ceiling at once. Loose where it's safe - edits auto-applied, tests running free. Walled where it isn't - secrets unreadable, prod untouchable. You've now built both halves in one session, which is the whole skill.
+This is the real shape of operating an agent well: not a single global trust level, but a high floor and a low ceiling at once. Loose where it is safe - edits auto-applied, tests running free. Walled where it is not - secrets unreadable, production config untouchable. Both halves in one session is the whole skill.
 
-There's one place left to take this. So far every loosening still kept *you* in the room. The last task today is a long batch you want to walk away from entirely - and that raises a sharper question than any prompt: how do you let the agent run with nobody watching [without handing it the keys to the whole machine](/course/claude-code/permissions-modes/autonomous/)?
+Every loosening so far still kept *you* in the room. A long batch you want to walk away from raises a sharper question than any prompt: how do you let the agent run with nobody watching [without handing it the keys to the whole machine](/course/claude-code/permissions-modes/autonomous/)?

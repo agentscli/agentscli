@@ -3,22 +3,32 @@ title: "Permissions & modes"
 description: "When Claude Code asks before acting - and how to tune that, from approving every edit to running hands-off without handing over your whole machine."
 ---
 
-In the last chapter every edit stopped and asked you `y/n`. That's the safest possible setting and exactly right for your first hour - but it's also friction, and once you trust the tool you'll want it out of your way for the boring stuff while staying paranoid about the dangerous stuff. The dial that controls all of that is *permissions*: the rules and modes that decide what Claude Code can do on its own and what it has to ask about first.
+An agent working in a real repository takes actions with very different consequences. Reading a file leaves no change behind. Editing one is reversible with `git`. Running a shell command may not be. Reading a credentials file leaks it into the conversation. A single "trust level" cannot fit all of those, so Claude Code lets you set the leash per action class and per task. Permissions are the course's **control** principle in its purest form: what guides execution, enforces boundaries, or allows intervention. Understanding an instruction is not the same as being unable to break it, and this chapter is about the second thing.
 
-Think of it as a leash with a length you set per task. Tedious, low-stakes work - let it run. Anything near secrets, production, or your machine's configuration - keep it short, or cut access entirely. Getting this dial right is what turns the agent from a thing you babysit into a thing you delegate to, without the recklessness that delegation usually implies.
+Two mechanisms do the work. A **permission mode** is a named posture that decides, in bulk, which actions stop and ask you before they run; the modes run from `default` (edits and consequential commands ask) to `bypassPermissions` (no normal prompts at all). **Allow rules** and **deny rules** are entries in your settings that move one specific action - a command pattern, a file path, a tool - to "run silently" or "refuse outright" regardless of the mode. Modes are the coarse dial; rules are the fine one.
 
-## The day we'll follow
+## The running example
 
-Same payments service from the last chapter, but today the work is a mixed bag of trust levels - which is exactly what makes it a good tour of the dial:
+The examples use a small payments service: Express and TypeScript, routes in `src/index.ts`, payment code under `src/payments/`, tests under `tests/`. Each page restates the facts it needs, so you can read them in any order and you do not need a checkout to follow. What makes the service a good tour is that it presents every trust level at once:
 
-- A **tedious rename** across two dozen files, where approving each edit is pure friction - [Default permission prompt](/course/claude-code/permissions-modes/default/) then [loosen it with Shift+Tab](/course/claude-code/permissions-modes/modes-ladder/)
-- A **test-and-build loop** you keep approving over and over - [pre-approve it and run shell inline](/course/claude-code/permissions-modes/rules/)
-- A **secrets directory and prod config** the agent must *never* touch, no matter how loose the rest is - [lock it out](/course/claude-code/permissions-modes/deny/)
-- A **long, hands-off batch** you want to walk away from - [run it autonomously, safely](/course/claude-code/permissions-modes/autonomous/)
+- **Routine test runs** you would let happen freely - `npm test` a hundred times without a second thought.
+- **Edits you want to see** - a mechanical rename is safe to batch, a change to the charge path is not.
+- **Files the agent must never touch** - the deny-rule exercise has you create disposable `.env`, `secrets/`, and production-config placeholders, because the companion fixture intentionally ships no secrets.
+- **A long batch you want to walk away from** - dozens of files and test runs, with nobody watching.
 
-The through-line: loosening and tightening are two ends of the same dial, and a good operator reaches for both in the same session. By the end you'll set the leash by reflex - long where it's safe, short where it isn't.
+## The chapter map
 
-Here's the whole dial in one picture - six named permission modes, from the normal prompt posture to fully bypassed permissions:
+- [Understand the default permission prompt](/course/claude-code/permissions-modes/default/): the baseline every looser setting is defined against, and the allow / ask / deny rulebook under every prompt.
+- [Loosen the leash with Shift+Tab and accept-edits](/course/claude-code/permissions-modes/modes-ladder/): the mode cycle, what `acceptEdits` auto-approves, and what it still refuses.
+- [Pre-approve safe commands and run shell inline](/course/claude-code/permissions-modes/rules/): an allow rule that retires the `npm test` prompt, and the `!` prefix for running commands yourself.
+- [Lock the agent out with deny rules and protected paths](/course/claude-code/permissions-modes/deny/): the wall around secrets and production config, and the paths Claude Code guards on its own.
+- [Run hands-off with auto mode, and when to reach for bypass](/course/claude-code/permissions-modes/autonomous/): hands-off with a safety net versus hands-off with none, and the `dontAsk` posture built for scripts.
+
+The through-line: loosening and tightening are two ends of the same dial, and a good operator reaches for both in the same session. Long where the work is mechanical and reversible, short near secrets, production, or your machine's configuration.
+
+## The whole dial in one picture
+
+Six named permission modes, tightest to loosest:
 
 ```text
  tightest ─┬─ 1  default             asks before actions that need approval
@@ -29,7 +39,11 @@ Here's the whole dial in one picture - six named permission modes, from the norm
            └─ 6  bypassPermissions   no normal permission prompts; isolate it
  loosest ──┘
 
-* Plan-mode protections do not hold when `bypassPermissions` is enabled.
+* Plan-mode protections do not apply when the active mode is `bypassPermissions`, and in an interactive session where `bypassPermissions` appears in the mode cycle they are not enforced even while plan mode is active.
 ```
 
-Allow/ask/deny rules are a separate layer that further narrows or broadens what each mode can do. You'll move between these postures across a single session: more automation for mechanical work, tighter controls near secrets or production. The rest of the chapter is each mode and rule layer in turn.
+Read the ladder as ordering one property: how often Claude asks before acting, tight to loose. It does not order how much each mode lets Claude do without asking, and `plan` and `dontAsk` are where those two ideas come apart: both cut interruptions without granting more freedom, and `dontAsk` gets fewer prompts by denying the borderline calls instead of asking. The `plan` rung gets a fuller treatment in the planning chapter, starting with [entering plan mode to research before you change code](/course/claude-code/planning/enter/).
+
+One fact about the starting rung before you read further: a plain `claude` launch may start in `auto`, not `default`, depending on your plan and version. That is why this course's walkthroughs launch with `claude --permission-mode default`; [the default-prompt lesson](/course/claude-code/permissions-modes/default/) states which plans and versions start where.
+
+Allow and deny rules are a separate layer that narrows or broadens what each mode can do, and a deny rule holds whichever mode is active. The rest of the chapter takes each mode and rule layer in turn, starting from [the default prompt](/course/claude-code/permissions-modes/default/).

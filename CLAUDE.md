@@ -102,6 +102,10 @@ One warm palette with an oxblood accent, light and dark, on every surface:
 2. Routes are auto-generated based on file path
 3. For sidebar inclusion, add entry to `sidebar` array in `astro.config.mjs`
 
+### Adding Course Lessons
+
+Read `docs/COURSE_AUTHORING_GUIDE.md` first. It fixes lesson kinds, the companion repo tags every task lesson starts from, evidence labels for transcripts, and the before-publish gate.
+
 ### Adding Blog Posts
 
 1. Create `.mdx` files in `src/content/docs/blog/`

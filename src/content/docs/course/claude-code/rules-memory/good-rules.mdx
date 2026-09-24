@@ -1,49 +1,86 @@
 ---
 title: "Write rules that are concrete, durable, and worth their tokens"
-description: "A CLAUDE.md loads into every session, so every line costs context. The rules that earn their slot are specific and project-true; the rest just charge rent."
-sidebar:
-  label: "Good rules · what earns its place"
+description: "A CLAUDE.md loads into every session, so every line pays rent in context. The repo's best rules show the shape of what belongs; the float in processor.ts shows what a rule cannot do."
 ---
 
 import RuleEconomy from '../../../../../components/interactive/RuleEconomy.tsx';
 
-`/init` gave you a baseline, and you corrected it. Now you start adding the things the agent could never have discovered by reading the repo - the knowledge that currently lives only in your morning re-explanations. But there's a discipline to this, because a `CLAUDE.md` isn't a free notepad. Every line you add is loaded into *every* session, spending context tokens before you've typed a single word of your actual task. The file is a budget, and a rule has to earn its slot.
+A `CLAUDE.md` is a markdown file of instructions that Claude Code loads into the model's context at the start of every session. One line of it is a rule. The file is not a free notepad: each line spends context before you have typed a word of the actual task, and the spend repeats on every session, including the ones that never touch the rule's subject. So a line has to do more than be true. It has to change what the agent does, on work that recurs, in a way the agent could not get anywhere else.
+
+Here is the rules body of the example repo's `CLAUDE.md`, complete. The repo is a small TypeScript payments service (the example this course returns to; each page restates the facts it needs):
+
+```markdown
+## Money handling
+
+- Use integer cents for all money calculations. Never use floating point for currency.
+- Store amounts as `number` representing cents (e.g. $19.99 = 1999).
+
+## Testing
+
+- Run tests with `npm test`.
+- Never commit without passing tests.
+- Every bug fix must include a regression test.
+
+## Code style
+
+- TypeScript strict mode. No `any` types.
+- Use ES module imports with `.js` extensions.
+- Prefer named exports over default exports.
+```
+
+Eight rules in three sections. Three of its entries are among the best rules you could write for this repo, and a fourth is missing. Working these cases gives you the whole discipline.
 
 ## The economics of a rule
 
-Here's the framing that makes the whole decision easy. A rule is context you pay for **once** instead of re-establishing **every session**. That's the entire trade.
+A rule is context you pay for **once** instead of re-establishing **every session**. That is the entire trade. Before the cents rule was written down, somebody re-taught it every session, or nobody did and the code floated. After the rule exists, the fact walks into every session on its own and the re-teaching stops.
 
-The morning ritual - "test command is `npm test`, charges are in cents, we use Conventional Commits" - is you spending tokens and keystrokes to re-teach the agent the same three facts daily. Move them into `CLAUDE.md` and you pay for them once, in a few lines, and the tax is gone. That's a brilliant trade, and it's the whole reason the file exists.
+The trade only works while the entry is *true, durable, and not otherwise available*. Pad the file and you invert it: context rent every session for lines that do not change behavior. The canonical guidance is to keep each file [under about 200 lines](https://code.claude.com/docs/en/memory). Longer files cost more and get followed less, because signal drowns in noise.
 
-But the trade only works when the entry is *true, durable, and not otherwise available*. Pad the file with vague or generic content and you've inverted it: now you're paying context rent every session for lines that don't change the agent's behavior at all. A bloated `CLAUDE.md` is worse than a lean one, and not by a little - the canonical guidance is to keep each file [under about 200 lines](https://code.claude.com/docs/en/memory), because longer files both cost more and, counterintuitively, get followed *less* reliably as the signal drowns in noise.
-
-You can run that trade yourself before reading a word more. Seven candidate lines, one ledger - toggle each in and watch which ones pay rent and which just collect it:
+Run the trade yourself before reading further. Seven candidate lines, one ledger. The token counts are illustrative; the arithmetic is the point. Toggle each line in and watch which ones pay rent and which only collect it:
 
 <RuleEconomy client:visible />
 
+Without the widget, the ledger's verdict reads like this: a durable fact the agent would otherwise get wrong saves a re-teach cycle most sessions, so it earns its slot within the first week. A line about this week's work is worth one week of value and then rent forever. A line the model already knows saves nothing and costs its tokens every session.
+
 ## What belongs
 
-The rules that pull their weight share a shape: **specific, verifiable, and particular to this project.** Things the agent cannot infer and would otherwise get wrong:
+The rules that pull their weight share a shape: specific, verifiable, and particular to this project. They are things the agent cannot infer and would otherwise get wrong. The repo's own file supplies the worked examples.
 
-- **The domain fact that bites.** "Charges are stored in cents, never dollars - a $10 charge is `1000`." This is the single most valuable line in the payments service's file. The agent has no way to know it, and getting it wrong means money bugs.
-- **The exact command, not the gist.** "Run `npm test` before committing" beats "test your changes." A command the agent can run verbatim is worth more than an instruction it has to interpret.
-- **The convention with teeth.** "Commit messages use Conventional Commits (`feat:`, `fix:`, `chore:`)." Now it writes commits your way without being told each time.
-- **The thing it must never touch.** "The `v1/` routes are frozen legacy - never modify them." A guardrail the agent would otherwise trip over.
+**The domain fact that bites.** "Use integer cents for all money calculations. Never use floating point for currency." The agent has no way to know this, and the failure mode is money computed wrong. The pair of lines does the job: the first states the constraint, the second, with its `$19.99 = 1999`, makes it actionable. This is the most valuable entry in the file, and the repo's own `src/payments/processor.ts` shows why it is needed: it computes the fee as `req.amount * 0.029` in floating point, against this rule.
 
-Notice the pattern: each is concrete enough that you could *check* whether the agent followed it. That testability is the tell of a good rule.
+**The rule with a future.** "Every bug fix must include a regression test." Concrete enough to check in a diff, durable enough to outlast any one fix, and it binds work that has not happened yet. Every bug fixed in this repo from now on answers to this line.
+
+**The convention the toolchain does not force.** "Use ES module imports with `.js` extensions." The repo's `tsconfig.json` uses bundler resolution, and `tsx` and Vitest tolerate extensionless imports, so nothing in the build complains when an agent writes `from "./processor"`. Plain Node ESM does complain. A team choice that is invisible until it bites is exactly what the file is for.
+
+**The rule the file lacks.** `processPayment` in `src/payments/processor.ts` declares its key as `idempotencyKey?: string`, optional. A caller that omits it gets no duplicate check at all, because `checkIdempotency` never runs, so new code that assumes a key always arrives is wrong. The candidate line: *processPayment's idempotency key is optional - never assume a caller sends one.* Durable, project-specific, checkable in review.
+
+The tell across all four: each is concrete enough that you could *check* whether the agent followed it. Testability separates the rules that change behavior from the rules that spend tokens.
 
 ## What doesn't
 
-The entries to keep *out* are the ones that feel responsible but change nothing:
+The entries to keep out are the ones that feel responsible and change nothing:
 
-- **Generic best-practice filler.** "Write clean code." "Follow best practices." "Handle errors properly." The agent already aims for these; the words just burn tokens.
-- **Anything the code already states.** The framework, the language, the directory names - Claude reads those. Don't transcribe the repo into the file describing the repo.
-- **One-off task notes.** "We're refactoring the charge handler this week." That's not durable; it's true for a week, then it's stale context misleading every session after. If it isn't a standing fact about the project, it doesn't belong in a rule.
+- **Generic best-practice filler.** "Write clean code." "Handle errors properly." The model already aims for these; the words compete with your real rules for attention.
+- **Anything the code already states.** The framework is Express, the language is TypeScript, the directories are what they are. Claude reads those. Transcribing the repo into the file describing the repo buys nothing. Catching a line like that is the job of the [audit you run on every `/init` suggestion (the command that drafts this file for you)](/course/claude-code/rules-memory/init/).
+- **One-off state.** "We're implementing the idempotency plan this week." True now, noise next month, misleading the month after, and a session about the rate limiter carries it anyway. This week's state belongs in the prompt or in a plan file on disk, not in a file every future session loads.
 
-The honest test for any candidate line: *would I have to tell a new teammate this, and will it still be true in three months?* Yes to both - it's a rule. Vague, obvious, or temporary - leave it out. You're curating, not dumping.
+The honest test for any candidate line: *would I tell a new teammate this, can't they find it in the repo themselves, and will it still be true in three months?* Yes to all three, it is a rule. Vague, obvious, or temporary, leave it out. You are curating, not dumping.
 
 :::note[Specific beats polite]
-"Use 2-space indentation" outperforms "format code nicely," and not by a little. CLAUDE.md is context the agent *interprets*, not configuration it's *forced* to obey - so the more concrete and unambiguous the instruction, the more reliably it lands. Write rules you could grade.
+"Use 2-space indentation" outperforms "format code nicely" because `CLAUDE.md` is context the agent *interprets*, not configuration it is *forced* to obey. The more concrete and unambiguous the instruction, the more reliably it lands. Write rules you could grade.
 :::
 
-So far every rule you've written goes in one project file that your whole team shares. But not every rule wants the same audience - some are personal, some belong to one corner of the codebase. [Rules layer across scopes, and knowing which scope a rule belongs in is the next move.](/course/claude-code/rules-memory/hierarchy/)
+One more look at the file's best line before moving on. The cents rule is in context every session, and `processor.ts` still computes the fee as `req.amount * 0.029` in floating point and adds it to the amount, with a green test asserting a total of `2056.971`. A rule that earns its slot informs; it does not compel. Enforcement is a separate mechanism, and [the hooks chapter](/course/claude-code/extending/) builds it.
+
+## Apply the test
+
+Suppose a teammate on another service opens a `CLAUDE.md` pull request with four candidate lines. You own the review: keep or cut each one, on the tests from this lesson, before reading the verdicts:
+
+- "Handle errors properly and write clean code."
+- "Timestamps are stored as UTC milliseconds; convert to local time only in the UI."
+- "We are moving the invoice endpoints to the v2 router this month."
+- "Never call `lockInvoice()` from a request handler - it holds a database lock; only the nightly job may take it."
+
+The verdicts, explained. Cut the first: filler the model already aims for, competing with your real rules for attention. Keep the second: concrete, durable, invisible in the code, and checkable in any diff that touches a date. Cut the third: true now, noise next month. This month's migration belongs in a plan file or the prompt, not a file every future session loads. Keep the fourth: a project-specific landmine no reader could infer, and one wrong call would teach expensively.
+
+The rules you keep still need homes. The optional-key rule is team truth. A rule like "Show me your plan before you edit" is yours alone. A rule saying the ledger in `src/payments/ledger.ts` keeps its balances in memory would matter only inside `src/payments/`. [Rules layer across scopes, and picking the scope is the next move.](/course/claude-code/rules-memory/hierarchy/)

@@ -1,69 +1,78 @@
 ---
 title: Enter plan mode to research before you change code
-description: "Plan mode lets Claude explore your codebase and write a proposal without editing a single file. How to enter it, and what it can and can't do inside."
-sidebar:
-  label: "Enter · Shift+Tab / /plan"
+description: "Plan mode lets Claude read the payment path and write a proposal without editing a file. Three ways in, what the mode allows, and the exception that can unblock edits."
 ---
 
 import PlanModeStepper from '../../../../../components/interactive/PlanModeStepper.tsx';
 
-The double-charge bug is in front of you and the temptation is to just describe the fix and let the agent go. Resist it for one move. You don't yet know how the current charge path is wired - whether there's already a request ID you can key on, where charges get written, whether retries even reach the same process. Editing before you know those things is how the agent picks a design you'll have to unpick later. So the first thing you do is put it in the mode where it *can't* edit, only learn and propose.
+Plan mode is the Claude Code setting in which the agent researches and proposes changes without making them. This page covers how to enter it, what it allows while the agent reads your code, and the one configuration where its edit-block does not hold.
+
+The task used throughout is a redesign in a small TypeScript payments service: make `POST /payments` idempotent, so a client that retries a completed request is never charged twice. The current helper in `src/utils/idempotency.ts` records the client's `Idempotency-Key` as seen at first check, before the payment finishes, and the function meant to record completion, `markProcessed`, is never called. The route in `src/index.ts` does not require the header at all; it passes it as optional to `processPayment` in `src/payments/processor.ts`, where the conditional dedup lives. The test suite is green, and it includes a duplicate-key test that passes because a second call with the same key is rejected.
+
+Green suite plus a design-heavy ticket is exactly when the agent should not start editing. With no failing test to steer by, its first edit commits it to an interpretation - require the key or not, mark at check or at completion - and a wrong guess shows up as a diff you have to unpick instead of a sentence you get to correct. So the first move is a mode change, not a prompt.
 
 ## Three ways in
 
-**Plan mode** tells Claude to research and propose changes without making them. You can enter it three ways, and which one you reach for depends on whether you want it for one prompt or the whole session:
+There are three ways into plan mode, and they differ in how long the posture lasts:
 
 ```text
-# the ladder - one press past accept-edits
-[Shift+Tab]  →  ⏸ plan mode on
+# the ladder - cycle to the plan rung
+[Shift+Tab]    default → accept edits → plan
 
-# just this one prompt, then back to where you were
-> /plan how should we make the charge endpoint idempotent?
+# one prompt, planned, then back to where you were
+/plan research how POST /payments handles idempotency
 
-# start the whole session in it
+# the whole session, planned from the first prompt
 claude --permission-mode plan
 ```
 
-`Shift+Tab` cycles `default → accept edits → plan` and the current mode shows in the status bar, same ladder you met in the permissions chapter. `/plan` is the lightweight option - it plans a single prompt without changing the session's mode. And `--permission-mode plan` is for when you already know the task is big enough that you want every prompt planned until you say otherwise. To leave plan mode without approving anything, press `Shift+Tab` again to cycle one round.
+`Shift+Tab` cycles through the permission modes your version and configuration offer; the status bar shows the active one. Current documentation puts plan right after accept-edits (the rung that auto-applies file edits) on that cycle, and pressing it again leaves plan mode without approving anything. The `/plan` prefix is the lighter instrument: it runs one prompt in the posture, then the session returns to whatever mode it had. Useful when a single question deserves research in the middle of other work.
+
+`claude --permission-mode plan` is for tasks you already know are big. The session starts in the posture and stays there until you approve a plan or cycle away, so every prompt gets the research treatment until you decide otherwise. All three paths land in the same place: a session that can read your code and reason about it, and cannot change it.
+
+The think-first posture is not unique to Claude Code. The other agents on this site carry their own versions, with different entry points and different strictness. The stepper below walks the stages: switch in, explore, a blocked edit attempt, the plan, the gate, execution. Follow the Claude Code column; the other tools are there for contrast. Its blocked-edit stage shows the normal case, where the mode's blocks hold; the `bypassPermissions` exception in the next section names the one configuration where they do not.
 
 <PlanModeStepper client:visible />
 
-## What it can do, and what it can't
+## What the mode allows, and what it blocks
 
-This is the part worth being precise about, because plan mode is a planning posture, not a substitute for sandboxing. In a normal permission session, Claude can:
+In plan mode, reads are unrestricted: the agent can open every file, follow imports, and search the tree. Shell commands are reviewed by the safety classifier when auto mode - the permission mode where most actions run without asking, with a classifier reviewing each one - is available in your configuration: approved commands run, rejected ones are blocked. Without auto mode available, commands outside the built-in read-only set prompt you instead.
 
-- **read any file** in your project - open the charge handler, follow the imports, look at the tests
-- **run read-only shell commands to explore** - `grep` for where charges are written, `git log` on the payments module, list the migrations directory
+Source edits are the point of the mode: they stay blocked until you approve a plan. One exception matters, and [Permissions & modes](/course/claude-code/permissions-modes/) covers it in full: in an interactive session where `bypassPermissions` (the mode that skips permission checks entirely) appears in your mode cycle - available to switch to, even if you never switch - the plan-mode blocks are not enforced, even while plan mode is the active mode. The agent is still instructed to plan, but edits and commands can run without prompting, so check whether your cycle offers `bypassPermissions` before treating plan mode as a fence.
 
-What it will *normally* not do is touch your source. No edits or destructive commands are allowed by the plan-mode permission posture, although `bypassPermissions` can override that protection. So pointed at our bug, it does exactly the investigation you'd do by hand, faster:
+Pointed at the ticket, a research pass reads the files named above plus a few around them. Here is the shape of such a pass over the real source - an illustrative transcript, not a captured run:
 
 ```text
-> [Shift+Tab]  ⏸ plan mode on
+> [Shift+Tab]   # plan mode on
 
-> we're double-charging on retries. research how the charge endpoint works
-  today and propose how to make it idempotent. don't write any code yet.
+> the duplicate-payment handling needs a redesign. research how
+  POST /payments handles idempotency today and propose a fix.
+  do not edit anything yet.
 
-  ⏵ Read  src/routes/charges.js
-  ⏵ Read  src/services/payment.js
-  ⏵ Bash  grep -rn "INSERT INTO charges" src/   (read-only, allowed)
-  ⏵ Read  migrations/0007_charges.sql
-
-  Here's what I found and what I propose:
+  ⏵ Read  src/index.ts
+  ⏵ Read  src/payments/processor.ts
+  ⏵ Read  src/utils/idempotency.ts
+  ⏵ Read  tests/payments.test.ts
 
   ## Current behavior
-  POST /charge writes a row and calls the gateway with no dedupe key.
-  Two identical requests = two gateway calls = two charges.
+  The route passes an optional Idempotency-Key header to
+  processPayment. No key means no dedup happens at all.
+  checkIdempotency records the key on first check, before the
+  payment runs; markProcessed is never called.
 
   ## Proposed approach
-  1. Require an Idempotency-Key header on POST /charge
-  2. New table idempotency_keys (key, status, charge_id, created_at)
+  1. Require Idempotency-Key on POST /payments, reject when absent
+  2. Check the key without recording it; call markProcessed only
+     after a payment completes
   3. ... [full plan continues]
 ```
 
-One caveat so you're not surprised: plan mode can auto-approve reads and some classifier-approved exploratory commands, while other commands may still prompt. It prevents source edits only while its permission protections are active; `bypassPermissions` is an explicit exception. The current rules for exactly what's allowed live in the [permission-modes docs](https://code.claude.com/docs/en/permission-modes); they shift, so check there rather than trusting a fixed memory.
+Every line of that sketch maps to a fact stated above: the optional header in `src/index.ts`, the conditional dedup in `src/payments/processor.ts`, the mark-on-first-check in `src/utils/idempotency.ts`, and the unused `markProcessed` sitting next to it. That checkability is the artifact plan mode exists to produce. The agent did the reading and committed to an approach, and committed nothing else.
+
+What the mode allows shifts with versions and configuration, which is why this page links instead of memorizing: the [permission-modes reference](https://code.claude.com/docs/en/permission-modes) carries the current rules for reads, commands, and the approval gate.
 
 :::tip[Try it]
-Give Claude a task that touches three or more files. Enter plan mode with Shift+Tab twice and read the plan before approving. Change one step in the plan, then let it execute and verify the result matches your revision.
+Give Claude a task that touches three or more files. Enter plan mode with `Shift+Tab` or the `/plan` prefix, read the plan before approving, and change one step in it (reply with the correction, or edit the proposal, before approving). Then approve, and check that what gets built matches your revision rather than the original.
 :::
 
-What you have now is the valuable artifact: a researched proposal, with zero risk taken, that you can read and push back on before any code exists. The agent did the investigation and committed to an approach - and committed *nothing else*. [Now you decide what happens to that plan](/course/claude-code/planning/approve/).
+What you hold now is a researched proposal and an unchanged codebase. That is not the same as zero risk taken: reads and commands still ran, and the edit-block is only as strong as the permission posture under it, with `bypassPermissions` as the documented exception. The honest claim is narrower and more useful: the design decision is on the table before any code expresses it, so correcting it costs a sentence instead of a diff. [Now decide what happens to that plan](/course/claude-code/planning/approve/).

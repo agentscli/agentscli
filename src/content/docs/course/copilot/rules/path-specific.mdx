@@ -1,21 +1,19 @@
 ---
 title: Path-specific rules with applyTo
-description: "shared-lib's twelve-consumer helpers need stricter rules than the rest of the code. Scope them to a path with applyTo, layered on top of the repo-wide file."
-sidebar:
-  label: "Path-specific · applyTo globs"
+description: "The files other teams import need stricter rules than the rest of the code. Scope those rules to a path with applyTo, layered on top of the repo-wide file."
 ---
 
-The repo-wide file has one blind spot: it treats every file in the repo the same. That's fine until part of the repo deserves stricter handling than the rest - and `shared-lib` is exactly that case. It's one repository, but the validation, auth, and audit helpers in it are imported by a dozen services, so a sloppy change there ripples outward in a way a change to a private utility never would. You want the helpers held to a tighter standard than the repo's tests or scripts, and a single repo-wide file can't express "be more careful *here*."
+A repo-wide file has one blind spot: it treats every file in the repo the same. That is fine until part of the repo deserves stricter handling than the rest. A shared library is the standing example - in this course's illustrative scenario, `shared-lib`, the internal library whose validation, auth, and audit helpers a dozen services import. A sloppy change there ripples outward in a way a change to a private utility never would. You want the helpers held to a tighter standard than the repo's tests and scripts, and "be more careful *here*" is exactly what a single repo-wide file cannot express.
 
-Path-specific instructions are the tool for that. You write a rule that only applies to files matching a glob, and Copilot pulls it in *in addition to* the repo-wide file when it's working on those files.
+Path-specific instructions are the tool for that - `*.instructions.md` files under `.github/instructions/`, each scoped by an `applyTo` glob. You write a rule that attaches only to files matching the glob, and Copilot pulls it in *in addition to* the repo-wide file when the files it is editing match.
 
 ## How they're structured
 
-Path-specific rules live as `*.instructions.md` files under `.github/instructions/` - Copilot looks there recursively, so you can organize them in subfolders. Each file carries frontmatter, and the load-bearing field is **`applyTo`**:
+Path-specific rules live as `*.instructions.md` files under `.github/instructions/` - Copilot looks there recursively, so you can organize in subfolders. Each file carries frontmatter, and the load-bearing field is **`applyTo`**:
 
 ```markdown
 ---
-applyTo: "src/helpers/**/*.ts"
+applyTo: "shared-lib/src/**/*.ts"
 description: "Stricter rules for the shared helpers consumed by 12 services"
 ---
 
@@ -33,28 +31,26 @@ potentially breaking.
 
 The fields:
 
-- **`applyTo`** *(required)* - a glob, relative to the workspace root, that decides which files this rule attaches to. `"src/helpers/**/*.ts"` scopes it to the helper tree and nothing else.
-- **`name`** and **`description`** *(optional)* - labels that describe what the rule is for.
+- **`applyTo`** *(required)* - a glob, relative to the workspace root, deciding which files this rule attaches to. `"shared-lib/src/**/*.ts"` scopes it to the library's source tree, recursively, and nothing else - not its tests, not the service next to it in the same repo ([glob examples](https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions) as of September 2026).
+- **`name`** and **`description`** *(optional)* - labels describing what the rule is for.
 
-By default Copilot reads `.github/instructions/`; if your team keeps these somewhere else, `chat.instructionsFilesLocations` points it at additional locations.
+Copilot reads `.github/instructions/` by default. An older setting, `chat.instructionsFilesLocations`, could point it at additional locations, but it is **deprecated and only used by the Local agent** (the pre-Agent-Host agent that still loads these settings; per the [custom instructions documentation](https://code.visualstudio.com/docs/agent-customization/custom-instructions), as of September 2026). If you configured instruction locations with it, move those files into supported locations rather than relying on the setting.
 
 ## They combine, they don't replace
 
-This is the part to internalize: when Copilot edits a file that matches your glob, the path-specific rule **combines with** the repo-wide `copilot-instructions.md` (or your `AGENTS.md` / `CLAUDE.md`) - it doesn't override it. So for a file under `src/helpers/`, Copilot has both the repo's general conventions *and* the stricter helper rules in context at once. The repo-wide file says "this is how we write code here"; the path-specific file adds "and in this directory, be extra careful about breaking consumers." Layered, not either-or.
+The part to internalize: when the files Copilot is editing match your glob, the path-specific rule **combines with** the repo-wide file (your `copilot-instructions.md`, `AGENTS.md`, or `CLAUDE.md`) - it does not override it. [GitHub's repository instructions page](https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions) states it directly, as of September 2026: when the path matches and a repository-wide file also exists, "the instructions from both files are used." For a file under `shared-lib/src/`, Copilot holds both in context: the repo's general conventions *and* the stricter helper rules. The repo-wide file says "this is how we write code here"; the path-specific file adds "and in this directory, treat every change as potentially breaking." Layered, not either-or.
 
-That's why this maps so cleanly onto `shared-lib`. The general conventions apply everywhere; the high-blast-radius helpers get an extra ring of rules wrapped around exactly the paths that ripple.
+That is why the mechanism maps so cleanly onto a shared library: general conventions apply everywhere, and the high-consequence source directory gets an extra ring of rules wrapped around exactly the paths that ripple. The judgment is the same one behind [matching latitude to risk](/course/copilot/modes/switching/) - expressed in files instead of chat roles.
 
 :::caution[IDE and cloud agent only - not GitHub.com chat]
-Path-specific `*.instructions.md` are honored in **IDE chat** (VS Code, JetBrains, and the other editors) and by the **cloud coding agent**, but **not** in chat on GitHub.com. If a teammate asks Copilot a question in the browser, it'll apply the repo-wide file but won't pick up your `applyTo`-scoped rules. Don't put a rule you depend on *only* in a path-specific file if it also needs to hold for browser chat - keep anything universal in the repo-wide file.
+Path-specific `*.instructions.md` files are honored in **IDE chat** (VS Code, JetBrains, and other editors) and by the **cloud coding agent**, but **not** in chat on GitHub.com, per [GitHub's customization support matrix](https://docs.github.com/en/copilot/reference/custom-instructions-support) as of September 2026. A teammate asking Copilot a question in the browser gets the repo-wide file but not your `applyTo`-scoped rules. Do not put a rule you depend on *only* in a path-specific file if it also needs to hold for browser chat; keep anything universal in the repo-wide file.
 :::
 
 ## A practical split
 
-For the two repos in this course, a clean division falls out:
+For a service-plus-library setup, a clean division falls out:
 
-- `orders-service` - mostly a repo-wide file is enough; it's your squad's app and the stakes are even across it.
-- `shared-lib` - a repo-wide file for the general conventions, **plus** a path-specific file over the helper directory that encodes the "twelve consumers, treat every change as breaking" discipline.
+- Your service repo - a repo-wide file is usually enough; your squad owns it and the stakes are even across it.
+- The shared library - a repo-wide file for general conventions, **plus** a path-specific file over the library's source directory encoding the "many consumers, treat every change as breaking" discipline.
 
-That difference in how tightly you scope rules mirrors the difference in blast radius you learned to read in the modes chapter. Same instinct, expressed in files instead of mode choices.
-
-Now: rules can come from more than one place at once - your machine, the repo, your organization. When they disagree, something has to win. [How rules layer - personal, repo, organization](/course/copilot/rules/hierarchy/).
+Rules can also arrive from more than one machine- and org-level source at once. When layers disagree, something has to win. [How rules layer - personal, repo, organization](/course/copilot/rules/hierarchy/).

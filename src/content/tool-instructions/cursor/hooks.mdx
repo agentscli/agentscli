@@ -16,10 +16,10 @@ Cursor has a **Hooks** primitive. Hooks are spawned subprocesses that communicat
 
 **App lifecycle:** `workspaceOpen`.
 
-**Enforcement:** JSON output and exit codes drive policy. A hook signals a block by emitting a deny response, conventionally with exit code `2`. Confirm the exact blocking and error behavior against the [current Hooks reference](https://cursor.com/docs/hooks) before treating a hook as a security boundary. *Unverified:* the older claim that every other non-zero exit is fail-open should not be relied on without a first-hand test.
+**Enforcement:** JSON output and exit codes drive policy. For permission hooks, exit `0` uses the JSON response; `permission: "deny"`, invalid JSON, or a response that does not match the schema blocks the action. Exit `2` also blocks. Other non-zero exits, crashes, timeouts, and missing output fail open by default.
 
-If a security hook must fail closed, make its wrapper catch scanner errors and emit that explicit deny itself, rather than letting the process crash with an arbitrary non-zero status and assuming Cursor will read the crash as a block. Do not rely on an undocumented `failClosed` setting to protect a write.
+For a security-critical hook, set the documented per-script option `failClosed: true`; Cursor then blocks when the hook crashes, times out, exits non-zero, or produces no output. Keep the wrapper's own error handling explicit as defense in depth, and test the allow, deny, malformed-output, timeout, and crash paths before relying on the boundary. Confirm this contract against the [current Hooks reference](https://cursor.com/docs/hooks) when upgrading Cursor. *Verified 2026-09-22.*
 
-The combination of `beforeShellExecution`, `beforeReadFile`, and `beforeMCPExecution` covers most policy-enforcement use cases (secret scanning, command allowlists, audit logging) - `beforeReadFile` and `beforeMCPExecution` have no direct analog in Claude Code or Codex.
+The combination of `beforeShellExecution`, `beforeReadFile`, and `beforeMCPExecution` covers most policy-enforcement use cases (secret scanning, command allowlists, audit logging). Claude Code can gate corresponding tool calls through `PreToolUse` matchers, although it does not give the read and MCP moments these dedicated event names; Codex has no direct equivalent hook surface.
 
 A separate **Third-Party Hooks** doc covers reusable hook scripts.

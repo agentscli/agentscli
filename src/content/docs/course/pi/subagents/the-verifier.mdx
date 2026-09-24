@@ -1,66 +1,100 @@
 ---
 title: "Build a verifier that doesn't trust the builder"
-description: "A second agent, scoped read-only, that turns the builder's self-report into falsifiable claims and checks each one against the real data instead of the summary."
-sidebar:
-  label: "The verifier · trust nothing self-reported"
+description: "A second agent with a narrow toolset that turns the builder's self-report into falsifiable claims and checks each one against the real data and the real transcript instead of the summary."
 ---
 
 import NightShift from '../../../../../components/interactive/NightShift.tsx';
 
-Every child in the last lesson finished with some version of "done - re-extracted, index updated." You read that, moved on, and closed the backlog ticket. Here's the spoiler, stated as a claim this lesson re-derives: batch 07 claimed all 12 of its URLs were clean. Only 9 of those 12 claims actually held up when a second agent went and checked. The other 3 split two different ways, and which way matters more than the count does.
+Every child in the last lesson finished with some version of "added, synced, rows look clean." You read that, moved on, and closed the import. Here's the spoiler, stated as a claim this lesson re-derives on a constructed split you can check by hand: batch 07 claimed all 12 of its URLs landed clean. Only 9 of those 12 claims held up when a second agent went and checked. The other 3 split two different ways, and which way matters more than the count does.
 
-That's the last slice of this module's villain: one window cannot hold the job, isolation buys you the room to split it - and the handoff, the report one window hands back to the window that dispatched it, is exactly where the tax comes due. Notice what actually happened in the last lesson: you accepted a claim from the one party in this whole exchange with every incentive to report success - the agent that just did the work. `stash`'s extractor still mangles *some* sites even after your fix; the full-text search still drops accented characters sometimes. A child that ran `stash reextract` and got a clean exit code has no way of knowing whether the text it just indexed is actually readable, or whether "café" made it into the search index as "caf." It reported what it did. It didn't verify what it produced.
+Notice what actually happened in the last lesson: you accepted a claim from the one party in this whole exchange with every incentive to report success - the agent that just did the work. And `stash` (the course's running example, a small FastAPI feed reader) gives that claim real ways to be false. `save_article` stores `str(None)` as the literal string `'None'`, so a feed whose dates don't parse still *looks* saved.
+
+An entry with no link lands with `link = ''`. A site that 404'd mid-batch can leave a feed row and no articles. A child that ran its Python, saw exit code 0, and moved on has no way of knowing any of that. It reported what it did. It didn't verify what it produced.
 
 That's a structural problem, not a prompting one - no amount of "please double-check your work" fixes an agent checking its own homework. The fix is a second, independent agent, spawned separately, whose only job is to distrust the first one's report on principle and go look for itself.
 
 ## Spawn the verifier against the builder's own transcript, not its summary
 
-The verifier doesn't have to take the builder's word for anything, because a Pi session persists its full, uncompacted history to a JSONL file on disk, regardless of what got summarized into context along the way. One catch carried over from the last two lessons: those children ran with `--no-session`, so they left no file behind - spawn any child whose work you intend to verify with `--session ~/.pi/agent/sessions/reextract-batch-07.jsonl` instead. Point the verifier at that file rather than at the builder's closing message, and it isn't reading a summary - it's reading exactly what happened, tool call by tool call:
+The verifier doesn't have to take the builder's word for anything, because a Pi session persists its full, uncompacted history to a JSONL file on disk, regardless of what got summarized into context along the way. One catch carried over from the last two lessons (the import setup is [this module's opener](/course/pi/subagents/)): the fan-out children ran with `--no-session`, so they left no file behind - spawn any child whose work you intend to verify with `--session <path>` instead, and have your driver - the script, or lead session, that spawns the children - pick the path. (So to verify batch 07 as shown, re-run that batch once with a session file.)
+
+Point the verifier at that file rather than at the builder's closing message, and it isn't reading a summary - it's reading exactly what happened, tool call by tool call. The verifier's own rules also live in a file you create first - here is `.pi/agents/verifier.md` in full, because the command below depends on it existing (one `cat` of a missing file expands to an empty append, and the verifier runs ruleless with no error to tell you):
+
+```markdown title=".pi/agents/verifier.md"
+## Verifier rules
+
+For each claimed URL, check against stash.db directly: (1) a feeds row
+exists for the site and article rows exist under its feed_id; (2) every
+saved row's published is a real timestamp - not NULL, not the empty
+string, and not the string 'None'; (3) link is non-empty; (4) no two
+rows share a link. Reconcile the builder's log against the claim: (5)
+every URL the builder reported must appear in the log as an attempted
+fetch, and any skip, abort, or mid-run error the closing message omits
+is a failed claim. Spot-check two saved rows against what the feed
+currently serves; if the feed is unreachable, that URL is
+could-not-verify.
+```
 
 ```text
 pi --mode json -p "Read the builder's session log at
-  ~/.pi/agent/sessions/reextract-batch-07.jsonl. It claims to have re-extracted
-  12 URLs and updated their search index entries. Do not trust that
-  report. For each URL: (1) read the actual stored article text and
-  confirm it contains no nav/ad boilerplate, (2) query the search index
-  directly and confirm the entry changed and preserves accented
-  characters where the source had them. Report per-claim: verified,
-  failed, or could-not-verify - with the specific mismatch for anything
-  that fails." \
+  ~/.pi/agent/sessions/--companion-repos-pi-stash--/import-batch-07.jsonl
+  (the path your driver chose when it spawned the builder - the default
+  sessions directory here; the dashes are Pi's encoding of the project
+  path, and yours will differ). It claims to have imported 12 URLs from
+  imports/old-saves.json, all saved clean. Do not trust that report -
+  apply every check in your rules file to each claimed URL, and report
+  per-URL: verified, failed, or could-not-verify - with the specific
+  mismatch for anything that fails." \
   --no-session \
   --tools read,bash \
-  --model openai/gpt-4o
+  --model openai/gpt-4o \
+  --append-system-prompt "$(cat .pi/agents/verifier.md)"
 ```
 
-Before you run that, predict the split. The prompt asks for three verdicts, per URL, across all 12: verified, failed, or could-not-verify. Given what you already know - the extractor still mangles some sites, search still drops accents sometimes - guess roughly how 12 real claims split across those three buckets. A reasonable guess: most hold up, a couple don't, maybe one stays genuinely unresolved.
+(That `--no-session` is deliberate, not an oversight of the rule two paragraphs up: the verifier needs no memory between runs - what must persist is its rules file and the builder's transcript, and both live on disk already.)
 
-Here's what the verifier actually reports back, per URL (a declared toy split, chosen to make this walkthrough checkable - see the numbers note in the last lesson):
+(A flag gloss for anyone joining here: `--mode json` switches the child from rendered terminal output to the structured, newline-delimited event stream a driver parses - the same headless surface the spawn lesson built the parser for.)
+
+On this job the claims happen to be checkable against `stash.db` and the import file alone; the transcript is what makes the method general. It catches the actions no database can show - a URL the builder silently skipped, an error it papered over in its closing message - which is why check (5) in the rules file reads the log, not just the claim.
+
+Before you run that, predict the split. The prompt asks for three verdicts, per URL, across all 12: verified, failed, or could-not-verify. Given what you already know - date formats `parse_date` doesn't recognize, entries without links, sites that vanish - guess roughly how 12 real claims divide across those three buckets. A reasonable guess: most hold up, a couple don't, maybe one stays genuinely unresolved.
+
+Here's what the verifier reports back, per URL (a declared toy split, chosen to make this walkthrough checkable - the prompt asks for three verdicts, per URL, across all 12):
 
 | Verdict | Count | What it found |
 |---|---|---|
-| Verified | 9 | stored text clean, index entry matches, accents intact |
-| Failed | 2 | `post-142`'s index entry still reads "caf" where the source has "café"; a second URL still carries nav boilerplate the extractor missed |
-| Could-not-verify | 1 | the search index query for that URL returned inconsistent results across two attempts - not proof of failure, and not proof of success either |
+| Verified | 9 | feed row present, articles saved under it, `published` a real timestamp on every row, links non-empty, no duplicates |
+| Failed | 2 | one feed saved every row with `published = 'None'` - its dates use a format `parse_date` doesn't know, so `save_article` stored `str(None)`; a second feed landed a row with an empty `link` (the entry had no link element at all) |
+| Could-not-verify | 1 | a third feed's URL 404s on re-fetch - can't distinguish rows saved garbage from a site that went dark between the builder's run and this one |
 
-Nine of twelve. Not zero, and not twelve. That's the number this lesson opened on, and it's exactly the mix that makes "please double-check your work" the wrong fix: the builder didn't lie about the other three, it was simply never in a position to know.
+Nine of twelve. Not zero, and not twelve. That's the number this lesson opened on, and it's exactly the mix that makes "please double-check your work" the wrong fix: the builder didn't lie about the other three, it was simply never in a position to know. A `'None'` string sitting in a `published` column looks like a saved date to the process that wrote it there.
 
-Two choices here matter more than they look. First, **the toolset**: `read,bash` only - no `write`, no `edit`. The verifier's whole job is to look, not to touch; giving it a narrower surface than the builder is the same instinct as the damage-control gate from an earlier module, just applied by omission instead of by rule. Second, **a different model than the builder used**. A verifier that shares the builder's blind spots will miss exactly what the builder missed; a genuinely independent second opinion is worth more when it isn't the same model checking its own reasoning twice.
+Two choices in that command matter more than they look. First, **the toolset**: `read,bash` only - no `write`, no `edit`. The verifier's whole job is to look, not to touch; giving it a narrower surface than the builder is the same instinct behind the [damage-control gate](/course/pi/rebuild-the-defaults/permissions/) - one rule file's worth of "these actions are off the table" - just applied by omission instead of by rule. Be honest about what that omission is: a strong nudge, not a wall. `bash` can still write to the filesystem, `stash.db` included, so `read,bash` scopes the job rather than enforcing look-don't-touch - enforcement would take a rule or a container.
+
+Second, **a different model than the builder used**. A verifier that shares the builder's model is more likely to miss what the builder missed - same training, same blind spots - and a genuinely independent second opinion is worth more when it isn't the same model reading its own reasoning twice.
 
 ## Decompose "done" into claims that can actually be checked
 
-The instruction above already does the important part: it doesn't ask "did this work?" - it asks the verifier to break "done" into pieces, each one either true or false against something real. "Re-extracted" isn't one claim, it's at least two: *the stored text changed*, and *the new text is actually clean*. "Index updated" is a separate claim from either of those. That decomposition is exactly what turned one vague report into the 9 / 2 / 1 table above - three checkable pieces per URL instead of one trusted sentence.
+The instruction above already does the important part: it doesn't ask "did this work?" - it asks the verifier to break "done" into pieces, each one either true or false against something real. "Imported and saved clean" isn't one claim, it's four: *the rows exist*, *the dates are real timestamps*, *the links are non-empty*, *nothing landed twice*.
 
-**"Done" is never one claim. Decompose it until every piece is checkable, or the verifier is checking nothing.**
+Written as the SQL the verifier actually runs, the load-bearing one is `published IS NOT NULL AND published NOT IN ('', 'None')` - the same predicate the [`/stash` command's](/course/pi/first-extension/a-command/) `undated` filter matches on, for the same reason. A `'None'` string is a **failed** claim, not a pass; drop that clause and the verifier passes rows `/stash` still flags.
 
-That decomposition belongs in a durable file, not a one-off prompt - put it in the verifier's own system prompt (`.pi/agents/verifier.md`, or handed in via `--append-system-prompt`), the same way `.pi/APPEND_SYSTEM.md` captures `stash`'s conventions so you stop re-typing them every session. And that's not incidental - it's the whole reason this pattern is worth building at all.
+The duplicate-links check deserves one honest sentence: chapter 3's unique index on `articles.link` means it can't fire anymore - the schema enforces it. The verifier still runs it, because a claim being cheap to check is no reason to trust an index's history instead of the data in front of you.
+
+Decomposition is what turned one vague report into the 9 / 2 / 1 table above - four checkable pieces per URL instead of one trusted sentence. **"Done" is never one claim. Decompose it until every piece is checkable, or the verifier is checking nothing.**
+
+That decomposition belongs in a durable file, not a one-off prompt - `.pi/agents/verifier.md`, the last line of that command. And that line is load-bearing in a way it's easy to miss: Pi does **not** auto-load that file. Project-side, the system-prompt files Pi reads are `.pi/SYSTEM.md` and `.pi/APPEND_SYSTEM.md` (AGENTS.md-style context files are a different, also-automatic mechanism, covered in [the tiny-prompt lesson](/course/pi/the-core/the-tiny-prompt/)) - `.pi/agents/` is just a folder you invented, and nothing reads it until you pass it. (The rules file above is what `--append-system-prompt` splices in; the prompt carries only the task-specific facts - which log, how many URLs, what was claimed.)
+
+That's exactly what `--append-system-prompt "$(cat .pi/agents/verifier.md)"` does: your driver shells out, cats the file into an argument, and Pi appends it to the verifier's system prompt for this run. The wiring is explicit because the loading is not automatic - forget that flag and the durable claims never load, leaving whatever you typed into the one-off prompt as this run's only checks. That prompt is exactly the throwaway lever the file exists to replace: it spends itself the moment the run starts, and the next spawn would begin from zero.
 
 ## Why "no chat input" is the point, not a limitation
 
 Look again at the flag you already know from the last two lessons: **`-p`**. Print mode. One prompt, one run, exit. You've been using it because it's the natural way to spawn a headless child - but for the verifier specifically, that constraint does something you haven't needed yet: it removes your ability to argue with it.
 
-Sit with what that means in practice. If the verifier wrongly flags a clean re-extraction as broken, or worse, waves through one that's actually still full of nav cruft - you can't just reply "no, that one's fine, ignore it" and move on. There's no follow-up turn to send it. The only lever you have is the file: open `.pi/agents/verifier.md` and change what it checks, or how. That's a real constraint, and it's a good one. It's the exact same discipline behind writing `.pi/APPEND_SYSTEM.md` instead of re-explaining `stash`'s conventions in every session - except here it isn't a convenience, it's *enforced*. A chat-shaped reviewer lets you patch a bad judgment call in the moment and forget it by next week.
+Sit with what that means in practice. If the verifier wrongly flags a clean import as broken, or worse, waves through one that saved six rows of `'None'` dates - you can't just reply "no, that one's fine, ignore it" and move on. There's no follow-up turn to send it.
 
-**No chat input means every fix becomes a durable rule the first time - there's no other way to reach this verifier at all.**
+The lever you are left holding is the file: open `.pi/agents/verifier.md` and change what it checks, or how. Note the timing, because the wiring above fixes it: the spawn command cats the file once, at launch, so an edit lands on the verifier's *next* run - the one in flight is already running its baked-in claims and cannot be steered at all. That's a real constraint, and it's a good one. It's the exact same discipline behind writing `.pi/APPEND_SYSTEM.md` instead of re-explaining `stash`'s conventions in every session - except here it isn't a convenience, it's *enforced*. A chat-shaped reviewer lets you patch a bad judgment call in the moment and forget it by next week.
+
+No chat input means a fix has to land somewhere durable: the file.
 
 Here's that same shape, made concrete. Nine chores went out overnight; only the worker's own report comes back unless you've wired something in to check it. Before you touch anything, guess: with nothing wired in, how many of the nine do you think actually got done correctly, versus just reported done? Watch the night play out, then choose what gets wired into the re-run - and compare what the morning report claims against what actually happened:
 
@@ -68,22 +102,24 @@ Here's that same shape, made concrete. Nine chores went out overnight; only the 
 
 Notice the ceiling even at full wiring. A verifier that checks the code compiles, the tests pass, and the full path runs still can't catch the one failure mode nobody encoded as a check - because a verifier can only verify a claim somebody already wrote down as falsifiable. That's not an argument against building one. It's the argument for building the *right* claims into it, and for treating "what should this verifier check" as a question that gets revisited every time something slips through, not answered once and forgotten.
 
-One more ceiling, and this one doesn't get solved in this lesson: nothing verified the verifier. It ran with `read,bash` and a prompt you wrote, and you read its 9 / 2 / 1 report the same way you read the builder's - on trust. Chase that far enough and you're proposing a third agent to check the second, then a fourth to check the third, and the regress never resolves, it just moves. This module doesn't answer it. The next one is where more agents means more of exactly this problem, multiplied by however many of them you add - pick it up there.
+One more ceiling, and this one doesn't get solved in this lesson: nothing verified the verifier. It ran with `read,bash` and a prompt you wrote, and you read its 9 / 2 / 1 report the same way you read the builder's - on trust. Chase that far enough and you're proposing a third agent to check the second, then a fourth to check the third, and the regress never resolves, it just moves.
+
+This module leaves it open on purpose. The next one is where more agents means more of exactly this problem, multiplied by however many of them you add - pick it up there.
 
 ## What you've actually built
 
-Two agents, neither one trusting the other by default. A builder that does the work and reports on itself, and a verifier that reads the builder's real transcript, breaks its claims into pieces small enough to check, and can only ever push back by having its rules edited - never by being talked out of a finding. That's a genuinely different relationship between agents than "one delegates to another." It's closer to the relationship you'd want between a contributor and a reviewer who's never met them: assume nothing, check everything falsifiable, and write down what you learn so the next review doesn't have to relearn it.
+Two agents, neither one trusting the other by default. A builder that does the work and reports on itself, and a verifier that reads the builder's real transcript, breaks its claims into pieces small enough to check against the actual database, and can only be steered, between runs, by having its rules edited - never by being talked out of a finding mid-run.
 
-If you've used Claude Code's `Task` tool, or something like it, this is what's running underneath - minus the parts it hides from you. `Task` gives you retries, a timeout, cost accounting rolled into your own usage, and a scoped subagent role picked from a list, for free, out of the box. The naked spawn gives you none of that by default; every one of those is a decision you make in your own driver, or a gap you leave open. That's the actual trade of building this yourself instead of trusting a dispatcher tool: less magic, and a harness where every piece of what "delegate to a subagent" means is something you chose, not something a black box decided for you.
+That's a genuinely different relationship between agents than "one delegates to another." It's closer to the relationship you'd want between a contributor and a reviewer who's never met them: assume nothing, check everything falsifiable, and write down what you learn so the next review doesn't have to relearn it.
 
-Replay the ledger with what this module added:
+If you've used Claude Code's `Task` tool, or something like it, this is what's running underneath - minus the parts it hides from you. `Task` gives you a scoped subagent role picked from a list and cost accounting rolled into your own usage, for free, out of the box; how much of the rest (retries, timeouts) it actually handles varies by tool and version. The naked spawn gives you none of that by default; every one of those is a decision you make in your own driver, or a gap you leave open.
 
-| Layer | What it costs | What it buys | Who decided |
-|---|---|---|---|
-| A spawned child | Tokens spent in a separate window, never counted against yours | Removes the failure of one job filling the only window you have | You |
-| A child's session file | Disk, not context - persists whether or not you ever read it | Removes the failure of trusting a summary instead of the real, tool-call-by-tool-call record | You |
-| An independent verifier | A second full agent run, its own tokens, its own window, its own model choice | Removes the failure of an agent grading its own homework | You |
+That's the actual trade of building this yourself instead of trusting a dispatcher tool: less magic, and a harness where every piece of what "delegate to a subagent" means is something you chose, not something a black box decided for you.
 
-Three new rows, and the same column that's carried every row since the first one: you decided. Not Pi, not the builder, not the verifier - the spawn call, the `--session` flag, the second model, all of it something you chose to spend.
+Count what this module added, cost against payoff. A spawned child spends its tokens in a separate window, never against yours - that is what removes the failure of one job filling the only window you have. A child's session file costs disk, not context, and it is what lets a verifier read the real tool-call-by-tool-call record instead of a summary. The verifier itself is a second full agent run - its own tokens, its own window, its own model choice - spent to remove the failure of an agent grading its own homework.
 
-Isolation works. Two agents just did real work on `stash`, in separate windows, and neither one had to hold the whole job at once. Now you're paying for the handoff between the isolated parts: the report a child hands back, the transcript a verifier has to go read instead of trust, the regress of who checks the checker that this module leaves open on purpose. The next scale-up isn't more of the same kind of pair - it's a structure: someone who plans, several someones who execute, and a rule about who's allowed to touch code directly. [Next: build a small team, and learn honestly when it's not worth the overhead](/course/pi/teams/).
+Every one of those was your decision, and that is the part worth carrying forward. Not Pi's, not the builder's, not the verifier's: the spawn call, the `--session` flag, the second model, the cat into `--append-system-prompt` - all of it something you chose to spend, because Pi does none of it for you and the choice was yours to make.
+
+Isolation works. Two agents just did real work on `stash`, in separate windows, and neither one had to hold the whole import at once. Now you're paying for the handoff between the isolated parts: the report a child hands back, the transcript a verifier has to go read instead of trust, the regress of who checks the checker that this module leaves open on purpose.
+
+The next scale-up isn't more of the same kind of pair - it's a structure: someone who plans, several someones who execute, and a rule about who's allowed to touch code directly. [Next: build a small team, and learn honestly when it's not worth the overhead](/course/pi/teams/).

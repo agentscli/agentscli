@@ -2,7 +2,7 @@
 
 The [local write skill](../.claude/skills/write/SKILL.md) adapts book-kit's shared technical-authoring core to agentscli. It selects blog, reference, or course guidance and preserves the site's voice, MDX components, and verification commands.
 
-General craft, evidence, selective deepening, compression, and critique have one home in book-kit's `authoring/`. Local authorities keep their existing jobs: the foundations authoring guide owns landmarks, blog-forge owns interviews/variants, and course conventions own running projects.
+General craft, evidence, selective deepening, compression, and critique have one home in book-kit's `authoring/`. Local authorities keep their existing jobs: the foundations authoring guide owns landmarks, blog-forge owns interviews/variants, and course conventions own teaching principles and presentation.
 
 ## Local setup
 
@@ -23,3 +23,7 @@ The first command previews changes. Applying creates a local `write/shared` link
 Use the existing `write plan`, `write draft`, `write revise`, or `write judge` entry point. Existing blog-forge and foundations entry points route through the same adapter. New content stays in MDX and uses Astro's existing checks; book-kit's standalone site/EPUB builders are not agentscli's publisher.
 
 For content changes run `pnpm verify`; instruction-only integration is validated by resolving the shared link, checking skill metadata and references, and reviewing the routing. This installation does not rewrite articles or establish that existing content has been fact-checked.
+
+## Course writing and review
+
+Use [the course authoring guide](COURSE_AUTHORING_GUIDE.md) for the reader-facing framework of capability, context, control, and cost. Its [editorial principles](COURSE_AUTHORING_GUIDE.md#editorial-principles) define course presentation. Use the guide's [presentation standard](COURSE_AUTHORING_GUIDE.md#consistent-quality-flexible-presentation) for published pages.

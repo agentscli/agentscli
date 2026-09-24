@@ -1,46 +1,59 @@
 ---
 title: Install Claude Code and open it in your project
-description: "From nothing installed to a running agent inside your repo. The install is a one-liner - the part that matters is where you launch it."
-sidebar:
-  label: "Install · launch in your repo"
+description: "Install the CLI, verify it runs, and choose the project it starts from. Learn why a working directory gives context without providing isolation."
 ---
 
-The repo is cloned, the ticket is open, and you have no agent yet. This is the shortest lesson in the chapter because the install genuinely is a one-liner - but there's one decision buried in it that quietly shapes everything Claude Code can see, and it's worth getting right on the first run rather than learning later.
+## Install the CLI
 
-## Getting the binary
+The chapter's worked task can wait: a payments service that answers health checks at `/health` while a new monitor polls `/healthz`. For now, leave the source alone. Install the CLI and check that your shell can find it:
 
-The recommended install is the native installer - one line on macOS, Linux, or WSL:
-
-```text
+```bash
+# macOS, Linux, or WSL
 curl -fsSL https://claude.ai/install.sh | bash
+claude --version
 ```
 
-On Windows it's a PowerShell one-liner instead, and if you'd rather go through a package manager there's Homebrew (`brew install --cask claude-code`), WinGet, or an npm global package (`npm install -g @anthropic-ai/claude-code`). They all land the same thing: a `claude` command on your `PATH` that you can run from any directory. Because the exact commands and supported platforms shift over time, treat the [official setup guide](https://code.claude.com/docs/en/setup) as the source of truth - it carries the current one-liner for every OS.
+On native Windows, run the installer in PowerShell:
 
-## Where you launch it is the whole game
-
-Here's the part that isn't obvious. Claude Code is scoped to the directory you start it in. That directory becomes its world - the files it can read, the project it reasons about, the `CLAUDE.md` it picks up. So you don't run it from your home folder and then point it somewhere; you `cd` into the project first and launch it *there*:
-
-```text
-> cd ~/work/payments-service
-> claude
-
-  ▐ Claude Code
-  ▐ cwd: ~/work/payments-service
-
-  How can I help?
+```powershell
+irm https://claude.ai/install.ps1 | iex
+claude --version
 ```
 
-That `cwd` line is the agent telling you what it can see. Launch from the repo root and it can reach the whole project; launch from a subdirectory and you've quietly fenced it into that corner. For this chapter you want the root, so the agent can find the routes, the tests, and the config without you hand-feeding paths.
+A working installation prints a version number. Yours may differ from another reader's; record it if you need to compare behavior later. These are the native installation commands from the [official setup guide](https://code.claude.com/docs/en/setup), which also covers supported systems and package-manager alternatives.
 
-This scoping isn't a quirk to memorize - it's the same fact that governs how sessions resume and how the context window fills, and you'll meet it again in later chapters. For now just internalize the habit: **the directory you launch from is the directory the agent lives in.** Start it in the wrong place and nothing else in this chapter works the way it should.
+If your shell reports `command not found`, installation and command discovery have come apart. Open a new terminal and retry. If it still fails, follow the [installation troubleshooting guide](https://code.claude.com/docs/en/troubleshooting) to check the install location and `PATH`. Once the command is available, `claude doctor` can inspect the installation. Repeatedly pasting the installer will not explain which directory your shell is searching.
 
-:::caution[Troubleshooting]
-**`claude: command not found` after install.** The binary landed somewhere your shell doesn't look. On macOS with Homebrew or the native installer, the usual culprit is a missing `PATH` entry - open a *new* terminal window (not a new tab) and try again. If it still fails, run `claude doctor` when available and check the installer's documented location (the native installer commonly uses `~/.local/bin/claude`) rather than assuming `~/.claude/bin/`.
+## Choose the starting point
 
-**Node.js version.** The npm install path (`npm install -g @anthropic-ai/claude-code`) currently requires Node.js 22+. Check with `node --version`; if you're below 22, upgrade Node first or use the native installer instead. Confirm the current requirement in the [installation guide](https://code.claude.com/docs/en/installation).
+Open a terminal in a working copy of a repository you own, set aside for this course; any project works for this page's launch check. The walkthrough uses the payments service supplied by your course host, and `~/work/payments-service` below is its illustrative path, not a required one. The health-route lessons that follow need that payments project or an Express project you adapt to the task; the [chapter introduction](/course/claude-code/getting-started/) describes the project and the option to read those lessons as a walkthrough.
 
-**What a failed install looks like.** A partial install typically shows a permission error (`EACCES`) or a network timeout during download. The fix for `EACCES` is to avoid `sudo` and instead fix your npm prefix (`npm config set prefix ~/.npm-global`); for timeouts, check your proxy settings or try the native installer.
-:::
+```bash
+cd ~/work/payments-service
+pwd
+git status --short
+claude --permission-mode default
+```
 
-The REPL is up and waiting. But if this is a fresh machine, it doesn't yet know who you are - [the first thing it needs is for you to sign in](/course/claude-code/getting-started/authenticate/).
+Before the last command, check the directory and the Git status. If `git status` reports that this is not a Git repository, which is the case for the payments project as the course host supplies it, create the history the later review, rewind, and worktree drills rely on: initialize a repository, ignore the installed and built output, and commit a baseline before Claude edits anything.
+
+```bash
+git init
+printf 'node_modules/\ndist/\n' > .gitignore
+git add -A
+git commit -m "Baseline before the course"
+```
+
+If you already have changes, preserve them and note which files they touch. Later, you need to distinguish the agent's work from work that was there when it arrived.
+
+The explicit `--permission-mode default` selects the manual permission mode for this walkthrough, and on current versions that flag is doing real work: a plain `claude` launch can start in auto mode, where most actions are auto-approved (the [default-prompt lesson](/course/claude-code/permissions-modes/default/) lists which plans and versions). Pinning `default` selects the manual approval mode while you are learning what the agent does: Claude asks before file edits and shell commands that no saved permission rule or organization setting already allows. Those rules and settings still apply, so the flag is not a promise that every operation will display a new prompt. The modes are documented in the [permission-modes reference](https://code.claude.com/docs/en/permission-modes) and taught in [Permissions & modes](/course/claude-code/permissions-modes/); the flag itself is in the [CLI reference](https://code.claude.com/docs/en/cli-reference).
+
+## A starting point is not a fence
+
+Launching from the repository root gives the session a sensible place to begin looking for the application, tests, and project instructions. Starting inside `src/payments/` instead makes it easier to orient the task around the payment module when the ticket actually concerns an HTTP route elsewhere.
+
+The working directory does not by itself isolate the process from the rest of your machine. File access also depends on permission rules, additional directories, and any configured sandbox. Keep the distinction clear: choosing a directory helps establish the task's context; restricting access requires the appropriate controls. The [working-directory documentation](https://code.claude.com/docs/en/permissions#working-directories) describes those access rules.
+
+There is another distinction you will use throughout the course. Being able to read a file does not mean the model has already read it. The agent still has to gather the information relevant to your question. In the next lesson, you will watch it do that for a route whose location you can check yourself.
+
+On a fresh installation, launching Claude Code also begins account setup. [Sign in, then ask where the health check lives](/course/claude-code/getting-started/authenticate/).

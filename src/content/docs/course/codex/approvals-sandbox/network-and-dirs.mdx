@@ -1,33 +1,31 @@
 ---
 title: Network is off by default - and how to widen the fence on purpose
-description: "The agent tries the exchange-rate API and fails: workspace-write blocks the network by default. Widen the fence on purpose with network_access and --add-dir."
-sidebar:
-  label: "Network & dirs · the teachable moment"
+description: "The agent tries an API call and fails: workspace-write blocks the network by default. Widen the fence on purpose with network_access and --add-dir."
 ---
 
-The refactor's done. The next ticket is a small one: `budgetcli` got a transaction in euros, and to record it in your reports the service needs to convert it to your home currency at the rate on the transaction date. You ask Codex to fetch that rate from the exchange-rate API the service already has a client for. You're in `on-request × workspace-write` - the comfortable daily cell from the last two lessons - so you expect it to just work.
+Under `workspace-write` - the sandbox level most interactive work runs in, entered with `codex -s workspace-write` (plus `-a on-request`, the approval policy that pauses when an action needs to cross the sandbox boundary) - the agent can edit the project. Sooner or later a task arrives that also needs the internet: fetch a live exchange rate, download a data file, query an API. In that comfortable daily combination you expect it to just work. It doesn't, and the way it fails is the single most important thing to understand about the `workspace-write` sandbox.
 
-It doesn't. And the way it fails is the single most important thing to understand about the `workspace-write` sandbox.
+## Network is a separate permission
 
-## The wall you didn't know was there
+An illustrative reconstruction, not a captured run - the exact wording of the refusal varies by version; the behavior is the documented default:
 
 ```text
-> fetch today's EUR→USD rate from the exchange-rate API and cache it
+> fetch today's EUR-to-USD rate from the exchange-rate API and cache it
+  for the euro transaction
 
-  ⎿ Read src/budgetcli/fx.py
-
-  ⏵ Running: python -c "import httpx; httpx.get('https://api.exchangerate.host/latest')"
-    ✗ Network is disabled in this sandbox.
-    The workspace-write sandbox blocks outbound network access by default.
+  • Read app/main.py
+  • Read app/models.py
+  • Ran python -c "import httpx; httpx.get('https://api.exchangerate.host/latest')"
+    blocked - network access is disabled in this sandbox
 ```
 
-Read that carefully, because the instinct is to think the agent did something wrong. It didn't. **In `workspace-write`, outbound network access is off by default.** The sandbox lets the agent write files inside your project - but reaching the internet is a *separate* permission, and it starts closed. "Can write the project" and "can phone the internet" are two different capabilities, and `workspace-write` grants only the first - notice this is the same shape as the two-axis lesson earlier in this chapter, just one level down: even inside one sandbox setting, "where" and "how far" split into more than one fence.
+Read that carefully, because the instinct is to think the agent did something wrong. It didn't. **In `workspace-write`, outbound network access is off by default.** The sandbox lets the agent write inside the workspace - but reaching the internet is a *separate* permission, and it starts closed. "Can write the project" and "can open a socket" are different capabilities, and `workspace-write` grants only the first. Under `on-request`, the blocked call surfaces as an approval prompt: approve it and the call runs as an exception beyond the default boundary. That works, but it relitigates the network on every crossing - which is why the deliberate, scoped route below is usually the better answer. Even inside one sandbox setting, "where" and "how far" are separate fences.
 
-This is a deliberate, valuable default, and it's worth sitting with *why* before you reach to switch it off. Most of the real damage an agent could do with your financial data needs the network: exfiltrating a secret, posting your transactions to some endpoint, pulling and running code from a URL. A sandbox that can write your project but can't open a socket has had its most dangerous capability removed by default. The agent hitting this wall isn't a bug you route around - it's the protection working, asking you to make an explicit decision before data starts leaving your machine.
+The default is deliberate, and worth understanding precisely. Damage that *leaves your machine* - exfiltrating a secret, posting your records to some endpoint, pulling code from a URL and running it - needs the network, and this boundary removes that path. It is a control boundary on network-mediated disclosure and downloads, not a general safety guarantee: the writes the sandbox does allow (your project, its temp directories) can still corrupt or destroy local files, exactly as any collaborator with write access could. Hitting this wall isn't a bug to route around - it's the boundary asking you to decide, explicitly, before data leaves your machine.
 
 ## Opening network on purpose
 
-When the network *is* what the task legitimately needs - as it is here, the rate API is a real dependency - you open it deliberately, in config, scoped to the workspace-write sandbox:
+When the network *is* what the task legitimately needs, you open it deliberately, in config, scoped to the workspace-write sandbox:
 
 ```toml
 # ~/.codex/config.toml  or  .codex/config.toml
@@ -35,11 +33,13 @@ When the network *is* what the task legitimately needs - as it is here, the rate
 network_access = true
 ```
 
-Now, and only now, the agent's call to the exchange-rate API goes through. The rest of the `workspace-write` fence is untouched - still can't write outside the project, still the same approval checkpoint - you've widened exactly one capability, the one this task actually requires, and left the rest of the wall standing. That's the discipline the two-axis model keeps pushing you toward: open the specific thing, not the whole machine. Reaching for `danger-full-access` to "just let it use the internet" would also hand it your entire filesystem. **`network_access` gives it the internet and nothing else.**
+Two conditions on that comment line. First, `~/.codex/config.toml` is your user config and applies everywhere; a `.codex/config.toml` inside the project applies only where Codex trusts that project, and an untrusted project skips project-local config entirely - the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference) documents per-project `trust_level`. Second, the flag opens *outbound access in general*, not just the one API in your task; it does not scope network to a host.
+
+With that in place, the sandbox permits outbound connections - whether a particular call then succeeds still depends on the usual suspects (DNS, credentials, the service being up). The rest of the fence is untouched: writes still land only in the workspace and its temp directories, and the approval checkpoint still governs other kinds of escalation. You've widened exactly one capability, the one this task actually requires. Reaching for `danger-full-access` to "just let it use the internet" would also hand it your entire filesystem. **`network_access` gives it the network and nothing else.**
 
 ## Widening which directories it can write
 
-The same scoped-widening logic applies to the filesystem. You keep your downloaded bank statements in `~/budget-data/`, *outside* the repo - sensible, since you don't want raw financial exports in git. But the importer needs to read and write there, and `workspace-write` fences the agent to the project. Two ways to extend that fence, both surgical:
+The same scoped-widening logic applies to the filesystem. Say the task's data lives outside the repo - downloaded bank statements kept in `~/budget-data/`, raw exports you deliberately keep out of git. The work will need to read and write there, and `workspace-write` fences writes to the workspace, which is working directory plus temp. Two ways to extend, both surgical.
 
 A one-off, per launch - `--add-dir` adds a writable root for this session only:
 
@@ -47,18 +47,17 @@ A one-off, per launch - `--add-dir` adds a writable root for this session only:
 codex -s workspace-write --add-dir ~/budget-data
 ```
 
-Or persistently, in the same `[sandbox_workspace_write]` block, with `writable_roots`:
+Or persistently, in the same `[sandbox_workspace_write]` block, with `writable_roots` (shown here without the network line, which stays off unless your task needs it):
 
 ```toml
 [sandbox_workspace_write]
-network_access = true
 writable_roots = ["~/budget-data"]
 ```
 
-Either way the agent can now write `~/budget-data` *and* the project - and still nothing else. Note what you did *not* do: you didn't switch to `danger-full-access` to get the data directory. The official guidance is explicit that `--add-dir` is the preferred move precisely because it grants the one directory you need instead of the whole disk. **Keep the wall; cut one door in it.**
+Either way the agent can now write `~/budget-data` *and* the workspace - and the extension behaves like the rest of the writable scope: temp directories remain writable, and protected paths such as `.git` keep their read-only protection inside any writable root (the [agent approvals and security docs](https://learn.chatgpt.com/docs/agent-approvals-security) list the protected paths; the config reference documents each key's exact read and write scope). Note what you did *not* do: switch to `danger-full-access` to get one data directory. `--add-dir` and `writable_roots` are preferred precisely because they grant the one directory you need instead of the whole disk. **Keep the wall; cut one door in it.**
 
-## The shape of the lesson
+## Widen by exactly one capability
 
-Both halves of this lesson are the same move. `workspace-write` ships with a tight, sensible fence: the project directory, no internet. When a task genuinely needs more reach, you don't tear the fence down - you widen it by the exact amount required and no more. `network_access` opens the network; `writable_roots` and `--add-dir` open specific directories. The keys, their defaults, and a couple of related toggles (`exclude_slash_tmp`, `exclude_tmpdir_env_var`) are documented in the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference) and the [agent approvals and security docs](https://learn.chatgpt.com/docs/agent-approvals-security).
+`workspace-write` ships with a tight, sensible fence: the working directory plus temp directories, no internet. When a task genuinely needs more reach, the move is always the same: widen the fence by the exact amount required and no more. `network_access` opens the network; `writable_roots` and `--add-dir` open specific directories. The keys, their defaults, and the temp-directory toggles (`exclude_slash_tmp`, `exclude_tmpdir_env_var`) are documented in the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
-You've now set both dials by hand and widened the fence twice. But you've also typed the same flags over and over, and tweaked `config.toml` for one task that the next task shouldn't inherit. There's a cleaner way to carry a whole trust posture around as one named thing - [bundle the axes into a profile](/course/codex/approvals-sandbox/profiles-for-trust/).
+Typing these flags repeatedly, or editing config for one task the next task shouldn't inherit, is its own friction. If you will reuse a posture, there is a cleaner way to carry it around as one named thing - [bundle the axes into a profile](/course/codex/approvals-sandbox/profiles-for-trust/).

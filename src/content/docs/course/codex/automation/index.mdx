@@ -1,32 +1,42 @@
 ---
 title: "Automation"
-description: "Trace one Codex run with nobody watching. Same four-beat loop from chapter one, minus the beat where you stood - and two things move in to cover for it."
-sidebar:
-  label: "Automation · headless, CI, the SDK"
+description: "Trace one Codex run with nobody watching. The same read-propose-approve-apply loop, minus the beat where you stood - and what moves in to cover for it."
 ---
 
-[Extending](/course/codex/extending/) gave a single session more reach than it started with - a server it could query, a hook that could stop it cold. Every one of those still assumed you were in the room: launching Codex, watching the diff, answering the pause. This chapter takes you out of the room. `budgetcli` grows two jobs that run with nobody watching - a report that writes itself once a month, and a check that fires on every push - and the villain that's been running under this whole course shows up here in its sharpest form: **there is no human left in the loop to catch the wrong turn.**
+Everything built so far - the trust postures, the rules file, the [hooks and external tools from the extending chapter](/course/codex/extending/) - has one thing in common: a human launched every run, read every diff, and answered every pause.
 
-Here's the contract this chapter holds to, stated once so every lesson can lean on it. [The loop](/course/codex/getting-started/the-loop/) has four beats - read, propose, approve, apply - and a headless run is that exact loop with one beat removed. Approve doesn't get replaced by nothing; it gets replaced by two things, decided at different times. The **sandbox** becomes the fence approve used to be, except it's set before the run starts instead of during it - it can't be talked to, only configured. The **rules file** becomes the only brief, because there's no back-and-forth left to correct a misunderstanding mid-run - whatever isn't already written down, the run never learns. And the **exit code**, backed by whatever you actually wired the run to check, becomes the review you used to do by hand, reading the diff before you'd let it commit. Every setting this chapter touches is one of those three doing the job a person used to do.
+This chapter takes you out of the room and asks the question that was left hanging: what runs when nobody watches, and what does fail-shut even mean when there's no one to fail in front of?
+
+`budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI) grows two jobs that run unattended, and the villain underneath this whole course arrives at its sharpest form here: **there is no human left in the loop to catch the wrong turn.**
+
+Constructed scenario, labeled once for the chapter: the two jobs are not features of the repo. There is no report writer, no scheduled importer, no budgets file - there never was. They are this course's defined teaching chores wrapped around two explicitly different states. The unpublished starter fixture has the categorizer at `app/services/categorise.py`, a float-based money parse in `app/importers/csv.py`, and six tests. The course's labeled continuation later replaces that parse with `Decimal` and grows the suite to ten tests. The statements directory under `~/budget-data/` is constructed too. Nobody has run these jobs. They are definitions to reason with, not logs.
+
+## The contract this chapter holds to
+
+[The loop](/course/codex/getting-started/the-loop/) has four beats - read, propose, approve, apply - and a headless run is that exact loop with one beat removed. Approve doesn't get replaced by nothing. It gets replaced by three things, each decided at a different time.
+
+The **sandbox** becomes the fence approve used to be, except it's set before the run starts instead of during it - it can't be talked to, only configured. The **committed brief** becomes the only brief, because there's no back-and-forth left to correct a misunderstanding mid-run: whatever isn't written down where Codex reads by default, the run never learns. And the **exit code**, backed by whatever you actually wired the run to check, becomes the review you used to do by hand before letting a diff commit.
+
+Every setting this chapter touches is one of those three doing a job a person used to do.
 
 ## The two jobs, and the run underneath both
 
-`budgetcli` has two chores that keep landing on a human by hand:
+Both chores keep landing on a human by hand, and each is small enough to trace whole:
 
-- **The monthly report.** At month-end, someone runs the categoriser, totals spend against `budgets.toml`, and writes up whatever went over.
-- **The transaction check.** Every time a fresh CSV batch lands, something needs to recategorise it and run the suite, so a malformed import gets caught at the door instead of corrupting months of history quietly.
+- **The monthly report.** At month-end, run the month's statement through the categorizer, total spend per category, and write up whatever went over.
+- **The transaction check.** Every time a fresh CSV batch lands or a push touches the import path, something needs to recheck the money paths and run the suite, so a malformed import gets caught at the door instead of corrupting months of history quietly.
 
-Both chores are the same shape underneath: read some files, decide something, write a result, and tell you whether it worked. That shape is `codex exec` - the one command this whole chapter is built on - and the running example we'll trace stage by stage is the monthly report, because it's the smaller of the two jobs and every stage shows up cleanly on it before the transaction check adds a second wrinkle: something other than you pressing the button.
+Underneath, both are the same shape: read some files, decide something, write a result, and tell you whether it worked. That shape is `codex exec` - the one command this whole chapter is built on. The running example traced stage by stage is the monthly report, because every stage shows up cleanly on it before the transaction check adds a second wrinkle: something other than you pressing the button.
 
 ## What the payoff actually costs
 
-State the payoff before you've configured anything, so you can check it against the arithmetic as you go. The categoriser `budgetcli`'s report depends on - `src/budgetcli/categorise/rules.py`, 512 lines - costs about **5,120 estimated tokens** every time a run reads it fresh, at 10 tokens per line. (Full method: [About the numbers](/course/codex/getting-started/#about-the-numbers-in-this-course).) Against a 200,000-token window that's nothing, 2.6% of it - and it still recurs every single month, forever, because a headless run knows exactly as little at the start as an interactive one does. **The report will cost that every month whether one person reads the number it produces or nobody ever does again - and the entire difference between those two outcomes is two flags and an exit code, not tokens.** That's the claim. The rest of the chapter re-derives it.
+State the payoff before configuring anything, so you can check it against the arithmetic as you go. What does an unattended report run read? On the starter fixture, little: the categorizer is 18 lines, the ledger 18, and the Python files total 166 lines (about 230 lines when tests, config, rules, and README are included). At the course's rough 10-tokens-per-line teaching estimate, that is about 2,000 tokens, around one percent of a 200,000-token window. (Estimators covered once in [the opening chapter](/course/codex/getting-started/).)
 
-We'll build the trace in order:
+So the tokens are not the cost. This is: **the report will run every month forever, whether one person reads the number it produces or nobody ever does again - and the entire difference between those two outcomes is two flags and an exit code, not tokens.** That's the claim. The rest of the chapter re-derives it:
 
 - [Generate the monthly report headless with `codex exec`](/course/codex/automation/headless/) - one call, one result, one exit code; the beat that goes missing and what fills the gap
-- [Wire the transaction check into CI on every push](/course/codex/automation/ci/) - authentication with no browser, the posture that has to be granted before the run exists, and what the exit code is actually worth
+- [Wire the transaction check into CI on every push](/course/codex/automation/ci/) - authentication with no browser, the posture granted before the run exists, and what the exit code is actually worth
 - [Make CI runs reproducible with `--ignore-user-config` and `--ignore-rules`](/course/codex/automation/reproducible/) - strip everything that isn't the committed brief, so the run means the same thing on any machine
-- [Reach for the Codex SDK when `exec` runs out of room](/course/codex/automation/sdk/) - where one call stops being enough, and the chapter's ledger row
+- [Reach for the Codex SDK when `exec` runs out of room](/course/codex/automation/sdk/) - where one call stops being enough, and what crossing over buys
 
-By the end, `budgetcli`'s report writes itself and its transactions get checked without you - and you'll know exactly which stage of that unattended run is the one you can't take back.
+By the end, the report writes itself and the checks run without you - you'll know exactly which stage of an unattended run is the one you can't take back, and which parts of this chapter's automation were written rather than run.

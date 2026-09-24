@@ -66,7 +66,7 @@ export const skaParts: SkaPart[] = [
     constraints:
       'Cursor and OpenCode require it to match the folder name; Copilot and OpenCode cap it at 64 characters.',
     support: {
-      'claude-code': { status: 'yes', note: 'required' },
+      'claude-code': { status: 'yes', note: 'optional · defaults to folder name' },
       codex: { status: 'yes', note: 'required' },
       opencode: { status: 'yes', note: 'required · 1 - 64 chars, must match folder' },
       cursor: { status: 'yes', note: 'required · must match folder' },
@@ -79,7 +79,7 @@ export const skaParts: SkaPart[] = [
     what: 'The trigger. Eligible skill descriptions are commonly indexed up front; the model matches your intent against them to decide when to pull the body in. Indexing can be bounded or lazy, so verify the active tool. Write this as a "use when…" hint, not a summary.',
     constraints: 'Capped at 1024 characters where a limit is documented (OpenCode, Copilot).',
     support: {
-      'claude-code': { status: 'yes', note: 'required · drives auto-invocation' },
+      'claude-code': { status: 'yes', note: 'recommended · drives auto-invocation · omitted falls back to the first body line' },
       codex: { status: 'yes', note: 'required · drives auto-invocation' },
       opencode: { status: 'yes', note: 'required · 1 - 1024 chars' },
       cursor: { status: 'yes', note: 'required · drives auto-select' },
@@ -140,7 +140,7 @@ export const skaParts: SkaPart[] = [
   {
     id: 'body',
     title: 'The body',
-    what: 'Whatever the agent needs to actually do the thing: a checklist, a procedure, domain knowledge. Loaded only when the skill fires - descriptions are always in context, bodies cost nothing until invoked. That progressive disclosure is what makes skills cheap to keep around.',
+    what: 'Whatever the agent needs to actually do the thing: a checklist, a procedure, domain knowledge. Loaded only when the skill fires - names are always listed, descriptions can shorten or drop under a budget, bodies cost nothing until invoked. That progressive disclosure is what makes skills cheap to keep around.',
     support: {
       'claude-code': { status: 'yes', note: 'auto by description, or `/<name>`' },
       codex: { status: 'yes', note: 'auto · `/skills` to browse · `$<name>` to mention' },

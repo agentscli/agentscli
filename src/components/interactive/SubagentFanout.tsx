@@ -8,7 +8,7 @@ import { useWidgetFrame } from './widget-frame';
  * illustrative (window = 200k, fixed overhead matches context-sim-data.ts);
  * the shape - parent coherence + parallelism vs total tokens - is the point.
  * Domains match the stash extraction-engine migration (teams/orchestration.mdx):
- * extraction lead, index lead, interface lead each read their own domain
+ * extraction lead, storage lead, interface lead each read their own domain
  * before any migration work starts.
  */
 
@@ -28,7 +28,7 @@ const PARENT_BASE: Seg[] = [
 
 const SWEEPS = [
   { id: 'extraction', label: 'extraction/ sweep', tokens: 46 },
-  { id: 'index', label: 'index/ sweep', tokens: 39 },
+  { id: 'storage', label: 'storage/ sweep', tokens: 39 },
   { id: 'interface', label: 'interface/ sweep', tokens: 33 },
 ];
 

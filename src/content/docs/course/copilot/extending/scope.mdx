@@ -1,37 +1,45 @@
 ---
 title: Scope a server to one agent
-description: "A workspace-level server is open to every conversation. A custom agent can carry its own MCP instead, so library-reviewer gets the registry and nothing else."
-sidebar:
-  label: "Scope · per-agent servers"
+description: "A workspace-level server is open to every conversation. The tools list in a custom agent's file decides which servers that agent may reach - reviewer gets the registry, nobody else."
 ---
 
-The registry server you connected is wired at the workspace level. That means every conversation in `shared-lib` can reach it - a quick Ask, a throwaway Edit, any agent you spin up. For a low-stakes tool that's fine. But this is a high-blast-radius repo, and a registry that can enumerate twelve services' worth of internal dependencies is exactly the kind of reach you'd rather *grant on purpose* than leave open by default.
+The registry server you connected is wired at the workspace level, which means ordinary chat can reach it once trusted - no declaration needed. For a low-stakes tool that is fine. But a registry that can enumerate a dozen services' worth of internal dependencies is exactly the kind of reach you would rather *grant on purpose* than leave open by default.
 
-There's a tighter way to wire it. Cast your mind back to Act 1, when you built the **`library-reviewer`** - the custom agent that holds `shared-lib`'s compatibility rules so you don't re-brief them every session. That reviewer is *precisely* the consumer of the registry. When it's checking whether a change breaks anyone, it needs to know who imports the library. No other conversation does.
+There is a tighter way to wire it. Cast back to the [reviewer](/course/copilot/custom-agents/a-reviewer/) - the custom agent that holds the compatibility rules of `shared-lib`, the course's illustrative internal library, imported by about a dozen services. That reviewer is *precisely* the consumer of the registry: when it is checking whether a change breaks anyone, it needs to know who imports the library. Almost nothing else in your day needs that.
 
-## Give the agent its own MCP
+## The agent's `tools` list is the scope
 
-A custom agent can declare its own servers through an **`mcp-servers`** property in its `.agent.md`. Instead of the registry being ambient across the whole workspace, it becomes part of *who the reviewer is* - bundled into the same file that already carries its job description and its scoped tools:
+A custom agent's frontmatter carries a **`tools`** list - the tools and MCP servers that agent is allowed to use. To reach a server's tools, the agent's list names the server with a `/*` suffix (syntax per the [custom agents configuration reference](https://docs.github.com/en/copilot/reference/custom-agents-configuration), verified September 2026):
 
 ```yaml
 ---
 name: library-reviewer
-description: Reviews changes to shared-lib for breakage across its consumers.
-mcp-servers:
-  - service-registry
+description: Reviews changes to shared-lib for breaking changes and API contract violations.
+tools:
+  - read
+  - search
+  - 'service-registry/*'
 ---
 ```
 
-Now the reach and the persona travel together. The `library-reviewer` can ask the registry "who depends on `shared-lib`?" the moment it needs to - which is the exact thing you did by hand in Act 1 when you assembled the consumer list before fanning subagents out. With the server scoped to the agent, you don't assemble that list anymore. The reviewer pulls it itself, then delegates the breakage check across whatever consumers the registry names.
+With that entry, `library-reviewer` can call the registry's tools when it needs them; an agent whose list omits the entry cannot. The reach travels with the persona: the same file that carries the reviewer's job description and its read-only base tools now also carries its one deliberate connection to an external system.
+
+:::note[What about `mcp-servers` in the agent file?]
+You may see an `mcp-servers` frontmatter property in the [cloud custom-agent configuration reference](https://docs.github.com/en/copilot/reference/custom-agents-configuration). As of September 2026, GitHub documents it as **not used in VS Code and other IDE custom agents** - it configures additional MCP servers for the GitHub.com cloud agent only, and it takes an object form mapping server names to full server configurations. For IDE agents, the `tools` list above is the mechanism.
+:::
+
+So the scoping decision splits in two: which servers exist for this workspace lives in [`.vscode/mcp.json`](/course/copilot/extending/connect/); which agents may use a given server lives in each agent's `tools` list. The registry can be workspace-visible (your teammates' agents may want it too) while each agent must declare it to call it.
 
 ## Why scope it at all
 
-Scoping isn't bureaucracy - it's the same judgment that's run through this whole act. Every capability you hand an agent is reach it can use *without asking you each time*. On `shared-lib`, where a wrong move ripples to a dozen apps, you want each grant to be deliberate: this agent, this server, for this reason. Workspace-level MCP says "anyone here can reach the registry." Agent-level MCP says "the reviewer can, because that's its job, and the rest of your conversations stay narrow." For the careful half of the course, the narrower default is the right one.
+Scoping is not bureaucracy - it is the same judgment that runs through this whole stretch of the course. Every capability you hand an agent is reach it can use *without asking you each time*. On a shared library, where a wrong move ripples to a dozen apps, each grant should be deliberate: this agent, this server, for this reason - the control principle again, boundaries granted on purpose.
 
-It also makes the reviewer *portable in the right way*. The agent file now carries everything it needs - its rules, its tools, and the one external system it depends on. Hand that file to a teammate and they get a reviewer that already knows who imports the library, with no separate "and also wire up the registry" step.
+The precise boundary: **workspace wiring governs chat; a custom agent's `tools` list gates that agent only.** Workspace-level MCP says "chat in this repo can reach the registry," and ordinary chat needs no declaration to call a trusted server. An agent-scoped `tools` entry says "this agent can, because that is its job" - an agent whose list omits the entry cannot call it, while chat still can. If you want to keep the registry out of *chat* too, that is a workspace-wiring change ([the connect lesson](/course/copilot/extending/connect/)) or the chat's tool-configuration toggle, not the agent file.
 
-## Where Act 1 stands
+It also makes the reviewer *portable in the right way*. The agent file carries its rules, its base tools, and the name of the one external system it depends on. Hand the file (plus the repo's `mcp.json`) to a teammate and they get a reviewer that already knows who imports the library.
 
-Step back and look at what you've assembled for the careful work. A `library-reviewer` that knows the compatibility rules. Subagents that fan a breakage check across every consumer. A Skill that carries the audit-event convention. And now a registry the reviewer can query itself, scoped so the reach is contained to the work that needs it. The machinery for changing a twelve-consumer library safely is in place.
+## Where the careful work stands
 
-There's one question all of it has been circling and never quite answered: when this agent actually runs - calls the registry, edits a file in `shared-lib`, executes a command - **how much do you let it do before you look?** That's the climax of Act 1, where every safeguard you've built gets put under one control. [Next chapter: Permissions & autonomy](/course/copilot/permissions/).
+Look at what this stretch of the course has assembled. A `library-reviewer` that knows the compatibility rules and can query the registry itself. [Subagents](/course/copilot/custom-agents/subagents/) - focused checkers run by a coordinator - that fan a breakage check across every consumer. A [skill](/course/copilot/skills/) that carries the audit-event convention. The machinery for changing a many-consumer library safely is in place.
+
+There is one question all of it has been building toward: when the agent actually runs - calls the registry, edits a file in the library, executes a command - **how much do you let it do before you look?** That is the next chapter, where the question every safeguard built so far has been circling gets its own setting. [Next chapter: Permissions & autonomy](/course/copilot/permissions/).

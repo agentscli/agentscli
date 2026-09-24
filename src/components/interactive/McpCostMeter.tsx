@@ -116,8 +116,9 @@ export default function McpCostMeter() {
 
       <p className="mcm-footnote">
         Tool counts and schema sizes are illustrative (~600 - 800 tokens per tool
-        definition). The shape is the point: every registered server is paid
-        for in window space whether the session uses it or not.
+        definition). The shape is the point: every enabled server&apos;s schemas are
+        paid for in window space - up front on clients that load eagerly, at
+        first use on clients that defer.
       </p>
     </div>
   );

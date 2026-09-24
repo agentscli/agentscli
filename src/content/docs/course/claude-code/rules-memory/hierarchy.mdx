@@ -1,69 +1,82 @@
 ---
 title: "Layer CLAUDE.md across user, project, and subdirectory scopes"
-description: "Personal, project, and subdirectory CLAUDE.md files don't override each other - they stack, in a defined order, into one combined context."
-sidebar:
-  label: "Hierarchy · how rules layer"
+description: "Claude Code concatenates CLAUDE.md files from managed policy, user, project, local, and subdirectory scopes - one combined context, broadest first, closest read last."
 ---
 
 import ConfigExplorer from '../../../../../components/interactive/ConfigExplorer.tsx';
 import RulesResolver from '../../../../../components/interactive/RulesResolver.tsx';
 
-You've been putting every rule in one file: the project `CLAUDE.md` at the repo root, shared with your team through version control. That's the right home for most of them. But two of your rules don't quite fit there. "Always explain your reasoning before editing" is a *personal* preference - your teammates shouldn't inherit it just because you like it. And the rule about how the `migrations/` directory's numbering scheme works only matters when the agent is actually in `migrations/` - loading it into every session about the charge API is wasted context. Both want a different scope. Claude Code has one for each.
+A `CLAUDE.md` is a file of standing instructions that Claude Code loads into the model's context. Its **scope** is the location it lives at, and the location decides who receives its rules: every project on your machine, everyone who clones this repo, only you in this repo, or only sessions that work inside one subtree. Different rules want different audiences, and one file cannot serve them all.
+
+Three rules from a small TypeScript payments service (the example this course returns to; each page restates the facts it needs) make the problem concrete:
+
+- *processPayment's idempotency key is optional - never assume a caller sends one.* This is project truth: `processPayment` in `src/payments/processor.ts` declares `idempotencyKey?: string`, so a caller can omit it and get no duplicate check. Every teammate's agent should carry this line.
+- *Show me your plan before you edit.* This is your habit, in every repo you open. Your teammates run looser, and your preference has no business in their sessions.
+- *The ledger is in-memory; balances reset on restart.* True of `src/payments/ledger.ts`, and relevant only when the agent is working inside `src/payments/`.
+
+The scope ladder gives each of those three the right audience.
 
 ## The scopes, broadest to narrowest
 
-CLAUDE.md files live at several locations, each with a different reach. In the order Claude loads them - widest scope first, most specific last:
+`CLAUDE.md` files live at several locations, each with a different reach. In the order Claude loads them, widest scope first, most specific last:
 
 ```text
 Managed policy   OS-specific managed path                              (org-wide, IT-deployed)
 User             ~/.claude/CLAUDE.md                                  (you, every project)
 Project          ./CLAUDE.md  or  ./.claude/CLAUDE.md                 (team, this repo)
 Local            ./CLAUDE.local.md                                    (you, this repo only - gitignore it)
-Subdirectory     ./migrations/CLAUDE.md                               (loaded on demand)
+Subdirectory     ./src/payments/CLAUDE.md                             (team, this subtree - proposal; loads on demand)
 ```
 
-Each answers a different question:
+One line there names a file that does not exist: the example repo has no `src/payments/CLAUDE.md`. This lesson proposes one to show the mechanism, and because the in-memory-ledger note is a genuine candidate for it, though at this repo's size the project file covers the ground. The other four scopes:
 
-- **User** (`~/.claude/CLAUDE.md`) - your personal habits across *all* projects. "Explain your reasoning before editing" goes here. It follows you between repos and never lands in anyone else's checkout.
-- **Project** (`./CLAUDE.md` or `./.claude/CLAUDE.md`) - the team-shared truth about *this* repo. Committed to git, so everyone on the payments service gets the cents rule and the test command. This is where most of your work from the last two lessons lives.
-- **Local** (`./CLAUDE.local.md`) - your personal notes for *this one project*, kept out of git. Your sandbox URL, your preferred test data. Add it to `.gitignore` so it never ships to teammates.
-- **Subdirectory** - a `CLAUDE.md` inside `migrations/` carries rules that only matter there. The migration-numbering rule goes here, and the agent only pays for it when it's actually working in that directory.
-- **Managed policy** - org-wide instructions your IT or platform team deploys; you can't override or exclude them. Most individual engineers never write one, but it's why a company standard can't be turned off by a local file.
+- **Managed policy**: org-wide instructions your platform team deploys to an OS-specific path. You cannot override or exclude them, which is why a company standard survives a local file. Most engineers never write one.
+- **User** (`~/.claude/CLAUDE.md`): personal habits across *all* projects. The show-me-your-plan preference goes here. It follows you between repos and never lands in a teammate's checkout.
+- **Project** (`./CLAUDE.md` or `./.claude/CLAUDE.md`): the team-shared truth for *this* repo, committed to git. The payments service's file lives here, and the optional-key rule joins it. Most rules land here.
+- **Local** (`./CLAUDE.local.md`): your personal notes for this one project, kept out of git: your scratch workflow, your local overrides. Add it to `.gitignore` so it never ships to a teammate.
 
-The exact managed-policy paths differ by operating system (for example, macOS, Linux/WSL, and Windows), so use the [memory page](https://code.claude.com/docs/en/memory) rather than hardcoding one platform's path.
+The exact managed-policy paths differ by operating system, so take them from the [memory reference](https://code.claude.com/docs/en/memory) rather than hardcoding one platform's.
 
 ## They stack - they don't fight
 
-This is the part people get wrong, so be precise about it: these files **do not override each other.** Claude walks up the directory tree from where you launched it, collects every `CLAUDE.md` and `CLAUDE.local.md` it finds, and **concatenates them all** into one combined context. Your user file *and* the project file *and* any parent-directory files are all present at once - none cancels another.
+The part people get wrong: these files **do not override each other.** Claude Code loads the user file plus every `CLAUDE.md` and `CLAUDE.local.md` it finds from the filesystem root down to your working directory, and **concatenates them all** into one combined context. Launched at the payments repo root, that means the user file and the project file. Launched from a nested directory, each ancestor's file joins too. None cancels another.
 
-Order still matters, just not as "winner takes all." Content is laid out from the broadest scope down to the most specific: the user file appears first, the project file after it, and the file closest to where you launched is read *last*. Within a single directory, `CLAUDE.local.md` is appended after `CLAUDE.md`, so your personal notes are the final word at that level. The practical upshot: a more specific instruction sits later in context and tends to win attention when two rules brush against the same topic - but if two files give *flatly contradictory* guidance, Claude may just pick one. That's not a feature to lean on; it's a reason to keep your layers consistent and prune contradictions, exactly as the last lesson warned.
+Order matters without being winner-takes-all. Content is laid out broadest to most specific; the file closest to where you launched is read *last*. Within a single directory, `CLAUDE.local.md` is appended after `CLAUDE.md`, so your personal notes are the final word at that level.
 
-The three layers you'll actually use stack like this - each one concatenated onto the last, none replacing the one above it:
+The practical upshot: a more specific instruction sits later in context and tends to win attention when two rules brush the same topic. Flatly contradictory guidance is another matter. Claude may simply pick one. That is not a feature to lean on; it is a reason to keep layers consistent and to prune contradictions whenever you audit the files.
+
+The layers you will actually use stack like this, each concatenated onto the last, none replacing the one above it:
 
 ```text
- ~/.claude/CLAUDE.md            your rules          (loaded first, every project)
-        │
-        │   +  concatenated, not overridden
-        ▼
- project/CLAUDE.md              the team's rules    (added next, this repo)
-        │
-        │   +  concatenated, not overridden
-        ▼
- project/src/CLAUDE.md          subdirectory rules  (read last, most specific)
+ ~/.claude/CLAUDE.md               your rules            (loaded first, every project)
+        |
+        |   +  concatenated, not overridden
+        v
+ repo-root/CLAUDE.md               the team's rules      (added next, this repo)
+        |
+        |   +  concatenated, not overridden
+        v
+ repo-root/src/payments/CLAUDE.md  subdirectory rules    (proposed; read last, on demand)
 
  result: one combined context = user + project + subdirectory, all present at once
 ```
 
-Subdirectory files behave a little differently in *when* they load. Files above your working directory load in full at launch. A `CLAUDE.md` in a subdirectory *below* it isn't loaded upfront - it's pulled in on demand, when Claude actually reads a file in that subdirectory. That's what makes per-subsystem rules cheap: the `migrations/` rules cost nothing until the agent goes there.
+Subdirectory files differ in *when* they load. Files at or above your working directory load in full at launch. A file below it, such as the proposed `src/payments/CLAUDE.md`, is pulled in on demand, when Claude reads a file in that subtree. That is what makes per-subsystem rules cheap: the payments rules cost nothing until the agent goes there.
+
+Rules can also live as topic files under `.claude/rules/`, one markdown file per topic. A file with `paths:` frontmatter, a list of glob patterns, loads only when Claude works with matching files. A file without it loads at launch, like `.claude/CLAUDE.md`. Both are ways to keep the root file short while a subsystem's rules stay close to the code they describe. The [memory reference](https://code.claude.com/docs/en/memory) documents both forms.
+
+The resolver below runs the same question across a generic monorepo scenario: a root rules file, a nested one in `packages/api/`, and a path-scoped rule. It models four tools (Claude Code, Codex, OpenCode, and Pi), so use the Claude Code tab for this course and the others for contrast. Pick a working location and watch which files enter the window:
 
 <RulesResolver client:visible />
 
-:::note[See exactly what loaded]
-Not sure which files are actually in context this session? Run `/memory` - it lists every `CLAUDE.md`, `CLAUDE.local.md`, and rules file currently loaded. If a rule isn't being followed, the first check is whether its file even shows up in that list.
+The Claude Code answer, in prose: working on a file at the root, the user-wide file and the project root file load. Working on a file in `packages/api/`, the nested file joins them, and the path-scoped rule joins when its `paths:` pattern matches the file being read. Working in `packages/web/`, only the two always-on files load. Nothing replaces the root file.
+
+:::note[Check what actually loaded]
+Two commands, two jobs. `/memory` lists memory-file locations across user and project scopes, including files that do not exist yet, and opens any of them in your editor, creating a selected file first if needed. It also toggles auto memory and opens the auto-memory folder. What loaded *this session* is the job of `/context`: it breaks the window into categories, so look for your file under **Memory files**. If a rule is not being followed, the first check is whether its file appears there at all.
 :::
 
-Rules are one row of a larger map. The same project-versus-home split decides where skills, subagents, settings, and MCP servers live - and if you hold the whole layout in your head once, you stop hunting for it. Walk it file by file (the other tabs show how the neighboring tools draw the same line):
+Rules are one row of a larger map. The same project-versus-home split decides where skills (task playbooks), subagents, settings, and MCP servers (external tool connections) live. Hold the whole layout in your head once and you stop hunting for it. Walk it file by file (the other tabs show how the neighboring tools draw the same line):
 
 <ConfigExplorer client:visible initialTool="claude-code" />
 
-You now have the full map of human-authored rules: what to write, where to put it, how the layers combine. But every rule so far has had one author - *you*. There's a second persistence system in Claude Code where the agent writes the notes itself, and it fills a gap the hand-written files can't. [That's auto memory, and it's a genuinely different primitive.](/course/claude-code/rules-memory/memory/)
+You now have the full map of human-authored rules: what to write, where to put it, how the layers combine. Every rule on this page has had one author, you. The second persistence system has the agent writing the notes itself, and it fills a gap the hand-written files cannot. [That is auto memory.](/course/claude-code/rules-memory/memory/)

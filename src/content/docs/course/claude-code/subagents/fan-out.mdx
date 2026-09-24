@@ -1,60 +1,91 @@
 ---
-title: Fan out across parallel subagents on independent slices of a problem
-description: "When a problem splits into parts that don't depend on each other, spawn several subagents at once - each works its slice, Claude synthesizes the results."
-sidebar:
-  label: "Fan out · parallel slices"
+title: Audit four independent slices at once with parallel subagents
+description: "Ledger coverage, idempotency semantics, the allowAsync race, and the fee math - four audits that never touch each other, run concurrently in windows of their own."
 ---
 
 import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
 
-The ledger map handed you four independent write sites, and now the next task wants depth on each: for the charge path, the refund path, the reconcile job, and the webhook, you want a real audit - what it writes, under what conditions, and whether the test coverage actually exercises the failure cases. Four self-contained investigations that don't touch each other. Run them one after another in a single subagent and you wait for the sum of all four. But because none of them depends on the others, you don't have to.
+One found bug is not a clean bill of health. In the small Express plus TypeScript payments service this course uses as its example, a single [subagent](/course/claude-code/subagents/) (a worker with its own context window that returns a summary) has already traced why every balance reads zero: the route in `src/index.ts` files ledger entries under the payment's UUID, and the balance route reads by account id. Before fixing that line you want the ground around it audited, and the audit splits cleanly into four slices:
 
-## Spawning workers at once
+1. **Ledger writes and their coverage.** Every call to `append` in `src/payments/ledger.ts`, its callers, and which of the six green tests exercise them.
+2. **Idempotency semantics.** `checkIdempotency` in `src/utils/idempotency.ts` and its caller in `src/payments/processor.ts`.
+3. **The rate limiter's async path.** `allowAsync` versus the synchronous `allow()` in `src/payments/rate-limiter.ts`.
+4. **The fee math.** The total computed in `src/payments/processor.ts`, checked against the rule in the repo's `CLAUDE.md`: use integer cents for all money, never floating point.
 
-Ask for parallel subagents and Claude spawns several, each on its own slice, each in its own isolated context:
+Four questions, and none of them needs another's answer. That independence is the license for a fan-out: one subagent per slice, each in a context window of its own, each reading the code as it stands, all running at the same time.
+
+## Four audits that never touch each other
+
+Ask for parallel subagents and Claude spawns one per slice, each in its own context window (the run shows Claude's default `general-purpose` workers):
 
 ```text
-> audit the four ledger write sites in parallel - one subagent each for the
-  charge path, the refund path, the reconcile job, and the webhook handler.
-  for each, report what it writes, the edge cases, and gaps in test coverage.
+audit the payments service in parallel - one subagent per slice:
+
+1. ledger writes: every append and its callers, and which tests
+   actually cover them
+2. idempotency semantics in src/utils/idempotency.ts and its caller
+   in src/payments/processor.ts
+3. the async path in src/payments/rate-limiter.ts versus allow()
+4. the fee math in src/payments/processor.ts against the cents rule
+   in CLAUDE.md
+
+report per slice: what the code does, the defect if any, and the
+evidence for it. conclusions only.
 ```
+
+The run below is illustrative, not captured. The tool counts are invented; every finding is what the course's example payments repo contains:
 
 ```text
-  ⏵ Agent (general-purpose)  charge path        ▶ running
-  ⏵ Agent (general-purpose)  refund path        ▶ running
-  ⏵ Agent (general-purpose)  reconcile job      ▶ running
-  ⏵ Agent (general-purpose)  webhook handler    ▶ running
+⏵ Agent (general-purpose)  ledger writes   ▶ running
+⏵ Agent (general-purpose)  idempotency     ▶ running
+⏵ Agent (general-purpose)  rate limiter    ▶ running
+⏵ Agent (general-purpose)  fee math        ▶ running
 
-  ⎿ charge path     done (12 tool uses)
-  ⎿ webhook handler done (9 tool uses)
-  ⎿ refund path     done (15 tool uses)
-  ⎿ reconcile job   done (18 tool uses)
+  ⎿ ledger writes  done (12 tool uses)
+  ⎿ rate limiter  done (10 tool uses)
+  ⎿ idempotency   done (14 tool uses)
+  ⎿ fee math      done (9 tool uses)
 
-  Synthesized findings across all four:
-  - charge & refund: writes are guarded and well-tested
-  - webhook: writes on settlement, but no test for the duplicate-settlement case
-  - reconcile job: no coverage at all, and it writes with a different code path
-  ...
+  Synthesized across all four:
+  - Ledger: the only write is the route call that files entries under
+    the payment UUID - the bug you already found. The tests cover the
+    Ledger class directly; nothing covers the route.
+  - Idempotency: checkIdempotency records a key on first check, so a
+    payment that fails after the check still burns its key and a
+    legitimate retry is rejected as a duplicate. markProcessed is
+    never called; a request with no key is never deduped at all.
+  - Rate limiter: allow() filters and decides in one synchronous
+    step; allowAsync() snapshots the bucket before its await and
+    writes back after it, so concurrent callers on a fresh key each
+    check their own empty array - all pass, and the last write
+    clobbers the rest. The limit admits the whole burst while the
+    map undercounts.
+  - Fee math: the processor computes the fee-inclusive total
+    (amount * 1.029; the fee itself is amount * 0.029) in floating
+    point against CLAUDE.md's integer-cents rule - and the test
+    enshrines it, asserting the exact float 2056.971 and passing.
 ```
 
-Four investigations ran concurrently, and crucially *each one's noise stayed in its own window* - the eighteen tool calls the reconcile worker made never mixed with the charge worker's twelve, and none of them entered your thread. When they all finished, Claude read the four summaries back and synthesized them into one set of findings. This is the documented [parallel research](https://code.claude.com/docs/en/sub-agents#run-parallel-research) pattern, and the line that makes it work is *the research paths don't depend on each other*. Independence is the whole license for parallelism here.
+Four investigations ran concurrently, and each one's noise stayed in its own window: the twelve calls the ledger worker made never mixed with the limiter worker's ten, and none of it entered your thread. When they finished, Claude read the four summaries and synthesized them. This is the documented [parallel research](https://code.claude.com/docs/en/sub-agents#run-parallel-research) pattern, and its license is the sentence to hold onto: the research paths do not depend on each other.
 
-That isolation is worth seeing as arithmetic once. Compare the same kind of fan-out run inline in your own window against the delegated version - count what actually lands in your thread:
+The arithmetic of that isolation is worth seeing once. The widget below models a different, illustrative fan-out, not this audit: before a code migration in another project, three sweeps read its `extraction/`, `storage/`, and `interface/` directories, run inline versus delegated. So where it says "migration brief" and "migration work", read "audit brief" and "the fix you came to make". Its token counts are invented; the shape is the point. Count what lands in your window in each mode:
 
 <SubagentFanout client:visible />
 
-## When parallel pays - and when it's just overkill
+If the widget does not load, the comparison it draws is this: inline, the three sweeps run one after another and every read lands in your window, so the work you came to do sits behind all of it. Delegated, each sweep reads in a window of its own, each paying its own system-prompt overhead - the base instructions every fresh instance loads - and your window holds the brief plus three short reports. Delegation does not reduce the total tokens spent; it buys your window's coherence and the parallelism.
 
-The temptation, once you've seen the fan-out work, is to reach for it constantly. Resist that. Parallelism pays when two things are both true: the slices are genuinely independent, and each is heavy enough that doing them in sequence would actually make you wait. The ledger audit qualifies on both counts - four separate code paths, each a real dig.
+## When parallel pays - and when it is overkill
 
-It's overkill, or worse, when:
+The temptation, once the fan-out works, is to reach for it constantly. Resist. Parallelism pays when two things are both true: the slices are genuinely independent, and each is heavy enough that running them in sequence would make you wait. The audit qualifies on both counts: four separate questions, each a real dig.
 
-- **The slices depend on each other.** If auditing the refund path requires what the charge-path audit found, they can't run at the same time - you'd just be guessing. Chain them instead: one subagent's result feeds the next, which the docs cover under [chaining subagents](https://code.claude.com/docs/en/sub-agents#chain-subagents).
-- **The work is light.** Spinning up four fresh agents that each have to gather context from scratch can be slower than one main thread that already knows the codebase. Fan-out has fixed startup cost; tiny tasks don't earn it back.
-- **You're fanning out wide just because you can.** The docs carry a real warning here, and it's the sharp edge of this whole technique.
+It is overkill, or worse, when:
 
-That warning is worth quoting straight, because it's the one that bites: *when subagents complete, their results return to your main conversation. Running many subagents that each return detailed results can consume significant context.* See [run parallel research](https://code.claude.com/docs/en/sub-agents#run-parallel-research). Read that twice. The reason you delegated in the first place was to keep noise out of your thread - but ten subagents each handing back a detailed report is its own flood, arriving all at once. The fix is in how you brief them: ask for *conclusions, not dumps*. "Report the coverage gaps," not "report everything you found." A subagent that returns three lines protects your context; one that returns three pages just relocated the problem.
+- **The slices depend on each other.** If auditing idempotency required what the ledger audit found, they could not run at the same time; you would be guessing. Chain them instead, so one subagent's result feeds the next. The docs cover this under [chaining subagents](https://code.claude.com/docs/en/sub-agents#chain-subagents).
+- **The work is light.** Spawning fresh agents that each gather context from scratch can be slower than one main thread that already holds it. Fan-out has fixed startup cost; tiny tasks do not earn it back.
+- **You are fanning out wide for the sake of it.** The docs carry a real warning here, and it is the sharp edge of the whole technique.
 
-So the shape that works: fan out across a *handful* of independent, heavy slices, and tell each worker to come back terse. That's leverage. Twenty subagents each writing you an essay is a different kind of mess than the one you were avoiding - but a mess all the same.
+That warning is worth quoting straight, because it is the one that bites: "Running many subagents that each return detailed results can consume significant context." See [run parallel research](https://code.claude.com/docs/en/sub-agents#run-parallel-research). The reason you delegated was to keep noise out of your thread, and ten subagents each handing back a detailed report is its own flood, arriving all at once.
 
-These four ran fast and you watched them finish. But some investigations aren't fast - a worker churning through a thousand-file migration, or running the full integration suite, can take long enough that you don't want to sit and wait. [Next we push that kind of work into the background](/course/claude-code/subagents/background/) and keep going while it grinds.
+The fix is in the brief: ask for conclusions, not dumps. "Report the defect and the evidence," not "report everything you found." A worker that returns three lines protects your context; one that returns three pages has relocated the problem rather than solved it. So the shape that works is a handful of independent, heavy slices, each briefed to come back terse.
+
+These four finished while you watched. A longer pass, such as the full suite, lint, build, and a fresh sweep, is the kind of job you eventually stop wanting to watch at all. [Next we push work into the background](/course/claude-code/subagents/background/) and keep going while it runs.

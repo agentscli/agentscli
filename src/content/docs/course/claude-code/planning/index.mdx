@@ -1,32 +1,39 @@
 ---
-title: "Planning"
-description: "Some changes are too big to let the agent start editing blind. Plan mode makes Claude Code research and propose first, so you approve before code moves."
+title: Make the agent research and propose before it builds
+description: "Some changes deserve a design before they deserve an edit. Plan mode makes Claude Code research the payments code and propose a fix, so you correct the decision while it is still cheap."
 ---
 
-Everything so far has been about *doing* - making edits, running commands, setting how freely the agent acts. This chapter is about the move that comes *before* doing, and it's the one that separates an operator who trusts the agent from one who gets burned by it: making Claude Code think the whole change through and hand you a plan, before it touches a single file.
+Plan mode is the Claude Code setting in which the agent reads your code and proposes a change but edits nothing until you approve. The other permission modes (default, accept-edits, auto, bypass) govern what the agent may do while it works. Plan mode governs when the work starts: the design arrives before the first edit, so you can argue with it while changing your mind still costs nothing.
 
-You saw plan mode go by as the tight third rung on the [Shift+Tab ladder](/course/claude-code/permissions-modes/modes-ladder/) - the mode that reads and proposes but changes nothing. That one-line description undersells it. Plan mode is how you point the agent at a task that's too big, too ambiguous, or too risky to let it start editing on instinct, and get back a researched proposal you can read, argue with, and correct *while it's still cheap* - before any code is written, not after you're staring at a tangle of wrong edits.
+This chapter is a task chapter. It takes one design-heavy change through the whole loop: enter plan mode, interrogate and correct the proposal, keep the plan on disk, and see how a build like this one runs in the cloud. Every page restates the facts it needs, so you can enter at any of them.
 
-## Why plan before you build
+## The task this chapter plans
 
-The failure mode this fixes is specific. Hand a vague, far-reaching task to an agent in accept-edits and it will do *something* immediately - and confidently. If it guessed the architecture wrong, you don't find out until twenty files have changed and the diff is too big to reason about. You're now reviewing an implementation when you should have been reviewing a *decision*. Plan mode pulls that decision to the front: research first, agree on the approach, then implement against a plan you both already understand.
+The worked example is a small TypeScript payments service (Express, tests under `tests/`, run with `npm test`). The ticket: make `POST /payments` idempotent, so a client that retries a completed request can never be charged twice. An idempotency key is a client-supplied identifier for one logical request; a server that sees the same key twice should recognize the retry instead of charging again.
 
-The rule of thumb is about the size and shape of the task:
+The service already has a helper for this, and the helper is where the defect lives. `src/utils/idempotency.ts` exports `checkIdempotency`, which records a key as seen at first check, before the payment has done any work. The function meant to record completion, `markProcessed`, exists in the same file and is never called. So a key becomes "used" the moment it is looked at. Whatever fails between the check and a finished payment, a declined charge downstream or a crash, finds the key already burned: the client's legitimate retry is rejected as a `"duplicate payment"`, and that rejection cannot tell the caller whether the original request succeeded.
 
-- **Small and obvious** - a rename, a one-file fix, a tweak you could describe in a sentence - just let it build. Planning is overhead here.
-- **Big, cross-cutting, or ambiguous** - touches many files, has more than one reasonable design, or you're not sure how the existing code is wired - plan first. The riskier the change, the more the plan earns its keep.
+Two more facts frame the design space. In `src/index.ts`, the route reads the `Idempotency-Key` header and hands it to `processPayment(req.body, key)`, and nothing requires the header to exist. In `src/payments/processor.ts`, the dedup check runs only when a key was supplied, so a caller who omits the header is never deduplicated at all. The keys live in an in-memory map, so nothing survives a process restart.
 
-The test: *if you'd want a junior engineer to write a short design note before starting, you want plan mode.*
+And nothing is red. The suite passes six tests out of six; the duplicate-key test passes because the code does reject a second call with the same key. The defect is a set of questions no test asks. What happens with no key? What happens when a failed payment is retried? What survives a restart? When a key becomes "used" is the central design decision, and the code answers it by accident. There is no failing test to steer you. There is a decision to make, with more than one defensible answer.
 
-## The change we'll follow
+## When to plan, and when to just build
 
-Same payments service from the last two chapters - but this task is a different animal. A customer got **double-charged** last week: their client retried a request that had actually succeeded the first time, and the service happily ran the charge twice. The fix is to make the charge endpoint **idempotent** - a retried request with the same key should never bill twice.
+Plan mode has a cost, a research pass and a round of review before anything moves, so spend it where it pays. Small and obvious tasks, a rename, a one-file fix, a change you could describe in a single sentence, do not need it: let the agent build and review the diff after. Big, cross-cutting, or ambiguous tasks do: many files, more than one reasonable design, or wiring you do not yet understand well enough to correct mid-diff.
 
-That's not a rename. It's a real design problem: where does the idempotency key come from, where do you store it, what happens when two identical requests race, how do you handle a key that's seen but not yet finished. You do *not* want the agent guessing at all of that and editing live. So we'll run it the right way:
+A usable test: if you would want a junior engineer on your team to write a short design note before starting this change, you want plan mode for it. The idempotency ticket passes that test three times over. It touches the route, the processor, and the helper, and every question in the previous section has more than one defensible answer.
 
-- [Enter plan mode](/course/claude-code/planning/enter/) and let Claude research the existing charge path without changing anything
-- [Read its proposal and choose how it executes](/course/claude-code/planning/approve/) - or send it back to keep refining
-- [Keep the plan on disk and resume it](/course/claude-code/planning/persist/) in a fresh session, so the approach survives a closed laptop or a cleared context
-- [Hand the whole thing to the cloud with Ultraplan](/course/claude-code/planning/ultraplan/) when you want a richer review surface than the terminal
+## The route this chapter takes
 
-By the end, reaching for plan mode on anything non-trivial will be reflex - the cheap insurance you buy before letting the agent loose on a hard change.
+There is no public starter checkpoint to clone for this chapter. Follow along in a disposable copy of a service with the same shape, or read each page as a decision to practice on a change in your own repository. If you want to see the helper traced by an agent first, [the clear-context lesson in Sessions & context](/course/claude-code/sessions-context/clear/) does that as a read-only task; it is optional background, not a prerequisite.
+
+The path has four moves:
+
+- [Enter plan mode](/course/claude-code/planning/enter/): three ways in, and exactly what the mode allows while the agent researches your code
+- [Review the proposal and choose how it executes](/course/claude-code/planning/approve/): correct the plan while corrections are still cheap, then approve it into the build mode the work deserves
+- [Save the plan to disk and resume it](/course/claude-code/planning/persist/): so the agreed approach outlives the conversation that produced it
+- [Take the build to the cloud](/course/claude-code/planning/ultraplan/): Claude Code on the web, for a change you would rather run and review in a browser
+
+By the end, the idempotency fix has a researched, corrected, approved plan on disk, and the implementation is deliberately yours to run, with `npm test` as the check. This chapter plans the fix; it does not claim to land it.
+
+Start with [entering plan mode](/course/claude-code/planning/enter/).

@@ -1,17 +1,15 @@
 ---
 title: Put OpenCode next to your editor
-description: "You don't have to give up VS Code or Neovim to run a terminal agent. Set $EDITOR, stay on the keyboard, and connect OpenCode beside your IDE over ACP."
-sidebar:
-  label: "Editor · ACP, same red squiggles"
+description: "You don't have to give up VS Code or Neovim to run a terminal agent. Set $EDITOR, stay on the keyboard, and connect OpenCode beside your IDE over ACP or the VS Code extension."
 ---
 
-You've shipped a reviewed change to `feedmill` from a terminal, and it worked - but it still felt like a detour. Your real day happens in VS Code or Neovim, with an LSP underlining type errors in the gutter and your hands on muscle-memory shortcuts. A terminal agent that asks you to abandon all of that to live in a TUI is a tool you'll reach for twice and then forget. The point of this lesson is the opposite: keep your editor exactly where it is, and slot OpenCode in beside it so the agent becomes part of the day instead of an exception to it.
+A terminal agent that asks you to abandon your editor is a tool you'll reach for twice and then forget. Your real day happens in VS Code or Neovim, with an LSP underlining type errors in the gutter and your hands on muscle-memory shortcuts. The point of this page is the opposite of abandonment: keep your editor exactly where it is, and slot OpenCode in beside it so the agent becomes part of the day instead of an exception to it. The examples use `feedmill`, the course's illustrative Go feed aggregator, but nothing here depends on its contents.
 
-There are two distinct ways to bridge the gap, and it's worth keeping them straight from the start. The first keeps you *in the TUI* but borrows your editor for the parts a terminal is bad at - long prompts, file references, quick shell checks. The second runs OpenCode *inside* your IDE over a protocol called ACP. You'll use both, for different moods.
+There are two distinct ways to bridge the gap, and it's worth keeping them straight from the start. The first keeps you *in the TUI* (OpenCode's full-screen terminal interface) but borrows your editor for the parts a terminal is bad at - long prompts, file references, quick shell checks. The second runs OpenCode *inside* your IDE over a protocol called ACP (VS Code takes a third route, an extension, covered below). You'll use both, for different moods.
 
 ## Borrow your editor from inside the TUI
 
-The first friction you hit in any terminal agent is composing a real message. A one-liner is fine inline, but the moment you want to write three paragraphs describing a refactor across `feedmill`'s feed parsers, editing in a single-line prompt is misery. OpenCode's answer is `/editor`: it opens a message composer in whatever editor your `$EDITOR` environment variable points at, you write the message there with all your normal editing power, save and close, and the composed text drops back into the conversation.
+The first friction you hit in any terminal agent is composing a real message. A one-liner is fine inline, but the moment you want to write three paragraphs describing a refactor across `feedmill`'s feed parsers, editing in a single-line prompt is misery. OpenCode's answer is `/editor`: it opens a message composer in whatever editor your `$EDITOR` environment variable points at, you write the message there with all your normal editing power, save and close, and the composed text drops back into the input box, ready to send.
 
 So set it once, the way you'd set it for `git`:
 
@@ -19,45 +17,44 @@ So set it once, the way you'd set it for `git`:
 export EDITOR="code --wait"
 ```
 
-The `--wait` matters: it tells VS Code to block until you close the file, which is exactly what `/editor` is waiting on. Neovim users just set `export EDITOR="nvim"`; emacs, `emacsclient`, whatever you already live in. Now in the TUI:
+The `--wait` matters: it tells VS Code to block until you close the file, which is exactly what `/editor` is waiting on. Neovim users just set `export EDITOR="nvim"`; emacs, `emacsclient`, whatever you already live in. Now in the TUI - an illustrative exchange:
 
 ```text
 > /editor
 
   (your editor opens an empty buffer; you write:)
 
-  the JSON-feed parser in internal/feed/json.go assumes every item has a
-  published date, but some sources only send updated. fall back to
-  updated when published is missing, and add a test for a feed that
-  only has updated.
+  the Atom normalizer in internal/adapter/normalise.go copies each
+  entry's updated string through as-is. parse it with parse.Date so
+  Published is stored as a UTC time, and add a test for an entry whose
+  updated carries a +05:30 offset.
 
-  (save, close - the message lands back in the prompt and sends)
+  (save, close - the message lands back in the input box, ready to send)
 ```
 
-That's the same kind of outcome-first request you wrote by hand in the last lesson, except you composed it with real editing instead of fighting a prompt line.
+That's the outcome-first style of request - state the *what*, leave the *how* to the agent - composed with real editing power instead of a prompt line.
 
-Two smaller moves keep you on the keyboard the rest of the time. Typing `@` in the prompt opens a fuzzy file picker scoped to the current working directory - start typing `json` and it surfaces `internal/feed/json.go`, you pick it, and the reference is attached to your message so the agent reads exactly the file you meant instead of guessing from a description:
+Two smaller moves keep you on the keyboard the rest of the time. Typing `@` in the prompt opens a fuzzy file picker scoped to the current working directory - start typing `normalise` and it surfaces `internal/adapter/normalise.go`, you pick it, and the reference is attached to your message so the agent reads exactly the file you meant instead of guessing from a description:
 
 ```text
-> the dedupe logic in @internal/feed/dedupe.go is dropping items that
-  share a title but have different links - it should only dedupe on the
-  canonical URL. fix it.
+> @internal/dedupe/hash.go builds the dedupe key from the feed URL plus
+  the entry ID, so one article syndicated into two feeds is stored twice.
+  key it on the canonical entry link instead.
 ```
 
-And prefixing a message with `!` runs it as a shell command straight from the TUI, dropping the output into the conversation as context the agent can then reason about:
+And prefixing a message with `!` runs it as a shell command straight from the TUI, dropping the output into the conversation as context the agent can then reason about. An illustrative run:
 
 ```text
-> !go test ./internal/feed/...
+> !go test ./internal/dedupe/
 
-  --- FAIL: TestDedupeByURL (0.00s)
-      dedupe_test.go:41: expected 3 items, got 2
+  ?   	github.com/example/feedmill/internal/dedupe	[no test files]
 
   (output is now in the thread)
 
-> that's the failure I meant - make the dedupe key the canonical URL
+> no tests yet - add one that pins the current key before you change it
 ```
 
-You ran the test without leaving the prompt, and the agent now sees the exact failure instead of your paraphrase of it. Between `@` for files and `!` for commands, you rarely have to break flow to give the agent what it needs.
+You ran the test without leaving the prompt, and the agent now sees the exact result instead of your paraphrase of it. Between `@` for files and `!` for commands, you rarely have to break flow to give the agent what it needs. (The TUI commands on this page - `/editor`, the `@` picker, the `!` prefix - are documented in the [TUI reference](https://opencode.ai/docs/tui/), as of September 2026.)
 
 ## Run OpenCode beside your IDE over ACP
 
@@ -67,26 +64,37 @@ You ran the test without leaving the prompt, and the agent now sees the exact fa
 opencode acp
 ```
 
-You don't usually type that yourself - you point your editor at it. Zed has built-in ACP support: add OpenCode to `agent_servers` in `settings.json` and pick it from `agent: new thread`. JetBrains is supported too, configured through an `acp.json` file (pointing at the OpenCode binary with the `acp` argument) rather than a packaged extension. Neovim users have ACP options as well - OpenCode's docs list Avante.nvim and CodeCompanion.nvim as supported clients. VS Code isn't covered in OpenCode's own ACP docs; support there comes from community extensions (e.g. `formulahendry/vscode-acp`) rather than a first-party path. In every case the editor starts OpenCode as a subprocess and drives it over the protocol: sessions, tool calls, and the same approval prompts you've been answering in the TUI all flow through the IDE's UI instead.
+You don't usually type that yourself - you point your editor at it. Zed has built-in ACP support: install OpenCode from Zed's ACP registry (or add a custom OpenCode entry to `agent_servers` in `settings.json`) and pick it from `agent: new thread`. JetBrains is supported too, configured through an `acp.json` file (pointing at the OpenCode binary with the `acp` argument) rather than a packaged extension. Neovim users have ACP options as well - OpenCode's docs list Avante.nvim and CodeCompanion.nvim as supported clients. That client list is the documented one as of September 2026: [ACP documentation](https://opencode.ai/docs/acp/). In every ACP client the editor starts OpenCode as a subprocess and drives it over the protocol: sessions and tool calls flow through the IDE's UI instead of the TUI, and the agents-and-permissions system comes with it - your `build` and `plan` agents (OpenCode's built-in named configurations, each with its own tools and permissions) and any rules you set for them. The ACP documentation lists that system among what the integration supports, without detailing how an approval prompt renders in a given client. One documented gap matters when you choose between the two surfaces: some built-in slash commands, `/undo` and `/redo` among them, are currently unsupported over ACP, so the TUI's quick way back is not available there.
 
-Keep the mental model clean: `/editor` is a TUI command that *borrows* your editor for composing one message; `opencode acp` is a *separate runtime* that hosts the whole agent inside your IDE. Same tool, two integration surfaces - and you'll switch between them by habit, the TUI for a focused session and ACP when you want the agent in arm's reach of the file you're already editing.
+VS Code isn't covered in OpenCode's own ACP docs. For VS Code and its forks (Cursor, Windsurf, VSCodium), the first-party route is the OpenCode IDE extension instead: run `opencode` in the editor's integrated terminal and the extension installs itself (as of September 2026; see the [IDE documentation](https://opencode.ai/docs/ide/)). The extension is not an ACP client. It runs the normal TUI in a terminal pane and adds shortcuts, such as sending your current selection, so `/undo`, `/editor`, and the rest of this page work there unchanged.
+
+Keep the mental model clean: `/editor` is a TUI command that *borrows* your editor for composing one message; `opencode acp` is a *separate runtime* that hosts the whole agent inside your IDE. Same tool, two integration surfaces - and you'll switch between them by habit, the TUI for a focused session and ACP when you want the agent in arm's reach of the file you're already editing (in VS Code and its forks, the extension's terminal pane fills that role, and it is still the TUI).
 
 ## Why this is more than convenience: shared diagnostics
 
-Here's the part that makes living next to your editor pay off beyond keystrokes. OpenCode can integrate with Language Server Protocol servers and feed their **diagnostics** back to the agent. LSP is disabled by default, so you enable it in config first - set `"lsp": true` to turn on all built-in servers (or `"lsp": {}` to keep the built-ins while adding your own); once enabled and pointed at `feedmill`'s typed Go codebase, OpenCode starts `gopls`. Install `gopls` yourself and make sure it is on your `PATH`; OpenCode does not replace the Go toolchain or promise to fetch the language server. The one thing it can't supply is `go` itself - install the Go tooling and verify `gopls` before debugging the OpenCode configuration. That's the *same* language server your editor leans on to draw the red squiggles in your gutter.
+Here's the part that makes living next to your editor pay off beyond keystrokes. OpenCode can integrate with Language Server Protocol servers and feed their **diagnostics** back to the agent. LSP is disabled by default, so you enable it in OpenCode's config file first: `opencode.json` at your repo root (create it if it doesn't exist).
 
-The consequence is concrete. When the agent edits `internal/feed/json.go` and introduces a type mismatch or an unused import, it doesn't have to wait for a test run or a fresh `go build` to find out - the LSP surfaces the diagnostic, and the agent sees the error you'd see, in the same place you'd see it:
-
-```text
-  ⏵ Edit internal/feed/json.go
-
-  diagnostics: internal/feed/json.go:52:9 - cannot use item.Updated
-  (type *time.Time) as type time.Time in assignment
-
-  Caught a nil-deref risk from the LSP - item.Updated is a pointer.
-  I'll guard for nil before falling back to it.
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": true
+}
 ```
 
-When it works, there's no gap between what your editor knows and what the agent knows, because they're reading the same source of truth. That's the real argument for putting OpenCode next to your editor rather than off in a corner: when the integration is healthy it isn't a second, blinder pair of eyes on your code - it's looking at the same diagnostics you are. (The [LSP docs](https://opencode.ai/docs/lsp/) caution that language servers can drift out of sync, use real memory, and slow a workflow down - so for some loops you'll still want the agent to run `go vet` or the test suite directly rather than trusting LSP feedback alone. Diagnostics are a fast first signal, not the whole verification story.)
+`"lsp": true` turns on all built-in servers (`"lsp": {}` keeps the built-ins while adding your own); once enabled and pointed at `feedmill`'s typed Go codebase, OpenCode starts `gopls` (as of September 2026; [LSP docs](https://opencode.ai/docs/lsp/)). The built-in `gopls` entry's documented requirement is the `go` command being available. If `gopls` isn't on your `PATH`, OpenCode runs `go install golang.org/x/tools/gopls@latest` to fetch it, unless you set `OPENCODE_DISABLE_LSP_DOWNLOAD=true` (per the Go server definition in [`lsp/server.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/lsp/server.ts), as of September 2026). So make sure `go` works in the shell you start OpenCode from before debugging the OpenCode configuration. That's the same *kind* of language server your editor leans on to draw the red squiggles in your gutter, but OpenCode runs its own `gopls` process: it reads the files on disk with its own settings, not your editor's session.
 
-You now have OpenCode where you actually work - composing in your real editor, picking files and running commands without leaving the keyboard, and reading the same diagnostics your IDE draws. That's the end of getting started: installed, on your own model, one turn of the loop understood, a first change shipped, and the agent wired into your day. Next, chapter 2 turns OpenCode's signature move - its indifference to which model you run - into real fluency: wiring up multiple [providers and models](/course/opencode/providers-models/), switching mid-session, and picking the right model for each kind of task.
+The consequence is concrete. When the agent edits `internal/adapter/normalise.go` and introduces a type mismatch or an unused import, it doesn't have to wait for a test run or a fresh `go build` to find out - the LSP surfaces the diagnostic, and the agent sees the error you'd see, in the same place you'd see it. An illustrative exchange:
+
+```text
+  ⏵ Edit internal/adapter/normalise.go
+
+  diagnostics: internal/adapter/normalise.go:28:15 - cannot use
+  published (variable of type time.Time) as string value in struct literal
+
+  The LSP caught it: Item.Published is still a string. I'll change the
+  field to time.Time so the parsed UTC value is what gets stored.
+```
+
+When the files are saved and both `gopls` instances see the same module and settings (the same build tags and environment), the agent's diagnostics match the squiggles in your gutter. Unsaved buffers and editor-only `gopls` settings don't reach OpenCode's instance, so save before you hand the agent a file, and expect differences where your editor's Go settings differ. That's the real argument for putting OpenCode next to your editor rather than off in a corner: when the integration is healthy it isn't a second, blinder pair of eyes on your code - it's looking at the same code, through the same kind of server, that you are. (The [LSP docs](https://opencode.ai/docs/lsp/) caution that language servers can drift out of sync, use real memory, and slow a workflow down - so for some loops you'll still want the agent to run `go vet` or the test suite directly rather than trusting LSP feedback alone. Diagnostics are a fast first signal, not the whole verification story.)
+
+With these pieces, OpenCode sits where you actually work - composing in your real editor, picking files and running commands without leaving the keyboard, and checking its edits against the same kind of diagnostics your IDE draws. The next lever is which model runs the loop - a deliberate choice, and the next chapter's whole subject: [providers and models](/course/opencode/providers-models/).

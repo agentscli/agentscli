@@ -1,19 +1,17 @@
 ---
 title: Register a custom tool
 description: "Add a tool to the agent's repertoire with the plugin tool() helper and a schema."
-sidebar:
-  label: "Custom tools · tool()"
 ---
 
-A plugin isn't only hooks. The same module can hand the model a **new tool** - a capability that didn't exist before, scoped exactly to your project. feedmill has a natural one: "given a feed URL, fetch it once and tell me which parser would claim it," the question you ask every time you onboard a source. Rather than have the agent improvise that with shell each time, register it as a tool:
+A plugin - the JS/TS module OpenCode loads at startup from your project's `.opencode/plugins/` directory so it can hook the agent's lifecycle - isn't only hooks. The same module can hand the model a **new tool**: a capability that didn't exist before, scoped exactly to your project. The [plugin hooks page](/course/opencode/extending/plugins-hooks/) covers the module and its gates; this page is the tool half. feedmill, the course's illustrative Go feed aggregator, has a natural one: "given a feed URL, fetch it once and tell me which parser would claim it," the question you ask every time you onboard a source. Rather than have the agent improvise that with shell each time, register it as a tool:
 
-```ts
+```ts title=".opencode/plugins/feedmill-guard.ts"
 import { type Plugin, tool } from "@opencode-ai/plugin"
 
 export const FeedmillGuard: Plugin = async ({ $, directory }) => {
   return {
-    event: async ({ event }) => { /* lint on file.edited, as above */ },
-    "tool.execute.before": async (input, output) => { /* gate, as above */ },
+    event: async ({ event }) => { /* lint on file.edited */ },
+    "tool.execute.before": async (input, output) => { /* block protected paths */ },
 
     tool: {
       "feedmill-classify": tool({
@@ -22,7 +20,7 @@ export const FeedmillGuard: Plugin = async ({ $, directory }) => {
           url: tool.schema.string().describe("the feed URL to classify"),
         },
         async execute(args) {
-          const out = await $`go run ./cmd/feedmill classify ${args.url}`.cwd(directory).text()
+          const out = await $`go run ./cmd/classify ${args.url}`.cwd(directory).text()
           return out
         },
       }),
@@ -31,7 +29,13 @@ export const FeedmillGuard: Plugin = async ({ $, directory }) => {
 }
 ```
 
-Now `feedmill-classify` shows up in the model's toolbox alongside `read`, `edit`, and `bash`, and it's gated by the same per-tool permission system as everything else - you can `allow` it for `build` and `deny` it for a read-only auditor exactly as you gated skills. The shape above matches the package: a top-level `tool` key maps each name to a `tool()` definition of `{ description, args, execute }`, where `execute`'s second `context` argument is optional, so `execute(args)` alone is fine.
+(The first two entries are the lint-on-edit and block-on-write hooks from the plugin hooks page; omit them if your plugin has no hooks. `tool` is the new part. `$` is the shell helper OpenCode passes the module at startup; `directory` is the current working directory. The feedmill scenario has no classifier yet, so this example assumes you added a small `cmd/classify` program that fetches the URL once and prints which parser - RSS, Atom, or JSON Feed - would claim it.)
+
+Restart OpenCode so it loads the changed module, then ask the agent to classify a feed URL and look for a `feedmill-classify` call in the transcript.
+
+Now `feedmill-classify` shows up in the model's toolbox alongside `read`, `edit`, and `bash`, and it's gated by [the same per-tool permission map](/course/opencode/permissions/per-tool-per-agent/) as everything else - you can `allow` it for `build`, OpenCode's default coding agent, and `deny` it for an auditor agent that should fetch nothing. The rule matches the call to `feedmill-classify` by name. The `go run` and the fetch inside `execute` run through the plugin's `$` shell, not through the `bash` tool, so a `bash` rule does not stop them; to keep an agent from fetching, deny the tool itself. The shape matches the package (as of September 2026; [plugins documentation](https://opencode.ai/docs/plugins/)): a top-level `tool` key maps each name to a `tool()` definition of `{ description, args, execute }`, where `args` is a Zod schema (`tool.schema` re-exports Zod) and `execute`'s second `context` argument is optional, so `execute(args)` alone is fine. One sharp edge worth knowing: a plugin tool that reuses a built-in tool's name takes precedence over the built-in.
+
+A plugin is not the only home for a tool. OpenCode also loads standalone tool files from `.opencode/tools/` (or `~/.config/opencode/tools/` for every project): each file exports a `tool()` definition, and the filename becomes the tool name (as of September 2026; [custom tools documentation](https://opencode.ai/docs/custom-tools/)). Use that route when you want one tool and no hooks. This page registers the tool in the plugin because feedmill's plugin module already exists and carries the hooks.
 
 The line between a custom tool and a skill is worth holding: a [skill](/course/opencode/skills/) is a procedure written in Markdown that the *model* reads and follows step by step; a custom tool is code *you* wrote that the model calls and gets a result from. Reach for a tool when the work is deterministic and you'd rather run it than describe it - fetch-and-classify is exactly that.
 

@@ -42,29 +42,37 @@ Two of twenty-four ship broken, silently, and nothing in the system tells you wh
 A [hook](/foundations/hooks/) fires deterministically on a tool call and can reject it before it runs. Claude Code's event for this is `PreToolUse`: it fires before the SQL executes, gets a chance to say no, and the model learns what happened only when it reads the reason. (Hooks that start a run when a merge lands or a cron ticks are a different mechanism wearing the same word - [triggers are hooks](/blog/triggers-are-hooks/); this piece stays inside one run.)
 
 ```python
-# .agent/hooks/validate_sql.py - PreToolUse, before the query runs
+# .claude/hooks/validate_sql.py - PreToolUse, before the query runs
 import sys, json, sqlite3
 
-payload = json.load(sys.stdin)
-sql = payload["tool_input"]["query"]
+try:
+    payload = json.load(sys.stdin)
+    sql = payload["tool_input"]["query"]
 
-cols = {row[1] for row in sqlite3.connect("schema.db")
-        .execute("PRAGMA table_info(users)")}
-used = extract_columns(sql)        # your parser
-unknown = used - cols
+    cols = {row[1] for row in sqlite3.connect("schema.db")
+            .execute("PRAGMA table_info(users)")}
+    used = extract_columns(sql)        # your tested SQL parser
+    unknown = used - cols
+except (KeyError, TypeError, ValueError, sqlite3.Error) as error:
+    print(f"SQL validation unavailable: {error}", file=sys.stderr)
+    sys.exit(2)
 
 if unknown:
     print(json.dumps({
-        "decision": "block",
-        "reason": f"Unknown column(s): {sorted(unknown)}. "
-                  f"Valid columns on users: {sorted(cols)}."
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason":
+                f"Unknown column(s): {sorted(unknown)}. "
+                f"Valid columns on users: {sorted(cols)}."
+        }
     }))
     sys.exit(0)
 ```
 
 The model proposes `last_active`. The hook reads the live schema, finds the column doesn't exist, blocks the call, and hands back the real column list as the reason. The agent reads that as fresh context, corrects to `last_seen_at`, and re-issues the call. One retry, and the thing that corrects the model is the live column list the hook just read - stronger than any adjective in the prompt.
 
-One detail in that snippet earns its keep: it prints JSON and exits `0`, the path where `reason` lands back in the agent's context instead of just stopping the run. The loop has a name in agent research, where it goes by **self-correction** or the **reflection** pattern: catch a wrong output, tell the model what's wrong, let it try again. What separates this instance from that family comes next. The ground truth is deterministic, the retry is capped, and the rate that reaches production is provably zero, which an open-ended reflection loop left to its own judgment never guarantees.
+One detail in that snippet earns its keep: a known invalid call prints the documented `PreToolUse` deny envelope and exits `0`, so the permission-decision reason returns to Claude as correction context. A validator failure prints to stderr and exits `2`, which blocks the tool call rather than silently treating a broken checker as success. Test both paths against the installed Claude Code version; the current [hooks reference](https://code.claude.com/docs/en/hooks) owns the event envelope and exit-code behavior. The loop has a name in agent research, where it goes by **self-correction** or the **reflection** pattern: catch a wrong output, tell the model what's wrong, let it try again. What separates this instance from that family comes next. The ground truth is deterministic, the retry is capped, and the rate that reaches production is provably zero, which an open-ended reflection loop left to its own judgment never guarantees.
 
 **The hook hands the model the one fact it was missing, the live column list, and lets the model finish the job itself.**
 

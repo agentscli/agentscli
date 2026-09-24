@@ -1,62 +1,38 @@
 ---
 title: Reclaim a full context window with /compact
-description: "Not done, not switching away, just out of room mid-refactor. Condense the thread with /compact - and learn what it tends to keep versus drop."
-sidebar:
-  label: "/compact · shrink thread"
+description: "Same task, no room left in the window. Condense the thread with /compact, save durable work first, and read what the marker does and doesn't tell you."
 ---
 
 import SessionXray from '../../../../../components/interactive/SessionXray.tsx';
 
-The money-handling refactor has sprawled. To move every float to integer cents you've had Codex read the importer, the models, the reports endpoint, and a pile of tests - and an hour of file dumps and command output has piled into the window. Put a number on just the three files chapter 1 already sized: `csv.py` at 2,100 estimated tokens, `models.py` at 3,400, the test suite at 12,400. That's 17,900 tokens spent on reads alone, before a single line of the actual back-and-forth is counted - about 9% of the window, gone to *finding out where things are* rather than to the fix itself. The agent is getting hazy: a moment ago it re-read a model it had already read, and it's started hedging on decisions it was firm about earlier.
+You are still on the same task, not switching projects, but the **context window** is crowded: long transcript, file bodies from earlier reads, test output still in history. The agent starts re-reading files it already saw. Starting a brand-new session would discard in-progress reasoning that never reached disk. **Compaction** keeps the thread and replaces much of the verbose history with a summary.
 
-You're in the worst spot for the two resets you already know. You can't start a fresh session - the half-finished refactor *is* this thread, and abandoning it means re-establishing everything. And resuming a leaner session wouldn't help, because the bloat isn't in some other session, it's right here. You're not done, you're not leaving, you're just out of room. This is the exact situation compaction exists for: keep the understanding, spend far fewer tokens carrying it.
+A **session** is the saved Codex conversation (`codex resume` restores it). Compaction operates **inside** that session. It does not change files on disk; see [resume](/course/codex/sessions-context/resume/) for the distinction between transcript and working tree.
 
 ## Condensing the thread
 
 ```text
-/compact     # summarise the conversation so far, keep the essentials
+/compact
 ```
 
-Compaction replaces the long back-and-forth with a summary of itself. The load-bearing parts tend to survive - the goal you're working toward, the decisions you reached, the current state of the code, the most recent turns. The verbose middle tends to collapse: the full file contents Codex read an hour ago, exact command output, the approaches you tried and discarded.
+Codex offers to summarize the chat so far; you confirm. Compaction tends to keep the current goal, decisions reached, recent turns, and the latest picture of the code. It tends to drop bulk: full file bodies read hours ago, verbose command output, abandoned approaches. Those are tendencies, not a contract you can inspect line by line.
 
-One number is worth holding before you run it: if `/compact` is doing its job, whatever summary comes out the other end should be a small fraction of the 17,900 tokens those three reads alone cost - not thousands, something you could count on two hands' worth of digits. Remember that shape; you're about to check it against a real one instead of taking it on faith.
+After compaction you typically see a marker such as **`Context compacted`** in the history. The summary text itself is not printed in current builds; making it visible in the transcript is an open request, not a shipped audit trail. You choose the moment; you do not get to proofread the summarizer's draft.
 
-```text
-> /compact
+**Automatic compaction** can also run as the window nears its limit (marker may say `automatically`). That fires when capacity is tight, not necessarily at a clean boundary in your work. Prefer choosing `/compact` yourself between steps when you feel the squeeze.
 
-  ⎿ Compacted. Conversation summarised.
-     Kept: goal: float to integer cents across importer, models, and
-     reports; cents convention locked; importer and models done, reports
-     pending; last three turns preserved.
-     Collapsed: full file dumps and command output from earlier in the thread.
+How much room returns? Treat exact ratios as illustrative, not product guarantees. In the widget's simulated session, a deliberate compact might move modeled occupancy from about 150k tokens toward about 35k: a summary block, recent turns kept verbatim, and standing overhead compaction does not remove. The widget dramatizes the **shape** of that trade; it is not a measurement of your session.
 
-> /status
-  [the window has real room again]
-
-> now convert the reports endpoint, the last float column
-  [carries on with the refactor's context intact, the dead weight gone]
-```
-
-Now pay off the number the way chapter 1 taught you to price prose: that "Kept" line is 162 characters. At 4 characters per token, that's about 40 estimated tokens - carrying the goal, the convention, and the state of every file, for roughly 40. Against the 17,900 the three reads cost going in, that's **roughly 450 times smaller. Same understanding, a rounding error of the footprint.** That's not a guess about what compaction probably does - it's the same arithmetic you'd run by hand, checked against what actually came back.
-
-Run `/status` (the [next lesson](/course/codex/sessions-context/status/)) right after and you'll see the window drop back down - same thread, same plan, far less weight.
-
-A note on judgment over mechanism. The official docs describe `/compact` as a command *you run*; whether Codex also condenses on its own as you near the limit isn't something to count on, so don't build a habit around it doing the work for you. Treat compaction as a deliberate move you make at a clean boundary - between finishing one file and starting the next - rather than something you hope fires at the right instant. *You* choosing the moment beats anything choosing it for you in the middle of a delicate step.
-
-## What compaction can't do
-
-That 450x number should feel almost too good, and the honest half comes immediately: it's cheap because it's *lossy*, not because nothing was lost. Compaction is a bet about what matters. It keeps what looks load-bearing and discards what looks like noise, and on a long refactor that bet is *usually* right, but "usually" is not "always" - and you don't find out which turn you were on until later.
-
-Watch the stakes before the rule. This is a session shaped like your refactor - window filling with file dumps and test output, the agent starting to re-read things - with its context window x-rayed beside the terminal. When it pauses, choose what happens next; the branch where you *don't* choose is the one worth seeing. (The commands wear generic names here - in Codex, the condense move is `/compact`, and the fresh start is a new session.)
+Watch the stakes before the rule. The replay below x-rays a filling window and pauses for your choice among continue, compact, or clear. Generic command names appear in the scene; in Codex the condense move is **`/compact`**.
 
 <SessionXray client:visible />
 
-Here's the rule to take from this lesson if you take nothing else: **compaction is lossy, so get unsaved work onto disk first.** If a change exists *only* in the conversation - Codex described the exact new body of `to_cents()` in detail but you never actually wrote it to a file - compaction can flatten "the precise implementation" down to "converted the amount to cents," and the specifics are simply gone. They were never anywhere but the chat, and the chat just got summarised at a 450-to-1 ratio, which is exactly why they didn't survive. Save, *then* compact: get the work into a file, a commit, or a note before you condense the thread holding it. Make that reflexive and compaction is free; skip it once on the wrong turn and you learn it the expensive way.
+Run **`/status`** after compacting if you want the aggregate context line on the same thread; see [status](/course/codex/sessions-context/status/) for how to read it.
 
-This is also where the chapter's thesis comes home. The cents convention, the category list, the test command - the context you cannot afford to lose - shouldn't live in a thread that a compaction might paraphrase away, no matter how good the odds usually are. It belongs on disk, in [`AGENTS.md`](/foundations/rules/) or a commit, where no summariser can touch it. Compaction is for the *transient* understanding of a session; the durable kind gets written down. Closing the gap between what the agent should know and what you've actually told it is the whole game, and a thread that's about to be compacted is precisely the wrong place to keep anything you'd hate to lose.
+## What compaction can't do
 
-## What you've reclaimed
+**Compaction is lossy.** Details that exist only in chat (the exact conversion you settled on, why one approach beat another) can flatten into a generic line. **Save first, then compact:** commit, branch, or sketch in a file anything you cannot afford to lose.
 
-The window has room again, the refactor's context is intact, and the work that mattered is on disk where compaction can't reach it. The thread is healthy.
+Durable project rules belong on disk anyway. In budgetcli (the course's running example, a small self-hosted personal-finance API in Python and FastAPI), integer-cents handling lives in **`AGENTS.md`** at the repo root and reloads every session without depending on the transcript. Compaction is for **transient** working context; git and project docs are for what must survive any reset or summarize pass.
 
-But "the agent feels hazy" sent you to `/compact` on instinct this time, and instinct isn't always right - sometimes the conversation isn't even the biggest thing in the window. Before you reach for compaction reflexively, it's worth being able to *see* what's actually eating the budget, so you fix the real culprit instead of the assumed one. That's a single command away: [inspect what's in the window](/course/codex/sessions-context/status/).
+Automatic and manual compaction address **conversation weight** - old file bodies and spent exchanges are exactly what they reclaim. What compaction does not shrink is standing overhead: connected MCP schemas and a long rules chain reload or persist regardless. If the window is full mainly from that standing overhead, or from reads that keep recurring turn after turn, diagnose with [/status](/course/codex/sessions-context/status/) and your own accounting before compacting working context away - you would be shrinking the part that was not the problem.

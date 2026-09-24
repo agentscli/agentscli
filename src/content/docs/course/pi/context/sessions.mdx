@@ -1,109 +1,138 @@
 ---
 title: "Resume, fork, and reset a Pi session"
 description: "Pick yesterday's session back up, fork today's real decision instead of betting on one fix upfront, and know when to start clean instead."
-sidebar:
-  label: "Sessions · resume, fork, reset"
 ---
 
 import SessionXray from '../../../../../components/interactive/SessionXray.tsx';
 
-Yesterday you were three files deep into `stash`'s readability extractor, chasing why it mangles certain sites, when you had to stop. Pi didn't lose any of that - every session is a plain JSONL file on disk under `~/.pi/agent/sessions/`, organized by project, one entry per turn, tool call, and model switch. Nothing about it is hidden from you; you're just not looking at it yet. Reopening yesterday is a matter of pointing Pi at the right file instead of re-explaining what you already worked out.
+Yesterday's session ended in a good place: `fetch_feed` fixed, both tests green, committed. Pi kept every line of that work. Sessions auto-save as plain JSONL files under `~/.pi/agent/sessions/`, organized by project - this repo's directory is the project's path with the leading slash dropped, every remaining slash turned into a dash, and a double dash added at each end, so `stash` (the course's running example, a small FastAPI feed reader) at `/Users/you/stash` lives under `--Users-you-stash--`.
+
+One line per entry: messages, tool calls, model switches, compactions. None of it is hidden from you; you're just not looking at it yet. Reopening yesterday is a matter of pointing Pi at the right file instead of re-explaining what you already worked out.
 
 ## What re-explaining actually costs
 
-Before you touch `pi --continue`, run this on a real session of your own - any bug you chased for more than a few minutes recently:
+Before you resume anything, run this on a real session of your own - any bug you chased for more than a few minutes:
 
 ```bash
-wc -l ~/.pi/agent/sessions/<project>/<the-session-file>.jsonl
+wc -l ~/.pi/agent/sessions/--Users-you-stash--/<the-session-file>.jsonl
 ```
 
-That's not a token count, just a line count - one entry per turn, tool call, and model switch, the same units the session format already uses. Now picture retyping that from memory: every hypothesis you ruled out, every file you already read, every dead end you already walked into and backed out of. If the number is small, fair enough, this lesson may not be buying you much. Most real debugging sessions aren't small, and that gap between "the file already holds it" and "you'd have to rebuild it by talking" is the whole reason `pi --continue` exists. **A session you can't reopen isn't gone, it's just a retyping tax you haven't paid yet.**
+That's not a token count, just a line count - one line per entry, the same units the session format already uses. Now picture retyping that from memory: yesterday's first hypothesis that the feed XML was simply malformed, the discovery that Atom's link is a child element rather than an attribute, every dead end you walked into and backed out of.
+
+If the number is small, fair enough, this lesson may not be buying you much. Most real debugging sessions aren't small, and the gap between "the file already holds it" and "you'd have to rebuild it by talking" is the whole reason session resume exists. **A session you can't reopen isn't gone, it's just a retyping tax you haven't paid yet.**
 
 ## Picking up where you left off
 
-From the shell, the fast path is `pi --continue` - continue the most recent session for the directory you're standing in:
+From the shell, the fast path is `pi -c` - continue the most recent session for the directory you're standing in:
 
 ```bash
 cd stash
-pi --continue
+pi -c
 ```
 
-That's the one you'll reach for most mornings. When the most recent session *isn't* the one you want - you did a quick README tidy after the extractor work, and the latest thread is that, not the bug - open the session picker instead and reach past it. From inside a running session, `/resume` does this (check `pi --help` for the shell-level equivalent in your version):
+That's the one you'll reach for most mornings. When the most recent session isn't the one you want, open the picker instead: `pi -r` at startup, `/resume` from inside a running session. It reaches back across every session Pi has ever run in this project, not just the last one. The shape of the list, illustrative:
 
 ```text
 > /resume
 
   Select a session:
-    stash · README tidy                 yesterday 19:05
-  ❯ stash · extractor mangles some sites  yesterday 16:40
-    stash · feed-date CSV fix             6 days ago
+    stash · first look around the repo        3 days ago
+    stash · parse_date offset fix             2 days ago
+  ❯ stash · fetch_feed namespace + link       yesterday 17:12
 ```
 
-That last entry is real - the picker reaches back across every session Pi has ever run in this repo, not just the last one.
-
-Once you're back in, ask directly instead of assuming:
+Once you're back in, ask directly instead of assuming. The reply below is illustrative, but it's the kind of answer the restored conversation actually supports:
 
 ```text
-> where did we leave the extractor bug?
+> where did we leave the feed parsing?
 
-  You'd traced it to two sites specifically: one strips article text down to
-  a single sentence because the readability heuristic picks the wrong <div>,
-  the other keeps the nav bar because it lacks the semantic markup the
-  heuristic depends on. You hadn't picked a fix yet.
+  Fixed in two steps: the namespace first - bare iter("entry") never matched
+  {http://www.w3.org/2005/Atom}entry, so the lookup now carries the Atom
+  namespace - then the link, which is a child element, so its href lives on
+  <link>, not <entry>. The test pins the link too. Suite green, committed.
 ```
 
 That's not Pi re-deriving anything - it's reading the restored conversation straight back to you. **The investigation you closed yesterday stays closed.**
 
-One thing the picker doesn't do: search *inside* old sessions for something you don't remember the title of. It lists sessions by project and recency, not by content - there's no built-in `pi search "diacritics"` reaching across every session you've ever run. Because each one is a plain JSONL file, you can `rg` across `~/.pi/agent/sessions/` yourself when you need to find that one time you fixed a tokenizer three weeks ago; Pi just doesn't ship a command that does it for you.
+One thing the picker doesn't do: search *inside* old sessions for something you don't remember the title of. It lists sessions by project and recency, and what you type filters over their names, not their contents - there's no built-in full-text search across everything you've ever run.
+
+Because each session is a plain JSONL file, you can close that gap yourself when you need it: `rg "unconverted data" ~/.pi/agent/sessions/` finds the afternoon you spent on that strptime error, across every project at once. Pi just doesn't ship a command that does it for you.
 
 ## The real fork: two fixes, one problem
 
-Today's actual work is a different bug: `stash`'s full-text search misses accented characters, so searching "café" doesn't find an article that mentions "café." There are two legitimate fixes, and you can't tell which is better without trying it:
+Today's work arrives through the fix you just landed. With `fetch_feed` parsing properly, `POST /feeds/{feed_id}/sync` really works for the first time - so you point it at a feed that's already stored, to refresh it. It reports success. The `articles` table now holds every article from that feed twice.
 
-1. Normalize incoming text at write time - strip diacritics before it ever reaches the search index.
-2. Reconfigure the FTS5 virtual table's tokenizer to ignore diacritics itself, and rebuild the index.
+You can see it coming in `stash/db.py`, and this is derived from reading the repo, not from a hunch: `init()`'s schema puts no UNIQUE constraint on `articles`, and `save_article` is a bare `INSERT`, so nothing between the sync loop in `stash/main.py` and the table stops a second copy.
 
-Betting on one before you've seen either in practice would be guessing. Instead, fork the session at the point where you asked about the bug, so both attempts start from the same understanding without polluting each other:
+Run the sync path twice against a scratch copy of the repo - executed with the date-offset parse fix and the Atom-namespace parse fix applied (the two earlier repairs to `parse_date` and `fetch_feed`), not invented - and you get exactly that:
+
+```text
+sync #1: {'saved': 1}
+sync #2: {'saved': 1}
+rows in articles: 2
+links appearing more than once: [('https://example.com/hello', 2)]
+```
+
+One more thing worth noticing before you fix anything: the endpoint's `saved` count is not evidence. `main.py` returns `len(articles)` - articles *fetched*, not rows *inserted* - so both syncs above happily say `1`. The table is where the truth lives, which is where the check belongs too.
+
+Two fixes, both legitimate, neither obviously cheaper:
+
+1. **Schema-level.** Add a unique index on `articles.link` (or on `link` plus `feed_id`, if the same article can legitimately arrive via two feeds) and make `save_article` insert with `ON CONFLICT(link) DO NOTHING`. The storage layer then enforces uniqueness on every caller, forever. The catch: SQLite refuses to build a unique index over rows that already violate it, so the duplicates sitting in `stash.db` must be migrated away first.
+2. **App-level.** Leave the schema alone. Before each insert in the sync path - a lookup helper in `db.py`, or inline in `stash/main.py` - check whether the link already exists and skip if so. No migration needed, but every future sync pays a read before every write, and the protection only holds for code paths that remember to check.
+
+Betting on one before you've seen either in practice would be guessing. Fork the session at the point where you asked about the bug, so both attempts start from the same understanding without polluting each other:
 
 ```text
 /fork
 ```
 
-`/fork` branches a **new session** from any earlier message in the current thread - you pick the point, Pi copies everything up to it into a fresh session file, and the original thread keeps existing untouched. Run it once from "where you asked about the accent bug," try the tokenizer approach in the new branch, then `/fork` again from the same point for the normalize-at-write approach in a second branch. Now you have two live attempts, each with the full context of the bug report and neither one contaminated by the other's dead ends.
+`/fork` branches a **new session** from a previous **user** message in the current thread - the selector it opens offers your messages as fork points, not every entry; assistant turns and tool calls aren't candidates. Pick the message, and Pi copies everything up to it into a fresh session file; the original thread keeps existing untouched.
 
-Don't just take "copies everything" on faith - count it. Before you fork, run `wc -l` on the current session's file and note the number; call it N. Fork it, then run `wc -l` on the new branch's file. It reads N. Not close to N - N, because `/fork` doesn't re-summarize or re-derive anything, it copies the entries verbatim up to the point you picked. Fork again from the same point for the second branch, and that file reads N too. **Two branches, one shared starting point, byte for byte, not by trust.**
+Run it once from "why does re-syncing double every article," take the schema fix in that branch, then `/fork` again from the same message for the check-before-insert approach in a second branch. Two live attempts, one shared starting point, neither contaminated by the other's dead ends.
+
+Don't just take "copies everything" on faith - count it. Before you fork, run `wc -l` on the current session's file and note the number; call it N. Fork, then `wc -l` the new branch's file: it should hold the entries up to the message you picked, copied verbatim - the count the original had at that point, not a compressed remnant of it.
+
+Fork again from the same point and the second branch matches too. If a count comes back dramatically smaller, you're not looking at a copy; `/fork` doesn't summarize.
 
 This is the same command doing two different jobs, and it's worth naming both:
 
 - **Explore two options that share a starting point.** That's what you just did - fork twice from the same message, run both approaches, and compare real results instead of arguing about it in the abstract.
-- **Undo a wrong turn.** If Pi goes deep into a bad approach - say it spends ten turns rewriting the tokenizer config in a way that breaks unrelated queries - you don't have to re-prompt through the whole mistake to undo it. Fork from the message right *before* the agent went sideways, and continue from there instead. The bad branch isn't deleted; it's still sitting on disk if you ever want to see what went wrong. It's just not the thread you're continuing in.
+- **Undo a wrong turn.** If a branch spends ten turns building a migration helper you never asked for, you don't have to prompt back through the whole mistake. Fork from the message right *before* it went sideways, and continue from there instead. The bad branch isn't deleted; it's still on disk if you ever want to see what went wrong. It's just not the thread you're continuing in.
 
-To see the branches you've made, use `/tree` (or double-Esc) - it visualizes the whole session as a tree, so you can find the fork point again, rename a branch, or jump between the two accent-fix attempts without losing your place.
+To see where you are inside any one session, `/tree` renders it as the tree it is - branches, labels, the active leaf - and lets you jump to an earlier point, any entry type, without creating a new file. The two fork attempts, though, are separate session files. You hop between them with `/resume`, same as any other session.
 
-You try the tokenizer reconfiguration first, and it works - `unicode61 remove_diacritics=2` on the FTS5 table, plus a one-time reindex. You keep that branch, and the normalize-at-write branch sits unused in the tree; you don't need to delete it, it's just not where you're working.
+The chapter keeps the schema fix. The migration - deleting duplicates, keeping the first row per link - is a one-time cost, and after it the constraint enforces itself on every future writer: the sync endpoint, any scratch script, whatever gets built in later chapters. The check-before-insert branch taxes every sync with a read per article, and its protection evaporates the first time a new code path forgets to check.
+
+Delete the unused branch or leave it sitting in the picker; either way, one honesty note before moving on - the README still confesses to a known failing test, and the suite has been green since yesterday. Noted for a later chore, not this one.
 
 ## Knowing when *not* to resume
 
-Here's a claim worth testing before you take it on faith: leaving a session running and just typing through it, past the point where the window is genuinely full, is *itself* a decision - and the worst of the three you actually have. Pi doesn't ask permission when that happens; the reset lands anyway, unsteered, at whatever moment the window runs out on its own, and nobody told it which part of the last hour actually mattered. You'll watch that play out below, against the two choices that pick the moment on purpose instead.
+Here's a claim worth testing before you take it on faith: leaving a session running and just typing through it, past the point where the window is genuinely full, is *itself* a decision - and the worst of the three you actually have.
 
-Resuming is cheap enough that it's tempting to reach for it out of habit - drag yesterday's extractor investigation into a task that has nothing to do with it, just because the session is right there. That's not continuity, that's clutter: Pi will happily keep talking about the extractor while you're actually trying to add a new tag-filter to the CLI, and the accumulated context does you no favors.
+Pi doesn't ask permission when that happens; the reset lands anyway, unsteered, at whatever moment the window runs out on its own, and nobody told it which part of the last hour actually mattered. You'll watch that play out below, against the two choices that pick the moment on purpose instead.
 
-When the next thing genuinely doesn't follow from the last one, start clean instead - check `pi --help` or `/help` for the exact fresh-session command in your installed version; we'll call it `/new` here:
+Resuming is cheap enough that it's tempting to reach for it out of habit - drag the dedup investigation into a task that has nothing to do with it, just because the session is right there. That's not continuity, that's clutter: Pi will happily keep discussing duplicate rows while you're actually trying to add a new feed, and the accumulated context does you no favors.
+
+When the next thing genuinely doesn't follow from the last one, start clean instead:
 
 ```text
 /new
 ```
 
-That clears to a blank session - no accent-bug history, no extractor trace, nothing to accidentally carry forward. The rule of thumb: resume or fork when you're continuing something, start clean when you're not. Getting this wrong in either direction costs you - dragging in unrelated history muddies a fresh task, and starting clean when you *were* continuing throws away context you'll just have to rebuild by hand.
+That clears to a blank session - no dedup history, no feed-parse trace, nothing to accidentally carry forward. The rule of thumb: resume or fork when you're continuing something, start clean when you're not. Getting this wrong in either direction costs you - dragging in unrelated history muddies a fresh task, and starting clean when you *were* continuing throws away context you'll just have to rebuild by hand.
 
-That judgment is easier to feel than to memorize. Below is a session hitting exactly that pressure point - 75% full, mid-task - with the window x-rayed beside the terminal so you can see what each of the three choices actually keeps and what it throws away. Pick one, watch it play out, then come back and try the other two. The command names are generic; in Pi, read "clear" as starting a fresh session, and the "compact" branch as a preview of [what the next lesson does about a full window](/course/pi/context/compaction/):
+That judgment is easier to feel than to memorize. Below is a session hitting exactly that pressure point - 75% full, mid-task - with the window x-rayed beside the terminal so you can see what each of the three choices actually keeps and what it throws away. Pick one, watch it play out, then come back and try the other two.
+
+The command names are generic; in Pi, read "clear" as starting a fresh session, and the "compact" branch as a preview of [what the next lesson does about a full window](/course/pi/context/compaction/):
 
 <SessionXray client:visible />
 
 However you picked, "keep going" is the one to check against the claim above: it looks like doing nothing, but the window still resets on its own, and the reasoning you watched Pi work out over tens of thousands of tokens gets flattened to a filename the moment it happens. `/compact` and `/clear` don't dodge the reset - nothing does. **They just let you pick the moment and say what's allowed to survive it.**
 
 :::tip[Try it]
-Start a session, make a change, then fork it with `/fork`. In the fork, try a different approach. Use `/tree` to see both branches side by side, then resume the original and notice your context is untouched - the fork never polluted it.
+Start a session, make a change, then fork it with `/fork`. In the fork, try a different approach. Use `/tree` to see where the branch sits, then reopen the original with `/resume` and notice your context is untouched - the fork never polluted it.
 :::
 
-You've got the accent-search fix landed by forking instead of gambling, and a habit for picking up tomorrow morning without losing today's decisions. But the *next* piece of stash work - rewriting the extractor properly - is going to run long enough to fill the window outright, and this time you won't be the one who forces the reset. [Next: what happens when the thread runs out of room](/course/pi/context/compaction/).
+The fork gave you a kept fix and a discarded branch, and the resume habit gives you tomorrow morning for free. But the kept fix carries a bill: `stash.db` still holds every duplicated row, and SQLite won't even build the new index until they're gone.
+
+The cleanup - migrate, then re-sync every stored feed under the constraint to prove it holds - is a job long enough to fill the window outright, and this time you won't be the one who forces the reset. [Next: what happens when the thread runs out of room](/course/pi/context/compaction/).

@@ -5,9 +5,9 @@ description: "Put the headless command on a runner: install, an encrypted key, o
 
 import NightShift from '../../../../../../components/interactive/NightShift.tsx';
 
-The headless command plus `CURSOR_API_KEY` is everything you need to put `budgetcli`'s agent on a runner. The job we'll automate is the transaction check: on every push, recategorise whatever landed and flag anything that looks off, so a bad import doesn't quietly corrupt months of history before you notice.
+The headless command (the CLI's `--print` mode - it answers one prompt and exits) plus a Cursor API key is everything you need to put `budgetcli`'s agent - the course's illustrative personal-finance API - on a runner. Create the key in Cursor Dashboard > API Keys ([CLI authentication reference](https://cursor.com/docs/cli/reference/authentication), as of September 2026) and save it as the repository secret `CURSOR_API_KEY`. The job we'll automate is the transaction check: on every push, inspect whatever landed and flag anything that looks off, so a bad import doesn't quietly corrupt months of history before you notice.
 
-The workflow is unremarkable on purpose - install the CLI, set the key from a secret, run one headless command, gate the step on its result:
+The workflow is unremarkable on purpose - install the CLI (it provides the `agent` command), set the key from a secret, run one headless command, gate the step on its result. The flags are the ones the reference documents (as of September 2026 - [parameters reference](https://cursor.com/docs/cli/reference/parameters)); the install line matches the [CLI installation docs](https://cursor.com/docs/cli/installation) as of the same date:
 
 ```text
 # .github/workflows/budgetcli-check.yml (shape only - confirm flags before use)
@@ -18,25 +18,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install cursor-agent
+      - name: Install the CLI
         run: curl https://cursor.com/install -fsS | bash
       - name: Run the check
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          cursor-agent -p "Inspect the transactions added in this push without editing files.
+          agent -p "Inspect the transactions added in this push without editing files.
             Reply with exactly PASS or FAIL: FAIL if any move sends an account
-            negative or lands in 'uncategorised', otherwise PASS." \
+            negative or lands in 'uncategorized', otherwise PASS." \
             --output-format json > result.json
           test "$(jq -r '.result' result.json)" = "PASS"
 ```
 
-The assertion here reads the documented `.result` field - the headless JSON output carries `.result`, so `jq -r '.result'` pulls the agent's answer and `test` turns it into the step's exit code. An earlier draft of this example asserted a `.ok` boolean; there is no documented `.ok` field, so don't reach for one. This example deliberately omits `--force`: the prompt is read-only, so the runner does not need unattended write permission. If a real CI task must edit files, use `--force` only inside a disposable, isolated runner and review the prompt and permissions separately.
+The assertion here reads the documented `.result` field - the headless JSON output carries `.result` and no `.ok` boolean ([output-format reference](https://cursor.com/docs/cli/reference/output-format)), so `jq -r '.result'` pulls the agent's answer and `test` turns it into the step's exit code. This example deliberately omits `--force`, which auto-approves command execution ("Force allow commands unless explicitly denied" is the reference's own definition): the prompt is read-only, so the runner does not need it. If a real CI task must edit files, use `--force` only inside a disposable, isolated runner and review the prompt and permissions separately.
 
 The one genuinely new thing is the gate: reading `.result` and comparing it turns the agent's JSON answer into the step's exit code, so a failed workflow fails after the push. To prevent merging, configure branch protection or required status checks; a workflow triggered by `push` cannot retroactively prevent that push.
 
-The gate is also where an unattended run's honesty comes from. With no one at the keyboard, `PASS` is just the agent's opinion until something the agent can't sweet-talk - a build, the suite, a full-path run - has to agree. Which checks you wire into the job decide what its green actually means:
+The gate is also where an unattended run's honesty comes from - control, in this course's sense (what enforces a boundary), made mechanical. With no one at the keyboard, `PASS` is just the agent's opinion until something the agent can't sweet-talk - a build, the type checker, the test suite, a full end-to-end run - has to agree. The scene below replays a generic overnight batch (a different repo, nine chores, the same question) and asks what the run has to get past before its morning report means anything. In this page's spelling, each answer is another step in this same workflow file - a build step, `tsc`, the unit suite, an end-to-end job - with the `.result` gate deciding what the whole thing reports:
 
 <NightShift client:visible />
 
-A CI job still burns your minutes on your runner, and it only fires on a push. The last two surfaces move the work off your infrastructure entirely and let it start from a comment. [Next: Cloud Agents and Bugbot](/course/cursor/cli-headless-ci/cloud-and-bugbot/).
+A CI job still burns your minutes on your runner, and it only fires on a push. Cloud Agents and Bugbot move the work off your infrastructure entirely and let it start from a comment. [Next: Cloud Agents and Bugbot](/course/cursor/cli-headless-ci/cloud-and-bugbot/).

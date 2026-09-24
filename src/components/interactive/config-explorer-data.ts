@@ -237,7 +237,7 @@ skills: [security-checklist]
             oneLiner: 'Project rules following the open agents.md spec.',
             when: 'Read at session start, every invocation.',
             description:
-              'Codex implements the open `agents.md` spec. Files are concatenated from the repo root downward - nested AGENTS.md files appear later in context and override earlier guidance positionally. No `@path` import directives are supported.',
+              'Codex implements the open `agents.md` spec. Files are concatenated from the repo root down to the directory where Codex was launched - one file per directory on that path - so a nested AGENTS.md joins only when its directory is on the launch path. Nested files appear later in context and override earlier guidance positionally. No `@path` import directives are supported.',
             chapter: CHAPTER.rules,
           },
           {
@@ -427,10 +427,10 @@ command = "scripts/check-bash-command.sh"`,
             oneLiner: 'The repo-wide rules file, applied to every Copilot request.',
             when: 'Always on, for every chat and agent request in this repo.',
             description:
-              'Copilot\'s flagship rules surface - and the only customization layer that reaches every surface Copilot runs on: VS Code, JetBrains, Visual Studio, chat on GitHub.com, the cloud coding agent, and code review. Layers combine rather than override; on conflict, precedence is personal > repository > organization.',
+              'Copilot\'s flagship rules surface - and the only customization layer that reaches every surface Copilot runs on: VS Code, JetBrains, Visual Studio, chat on GitHub.com, the cloud coding agent, and code review. Layers combine rather than override; on conflict, precedence is personal > repository > organization, on the surfaces where GitHub documents it.',
             tips: [
               'Run `/init` in chat to scaffold this file from your codebase.',
-              'Gated by the VS Code setting `github.copilot.chat.codeGeneration.useInstructionFiles`.',
+              'Detected automatically - VS Code applies it to all chat requests, no setting to flip (settings-based generation instructions were deprecated in VS Code 1.102).',
             ],
             chapter: CHAPTER.rules,
           },
@@ -557,7 +557,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             oneLiner: 'The switchboard: `chat.*` settings decide which files Copilot reads.',
             when: 'Always on, across every workspace.',
             description:
-              'Copilot has no dotfile of its own - your personal layer is VS Code\'s user settings. The keys that matter for this map: `chat.useAgentsMdFile`, `chat.useClaudeMdFile`, `chat.instructionsFilesLocations`, `chat.promptFilesLocations`, `chat.agentFilesLocations`, `chat.agentSkillsLocations`, and the `chat.tools.*.autoApprove` permission family.',
+              'Personal instructions have two homes: account-level rules set on github.com (the precedence-topper; see the Personal instructions node), and user-level instruction files in your home directory (for example `~/.copilot/instructions` in current builds), switched on from VS Code user settings. The keys that matter for this map: `chat.useAgentsMdFile`, `chat.useClaudeMdFile`, `chat.useCustomizationsInParentRepositories`, `chat.agentSkillsLocations`, `github.copilot.chat.organizationInstructions.enabled`, and the `chat.tools.*.autoApprove` permission family. (The older `chat.instructionsFilesLocations`, `chat.promptFilesLocations`, and `chat.agentFilesLocations` settings are deprecated; only the older Local agent engine reads them.)',
             chapter: CHAPTER.configuration,
           },
           {
@@ -575,9 +575,9 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
             label: 'Org instructions  (github.com)',
             type: 'file',
             oneLiner: 'Org-wide rules - with a catch almost everyone misses.',
-            when: 'Applied only in chat on GitHub.com, the cloud coding agent, and code review.',
+            when: 'Applied in GitHub.com chat, the cloud coding agent, and code review; in the IDE, off by default (VS Code can enable discovery; JetBrains does not apply the layer).',
             description:
-              'Organization custom instructions do not apply in your IDE - not VS Code, not JetBrains. A rule that must hold in the editor has to live in the repository file instead. Orgs also control model allow-lists, content exclusions, and MCP policy from here.',
+              'Organization custom instructions are not applied in the IDE by default. In VS Code, discovery is gated by github.copilot.chat.organizationInstructions.enabled; JetBrains does not apply the layer. They do apply in GitHub.com chat, code review, and the cloud coding agent - so a rule that must hold in the editor has to live in the repository file. Orgs also control model allow-lists, content exclusions, and MCP policy from here.',
             chapter: CHAPTER.rules,
           },
           {
@@ -650,7 +650,7 @@ You are a strict reviewer of SQL migrations. Flag destructive DDL.`,
                 oneLiner: 'Structured `.mdc` rules whose frontmatter controls when they attach.',
                 when: 'Per rule: always, glob-matched, agent-judged, or manual via `@RuleName`.',
                 description:
-                  'Three frontmatter fields - `description`, `globs`, `alwaysApply` - combine into four rule types: Always, Apply Intelligently (the agent judges by description), Apply to Specific Files (globs), and Apply Manually. The glob type is not deterministic: it attaches when a matching file enters the agent\'s context, not merely when it\'s open in the editor.',
+                  'Three frontmatter fields - `description`, `globs`, `alwaysApply` - combine into four rule types: Always Apply, Apply Intelligently (the agent judges by description), Apply to Specific Files (globs), and Apply Manually. The glob type is not deterministic: it attaches when a matching file enters the agent\'s context, not merely when it\'s open in the editor.',
                 tips: [
                   'Never trust a glob rule for a non-negotiable convention - promote it to `alwaysApply: true` or into AGENTS.md.',
                 ],
@@ -708,9 +708,9 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 type: 'file',
                 badge: 'committed',
                 oneLiner: 'MCP servers for this repo - stdio, SSE, or streamable HTTP.',
-                when: 'Servers connect at session start; every enabled server\'s tool schemas load into context.',
+                when: 'Servers are discovered and loaded when the agent needs them (Cursor 2.4+), not eagerly at session start; a used server\'s tool schemas then enter context.',
                 description:
-                  'stdio servers get `command`, `args`, and `env`; remote servers get `url` and `headers`. The project file resolves before your user file. One-click installs from the MCP Marketplace or cursor.directory write into an mcp.json for you - check which scope it landed in.',
+                  'stdio servers get `command`, `args`, and `env`; remote servers get `url` and `headers`. The project file resolves before your user file. One-click installs from the Cursor Marketplace or cursor.directory write into an mcp.json for you - check which scope it landed in.',
                 exampleIntro: 'A local database server:',
                 example: `{
   "mcpServers": {
@@ -730,16 +730,16 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 label: 'hooks.json',
                 type: 'file',
                 badge: 'committed',
-                oneLiner: 'Deterministic gates on the agent lifecycle - the broadest event surface in scope.',
+                oneLiner: 'Deterministic gates on the agent lifecycle - dedicated read and MCP moments included.',
                 when: 'Fires at the named lifecycle event, every time, whatever the model decided.',
                 description:
-                  'Around 21 events across agent, Tab, and app lifecycle. `beforeShellExecution`, `beforeReadFile`, and `beforeMCPExecution` are the policy workhorses - and the latter two have no analog in Claude Code or Codex. Hooks read JSON on stdin and answer with `permission: allow | deny | ask`; exit 2 blocks, other non-zero exits fail open, so test the deny path.',
+                  'Around 21 events across agent, Tab, and app lifecycle. `beforeShellExecution`, `beforeReadFile`, and `beforeMCPExecution` are the policy workhorses - the read and MCP moments get dedicated event names (Claude Code reaches the same gates via a PreToolUse matcher). Hooks read JSON on stdin and answer with `permission: allow | deny | ask`; exit 2 blocks, other non-zero exits fail open unless failClosed: true, so test the deny path.',
                 exampleIntro: 'A gate on shell commands:',
                 example: `{
   "version": 1,
   "hooks": {
     "beforeShellExecution": [
-      { "command": "./.cursor/hooks/protect-ledger.sh" }
+      { "command": "./.cursor/hooks/protect-ledger.sh", "failClosed": true }
     ]
   }
 }`,
@@ -766,7 +766,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 label: 'mcp.json',
                 type: 'file',
                 oneLiner: 'Personal MCP servers, available in every repo.',
-                when: 'Servers connect at session start; resolved after the project file.',
+                when: 'Loaded when needed (Cursor 2.4+); resolved after the project file.',
                 description:
                   'Same schema as the project file - the home for tools that are your habit rather than the repo\'s business. On Linux the path is `~/.config/cursor/mcp.json`.',
                 chapter: CHAPTER.mcp,
@@ -778,7 +778,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 oneLiner: 'Personal hooks with the same event surface as project hooks.',
                 when: 'Fires at the named lifecycle event, in every project.',
                 description:
-                  'Same schema and verdict channels as the project file. Enterprise plans can also distribute hooks centrally from the dashboard, with no local file.',
+                  'Same schema and verdict channels as the project file. Team plans can distribute hooks from the dashboard; Enterprise plans use managed paths (precedence Enterprise -> Team -> Project -> User).',
                 chapter: CHAPTER.hooks,
               },
               {
@@ -1153,7 +1153,7 @@ next step (retry, skip, or needs a new source adapter).`,
                 oneLiner: 'Global defaults for every project - the base of the deep merge.',
                 when: 'Read at startup, in every project.',
                 description:
-                  'The fields worth knowing on sight: `defaultProvider` and `defaultModel`, `defaultThinkingLevel` (`off` through `xhigh`), `enabledModels` (the allow-list `Ctrl+P` cycles through), resource-path arrays (`packages`, `extensions`, `skills`, `prompts`, `themes`), retry policy, and `defaultProjectTrust`.',
+                  'The fields worth knowing on sight: `defaultProvider` and `defaultModel`, `defaultThinkingLevel` (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), `enabledModels` (the allow-list `Ctrl+P` cycles through), resource-path arrays (`packages`, `extensions`, `skills`, `prompts`, `themes`), retry policy, and `defaultProjectTrust`.',
                 chapter: CHAPTER.configuration,
               },
               {

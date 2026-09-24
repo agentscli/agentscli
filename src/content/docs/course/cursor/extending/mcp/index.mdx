@@ -7,13 +7,13 @@ import McpCostMeter from '../../../../../../components/interactive/McpCostMeter.
 
 ## Reach: MCP servers
 
-You hit the wall the moment you ask Cursor to touch `budgetcli`'s storage. You ask it to add a column to the reconciliation path, and it writes a query against an `accounts` table with a `balance` column - except `budgetcli` stores money as integer cents in `balance_cents`, and there's a `currency` column the agent never mentioned because it never saw it. The schema lives in a running Postgres database. The agent's whole world is the files in the repo. So it guesses from the struct definitions, gets the column names half-right, and you spend the turn pasting `\d accounts` back at it.
+You hit the wall the moment you ask Cursor to touch the storage of `budgetcli`, the course's illustrative TypeScript personal-finance API. You ask it to add a column to the reconciliation path, and it writes a query against an `accounts` table with a `balance` column - except `budgetcli` stores money as integer cents in `balance_cents`, and there's a `currency` column the agent never mentioned because it never saw it. The schema lives in a running Postgres database. The agent's whole world is the files in the repo. So it guesses from the struct definitions, gets the column names half-right, and you spend the turn pasting `\d accounts` back at it.
 
 That pasting *is* the gap. The truth isn't in the codebase - it's in a live system the agent has no hands on. Cursor's answer is the **Model Context Protocol**: you declare the database as an MCP server, and Cursor hands the agent a tool that queries it directly. MCP is configuration, not code - you write JSON pointing at a process or URL that already speaks the protocol; you don't write a server. One direction only, though: Cursor is an MCP *client* - it consumes the servers you point it at - and does not itself act as an MCP server you can connect other tools to.
 
 ### Three transports
 
-The first decision is *how* Cursor talks to the server. Cursor supports exactly three transports, under these names - pick by where the server runs and how it's reached, not by what it does:
+The first decision is *how* Cursor talks to the server. Cursor supports exactly three transports, under these names (as of September 2026 - [MCP documentation](https://cursor.com/docs/mcp)) - pick by where the server runs and how it's reached, not by what it does:
 
 - **stdio** - Cursor spawns and manages a local process and talks to it over standard in/out. The fit when the server is a command on your machine - like a Postgres MCP pointed at your dev database.
 - **SSE** (Server-Sent Events) - local or remote, over HTTP with a streaming response channel.
@@ -48,10 +48,10 @@ The schema mirrors the common MCP shape. For a stdio (local) server you give it 
 }
 ```
 
-The `command` plus `args` is the argv Cursor spawns, exactly as you'd type it in a shell. The connection string goes in `env` rather than inline in `args`, so it stays out of the process listing - and you can resolve it from a real environment variable instead of pasting a live credential into a file you'll commit.
+`uvx` runs a Python package without installing it. The `command` plus `args` is the argv Cursor spawns, exactly as you'd type it in a shell. The connection string goes in `env` rather than inline in `args`, so it stays out of the process listing - and you can resolve it from a real environment variable instead of pasting a live credential into a file you'll commit.
 
-:::caution[Don't reach for the deprecated Postgres server]
-Anthropic's old reference `@modelcontextprotocol/server-postgres` was archived in 2025 and its last published version carries an unpatched read-only-bypass SQL-injection flaw - a crafted statement (`COMMIT;` followed by, say, a `DROP TABLE`) escapes the intended read-only mode because input isn't properly sanitized. The example above uses the maintained `postgres-mcp` ("Postgres MCP Pro"), which is actively patched and ships an `--access-mode` flag so you can pin it to `restricted` (read-only) rather than `unrestricted`.
+:::caution[Don't reach for the deprecated Postgres server - and treat restricted mode as a layer, not a wall]
+Anthropic's old reference `@modelcontextprotocol/server-postgres` was archived in 2025 ([archive](https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres); the npm package is deprecated) and its last published version carries an unpatched read-only-bypass SQL-injection flaw ([Security Labs writeup](https://securitylabs.datadoghq.com/articles/mcp-vulnerability-case-study-SQL-injection-in-the-postgresql-mcp-server/)) - a crafted statement (`COMMIT;` followed by, say, a `DROP TABLE`) escapes the intended read-only mode because input isn't properly sanitized. The example above uses the maintained `postgres-mcp` ("Postgres MCP Pro"), which ships an `--access-mode` flag so you can pin it to `restricted` (read-only) rather than `unrestricted`. Treat that flag as defense in depth, not a guarantee: **CVE-2026-85620** (published September 2026) is a restricted-mode *bypass* in `postgres-mcp` 0.3.0 and earlier, where a crafted FROM clause can invoke database functions such as `pg_read_file` that escape the intended read-only boundary ([advisory](https://www.vulncheck.com/advisories/postgres-mcp-pro-0.3.0-restricted-mode-bypass-via-from-clause-function)). Check whether your installed release carries the fix before trusting the flag - and whatever the flag says, point the server at a database where a leak is survivable.
 :::
 
 Once it's declared, the next time the agent needs the schema it runs the query itself - sees `balance_cents` and the `currency` column with its own eyes - and writes the migration against what's actually there. The schema-guessing turn is gone. And because MCP tools are tools, they sit under the same [permission model](/course/cursor/permissions/) as everything else: a server that can *write* to your system is gated exactly like a shell command that can.
@@ -66,37 +66,38 @@ When the system isn't a local process - `budgetcli`'s exchange-rate provider is 
     "fx-rates": {
       "url": "https://rates.example.com/mcp",
       "headers": {
-        "Authorization": "Bearer ${FX_RATES_TOKEN}"
+        "Authorization": "Bearer ${env:FX_RATES_TOKEN}"
       }
     }
   }
 }
 ```
 
-For a static token, `headers` is the whole story - resolve it from the environment rather than committing a live credential. For a service that speaks **OAuth**, Cursor runs the authorization dance for you and holds the tokens, so you never manage a bearer string. Cursor uses a single fixed OAuth redirect URL for *all* MCP servers:
+For a static token, `headers` is the whole story - resolve it from the environment rather than committing a live credential. For a service that speaks **OAuth**, Cursor runs the authorization dance for you and holds the tokens, so you never manage a bearer string. On the provider's side, register Cursor's OAuth redirect URLs - there are two (as of September 2026 - [MCP documentation](https://cursor.com/docs/mcp)):
 
 ```text
-cursor://anysphere.cursor-mcp/oauth/callback
+http://localhost:8787/callback                    (desktop app)
+https://www.cursor.com/agents/mcp/oauth/callback  (web and Cursor Agents)
 ```
+
+Register both as allowed redirect URIs if you authenticate from both places. The pair replaced an older single `cursor://` custom-scheme URL: the desktop app now uses the localhost loopback redirect that RFC 8252, the OAuth standard for native applications, prescribes ([staff explanation](https://forum.cursor.com/t/oauth-redirect-uri-changed-from-cursor-to-http-localhost-for-streamable-http-mcp/165019)). A provider registration set up from an older tutorial - one that lists only the `cursor://` URL - is incomplete today.
 
 When a provider requires fixed client credentials, you can embed them: `mcp.json` accepts an optional `auth` object (`CLIENT_ID`, `CLIENT_SECRET`, `scopes`) alongside `url` and `headers` for static OAuth client credentials.
 
-That `cursor://` callback is one of a small family of Cursor deep links; another - `cursor://anysphere.cursor-deeplink/mcp/install` - is the mechanism behind one-click install, the easiest way to add a server you didn't write yourself.
+### One-click install: the Cursor Marketplace and cursor.directory
 
-### One-click install: Marketplace and cursor.directory
-
-You rarely hand-author `mcp.json`. Cursor has a curated **MCP Marketplace** in-app with one-click install, and the community directory at **cursor.directory** carries an **"Add to Cursor"** button on each server. That button is an `mcp/install` deep link - it carries a base64-encoded server config, prompts you to confirm, writes the declaration into `mcp.json`, and kicks off the OAuth flow if the server needs it. So a remote, OAuth-gated server can go from "found it on the directory" to "authenticated and live" without you touching a config file.
+You rarely hand-author `mcp.json`. The **Cursor Marketplace** - in-app under Customize, or on the web at [cursor.com/marketplace](https://cursor.com/marketplace) - distributes **Plugins**: bundles that can package MCP servers together with skills, subagents, hooks, and rules, installable in one click (Plugins shipped in Cursor 2.5; [changelog](https://cursor.com/changelog/2-5)). For a single server without a bundle around it, the community directory at **cursor.directory** carries an **"Add to Cursor"** button on each server. That button is an `mcp/install` deep link - `cursor://anysphere.cursor-deeplink/mcp/install` carrying a base64-encoded server config in the same format as `mcp.json` ([install-links documentation](https://cursor.com/docs/mcp/install-links)). The link prompts you to confirm, writes the declaration into an `mcp.json`, and kicks off the OAuth flow if the server needs it. So a remote, OAuth-gated server can go from "found it on the directory" to "authenticated and live" without you touching a config file.
 
 :::note[Where the one-click install lands]
 After a one-click install, confirm *which* `mcp.json` the declaration landed in. A server that should follow *you* belongs in `~/.cursor/mcp.json`; one that everyone on `budgetcli` needs belongs in `<repo>/.cursor/mcp.json`, committed - move the declaration there if the install put it elsewhere.
 :::
 
-One-click install makes collecting servers easy, but collecting still has a cost: Cursor can discover and load MCP servers and tools **when they are needed**, which reduces unnecessary context compared with eagerly loading every enabled server at session start. The database server closes a real gap in `budgetcli`; a directory-browsing habit can still add tools and permissions you do not need. Mount and unmount below and watch what each server costs. ([Cursor 2.4 changelog](https://cursor.com/changelog/2-4))
+One-click install makes collecting servers easy, but collecting still has a cost: since Cursor 2.4, agents discover and load MCP servers and tools **when they are needed**, which reduces unnecessary context compared with eagerly loading every enabled server at session start ([changelog](https://cursor.com/changelog/2-4)). The database server closes a real gap in `budgetcli`; a directory-browsing habit can still add tools and permissions you do not need. Mount and unmount below and watch what each server costs.
 
 <McpCostMeter client:visible />
 
 :::tip[Try it]
-Add an MCP server to your Cursor config (use a simple filesystem or search server). Ask the Agent a question that requires it. Check the context cost in the conversation - notice how much window the server's tools consume.
+Add an MCP server to your Cursor config (use a simple filesystem or search server). Ask the Agent a question that requires it, and notice when the server's tools enter the conversation - under the load-when-needed behavior the schemas arrive on first use, not at session start. Check the context cost in the conversation: how much window do the tools you actually used consume?
 :::
 
 Reach solves what the agent cannot see. It does nothing for the other tax you keep paying - the procedure the agent runs perfectly today and will not remember next session. [Next: package the procedure as a Skill](/course/cursor/extending/skills/).

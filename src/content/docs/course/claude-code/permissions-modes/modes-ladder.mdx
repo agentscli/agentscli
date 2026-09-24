@@ -1,24 +1,24 @@
 ---
 title: Loosen the leash with Shift+Tab and accept-edits
-description: "A two-dozen-file rename shouldn't cost two dozen y/n prompts. Cycle to accept-edits mode and let the agent make scoped changes while you review the diff after."
-sidebar:
-  label: "Shift+Tab · accept edits"
+description: "A mechanical rename shouldn't cost one y/n prompt per edit. Cycle to accept-edits mode and let the agent make scoped changes while you review the diff after."
 ---
 
 import AutonomyDial from '../../../../../components/interactive/AutonomyDial.tsx';
 
-The rename is pure mechanical work - the same safe edit, twenty-four times - and approving each one is exactly the kind of friction that makes people stop using an agent for the boring jobs it's best at. The fix is to move the whole *category* of "edit a file" from **ask** to **allow** for the duration of this task, and the fastest way to do that is a single keypress.
+A mechanical rename - say `processPayment` to `capturePayment` in the course's payments service (a seven-file Express and TypeScript app), where the function is defined in `src/payments/processor.ts` and called from `src/index.ts` and `tests/payments.test.ts` - is the same safe edit repeated. In Claude Code's **default** permission mode (a permission mode is a named posture that decides which actions stop and ask before they run), every one of those edits prompts you. Approving each one is exactly the friction that makes people stop using an agent for the boring jobs it is best at. The fix is to move the whole *category* of "edit a file" from ask to allow for the duration of the task, and the fastest way to do that is one keypress.
 
 ## The mode ladder
 
-Press **Shift+Tab** and Claude Code cycles through its permission modes, the current one shown in the status bar:
+Press **Shift+Tab** in a running session and Claude Code cycles through the permission modes available to you; the current one shows in the status bar. The base cycle is:
 
 ```text
-  default        → ⏵⏵ accept edits on   → ⏸ plan mode on   → (back to default)
-  reads only        edits don't prompt     research, no edits
+  default → acceptEdits → plan → default …
+  manual     edits flow    research/propose
 ```
 
-One press from default lands you in **accept-edits**. Now the rename runs end to end without stopping:
+Two more rungs slide into the cycle when they are available: **auto** (most actions run, a background classifier blocks unsafe ones) when your account and model qualify, and **bypassPermissions** (no normal prompts) only after you start the session with an enabling flag. One mode never appears in the cycle: **dontAsk**, which denies any call that would otherwise prompt; it is set with `--permission-mode dontAsk` because it is built for scripts, not sessions. The [permission-modes reference](https://code.claude.com/docs/en/permission-modes) owns the current list and labels, and the details of how each mode's blocking works.
+
+One press from default lands you in **acceptEdits**. Now the rename runs end to end without stopping. The transcript is illustrative:
 
 ```text
 > [Shift+Tab]
@@ -26,27 +26,32 @@ One press from default lands you in **accept-edits**. Now the rename runs end to
 
 > finish the rename across all remaining files
 
-  ⏵ Edit src/routes/payments.js   ✓ applied
-  ⏵ Edit test/charges.test.js     ✓ applied
-  ⏵ Edit src/refunds.js           ✓ applied
-  ... 21 more files edited
-  Done. Renamed chargeCard → capturePayment across 24 files.
+  ⏵ Edit src/index.ts                ✓ applied
+  ⏵ Edit tests/payments.test.ts      ✓ applied
+  Done. Renamed processPayment → capturePayment in 3 files
+  (9 occurrences). The suite still passes.
 ```
 
-Twenty-four edits, zero prompts. You didn't approve each one - you approved the *kind of work* up front by choosing the mode, and you'll review the result in one pass with `git diff` instead of in two dozen interruptions. That's the trade accept-edits makes: it swaps inline-per-edit review for after-the-fact batch review, which is the right trade when the edits are mechanical and you trust the direction.
+You are approving a class of file edits for this task, then reviewing the result as one unit. Use `git status`, `git diff --stat`, `git diff --check`, and `git diff` after the run. This swaps inline per-edit review for after-the-fact batch review, which fits mechanical changes when you trust the direction.
 
-The keypress is the easy part - knowing which rung a task *deserves* is the discipline, and it never comes from how hard the work is. It comes from two properties of the task itself. Set them for the rename - tracked files, your own repo - and see where it lands, then toggle either one up and watch how fast the ladder tightens:
+One mechanical fact about that scope: acceptEdits does not lapse when the task ends. The mode persists until you cycle it back to `default` yourself - the cycle diagram above is the route back - so before starting a second, less reversible task in the same session, shift back toward the tighter rungs first.
+
+The keypress is the easy part. Knowing which rung a task *deserves* is the discipline, and it never comes from how hard the work is. It comes from two properties of the task itself: how reversible a mistake is, and how far its effects reach. Set them for the rename - tracked files, your own repo - and see where it lands, then toggle either one up and watch how fast the ladder tightens. The dial is generic across tools; the mapping to Claude Code's modes is the one above, except that plan is a posture change off the ask-frequency axis, not a looser rung on it.
 
 <AutonomyDial client:visible />
 
+If the dial does not render, the rule it encodes is short: reversible and contained work earns a looser mode; anything irreversible or far-reaching earns a tighter one, whatever the effort involved.
+
 ## What accept-edits still won't do
 
-Here's the part that makes accept-edits *safe* rather than reckless, and it's worth being precise about. Loosening the leash on edits does not loosen it on everything:
+This is the part that makes accept-edits *safe* rather than reckless, and it is worth being precise about. Loosening the leash on edits does not loosen it on everything:
 
-- It auto-approves **file edits and a handful of routine filesystem commands** (`mkdir`, `touch`, `mv`, `cp`, and the like) - but only for paths **inside your working directory**. An edit to something outside the project still stops and asks.
-- It does **not** auto-approve arbitrary shell commands. The agent wanting to run `npm test` or `curl` still prompts - that's the next lesson's problem.
-- It still refuses to silently touch **protected paths** - your `.git` directory, `.claude` config, shell startup files. Those are guarded in normal permission modes; `bypassPermissions` is the important exception, which we'll get to last.
+- It auto-approves **file edits and a handful of routine filesystem commands** (`mkdir`, `touch`, `mv`, `cp`, and the like), but only for paths **inside your working directory**. An edit to something outside the project still stops and asks.
+- It does **not** auto-approve arbitrary shell commands. The agent wanting to run `npm test` or `curl` still prompts; [an allow rule](/course/claude-code/permissions-modes/rules/) is the tool for that.
+- It still stops and asks before touching **protected paths** - your `.git` directory, Claude Code's own `.claude` configuration, shell startup files such as `.zshrc`, your `.mcp.json`. Those are guarded in normal permission modes; `bypassPermissions` is the exception, and [the hands-off lesson](/course/claude-code/permissions-modes/autonomous/) explains why it belongs only in a container.
 
-So accept-edits is a *scoped* loosening: free rein over ordinary edits in your project, the same caution everywhere else. That scoping is why it's the natural default for an afternoon of hands-on iteration where you're watching the diffs anyway. *The exact set of auto-approved commands and protected paths is enumerated in the [permission-modes docs](https://code.claude.com/docs/en/permission-modes); it's a list that shifts, so check there rather than trusting a fixed memory of it.*
+So accept-edits is a *scoped* loosening. Ordinary edits get smoother while other actions remain subject to rules and prompts; that mix of loosening and enforcement is the course's **control** principle at work - what guides execution, enforces boundaries, or allows intervention. The exact behavior is versioned; check the [permission-modes docs](https://code.claude.com/docs/en/permission-modes) rather than trusting a fixed memory of it.
 
-You'll have noticed the third rung on that ladder - **plan mode** - which normally reads and proposes but makes no source edits. It is not a guarantee when `bypassPermissions` is active, so always check the current mode before relying on it as a safety boundary. It's the *tighter* neighbor of default, and it's powerful enough to earn [its own chapter](/course/claude-code/planning/), so we'll skip past it here. For now you've got the looser end working: the rename flew by. But the next chunk of work is a test-and-build loop, and accept-edits won't help - running the tests still prompts every time. [Time to pre-approve the commands you trust](/course/claude-code/permissions-modes/rules/).
+You will have noticed **plan mode** in the cycle, the rung where the agent reads and proposes but makes no source edits. It is not a guarantee in a session started with the bypass-enabling flag - when `bypassPermissions` is the active mode or sits in your mode cycle - so check the cycle before relying on it as a safety boundary. It earns [its own chapter](/course/claude-code/planning/).
+
+The rename is done. The next kind of friction is a test-and-build loop, and accept-edits will not answer repeated shell prompts. [Pre-approve the commands you trust](/course/claude-code/permissions-modes/rules/).

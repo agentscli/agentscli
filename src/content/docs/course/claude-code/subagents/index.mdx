@@ -1,27 +1,47 @@
 ---
-title: "Subagents"
-description: "Some work is worth doing but not worth keeping in your main thread. A subagent does it in an isolated context and hands back only the conclusion."
+title: Keep noisy work out of your main thread with subagents
+description: "Payments succeed and every balance still reads zero. Learn where work should think: delegate the trace, fan out the audits, background the long parts, and save the recurring auditor as a file."
 ---
 
-The last chapter was about choosing how hard the agent thinks. This one is about choosing *where* it thinks. Because some investigations are worth running but not worth keeping - and the move that lets you run them without paying for the mess is the subagent: a fresh context window that does a scoped job off to the side and returns only what you actually need.
+Every file the agent reads lands in the same context window you work from. The **context window** is the finite space that holds your conversation, your instructions, and every tool result; once a file is in it, it stays until the session compacts (summarizes old context in place) or ends. Most investigations read far more than they conclude, and that reading is scaffolding: opened once, quoted once, never needed again. This chapter is about *where* that reading should happen. Not how hard the agent thinks, which is the [model and effort question](/course/claude-code/models-thinking/), but which window absorbs the noise.
 
-The core idea is small and it's the whole chapter, so hold onto it. A subagent is a separate Claude instance with its own context window. You hand it a task, it works in isolation - reading files, running greps, dumping logs into *its* memory, not yours - and when it's done it returns a single summary to your main conversation. The hundred file reads it did to reach that summary never enter your thread. You get the conclusion; the agent eats the noise. That's the trade in one line, and everything below is just learning when and how to make it.
+The example is a small payments service, and every page in the chapter restates the facts it needs, so you can start anywhere.
 
-Subagents are different from **agent teams**. Teams are an experimental, higher-cost mode in which independent Claude sessions share a task list and message one another directly. Use a subagent when only the result matters; use a team when workers need to coordinate, and enable it only after checking the current [agent teams documentation](https://code.claude.com/docs/en/agent-teams).
+## Payments succeed; balances read zero
 
-## The investigation we'll follow
+The service is Express plus TypeScript. `POST /payments` and `GET /balance/:accountId` are handled in `src/index.ts`. Money is recorded by a `Ledger` class in `src/payments/ledger.ts`, which exposes `append`, `balance`, and `history`. Two test files, `tests/payments.test.ts` and `tests/ledger.test.ts`, hold six tests, and all six pass. Neither file posts a payment and then reads a balance, so nothing checks that the route and the ledger agree.
 
-Same payments service from the last chapters. This time you're not fixing anything yet - you're trying to *understand* something before a risky migration. The question on the table:
+Start the service in one terminal with `npm run dev`, then pay an account and check its balance from another:
 
-> Map every place the payments code writes to the ledger, and every test that covers those writes.
+```bash
+curl -s -X POST localhost:3000/payments \
+  -H 'content-type: application/json' \
+  -H 'idempotency-key: demo-1' \
+  -d '{"accountId":"acct_1","amount":1999,"currency":"USD"}'
+curl -s localhost:3000/balance/acct_1
+```
 
-That sounds simple until you start. The ledger gets touched from the charge path, the refund path, a nightly reconciliation job, and a webhook handler - and each of those has tests scattered across three directories. Answering it by hand means reading dozens of files, running greps that return pages of hits, and skimming test suites you'll never look at again. Do all of that in your main session and you've buried the actual work - the migration you came here to plan - under a landfill of file dumps the agent now has to carry for the rest of the day.
+The POST replies 201 with a completed payment: a fresh id, the account, the amount with its fee. The GET replies `{"accountId":"acct_1","balance":0}`. Pay again with a new idempotency key and the balance stays 0, for every account, after every payment.
 
-So we'll do it the other way. Over the next few lessons:
+Nothing crashed and the suite is green, yet the service reports success while every account sums to zero. That is a question worth answering before anyone trusts it, and all the evidence is inspectable: the route handler, the `Ledger` class, and two test files that never connect them. If your working copy carries changes from earlier chapters, read your own code as it stands; the payments example source prepared for this course is the reference this walkthrough quotes, and [the getting-started chapter](/course/claude-code/getting-started/) describes where that source comes from.
 
-- [Hand the whole investigation to one subagent](/course/claude-code/subagents/delegate/) and watch what comes back - the map, not the file dumps that produced it.
-- [Fan it out across several subagents at once](/course/claude-code/subagents/fan-out/) when the problem splits into independent slices - and learn when that's leverage versus when it's just showing off.
-- [Push a long-running one into the background](/course/claude-code/subagents/background/) so you can keep working while it grinds, and control or kill it when you need to.
-- [Define a reusable subagent](/course/claude-code/subagents/custom/) so a job you run constantly - like that ledger audit - always runs the same way, with the same tools and the same instructions.
+## Where the work should think
 
-By the end, "should this work happen in my thread or somewhere else?" will be a question you ask before every noisy task. Start with [delegating the investigation](/course/claude-code/subagents/delegate/).
+Answering the question inline means reading `src/index.ts` end to end, then `src/payments/ledger.ts`, then both test files, plus the greps that find every caller of `append`, `balance`, and `history`. High volume in, one paragraph out. In your main window, all of that volume stays.
+
+A **subagent** is the move for exactly this shape. It is a separate Claude instance with its own context window: you hand it a task, it reads and greps and accumulates in *its* memory, and when it finishes it returns a single summary to your main conversation. The reads never enter your thread. You keep the conclusion; the subagent keeps the noise, and discards it.
+
+Subagents are not **agent teams**. Teams are an experimental, higher-cost mode, disabled by default, in which independent Claude sessions share a task list and message one another directly. Use a subagent when only the result matters; consider a team only when workers must genuinely coordinate, after reading the current [agent teams documentation](https://code.claude.com/docs/en/agent-teams).
+
+## From one mystery to a reusable auditor
+
+The chapter carries the zero-balance question through four moves. Each page stands on its own:
+
+- [Delegate the whole trace to one subagent](/course/claude-code/subagents/delegate/) and get back the one-line disagreement between the write path and the read path, not the file dumps that produced it.
+- [Fan the wider audit across four parallel subagents](/course/claude-code/subagents/fan-out/) when the problem splits into independent slices, and learn when that is leverage and when it is overkill.
+- [Push a long job into the background](/course/claude-code/subagents/background/) and keep working while it runs, with `/tasks` as the control surface.
+- [Save the auditor as a custom agent](/course/claude-code/subagents/custom/): a markdown file in `.claude/agents/` that runs a payments audit on demand, the same way for everyone who pulls the repo.
+
+Three terms recur, and they mean different things. A **subagent** is any worker with its own context window that returns a summary. A **background subagent** is one that runs while you keep typing; `Ctrl+B` sends a running task there and `/tasks` lists them. A **custom agent** is a subagent whose tools, model, and instructions are saved in a file so it can be invoked by name.
+
+By the end, "should this work think in my thread or somewhere else?" is a question you ask before every noisy task. Start by [delegating the investigation](/course/claude-code/subagents/delegate/).

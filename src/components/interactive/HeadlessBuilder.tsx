@@ -49,6 +49,11 @@ export default function HeadlessBuilder() {
   const output = tool.outputs[outputId];
   const posture = tool.postures[postureId];
   const command = hlbAssemble(tool, task.prompt, outputId, postureId);
+  const postureOptions = hlbPostures.map((p) => ({
+    id: p.id,
+    label: tool.postures[p.id]?.labelOverride ?? p.label,
+  }));
+  const postureLabel = postureOptions.find((p) => p.id === postureId)?.label;
   const tabs = useAccessibleTabs(hlbTools.length, toolIdx, setToolIdx);
 
   return (
@@ -66,16 +71,16 @@ export default function HeadlessBuilder() {
         ))}
       </div>
       <p className="hlb-scope-note">
-        This builder covers five tools. Pi&apos;s headless and JSON modes are documented in the comparison below.
+        This builder covers five tools. Pi&apos;s headless and JSON modes are documented in the foundations headless chapter.
       </p>
 
       <ChoiceRow label="Task" options={hlbTasks} value={taskId} onChange={setTaskId} />
       <ChoiceRow label="Output" options={hlbOutputs} value={outputId} onChange={setOutputId} />
-      <ChoiceRow label="Posture" options={hlbPostures} value={postureId} onChange={setPostureId} />
+      <ChoiceRow label="Posture" options={postureOptions} value={postureId} onChange={setPostureId} />
 
       <div className="hlb-result" {...tabs.panelProps}>
         <span className="hlb-sr-only" aria-live="polite">
-          {tool.label}, {task.label}, {hlbOutputs.find((o) => o.id === outputId)?.label}, {hlbPostures.find((p) => p.id === postureId)?.label}.
+          {tool.label}, {task.label}, {hlbOutputs.find((o) => o.id === outputId)?.label}, {postureLabel}.
         </span>
         <pre className="hlb-cmd">
           <code>{command}</code>

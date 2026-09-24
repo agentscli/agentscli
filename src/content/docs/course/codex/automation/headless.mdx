@@ -1,58 +1,68 @@
 ---
 title: Generate the monthly report headless with codex exec
-description: "codex exec runs the same four-beat loop with one beat missing. Trace it once on the report job and find the exact stage nothing can undo."
-sidebar:
-  label: "Headless · codex exec, input/output"
+description: "codex exec runs the same four-beat loop with one beat missing, and never asks you anything. Trace it once on the report job and find the exact stage nothing can undo."
 ---
 
-Every turn you've watched so far had you standing at the end of it, reading a diff or answering a `y/n`. This lesson removes you from one specific job - the month-end report - and the honest way to start is by naming what that removal actually costs, not just what it saves. [The loop](/course/codex/getting-started/the-loop/) has four beats: read, propose, approve, apply. `codex exec` still runs three of them directly. What's gone is the one beat where you were the thing standing in the loop - and the tension for this whole lesson is that everything the approve beat used to catch on the fly now has to be caught before the run ever starts, or not at all.
+Every turn you've watched in this course had you standing at the end of it, reading a diff or answering a pause. This lesson removes you from one specific job - the month-end report, the chapter's constructed chore - and the honest way to start is by naming what that removal costs, not just what it saves. [The loop](/course/codex/getting-started/the-loop/) has four beats: read, propose, approve, apply. `codex exec` still runs three of them directly. What's gone is the beat where you were the thing standing in the loop.
+
+The tension follows immediately: everything the approve beat used to catch on the fly now has to be caught before the run ever starts, or not at all.
 
 ## The headless entry point
 
-`codex exec` (alias `codex e`) runs the agent **non-interactively**: it takes a prompt, runs to completion, prints the result, and exits. No chat, no back-and-forth - a command that returns, which the docs describe as the path for [scripted or CI-style runs that should finish without human interaction](https://learn.chatgpt.com/docs/developer-commands?surface=cli). That's exactly the shape a month-end report needs:
+`codex exec` (alias `codex e`) runs the agent **non-interactively**: it takes a prompt, runs to completion, prints the final message, and exits - the docs' own framing is [scripted or CI-style runs that should finish without human interaction](https://learn.chatgpt.com/docs/developer-commands). No chat, no back-and-forth. Progress streams to stderr; only the final message lands on stdout. That's exactly the shape a month-end report needs:
 
 ```text
-codex exec "Run the categoriser over last month's transactions, then write a budget report: spend by category, budget vs actual, and every category that went over."
+codex exec "Read this month's statement from ~/budget-data/statements/,
+categorize each row the way app/importers/csv.py does, and total spend
+per category." > reports/2026-04.md
 ```
 
-Because it's an ordinary command-line program, it composes with anything a shell can do - redirect it, drop it in a cron entry, hand it to a CI step. That composability is the whole point of the subcommand, and it's why the rest of this chapter never has to reinvent the run - only what surrounds it.
+Two deliberate choices in that one line. The statement and the report path are the chapter's constructed artifacts, named in the [chapter introduction](/course/codex/automation/); the categorizer and the importer it references are real. And the redirect is doing the writing - your shell creates the file, so Codex itself only has to read, which matters in a moment.
+
+Because it's an ordinary command-line program, it composes with anything a shell can do - redirect it, drop it in a cron entry, hand it to a CI step. It also reads **stdin**: with a prompt argument, the prompt is the instruction and the piped content arrives as additional context, which is how you hand a run exactly the data it should see and nothing else.
+
+## Why nothing asks you anything
+
+Here is the first fact to get exactly right, because the tempting explanation is wrong. It is *not* that the run stayed safely inside its fence and so no prompt was needed. In `codex exec`, the approval policy defaults to **`never`**: there is no prompt to fire, ever, in a headless run. A move the policy disallows isn't paused for a `y/n` that will never come - it's rejected, and the run either routes around it or fails.
+
+The default sandbox is just as tight: exec runs **read-only** out of the box. Put together, the out-of-the-box exec posture is the `budget-audit` pairing from [the approvals chapter](/course/codex/approvals-sandbox/profiles-for-trust/) - `never` plus `read-only` - without you setting either dial. A job that only reads and reports - this one, with the shell doing the writing - fits it unchanged. A run that must itself edit files has to be granted that reach explicitly. Nothing is inferred from your absence; it's simply denied.
+
+And the walls from [the extending chapter](/course/codex/extending/hooks-gate/) ride along. Hooks are discovered next to the session's active config layers - the repo's `.codex/hooks.json` among them - and the trust you recorded through `/hooks` is pinned to each hook's hash. So an exec run in this repo still meets the money-tests gate: an edit under `app/importers/` or `app/services/` fires the test suite whether anyone is watching or not.
+
+That is what putting the check on the rail instead of in the window bought. (The hooks reference doesn't call out exec runs by name; the discovery and trust model is the mechanism, and it's worth a one-run verification on your own setup.)
 
 ## Trace the stages, ground truth first
 
-Before pricing anything, get the comparison you actually want: what did this class of job cost the last time a human ran it? Go back to [your first change](/course/codex/getting-started/first-change/) - closing one ticket interactively, on a repo you didn't trust yet, took **4 turns**: a plan, an edit, a caught mistake, a fix. That's the ground truth. Now watch what the same shape of job looks like from outside a `codex exec` call.
+Before pricing anything, get the comparison you actually want: what did this class of job cost the last time a human ran it? [Your first change](/course/codex/getting-started/first-change/) - closing one ticket interactively, on a repo you didn't trust yet - took **3 turns**: the ticket, the review, the commit, with about 480 estimated tokens in the window. That's the ground truth. Now watch the same shape of job from outside a `codex exec` call.
 
-`codex exec` reads **stdin**, so you can pipe exactly the slice of data you want it to see:
+The **read** beat still happens. To total by category, the run has to open the categorizer at `app/services/categorise.py` - 18 lines, about 180 estimated tokens at 10 tokens per line - and likely `app/models.py` and the ledger beside it. The **propose** beat still happens too, invisibly: there's no chat window for a plan to show up in, but the agent still decides one before writing anything. Then **apply**: the report gets written. Two output routes exist - your shell redirects the streamed final message (as above), or `--output-last-message <file>` has the `codex exec` process itself write its final message to a file you name (short form `-o`). The flag is an output artifact of the run, not a sandboxed write by the agent's tools, so it works under the read-only default.
 
-```text
-cat statements/2026-04.csv | codex exec "These are last month's transactions. Categorise them, then total spend per category against the budgets in budgets.toml."
-```
-
-Piping the CSV in has a real cost benefit, not just a style preference: the agent doesn't have to *find* the file, only read what you handed it. The **read** beat still happens - it still has to open the categoriser at `src/budgetcli/categorise/rules.py`, 512 lines, to know the rules it's applying, which is 5,120 estimated tokens at 10 tokens per line. Plant that number; it's the one this trace turns on. The **propose** beat still happens too, invisibly - there's no chat window for it to show up in, but the agent still decides a plan before it writes anything. Then **apply**: the report gets written.
-
-```text
-codex exec "Generate April's budget report from the categorised transactions." > reports/2026-04.md
-```
-
-Read, propose, apply. Three beats, present and accounted for, at a cost you can put a number on: **5,120 tokens, paid fresh every month, because a headless run starts exactly as blind as an interactive one does.** No approval prompt fired, because nothing in this run reached outside the working directory or the network. That's not the sandbox saving you yet - that's just a report that didn't need saving from.
+Read, propose, apply. Three beats, present and accounted for, at a cost you can put a number on: a few hundred estimated tokens, paid fresh every month, because a headless run starts exactly as cold as an interactive one - it knows what it reads, plus what's written down where Codex reads by default, and nothing else.
 
 ## Where the fourth beat went, and what "1 turn" is hiding
 
-Now count turns the way the loop taught you to: how many round trips did this cost? From the calling script's side, the honest answer is **one** - one command, one result, done. Compare that against the 4 turns the interactive fix took, and it looks like automation just quartered the cost. **It didn't. It changed what the number is measuring.** "Turns" was built to count how many times you had to come back - and if nobody's coming back, the count collapses to one by definition, not by improvement. A one-turn run and a four-turn run can contain the exact same number of places something quietly went wrong; the instrument just stopped being able to tell you which.
+Count turns the way the loop taught you: how many round trips did this cost? From the calling script's side, the honest answer is **one** - one command, one result, done. Compare that against the 3 turns the interactive fix took, and it looks like automation just cut the cost by two-thirds. **It didn't. It changed what the number is measuring.** "Turns" was built to count how many times you had to come back - and if nobody's coming back, the count collapses to one by definition, not by improvement.
 
-## Exit behaviour: fails shut, not open
+A one-turn run and a three-turn run can contain the exact same number of places something quietly went wrong; the instrument just stopped being able to tell you which.
 
-This is the piece that makes `codex exec` safe to script around at all, and it's worth naming: **fails shut.** The command runs to completion and exits with a status code - zero when it finished, non-zero when it couldn't - and if it reaches for something its sandbox or approval policy doesn't allow, it has nowhere to pause to. There's no `y/n` waiting for an answer that will never come. It just fails.
+## Exit behavior: fails shut, not open
 
-```text
-codex exec "Generate April's budget report." > reports/2026-04.md \
+The never-ask default is what makes `codex exec` safe to script around at all, and it deserves its name: **fails shut.** The command runs to completion and exits with a status code - zero when it finished, non-zero when it couldn't - and a disallowed action has nowhere to pause to. It just fails.
+
+```bash
+codex exec "Generate April's budget report." --output-last-message reports/2026-04.md \
   && echo "report written" \
   || echo "report failed - check the log"
 ```
 
-A dead job that exited non-zero is the *safe* outcome - better than one that quietly waved itself through, and much better than one that hangs forever on a prompt nobody's there to answer. Fail shut is the whole reason approve can be removed from this loop without the loop becoming reckless by default.
+(An illustrative command shape; `-o` is its short form. The flag writes the final message itself, so the run stays read-only.)
+
+A dead job that exited non-zero is the *safe* outcome - better than one that quietly waved itself through, and far better than one that hangs forever on a prompt nobody's there to answer. Fail shut is the whole reason the approve beat can be removed without the loop becoming reckless by default.
 
 ## The stage you can't take back
 
-Here's the honesty this lesson owes you, and it belongs right here, not at the bottom: **apply is the point of no return, and the exit code doesn't cover it.** In your first change, the float-bug line got caught in the gap between apply and commit - a human read the diff before it became permanent. That gap doesn't exist in a headless run. The sandbox decides whether apply is *allowed* - a permissions question, settled in advance. Nothing after it decides whether apply was *right*, until the exit code says so, and the exit code only speaks for whatever you actually told it to check. A wrong-but-permitted write - a mis-totalled category, a currency line quietly parsed as a float again - can sit in `reports/2026-04.md` for a month, unread, correct-looking, wrong. **That's not a crash. It's a number nobody caught, waiting for the day someone budgets against it.**
+Here's the honesty this lesson owes you, and it belongs right here, not at the bottom: **apply is the point of no return, and the exit code doesn't cover it.** In your first change, the review beat caught the neighboring float parse - a human read the diff before anything became permanent. That gap doesn't exist in a headless run. The sandbox decides whether apply is *allowed* - a permissions question, settled in advance.
 
-You now have the report generating itself, and you know exactly which stage in that run nothing is watching. But everything in this lesson still assumes *you* fired the command. The transaction check needs something else to press the button - a push - and that changes what has to be granted, and when. That's [the next lesson](/course/codex/automation/ci/).
+Nothing after it decides whether apply was *right*, until the exit code says so - and the exit code speaks only for what you actually wired it to check. A wrong-but-permitted write, a mis-totaled category sitting correct-looking in `reports/2026-04.md` for a month, unread: **that's not a crash. It's a number nobody caught, waiting for the day someone budgets against it.**
+
+The report now generates itself, and you know exactly which stage in that run nothing is watching. But everything here still assumes *you* fired the command. The transaction check needs something else to press the button - a push - and that changes what has to be granted, and when. That's [the next lesson](/course/codex/automation/ci/).

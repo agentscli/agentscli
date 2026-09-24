@@ -1,79 +1,71 @@
 ---
-title: "Write the first AGENTS.md for budgetcli"
-description: "Codex keeps reintroducing the float-money bug and inventing categories. Put the facts it cannot infer from the code into an AGENTS.md it reads every run."
-sidebar:
-  label: "First AGENTS.md · capture the facts"
+title: "The AGENTS.md budgetcli already has"
+description: "The repo shipped with a correct AGENTS.md - money as integer cents, ISO dates, pytest before commit. Codex reads it every session. The importer violated two of its rules anyway. Audit the real file."
 ---
 
-You've spent enough sessions correcting the same three things that you can predict them. Codex writes `total = sum(t.amount) / 100.0` and hands you a float where the rest of the codebase deals in integer cents. It tags an imported transaction `"dining"` when `budgetcli` has only ever recognised `"groceries"` and `"restaurants"`. It parses a statement date as `MM/DD` when the bank exports `DD/MM`. None of these are things Codex *should* know - it can't read the original author's intent out of code that's already half-wrong about them. So you tell it. Once. In a file it reads on its own before every run, and pay for once instead of every session.
+You never wrote this file. It came with the clone, sitting next to `README.md` at the repo root, and it has been quietly doing its job since your first session. Here it is in full, exactly as the repo ships it:
 
-## Create the file at the repo root
+```markdown title="AGENTS.md (as shipped)"
+# BudgetCLI - Agent Rules
 
-`AGENTS.md` is plain Markdown. Codex looks for it automatically - put it at the root of the `budgetcli` repo and it gets loaded at the top of every session in that directory, no flag, no command, nothing to remember. Create it next to your `README.md`:
+## Money handling
 
-```text
-budgetcli/
-├── AGENTS.md          ← the standing brief Codex reads every run
-├── README.md
-├── pyproject.toml
-└── src/budgetcli/...
-```
-
-There's no special syntax to learn. Codex reads the file the way the model reads any prose you'd give it - headings, bullets, short declarative sentences. Write it the way you'd brief a sharp new engineer who's never seen the project: tell them the things that bite, skip the things they'll figure out from the code.
-
-## The three facts that bite
-
-Here's a first `AGENTS.md` for `budgetcli`. Every line earns its place because it's something Codex got *wrong*, not something it could have read off the source:
-
-```markdown title="AGENTS.md"
-# budgetcli
-
-A self-hosted personal-finance budgeting API (FastAPI, Python).
-You are working on the maintainer's own financial data - be precise.
-
-## Money
-
-- Money is **integer cents**, always. Never float, never `Decimal`, never dollars.
-- A $10.00 charge is the integer `1000`. A $4.99 charge is `499`.
-- Never divide by 100 to "convert to dollars" in business logic. Format to
-  dollars only at the API boundary, for display, never in storage or maths.
-- When summing or comparing amounts, stay in integer cents end to end.
-
-## Categories
-
-Transactions are tagged with a category from this **fixed** list. Do not
-invent new ones; if a transaction fits none, leave it uncategorised:
-
-`groceries`, `restaurants`, `rent`, `utilities`, `transport`,
-`subscriptions`, `income`, `transfer`.
+- Money is always integer cents. Never use floats for currency.
+- A $5.75 coffee is stored as `575`.
 
 ## Dates
 
-- Bank CSV exports use **DD/MM/YYYY**. Parse them as day-first, not month-first.
-- Store and compare dates as ISO `YYYY-MM-DD`.
-- Transactions are dated by the statement's posting date, not import time.
+- Dates are ISO 8601 UTC (e.g. `2024-03-15T00:00:00Z`).
+- Never use locale-dependent date formats.
 
-## Running it
+## Testing
 
-- Tests: `pytest`
-- Run the API locally: `uvicorn budgetcli.main:app --reload`
-- Lint before committing: `ruff check .`
+- Run tests with `pytest`.
+- All tests must pass before committing.
+
+## Code style
+
+- Use type hints on all function signatures.
+- Prefer pydantic models over raw dicts for data validation.
 ```
 
-Notice what's *not* in there. Nothing says "write clean code" or "follow Python best practices" - Codex already aims for those, and the words would just burn context. Nothing transcribes the directory layout or the framework name; Codex reads those from the repo. Every line is a fact that's specific to `budgetcli`, true beyond this week, and something the code itself either omits or gets wrong. This is the bar every line has to clear, and the [good-rules lesson](/course/codex/rules/good-rules/) sharpens it further.
+Codex reads it without being asked. At the start of every session - before your first prompt - it builds an instruction chain that includes this file, no flag, no command, nothing to remember. That behavior is documented in [the official AGENTS.md guide](https://learn.chatgpt.com/docs/agent-configuration/agents-md): the chain is assembled once per run, once per launched session. Twenty-one lines, 460 characters of standing context, present whether the session is about money or not.
 
-## What it actually costs
+## The audit: two rules, two violations
 
-Now count what you just wrote, because the whole chapter turns on this number. Thirty-two lines, 1,137 characters including the blank ones - and by this course's prose estimator, four characters per token, that's roughly **284 tokens**. Not 284 tokens once. **284 tokens every single session**, from the moment you save this file until the day you delete it, whether that session ever touches an amount field or not. That's the rent named in the last lesson, priced for real for the first time. Hold that number - the next two lessons spend it against what the float-money bug actually costs when nobody's written this down.
+Now hold the file against the code it governs, because this is where the chapter's premise lives. `app/importers/csv.py` violates two of these rules. Not subtly, and not because the rules were missing.
+
+The date rule says ISO 8601 only, never locale-dependent formats. The parser as shipped called `datetime.strptime(row["date"], "%d/%m/%Y")` on ISO data - a locale-dependent format string pointed at the one format the rules forbid. That one is now dead: a fix (covered in the course's [first-change lesson](/course/codex/getting-started/first-change/)) replaced the format string, and the file did real work in the fixing - the agent's plan cited this exact rule before editing, because the rule was in its context for free. A rule can inform a fix without having prevented the bug.
+
+The money rule is still being broken. Line 13 of `app/importers/csv.py` reads `amount_cents = int(float(row["amount"]) * 100)` - every amount in the file routes through a float, against "Never use floats for currency." The sample data happens to survive it; a quick Python check (`int(float("0.29") * 100)`) shows why it should not have to, landing `0.29` as `28` cents. This line shipped under a correct, auto-loaded rules file, and it sits there still, in a live money path, with the suite green.
+
+So what is the file actually worth? Notice what the audit shows: it did not stop either violation, it made one fix cheap, and it was correct both times. A rules file is context - the cheapest possible place to be right. It is not a guard, and the last lesson of this chapter returns to that line with teeth.
+
+## What the audit says is missing
+
+Read the money rule again and ask what it tells an agent asked to parse an amount string. It states the *destination* - integer cents - but not the *path* there. And the natural first instinct for getting from `"82.30"` to `8230` is exactly the float shortcut already in the code. The rule forbids floats for currency and never says what to do instead at the boundary where strings become cents.
+
+That is the file's next line, and this is a proposal, not a repo fact - you would be its first author:
+
+```markdown title="AGENTS.md - proposed addition"
+- When parsing an amount string, convert to integer cents without passing
+  through a float - use `Decimal` or string math, rounding half up.
+```
+
+The proposed line costs about 35 estimated tokens by the estimator below, taking the file from roughly 115 to roughly 150. It is written for the exact violation already on disk: it names the input (an amount string), the output (integer cents), the forbidden path (through a float), and the sanctioned ones. Whether it should live in the root file or next to the importer is the next lesson's question.
+
+## What the file actually costs
+
+Count what the repo is paying. Four hundred sixty characters of Markdown, at this course's prose estimator of four characters per token, is roughly **115 tokens - every session**, from clone to deletion, regardless of what the session is about. That is the rent. What it is *not* is fixed: the cost scales with the file's size, in direct proportion. Twice as many rules would cost roughly 230 tokens a session. The mechanism is what never changes - loaded in full, every run, automatically.
+
+Scale it honestly. The whole repo is about 2,000 estimated tokens, so the rules file is a small fraction of one read of the codebase it governs, and a rounding error against a 200,000-token window. Cheap - but recurring, so every line had better be load-bearing. A file this lean can justify itself with one informed fix; a file twice as long has to justify twice as much, every single session.
 
 ## Watch it land
 
-Drop the file in, start a fresh session in the repo, and ask Codex to add a report endpoint that totals spend by category. Two things should now be different from last week. The total comes back in integer cents, summed without a stray `/ 100.0`. And the category breakdown uses only the eight names from your list - no `"dining"`, no `"misc"`. You didn't say any of it in the prompt. Codex read it before you typed.
-
-Three facts you used to repeat every morning, written down once, now get paid for once per session instead of once per mistake - the whole trade in one line.
+The check takes one fresh session. Start `codex` at the repo root, let the chain load, and give it a task that touches money without mentioning any convention - say, sketching an endpoint that reports spend per category using the ledger's `by_category()` method. Then read the plan it writes back. Watch for the tells: amounts described in cents, dates in ISO, `pytest` named as the check. None of that came from your prompt. It came from 460 characters the repo has been carrying all along.
 
 :::tip[Try it]
-Write three rules for `budgetcli` in `AGENTS.md`: one about money handling (always integer cents), one about test commands, one about import style. Start a fresh session and ask Codex to add a new endpoint. Check whether it followed your rules without being reminded.
+Run the same audit on a repo of your own. Open its `AGENTS.md`, then three files it governs, and sort every rule into kept, broken, or missing. Most files produce one line for each column - and the missing column is the one worth an afternoon.
 :::
 
-One file at the repo root covers the team-shared truth about `budgetcli`, and its 284 tokens are the same whether the file is this lean or twice as long. That's exactly why the next question isn't "what else should I write" but "where else should it live" - some facts are personal, some only matter in one subdirectory, and paying rent on them everywhere is money spent on a session that will never use them. [Next: how Codex discovers and layers several `AGENTS.md` files at once.](/course/codex/rules/the-hierarchy/)
+One file at the root now charges every session that rent - audit, proposal, and all. That is the right lease for facts every session needs, and the wrong one for facts only some sessions do. Where a file lives decides who pays for it, and that is a mechanism with rules of its own. [Next: how Codex discovers and layers several `AGENTS.md` files at once.](/course/codex/rules/the-hierarchy/)

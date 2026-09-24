@@ -1,20 +1,18 @@
 ---
 title: Route the cheap work to the cheap model
 description: "Two independent dials - which model answers, and how hard it thinks before it does. Stash's lumpy backlog is what makes misusing them expensive."
-sidebar:
-  label: "routing · two dials, per task"
 ---
 
 import ModelEconomy from '../../../../../components/interactive/ModelEconomy.tsx';
 
-Here's the backlog sitting in front of you on stash right now, and it's deliberately lumpy:
+Here's the backlog sitting in front of you on `stash` (the course's running example, a small FastAPI feed reader) right now, and it's deliberately lumpy:
 
-- **Re-extract every URL saved before the readability fix.** A few hundred rows: fetch the page, run it through the (now-corrected) extractor, overwrite the stored text. Mechanical. Every row is the same shape of work.
-- **Redesign how the extractor handles the sites it still mangles.** One judgment call with real branches - which signals to trust when a page has no clean `<article>` tag, how far to fall back before giving up and storing the raw text. Get it wrong and you're back here next month with the same bug.
+- **Re-sync every entry saved during the broken-parse window.** A few hundred rows with a missing `published`, an empty `link`, or a blank `summary`: fetch the feed, parse it with the fixed code, upsert the row. Mechanical. Every row is the same shape of work.
+- **Harden `fetch_feed` against the feeds it still chokes on.** One judgment call with real branches, and it lives in `stash/feeds.py`: what to do when a feed isn't Atom-shaped at all, or dies halfway through as malformed XML, or mixes namespaces the parse doesn't expect. Get the error paths wrong and the next bad feed quietly re-creates the backlog you're sweeping.
 
-Run both through the same pinned model at the same reasoning depth and you're either overpaying on the sweep or underthinking the redesign. Pi actually gives you two separate levers to avoid that, and they're worth naming separately because they compound.
+Run both through the same pinned model at the same reasoning depth and you're either overpaying on the sweep or underthinking the hardening. Pi actually gives you two separate levers to avoid that, and they're worth naming separately because they compound.
 
-Here's the claim this lesson rederives by hand, on the sweep, before it touches a single JSON file: pinned to the expensive corner, four rows of "fetch, strip tags, save" cost about fifteen times what the same four rows cost at the matched corner - for output that's identical either way. Not fifteen times more thinking. Fifteen times more bill.
+Here's the claim this lesson derives by hand, on the sweep, before it touches a single JSON file: pinned to the expensive corner (strongest model, highest thinking), four rows of fetch, parse, upsert cost about fifteen times what the same four rows cost at the corner matched to the work - for output that's identical either way. Not fifteen times more thinking. Fifteen times more bill.
 
 (This chapter's dial is Pi's own `settings.json` and `models.json`; the [Foundations model-selection chapter](/foundations/model-selection/) has the spec-level view of how all six tools in this site's scope handle the same choice.)
 
@@ -22,13 +20,13 @@ Here's the claim this lesson rederives by hand, on the sweep, before it touches 
 
 **Which model answers** - set by `defaultModel` (and `defaultProvider`) in `settings.json`, or picked mid-session:
 
-- `/model` opens the full model picker.
-- `Ctrl+L` opens the same selector as an overlay, without leaving what you're typing.
-- `Ctrl+P` cycles through whatever's in your `enabledModels` allow-list - the curated shortlist from the last lesson, not every model every provider exposes.
+- `/model` opens the model picker - and `Ctrl+S` there saves the row you're on as the startup default.
+- `Ctrl+L` opens the same model selector from the keyboard.
+- `Ctrl+P` cycles to the next model among the ones enabled for cycling - the shortlist your `enabledModels` setting defines, which is also the enabling step: a model whose id is listed there is cycle-able ([the config lesson](/course/pi/models-config/config-files/) walks that field), not every model every provider exposes.
 
 **How hard it thinks** - Pi calls this the thinking level, and it's a first-class setting, not a hidden knob: `off | minimal | low | medium | high | xhigh | max`, set globally via `defaultThinkingLevel`, cycled mid-session with `Shift+Tab`, and - if a provider's defaults don't fit - retuned per level with `thinkingBudgets` (a custom token allocation for each rung of the scale).
 
-Neither dial cares what the other is set to. That's the point: a cheap model at `high` thinking and a frontier model at `off` are both real, useful, and completely different tools. The re-extraction sweep wants a cheap model at `low` or `off` - there's nothing to reason about, only rows to process. The extractor redesign wants your strongest model at `high` - a wrong call here is a rewrite, same as it would be anywhere else in this course.
+Neither dial cares what the other is set to. That's the point: a cheap model at `high` thinking and a frontier model at `off` are both real, useful, and completely different tools. The re-sync sweep wants a cheap model at `low` or `off` - there's nothing to reason about, only rows to process. The `fetch_feed` hardening wants your strongest model at `high` - a wrong call here is a rewrite, same as it would be anywhere else in this course.
 
 ## Trace the sweep by hand
 
@@ -36,9 +34,13 @@ Take four rows off the re-extraction backlog - small enough to add up in your he
 
 **Guess before the next paragraph:** if you ran those same four rows through your strongest model at its highest thinking level instead, would you guess the bill doubles? Triples? Something bigger?
 
-Now trace it. A capable model bills roughly five times what a light model does, per token. High thinking generates roughly three times the tokens a low-thinking pass does, on the same request - reasoning tokens the sweep has no use for, since there's nothing in "fetch, strip tags, save" to reason about. Multiply the two: 5 x 3 = 15. Four rows at the expensive corner cost 4 x 15 = 60 toy units, against 4 units at the matched corner. **Fifteen times the spend. Zero extra output.** That's the number this lesson opened with, rederived from two multipliers you can multiply yourself.
+Now trace it. A capable model bills roughly five times what a light model does, per token. High thinking generates roughly three times the tokens a low-thinking pass does, on the same request - reasoning tokens the sweep has no use for, since there's nothing in fetch, parse, upsert to reason about. Both multipliers are declared toys, chosen so the arithmetic stays hand-checkable.
 
-Route the *other* task - the extractor redesign - through the cheap corner and the trap flips shape instead of disappearing. The redesign has a real branch in it: which signals to trust when a page has no clean `<article>` tag. A light model at low thinking doesn't do a shallower version of that job; it's more likely to get the branch wrong, and a wrong call here isn't a bad paragraph, it's a design decision you're now shipping. Catch it in review and you pay for the light model's attempt, then pay again for a capable model to redo it properly - which comes out *more* expensive than routing it correctly the first time. Verdict: **wrong-cheap costs more than right-expensive.**
+Multiply them: 5 x 3 = 15. Four rows at the expensive corner cost 4 x 15 = 60 toy units, against 4 units at the matched corner. **Fifteen times the spend. Zero extra output.** That's the number this lesson opened with, rederived from two multipliers you can multiply yourself.
+
+Route the *other* task - the `fetch_feed` hardening - through the cheap corner and the trap flips shape instead of disappearing. That job has a real branch in it: whether a malformed feed should crash the sweep, skip the feed, or fetch it raw for later. A light model at low thinking doesn't do a shallower version of that job; it's more likely to get the branch wrong.
+
+And a wrong call here isn't a bad paragraph, it's error handling you're now shipping. Catch it in review and you pay for the light model's attempt, then pay again for a capable model to redo it properly - which comes out *more* expensive than routing it correctly the first time. Verdict: **wrong-cheap costs more than right-expensive.**
 
 The 5x and 3x multipliers above are the same ones the widget below uses, on a small set of task types rather than one toy sweep - deliberately coarse, chosen so the ratios are the point, not exact pricing. Set every task's dials to the corner you'd have picked out of habit, then to the corner each task's own verdict recommends, and watch which one racks up the redo tax:
 
@@ -46,7 +48,7 @@ The 5x and 3x multipliers above are the same ones the widget below uses, on a sm
 
 ## Actually adding the cheap model
 
-`enabledModels` and `defaultModel` only help once a cheap option is defined for Pi to route to. That's `models.json`, and it's usually easier to have Pi do the editing than to hand-write the provider block yourself - it can read its own docs and figure out the shape a new provider needs. Say you want to add a low-cost coding model behind an OpenRouter-style API key, for the sweep work specifically:
+`enabledModels` and `defaultModel` only help once a cheap option exists for Pi to route to - and if a cheap model from a provider you already use shows up in `/model`, that already counts. `models.json` is for adding one that is not listed, and it's usually easier to have Pi do the editing than to hand-write the provider block yourself - it can read its own docs and figure out the shape a new provider needs. Say you want to add a low-cost coding model behind an OpenRouter-style API key, for the sweep work specifically:
 
 ```text
 > add a custom provider to models.json for a cheap coding model I can
@@ -54,10 +56,9 @@ The 5x and 3x multipliers above are the same ones the widget below uses, on a sm
   the API key
 ```
 
-Pi identifies that this isn't a login-subscription provider the way OpenAI or GitHub Copilot are - it needs a `models.json` entry with its own `baseUrl`, `api` shape, and an `apiKey` field, plus (depending on how the key resolves) a matching entry in `auth.json`:
+Pi identifies that this isn't a login-subscription provider the way OpenAI or GitHub Copilot are - it needs an entry in `~/.pi/agent/models.json` with its own `baseUrl`, `api` shape, and an `apiKey` field, plus (depending on how the key resolves) a matching entry in `auth.json`:
 
 ```json
-// ~/.pi/agent/models.json
 {
   "providers": {
     "cheap-coder": {
@@ -72,22 +73,26 @@ Pi identifies that this isn't a login-subscription provider the way OpenAI or Gi
 }
 ```
 
-`apiKey` resolves three ways - a literal string, a `$ENV_VAR` interpolation, or a `!command` whose stdout it uses - so you're not forced to put the key in the file at all. Paste the key yourself; don't ask Pi to read the file back and confirm it took. Agents that can read files can also print them, verbatim, to whatever terminal you're sitting in - including one you might be sharing or recording. If a key is ever echoed back to you in plaintext, treat it as burned and rotate it, on principle, whether or not you think anyone else saw it.
+`apiKey` resolves three ways - a literal string, a `$ENV_VAR` interpolation, or a `!command` whose stdout it uses - so you're never forced to put the key in the file at all. One convenience worth knowing while you're in here: `models.json` reloads every time you open `/model`, so you can edit it mid-session without a restart.
+
+Paste the key yourself; don't ask Pi to read the file back and confirm it took. Agents that can read files can also print them, verbatim, to whatever terminal you're sitting in - including one you might be sharing or recording. If a key is ever echoed back to you in plaintext, treat it as burned and rotate it, on principle, whether or not you think anyone else saw it.
 
 :::caution[Claude models: understand the billing path]
-Pi currently supports Claude Pro/Max OAuth. Its provider documentation says third-party harness usage draws from extra usage and is billed per token, not against Claude plan limits. API-key billing remains the most predictable option for this course; whichever path you choose, verify current provider terms and billing before routing a large workload through it. See [Authenticate](/course/pi/getting-started/auth/).
+Pi currently supports Claude Pro/Max subscription auth, and its provider documentation says third-party harness usage draws from extra usage and is billed per token, not against Claude plan limits. API-key billing remains the most predictable option for this course; whichever path you choose, verify current provider terms and billing before routing a large workload through it. See [Authenticate](/course/pi/getting-started/auth/).
 :::
 
-Once the provider's live, `/model` shows it in the picker and `Ctrl+P` cycles it if it's in `enabledModels`. Point the re-extraction sweep at it, `low` thinking, and let it run through the backlog for a fraction of what the frontier model would have billed for the same mechanical rows. Keep the extractor redesign on your strongest model at `high` - that one still earns every token.
+Once the provider's live, `/model` shows it in the picker, and `Ctrl+P` reaches it once you add its id to the `enabledModels` cycling list ([the config lesson](/course/pi/models-config/config-files/) covers the field). Point the re-sync sweep at it, `low` thinking, and let it run through the backlog for a fraction of what the frontier model would have billed for the same mechanical rows. Keep the `fetch_feed` hardening on your strongest model at `high` - that one still earns every token.
 
 :::tip[Try it]
-Open `models.json` and set a cheap model for mechanical tasks. Give Pi a rename-across-files job in stash and watch it use the cheap model, then ask a design question and notice the routing shift. Check `/session` or Pi's footer, along with the provider dashboard, to confirm the difference in spend.
+Open `models.json` and set a cheap model for mechanical tasks. Point a four-row slice of the re-sync backlog at it and watch it run, then ask how `fetch_feed` should treat a feed that isn't Atom and notice the routing shift. Check `/session` or Pi's footer, along with the provider dashboard, to confirm the difference in spend.
 :::
 
 That reconciles the opening claim: the toy trace put the ratio at 15x for the sweep specifically, because the sweep has no real use for the extra reasoning it would otherwise be billed for. A different task mix will land on a different multiple, but the mechanism is the same one you just multiplied by hand - model price times thinking-generated tokens - and it's checkable on any task the same way: pick the toy size, pick the corner, multiply.
 
-**When routing doesn't help:** a one-off task you'll type once and never repeat isn't worth a `/model` switch - whatever the switch would save costs you more attention than it's worth, and attention is the thing this whole exercise is supposed to protect. Routing also doesn't help when you can't actually tell, before you start, whether a task is mechanical or has a branch hiding in it - misjudging that costs more either direction than not routing at all. Route the backlog chores you've done before and recognize on sight; leave anything genuinely new on your default model until you've seen its shape once.
+**When routing doesn't help:** a one-off task you'll type once and never repeat isn't worth a `/model` switch - whatever the switch would save costs you more attention than it's worth, and attention is the thing this whole exercise is supposed to protect.
 
-**One thing routing doesn't give you: a ceiling.** Nothing in `settings.json` or `models.json` caps total spend or warns you before a runaway loop bills the frontier model all night - Pi's core product doesn't manage token spend for you, by the same minimal-core choice that keeps its file count small. The community has filled that gap with a third-party extension or two rather than Pi shipping one; if a hard spend cap matters to you, check your provider's own dashboard for a spend alert, because Pi's config surface won't stop you before the fact.
+Routing also doesn't help when you can't actually tell, before you start, whether a task is mechanical or has a branch hiding in it - misjudging that costs more either direction than not routing at all. Route the backlog chores you've done before and recognize on sight; leave anything genuinely new on your default model until you've seen its shape once.
+
+**One thing routing doesn't give you: a ceiling.** Nothing in `settings.json` or `models.json` caps total spend or warns you before a runaway loop bills the frontier model all night - Pi's core doesn't manage token spend for you. The community has filled that gap with third-party extensions rather than Pi shipping one; if a hard spend cap matters to you, check your provider's own dashboard for a spend alert, because Pi's config surface won't stop you before the fact.
 
 Routing between hosted models is one lever. There's a more extreme version of "cheap" available too: a model that costs nothing per token because it's running on the machine in front of you. [See what that actually buys you - and where it runs out of room](/course/pi/models-config/local-models/).

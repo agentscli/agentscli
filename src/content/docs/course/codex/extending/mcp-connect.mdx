@@ -1,19 +1,17 @@
 ---
 title: Connect the exchange-rate API as an MCP server
-description: "Foreign transactions sit at a guessed rate, so the report lies. Add the rate API as an MCP server, then price what a connected tool costs every turn."
-sidebar:
-  label: "MCP · connect a server"
+description: "Foreign transactions sit at a guessed rate, so the report lies. Add the rate API as an MCP server, learn what actually governs its reach, and price the toll."
 ---
 
 import McpCostMeter from '../../../../../components/interactive/McpCostMeter.tsx';
 
-`src/budgetcli/fx.py` already knows what it wants to do: fetch the day's EUR→USD and GBP→USD rates and use them instead of whatever number you guessed when you typed a transaction in. What it doesn't have is a way to reach the API that has those rates. Codex can read `fx.py`, understand exactly what it's for, and reason about currency conversion all day - it still can't dial out to a server the model has never heard of. That's not a knowledge gap a rule can close. It's a **reach** gap - and every door you open to close it costs you something on every single turn from now on, whether you walk through it or not.
+Nothing inside `budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI) can fetch a rate. The repo has no `fx` module and never did - the foreign-currency feature is this course's constructed next ticket, labeled once in the [chapter opening](/course/codex/extending/) and once more here. Codex can read the ticket, understand exactly what it needs, and reason about currency conversion all day. It still can't dial a server that isn't wired to it. That is not a knowledge gap a rule can close. It is a **reach** gap - and every door that closes it can charge rent.
 
 The **Model Context Protocol** is an open standard for connecting an agent to an external tool or data source; an *MCP server* is one such connection. Wire the rate API up as a server and Codex gets a new tool - convert one currency to another - that it reaches for on its own, the way it already reaches for shell or file edits. The API stops being something you look up and paste in, and becomes something the agent touches directly.
 
 ## Register the server
 
-Codex configures MCP servers in `config.toml`, under a `[mcp_servers.<name>]` table. The common shape is a **stdio server** - a process Codex spawns on your machine and talks to over stdin/stdout. You give it a `command` and its `args`:
+Codex configures MCP servers in `config.toml`, under a `[mcp_servers.<name>]` table - yours at `~/.codex/config.toml`, or the repo's `.codex/config.toml` for trusted projects. The common shape is a **stdio server**: a process Codex spawns on your machine and talks to over stdin/stdout. You give it a `command` and its `args`:
 
 ```toml
 # ~/.codex/config.toml  (or .codex/config.toml in the repo)
@@ -22,30 +20,30 @@ command = "npx"
 args = ["-y", "your-exchange-rate-mcp-server", "--api-url", "https://<your-rate-api-endpoint>"]
 ```
 
-Use the real package and endpoint your rate provider publishes - the values above are placeholders, not a server that exists. The table name (`fx` here) becomes the prefix on every tool the server exposes, so the model sees something like `fx.convert` and never collides with another server's tools.
+Use the real package and endpoint your rate provider publishes - the values above are placeholders, not a server that exists. The table name, `fx` here, is how the server is named in config, in `codex mcp` output, and in the tool names further down.
 
-Servers that live out on the network are reached as a remote server instead, by giving a `url` in place of `command`/`args`. The transport is chosen by which key is present; the official syntax for both shapes, plus auth via named environment variables rather than secrets pasted into the file, is on the [Codex MCP docs](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+Servers that live out on the network are reached as remote servers instead, by giving a `url` in place of `command`/`args`. Which key is present picks the transport; the full syntax for both shapes, plus OAuth and environment-variable auth, is on the [Codex MCP docs](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
 
 You don't have to hand-edit the file. The `codex mcp` subcommand manages servers from the CLI:
 
 ```text
 codex mcp add fx -- npx -y your-exchange-rate-mcp-server --api-url https://<your-rate-api-endpoint>
-codex mcp list          # what's registered, connected, or failed
+codex mcp list          # what's registered
 codex mcp get fx        # inspect one server
 codex mcp remove fx
 ```
 
-The bare `--` in the `add` form separates the server name from the command Codex will spawn. Everything before it is the name; everything after is the process. Inside a session, `/mcp` shows the same connection status without leaving the agent.
+The bare `--` in the `add` form separates the server name from the command Codex will spawn: everything before it is the name, everything after is the process. Inside a session, `/mcp` shows the same connection status without leaving the agent.
 
-**One test before you read any further.** Run `codex mcp list` on your own setup right now. If it comes back empty, none of the arithmetic below has cost you anything yet - it starts the moment you register your first server, and this lesson is about to show you why that moment is worth noticing. If it already lists two or three servers, you're already paying it.
+**One test before you read any further.** Run `codex mcp list` on your own setup right now. If it comes back empty, none of the arithmetic below has cost you anything yet - it starts the moment you register your first server, and this lesson is about why that moment is worth noticing. If it already lists two or three servers, you're already on the meter.
 
-## What one tool actually costs
+## What the model actually sees
 
-Before you wire `fx` up, look at what registering it actually hands the model. Every MCP tool ships a schema - name, description, parameters - and that schema has to sit somewhere Codex can see it: inside the context window, alongside everything else it's holding for the turn. Roughly what `fx.convert`'s schema looks like:
+Every MCP tool ships a schema - name, description, parameters - and a name the model addresses it by. The model-visible name is **`mcp__fx__convert`**: an `mcp__` prefix, then the server name, then the tool name, joined with double underscores. The TUI renders the same call as `fx.convert` - server, dot, tool - which reads easier and is what you'll see on screen. Two renderings, one tool. Roughly what the schema looks like:
 
 ```json
 {
-  "name": "fx.convert",
+  "name": "mcp__fx__convert",
   "description": "Convert an amount from one currency to another at the day's exchange rate.",
   "inputSchema": {
     "type": "object",
@@ -59,94 +57,68 @@ Before you wire `fx` up, look at what registering it actually hands the model. E
 }
 ```
 
-Count it: 506 characters. At four characters per token - the same prose estimator this course has used since chapter 1 - that's 126.5, call it 127, tokens. Against a 200,000-token window, 127 tokens is nothing. **That is exactly the reading that gets people into trouble, because it is measuring the wrong thing.**
+Count it: 512 characters. At four characters per token - this course's declared prose estimator - that's 128 tokens. Against a 200,000-token window, 128 tokens is nothing. **That is exactly the reading that gets people into trouble, because it is measuring the wrong thing.**
 
-Here's the catch, and it's the whole tension of this lesson: that 127 tokens isn't a one-time read, the way opening a file is. It's part of what Codex sees on *every* turn for as long as `fx` stays registered - the turn where you ask about a EUR transaction, and the nineteen turns after it where you don't. Call this the **standing toll**: what a connected server charges you, every turn, whether you use it or not. Reach isn't a purchase. It's rent.
+## The toll, and when it actually starts
 
-One small server barely registers against a 200,000-token window. It's the *habit* that doesn't scale - see for yourself further down this page.
+A schema is not a one-time read, the way opening a file is. A tool definition that is loaded rides the context window turn after turn - the turn where you ask about a EUR transaction, and the turns after it where you don't. Call this the **standing toll**: what a connected server charges, every turn, whether you use it or not.
 
-## The network-off gotcha
+Current Codex gives that toll a wrinkle worth budgeting around. On model and provider combinations that support tool search, Codex defers MCP schemas by default: at the start the model sees the server's name and description - a small stub, not the 128-token schema - and the full schema loads only when the model searches for and then uses the tool. Once loaded, it stays in context for the rest of the session.
 
-Now you ask Codex to use it - and on a fresh `budgetcli` setup, it fails:
+Where deferral isn't available - older setups, unsupported combinations - the schema rides from the moment you register the server. The [tool search docs](https://developers.openai.com/api/docs/guides/tools-tool-search) describe the mechanism.
 
-```text
-> recompute the EUR and GBP transactions at the current rate
+So the honest version of the toll: it is real in every case that matters. From registration where schemas inject up front, and from first use everywhere else - and from first use it keeps charging whether you call the tool again or not. Reach isn't a purchase. It's rent. The lease just may not start until the first call.
 
-  ● fx.convert  { from: "EUR", to: "USD", amount: 4200 }
-    ✗ network error: connection refused
+## Reach is its own surface, not the sandbox wall
 
-  The rate server is registered but I can't reach the network to
-  call it - the sandbox is blocking the outbound request.
-```
+Here is the correction this chapter promised, because the instinct is strong. Back in [approvals & sandbox](/course/codex/approvals-sandbox/network-and-dirs/), the constructed rate ticket hit a wall: `workspace-write` keeps network off by default for scripts and subprocesses that shell commands spawn, and `[sandbox_workspace_write] network_access = true` was the deliberate, scoped fix. It's natural to assume the MCP server faces the same wall. It doesn't - and assuming so mis-aims both controls.
 
-Nothing is wrong with the server. This is the same wall `fx.py` hit back in [approvals & sandbox](/course/codex/approvals-sandbox/network-and-dirs/): in `workspace-write`, **network access is off by default**. A stdio MCP server runs as a child process *inside* that sandbox, so when it tries to reach the rate API, the sandbox refuses the connection - exactly as it refused the agent's own attempt from inside `fx.py`.
+The docs draw the line explicitly. The command network proxy "applies to scripts, programs, and subprocesses spawned by commands" and "does not filter ... MCP server connections." Those connections run through their own surface: the `mcp_servers` config that defines the server, managed allowlists where an organization sets them, and per-server and per-tool approval settings - destructive tool calls always require approval when the tool advertises a destructive annotation.
 
-The fix is the one from that chapter: enable network for this workspace deliberately, knowing what you're opening.
-
-```toml
-[sandbox_workspace_write]
-network_access = true
-```
-
-This is worth sitting with rather than reflexively flipping on. Registering an MCP server does not by itself grant the agent the network - the sandbox still governs reach. That separation is a feature: you decide, per project, whether the convenience of a live API is worth the wider blast radius, instead of a connection silently becoming a hole. For `budgetcli`, a single read-only rate lookup is an easy yes - but it's *you* saying yes, not the server assuming it. **Registering a tool and granting it reach are two different decisions, on purpose.**
+Practically: **registering a server is the reach decision.** Nothing else has to be switched on for `fx` to go get rates. So treat registration the way the [approvals chapter](/course/codex/approvals-sandbox/network-and-dirs/) taught you to treat widening a fence - named server, known tools, a reason you can say out loud - and check `/mcp` to see exactly what you've granted. Flipping `network_access` for a shell-spawned script and registering an MCP server are two different doors, opened by two different decisions, on purpose.
 
 ## Use what you connected
 
-With the network open, the same request goes through, and the copy-paste loop `fx.py` was built to avoid finally closes:
+With the server wired, the copy-paste loop the ticket was built to avoid finally closes:
 
 ```text
 > recompute the EUR and GBP transactions at the current rate
 
-  ● fx.convert  { from: "EUR", to: "USD", amount: 4200 }
+  • fx.convert  { from: "EUR", to: "USD", amount: 4200 }
     → 4557
 
-  ● fx.convert  { from: "GBP", to: "USD", amount: 1899 }
+  • fx.convert  { from: "GBP", to: "USD", amount: 1899 }
     → 2402
 
-  Converted both at the live rate and stored the results as integer
-  cents, per the AGENTS.md money rule. The March report total drops
-  by $38 once the stale rates are replaced.
+  Converted both at the live rate and stored integer cents, per the
+  AGENTS.md money rule. The March total drops by $38 once the stale
+  guessed rates are replaced.
 ```
 
-Notice what changed. You asked one question in plain language; Codex called the rate tool twice on its own, applied the [cents-not-floats rule](/course/codex/rules/) from `AGENTS.md` without being reminded, and reasoned across the result. Nothing was pasted. A live external system is now part of the agent's working context - for the cost of the toll you just computed by hand.
+An illustrative reconstruction, not a captured run - your server supplies the numbers, and the reply wording is yours. The `fx.convert` lines are the TUI rendering; the model addressed `mcp__fx__convert`. You asked one question in plain language; Codex called the rate tool twice on its own, applied the [cents-not-floats rule](/course/codex/rules/) from `AGENTS.md` without being reminded, and reasoned across the result.
 
 ## Watch the toll stack
 
-One server at 127 tokens a turn is easy to shrug off. Real setups rarely stop at one. The meter below models five servers people commonly reach for - GitHub, a browser via Playwright, Notion, Figma, Postgres - stacked on top of Codex's own built-in tools, modeled here at roughly 12,000 tokens before you add anything:
+One server at 128 tokens a turn is easy to shrug off. Real setups rarely stop at one. The meter below models five servers people commonly reach for - GitHub, a browser via Playwright, Notion, Figma, Postgres - stacked on top of Codex's own built-in tools, modeled at roughly 12,000 tokens before you add anything:
 
 <McpCostMeter client:visible />
 
-Turn all five add-ons on together and tool schemas alone cost 82,000 of the 200,000-token window - 41 percent - before your first message goes out. Turn them off one at a time and watch the bar shrink back down; that's the standing toll, paid per server, whether the session ever calls it or not. `fx.convert` at 127 tokens is small precisely because it's one tool with three parameters - a 35-tool server like GitHub's carries thirty-five of these, which is why its toll runs closer to 26,000.
+Turn all five add-ons on together and tool schemas alone cost 82,000 of the 200,000-token window - 41 percent - before your first message goes out. Turn them off one at a time and watch the bar shrink. The meter is an order-of-magnitude model of the *upfront* arithmetic, the worst case: its tool counts and schema sizes are illustrative, and `mcp__fx__convert` at 128 tokens is one tool with three parameters - a 35-tool server carries thirty-five of those.
 
-Tick the box marked **defer schemas until first use** and every enabled server drops to a small stub - name and description only - until Codex actually calls one of its tools. That's a real lever some MCP clients expose, and it's the honest way to shrink the toll instead of just tolerating it. Availability and the exact threshold are client- and configuration-dependent, so check whether yours offers it before you budget around having it.
+Tick the box marked **defer schemas until first use** and every enabled server drops to a small stub until one of its tools is called. That lever is not hypothetical in current Codex: on supported model and provider combinations, deferral is the default behavior described above. What the checkbox models - and what you should still check on your own setup - is availability: deferral depends on the model, provider, and configuration, so verify which regime you're actually in before budgeting around it.
 
-**The discipline this buys you is simple: connect for a concrete gap, not on spec.** `fx` earns its place because nothing else in `budgetcli` can reach that API. A server you added "in case it's useful later" charges the same standing toll as one you use ten times a day - the meter doesn't know the difference, and neither does your context window.
+**The discipline this buys you is simple: connect for a concrete gap, not on spec.** `fx` earns its place because nothing in `budgetcli` can reach that API. A server you added "in case it's useful later" charges the same standing toll as one you use ten times a day - the meter doesn't know the difference, and neither does your context window.
 
-## Codex as an MCP server
+## The other direction, now a legacy door
 
-MCP runs the other way too. Everything above pointed Codex *outward* - it became a client of the rate API. But Codex can itself stand up as a server, exposing its own ability to run a coding task as a tool that some *other* program calls. The wiring is symmetric; only the direction of the arrow changes.
+MCP runs both ways. Everything above pointed Codex *outward* - it became a client of the rate API. Codex can also stand on the other side, exposing "do a coding task in this repo" as a tool some other program drives. The old wiring for that was `codex mcp-server`, a stdio entry point.
 
-You make Codex a server with one command:
+Treat that command as history. It was deprecated in the 2026-08-24 changelog and removed from the CLI in 0.154.0 (2026-09-09; re-verified firsthand against the installed 0.155.1, where `mcp-server` is no longer a recognized subcommand); new integrations use the [Codex app server](https://learn.chatgpt.com/docs/developer-commands?surface=cli) instead. If you meet `codex mcp-server` in older automation examples, that's what it was.
 
-```text
-codex mcp-server
-```
+The pattern it served still matters. When another system owns the loop - a larger agent, a script, CI - and wants repo-scoped coding as one callable capability, Codex serves rather than hosts, and the *caller* then owns the approval and sandbox decisions for the work Codex does. A serving invocation with wide-open approvals on your real repo is exactly as dangerous as it sounds, with no human at the TUI to catch it. Scope it like any unattended run - which is squarely where the [automation chapter](/course/codex/automation/) heads.
 
-Note the hyphen - it's `codex mcp-server`, the inverse of the `codex mcp` subcommand you used to *manage* servers above. It runs Codex over stdio, waiting for an MCP client to connect and drive it. The exact handshake and the tools it exposes are on the [Codex CLI reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
+## Rent buys a tool, not a guarantee
 
-### When this is the move
+`fx` is wired conceptually, and the constructed label deserves restating: no rate code exists anywhere in `budgetcli` - what this lesson added is the door, not the feature. The door has a price you can now compute for any server before you add it. And what a server sends *back* is outside content the agent reads and acts on, exactly like a bank CSV or a web page - a tool reply is a place instructions can arrive from, and the same rule applies as to any untrusted input.
 
-For most of your week on `budgetcli`, it isn't. You sit at the Codex TUI and Codex is the thing in charge - it's the *host*, reaching out to servers like the rate API. Running Codex as a server inverts that: now Codex is the *tool*, and something else owns the loop. That's the right shape in a narrow set of cases:
-
-- **Another agent orchestrates, Codex executes.** A larger automation - a different agent, or a script you've built - owns the high-level plan and wants to hand off a concrete coding task: "regenerate the March report in `budgetcli` and commit it." It calls Codex as a server, Codex does the focused work in the repo, and hands back the result. The outer system never has to reimplement what Codex already does well.
-- **You want Codex's repo-scoped work as a callable capability**, not an interactive session. Anything that can speak MCP - including agents built on other stacks - can then treat "do a coding task in this repo" as one more tool alongside its others.
-
-The thing to hold onto is that serving Codex is a *delegation* pattern, not a default. When Codex serves, the caller decides how much rope it gets - the same approval and sandbox dials from [the approvals chapter](/course/codex/approvals-sandbox/) still apply to the work Codex does on the other end of that connection. A server invocation that runs with wide-open approvals on your real `budgetcli` repo is exactly as dangerous as it sounds, and now there's no human watching the TUI to catch it. Scope it the way you'd scope any unattended run.
-
-For the work in this course you'll stay the host - Codex reaching out, not being reached. But knowing the protocol is bidirectional matters the moment you start chaining agents together, which is squarely where the [automation chapter](/course/codex/automation/) heads.
-
-## Where this leaves you
-
-`fx` is connected, the network is open on purpose, and the standing toll it charges is a number you can now compute for any server before you add it. That solves reach. It also opens a door worth naming before you walk through it: what a server sends *back* is outside content the agent reads and acts on, exactly like a bank CSV or a web page, and a tool reply is a place instructions can arrive from. The same rule applies as to any untrusted input, and it is one of the reasons the next lesson exists.
-
-None of that touches the other problem waiting in `budgetcli`: nothing about a connected tool, and nothing about a line in `AGENTS.md`, stops Codex from using that reach to make the one write in your ledger that must never happen by accident. Rent-per-turn doesn't buy you a guarantee - it buys you a tool. The guarantee is a different kind of thing, and it's [the next lesson](/course/codex/extending/hooks-gate/).
+None of that stops Codex from using the reach to make the one write that must never happen by accident. Rent buys you a tool, not a guarantee. The guarantee is a different kind of thing entirely, and it is [the next lesson](/course/codex/extending/hooks-gate/).

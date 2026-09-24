@@ -1,99 +1,149 @@
 ---
 title: Ship your first reviewed change with OpenCode
 description: "Hand OpenCode the timestamp bug in plain English, gate edits to ask, read the diff yourself, and commit at the first green - the commit is your real safety net."
-sidebar:
-  label: "First change · fix, review, commit"
 ---
 
-Now the actual ticket. `feedmill` pulls dozens of feeds and stitches them into one reading queue, and one source has been misbehaving: items from it land with the wrong timestamp, so they sort into the wrong place in the queue and you read week-old posts as if they're fresh. From the last lesson you know the parsing lives in the `parser` package and that one source's dates plainly don't match what the parser expects. The likely cause is the oldest one in the book - the parser assumes a single date layout, and this feed writes a different one. You don't need to hand OpenCode any of that. You describe the outcome you want the way you'd say it to a teammate, and let the loop you just watched do the legwork.
+Fix a date-parsing bug with OpenCode open in your repo - [install it first](/course/opencode/getting-started/install/) if you're starting from scratch. The examples use `feedmill`, the course's illustrative Go feed aggregator. It has a failing regression test in `parser/date_test.go`: `internal/parse/date.go` parses an RFC3339 timestamp with an offset, then incorrectly relabels its wall-clock fields as UTC instead of converting the instant to UTC. An item published at `09:00 +05:30` therefore lands at `09:00 UTC`, five and a half hours late. You do not need to hand OpenCode the implementation diagnosis. Describe the outcome you want as you would to a teammate, and let the loop do the legwork.
+
+The site ships no copy of `feedmill`, so recreate the bug in a disposable directory, or pick one small failing test in your own repo instead. To recreate it, run `git init` and `go mod init github.com/example/feedmill` in an empty directory (the page's safety net is Git, so the directory must be a repository), then add these two files:
+
+```go title="internal/parse/date.go"
+package parse
+
+import "time"
+
+var layouts = []string{
+	time.RFC3339,
+	"2006-01-02T15:04:05",
+	"Mon, 02 Jan 2006 15:04:05 -0700",
+}
+
+func Date(value string) (time.Time, error) {
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+			return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(),
+				t.Minute(), t.Second(), t.Nanosecond(), time.UTC), nil
+		}
+	}
+	return time.Time{}, &time.ParseError{Message: "unsupported date: " + value}
+}
+```
+
+```go title="parser/date_test.go"
+package parser
+
+import (
+	"testing"
+	"time"
+
+	"github.com/example/feedmill/internal/parse"
+)
+
+func TestDatePreservesOffset(t *testing.T) {
+	got, err := parse.Date("2026-02-03T09:00:00+05:30")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := time.Date(2026, 2, 3, 3, 30, 0, 0, time.UTC)
+	if !got.UTC().Equal(want) {
+		t.Fatalf("got %v, want %v", got.UTC(), want)
+	}
+}
+```
+
+Run `go test ./...` once to see the test fail, then commit both files so you have a clean starting point.
 
 ## Set the checkpoint before you describe the work
 
-There's one thing to do first that the Codex and Claude Code worlds don't make you think about, because OpenCode's default is different: out of the box the **build** agent runs with `edit` set to `allow`, which means it writes edits to disk without stopping to ask. For your *first* change in an inherited repo, you want the pause - an approval prompt on every edit, but one that still *applies* the change once you say yes.
+There's one thing to do first, because OpenCode's default may not be what you expect: out of the box the **build** agent runs with `edit` set to `allow`, which means it writes edits to disk without stopping to ask (permission defaults as of September 2026: [permissions documentation](https://opencode.ai/docs/permissions/)). For your first change in a repo you're still learning, you want the pause - an approval prompt on every edit, but one that still *applies* the change once you say yes.
 
-The cleanest way to get that is one line of config. Set `permission.edit: "ask"` in `opencode.json` (or in your global config), and every edit the build agent wants to make turns into an approval prompt: it shows you the diff, waits, and writes only after you approve.
+The cleanest way to get that is one setting in config. Set `agent.build.permission.edit` to `"ask"` in the `opencode.json` at your repo root (create the file if it doesn't exist; a top-level `permission.edit` works too, and applies to every agent), and every edit the build agent wants to make turns into an approval prompt: it shows you the diff, waits, and writes only after you approve. The gate covers the file-edit tools only (`edit`, `write`, and `patch`, per the permissions documentation). Shell commands, including ones that change files such as `gofmt -w` or `git checkout`, still run without a prompt unless you also gate `bash`.
 
 ```json title="opencode.json"
 {
-  "permission": {
-    "edit": "ask"
+  "agent": {
+    "build": {
+      "permission": {
+        "edit": "ask"
+      }
+    }
   }
 }
 ```
 
-Don't reach for the **plan** agent here, even though its name sounds right. Plan is OpenCode's restricted planning agent - file edits and bash are set to `ask`, and its prompt points it at analysis, so it's built to hand you an approach rather than land a change. It's the right tool when you want a plan and nothing written; it's the wrong tool when you want to actually land this fix. You'll switch *to* it later in the course; for your first change you want build with edits gated to `ask`. (You cycle primary agents with the `agent_cycle` keybind, `Tab` by default, but you don't need to switch agents for this - the config does the work.)
+OpenCode reads its config when it starts, so save `opencode.json`, then start `opencode` from the repo root, or quit and restart it if it's already open (as of September 2026; see the [config documentation](https://opencode.ai/docs/config/)).
+
+Don't reach for the **plan** agent here, even though its name sounds right. Plan is OpenCode's restricted planning agent: its prompt points it at analysis, so it's built to hand you an approach rather than land a change. Its permissions differ from build's too: it denies the edit tools (plan files excepted) and leaves bash ungated (as of September 2026, v1.18.32, per [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts); the agents documentation describes both as `ask`). It's the right tool when you want a plan rather than file edits (bash still runs, so a shell command can still change files); it's the wrong tool when you want to actually land this fix. Later chapters switch to it deliberately for exactly that job; for your first change you want build with edits gated to `ask`. (You cycle primary agents with the `agent_cycle` keybind, `Tab` by default as of September 2026 - see the [keybinds documentation](https://opencode.ai/docs/keybinds/) - but you don't need to switch agents for this: build is the default primary agent, so it is already the one you are talking to, and the config gates its edits.)
 
 ## Describe the outcome, not the steps
 
 ```text
-> one feed source is landing items with the wrong timestamp - looks like
-  the parser only understands one date layout and this feed uses another.
-  Make the date parsing handle the formats our feeds actually use, and
-  add a test that pins the case that's broken right now.
+> the existing offset-timestamp regression is failing. Make Date preserve
+  the instant represented by an RFC3339 offset and return the equivalent
+  UTC time. Keep the other supported layouts working and run all tests.
 ```
 
 Notice what you didn't say. You didn't name the function, didn't paste the parsing code, didn't spell out the test framework. You stated the *what* and left the *how* to the agent - and it works the problem the same way you would:
 
-```text
-  | Read  parser/date.go, parser/date_test.go            (2 files)
-
-  The parser pulls each item's date with time.Parse against a single
-  hardcoded layout, so a feed using a different one is silently parsed
-  wrong (or zeroed). I'll have it try the layouts our feeds use in order
-  and return an error if none match, then add a test for the layout
-  that's currently failing.
-
-  | Edit  parser/date.go
-    - t, err := time.Parse(time.RFC1123Z, raw)
-    + t, err := parseFeedDate(raw)
-
-  Apply this change?
-    Yes   No   Always
-```
-
-It **read** the relevant files first - including the existing test, so its new test would match the house style instead of inventing one. It **proposed** a plan in two sentences before touching anything. Then, because you gated edits to `ask`, it **stopped at the edit and asked**. That pause is the leash. The approval dialog shows you the operation, the file path, and a unified diff of exactly what it wants to write - you're approving a concrete change, not a vague intent. The `Always` option would stop asking for edits like this for the rest of the session; resist it on your first change. Approve this one edit, it moves to the test, asks again, and then does the thing that actually closes the ticket - it runs the project's tests itself:
+An illustrative, abridged transcript of what comes back (your wording, tool labels, and timings will differ):
 
 ```text
-  | Edit  parser/date_test.go          → approved
+  | Read  internal/parse/date.go, parser/date_test.go            (2 files)
 
-  | Bash  go test ./parser/
-    ok   feedmill/parser   0.214s
+  The parser already accepts RFC3339, but after parsing it rebuilds a UTC
+  value from the local wall-clock fields. That drops the +05:30 offset.
+  I'll return the parsed instant instead and keep the unsupported-date
+  error for inputs that match no layout.
 
-  Done. The parser now tries the feed date layouts in order and returns
-  an error when none match; the new test covers the timestamp that was
-  previously parsed into the wrong day.
+  | Edit  internal/parse/date.go
+    - return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(),
+    -   t.Minute(), t.Second(), t.Nanosecond(), time.UTC), nil
+    + return t.UTC(), nil
+
+  Permission required
+    Allow once   Allow always   Reject
 ```
 
-There's the full loop, closed on a real bug: read, propose, approve, apply - with the apply beat ending in the agent verifying its own change against the test suite before it reports done. OpenCode runs the test through its `bash` tool, which is gated by the same permission model as edits, so you see (and can approve) the command it runs.
+It **read** the relevant files first - including the existing test, so it knows exactly what the regression expects instead of guessing. It **proposed** a plan in two sentences before touching anything. Then, because you gated edits to `ask`, it **stopped at the edit and asked**. That pause is the leash. The approval dialog shows you the operation, the file path, and a unified diff of exactly what it wants to write - you're approving a concrete change, not a vague intent. The `Allow always` option would stop asking for edits like this until OpenCode restarts (the approval dialog's option labels as of September 2026, from the permission dialog in [`routes/session/permission.tsx`](https://github.com/anomalyco/opencode/blob/dev/packages/tui/src/routes/session/permission.tsx)); resist it on your first change. Approve this one edit, and it does the thing that actually proves the fix - it runs the project's tests itself (illustrative output):
+
+```text
+  | Bash  go test ./...
+    ok   github.com/example/feedmill/parser   0.214s
+
+  Done. Date now converts the parsed instant to UTC instead of relabeling
+  its clock fields. The existing offset regression and the full suite pass.
+```
+
+There's the full loop, closed on a real bug: read, propose, approve, apply - with the apply beat ending in the agent verifying its own change against the test suite before it reports done. OpenCode runs the test through its `bash` tool, which the same permission model governs: `bash` defaults to allow, so under this page's edit-only gate the command runs without a prompt (you could gate `agent.build.permission.bash` exactly the way you gated `edit` if you wanted the checkpoint).
 
 ## Read the diff before you believe the summary
 
-The agent's closing summary is a *claim* about what it did. The diff is the evidence - and on a parser-heavy repo you inherited, feeding a public reading queue, the gap between claim and evidence is exactly where you want your eyes. Read it:
+The agent's closing summary is a *claim* about what it did. The diff is the evidence - and on a parser-heavy repo feeding a reading queue, the gap between claim and evidence is exactly where you want your eyes. So read the diff yourself instead of asking the agent to describe it: run `git diff` in a second terminal, or type `!git diff` in the TUI input, which runs the shell command directly (as of September 2026; see the [TUI documentation](https://opencode.ai/docs/tui/)):
 
 ```text
-> show me everything you changed
+!git diff
 ```
 
-You're reading for two things: *does the change do what I asked,* and *did it do anything I didn't ask.* For a date-parsing fix this is a thirty-second read, but the point isn't the time - it's that you never skip it. Look closely at the things that bite in this domain: a test that passes because it asserts the wrong day, a new layout that *also* matches a date it shouldn't and quietly mis-parses a second feed, or a "fix" that swallows the error where the old code surfaced it. (`feedmill` is a typed Go codebase, so if you've got the language server wired in, OpenCode's LSP integration will already be flagging anything that doesn't compile or type-check - but that catches broken code, not *wrong* code. The wrong-but-valid edit is still yours to spot in the diff.)
+You're reading for two things: *does the change do what I asked,* and *did it do anything I didn't ask.* For a date-parsing fix this is a thirty-second read, but the point isn't the time - it's that you never skip it. Look closely at the things that bite in this domain: a test that passes because it asserts the wrong day, a new layout that *also* matches a date it shouldn't and quietly mis-parses a second feed, or a "fix" that swallows the error where the old code surfaced it. (`feedmill` is a typed Go codebase, so if LSP is enabled - it's off by default as of September 2026 ([LSP documentation](https://opencode.ai/docs/lsp/)); the [editor page](/course/opencode/getting-started/editor/) covers wiring it - OpenCode will already be flagging anything that doesn't compile or type-check - but that catches broken code, not *wrong* code. The wrong-but-valid edit is still yours to spot in the diff.)
 
-If the review turns up something off, OpenCode gives you a quick way back: `/undo`. It's git-backed - the docs describe `/undo` as removing the most recent user message, all the responses after it, *and* the file changes from that exchange, with `/redo` restoring them if you change your mind. (It needs the project to be a Git repository; `feedmill` is.) When it works, the move on a wrong change is clean: `/undo`, re-describe what you actually wanted, and let the loop run again rather than stacking a correction on top of the agent's mistake.
+If the review turns up something off, OpenCode gives you a quick way back: `/undo`. The [TUI documentation](https://opencode.ai/docs/tui/) (as of September 2026) describes it as git-backed: it removes the most recent user message, all the responses after it, and the file changes from that exchange, with `/redo` bringing them back if you change your mind. (It needs the project to be a Git repository, so make sure yours is one.) When it works, the move on a wrong change is clean: `/undo`, re-describe what you actually wanted, and let the loop run again rather than stacking a correction on top of the agent's mistake.
 
-Treat `/undo` as a convenience for the *last* step, not as your real safety net - that role belongs to Git itself (next section). OpenCode's current TUI documentation says undo relies on Git-backed snapshots and restores file changes when snapshots were captured successfully. Verify the working tree after an undo before treating it as a destructive recovery mechanism.
+Treat `/undo` as a convenience for the *last* step, not as your real safety net - that role belongs to Git itself (next section). After an undo, run `git status` and `git diff` to confirm the tree is what you expect.
 
 ## Commit the moment it's right
 
-When the review passes, commit immediately - and you can have the agent do it through its `bash` tool:
+When the review passes, commit immediately - and you can have the agent do it through its `bash` tool. With only `edit` gated, the commit runs without a prompt (illustrative):
 
 ```text
 > commit this with a sensible message
 
-  | Bash  git commit -am "Parse multiple feed date layouts; fix wrong timestamps"   → approved
+  | Bash  git commit -am "Convert offset timestamps to UTC in parse.Date"
 ```
 
-This is the single most valuable habit in the chapter. `/undo` is at best a *shallow* convenience - it reaches back over the recent exchange, when it reaches at all. Git is the deep, reliable one. **A commit is the floor that doesn't vanish.** Every time the agent reaches a genuinely working, reviewed state, a commit locks it in, and then the next experiment - however badly it goes - can never cost you more than the work since your last commit. Commit at every green, reviewed checkpoint and you can let the agent take bigger swings, because the downside is always capped at "go back to the last commit." On a week of work in someone else's parsers, that floor is what lets you move fast without fear. Think of it as two tiers: `/undo` for the last bad step, `git commit` for everything you've already proven good.
+This is the most valuable habit on this page. `/undo` is at best a *shallow* convenience - it reaches back over the recent exchange, when it reaches at all. Git is the deep, reliable one. **A commit is the floor that doesn't vanish.** Every time the agent reaches a genuinely working, reviewed state, a commit locks it in, and then the next experiment - however badly it goes - can never cost your tracked files more than the work since your last commit. Commit at every green, reviewed checkpoint and you can let the agent take bigger swings, because for tracked files the downside is capped at "go back to the last commit." A commit does not cover untracked or ignored files, paths outside the repo, or your Git history and remotes, and ungated `bash` can reach all of them. On a long stretch of work in parsers like these, that floor is what lets you move fast without fear. Think of it as two tiers: `/undo` for the last bad step, `git commit` for everything you've already proven good.
 
 :::tip[Try it]
-Open feedmill (or your own Go repo) and describe a small fix in one sentence. When the approval prompt appears, read the diff before you type `y`. If anything looks off, type `n` and rephrase. Commit the moment the diff matches your intent.
+Open `feedmill` - or your own repo, ideally a Go one - and describe a small fix in one sentence. When the approval prompt appears, read the diff before you choose `Allow once`. If anything looks off, choose `Reject` and rephrase. Commit the moment the diff matches your intent.
 :::
 
 Your first change is described, proposed, approved, applied, reviewed, and committed - the whole loop, closed once by hand on a real bug, with a commit locking it in underneath. Now make it something you reach for without thinking, by putting OpenCode [where you already spend your day: next to your editor](/course/opencode/getting-started/editor/).

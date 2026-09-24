@@ -1,30 +1,29 @@
 ---
 title: Block a bad commit with a PreToolUse hook
 description: "Wire a PreToolUse hook that refuses any commit touching the ledger unless a test changed too - a wall the agent can't talk its way past."
-sidebar:
-  label: "Hooks · PreToolUse gate"
 ---
 
 import HookTimeline from '../../../../../components/interactive/HookTimeline.tsx';
 
-There's one rule in the payments service you treat as sacred: **no change to the ledger code lands without a test alongside it.** The ledger is where money is counted; an untested change there is the kind of mistake that's invisible until it's expensive. You could write this rule into your project memory and ask the agent to honor it - and most of the time it would. But "most of the time" is precisely the wrong guarantee for the one thing that must never slip. You don't want a request the agent can forget under a full context window. You want a gate that fires every single time, no matter what the model decided.
+Take a small TypeScript payments service (the example this course returns to; this page restates the facts it needs). Its root `CLAUDE.md` carries two rules: "Every bug fix must include a regression test" and "Never commit without passing tests." The same file says to use integer cents and never floating point for currency, and `src/payments/processor.ts` still computes the fee-inclusive total, `amount * 1.029`, in floating point (the fee itself is `amount * 0.029`). Those lines load into the agent's context every session, and as [the rules-memory chapter](/course/claude-code/rules-memory/) shows, a loaded rule can still lose to a strong prior: the lines informed, and they held nothing. The guarantee this project still lacks is that a change to the money-counting code - `src/payments/ledger.ts`, with its tests in `tests/ledger.test.ts` - never lands without a test alongside it, and asking the agent harder is not a mechanism for that.
 
-That's a **hook**: a configured command Claude Code runs at a fixed point in its lifecycle. The agent doesn't choose to run it, but the hook must be loaded and enabled; `--bare`, configuration, or a hook failure can change whether it runs. When loaded, its decision is deterministic and independent of the model.
+The mechanism is a **hook**: a handler wired to a fixed moment in the agent's lifecycle. Handlers come in five types - `command`, `http`, `mcp_tool`, `prompt`, and `agent` - and ours is `type: "command"`: a shell command Claude Code runs at that moment, every time, with no model deciding whether it fires. In the course's vocabulary this is **control**: a rule expresses a constraint, and a hook enforces one.
 
-## The right moment to fire
+Two separate facts govern whether it protects you. Whether it *loads* is a configuration question: a session started with `--bare` skips hook discovery entirely, and `"disableAllHooks": true` disarms configured hooks. Whether it *blocks* once loaded is decided by the script itself, through the exit-code contract below. Keep those questions separate; a failed hook still ran.
 
-Hooks attach to lifecycle **events**. There are many - `SessionStart` when a session opens, `PostToolUse` after a tool runs, `Stop` when the agent tries to finish, `UserPromptSubmit` when you send a message - and picking the right one is most of the design. The full catalog is on the [hooks docs page](https://code.claude.com/docs/en/hooks).
+## The moment before the mistake
 
-For our wall we want **`PreToolUse`**: it fires *before* a tool call executes, and - this is the key - it can **block that call from happening at all**. We want to inspect the commit the agent is about to make and refuse it if the ledger changed without a test. `PreToolUse` is the only event that lets us intervene at that instant, before the bad commit exists.
+Hooks attach to lifecycle **events** - `SessionStart` when a session opens, `PostToolUse` after a tool runs, `Stop` when the agent tries to finish, `UserPromptSubmit` when you send a message. The full catalog is on the [hooks reference](https://code.claude.com/docs/en/hooks), and picking the event is most of the design.
+
+Our wall wants **`PreToolUse`**. It fires *before* a tool call executes, and it can block that call from happening at all. We want to inspect the commit the agent is about to make and refuse it if the ledger changed without a test. `PostToolUse` would tell us about a bad commit that already exists; `PreToolUse` is the only event that sits at the instant before the mistake. The timeline below places the events along one tool call and compares how four tools expose them; the Claude Code column is the one this lesson wires:
 
 <HookTimeline client:visible />
 
-## Wire it up
+## The wiring
 
 A hook is configured in `settings.json` under a `hooks` key. You name the event, a `matcher` that narrows *which* tool calls trigger it, and the command to run:
 
-```jsonc
-// .claude/settings.json
+```json title=".claude/settings.json"
 {
   "hooks": {
     "PreToolUse": [
@@ -33,7 +32,7 @@ A hook is configured in `settings.json` under a `hooks` key. You name the event,
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/ledger-needs-test.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/ledger-needs-test.sh\""
           }
         ]
       }
@@ -42,9 +41,15 @@ A hook is configured in `settings.json` under a `hooks` key. You name the event,
 }
 ```
 
-The `matcher: "Bash"` means this only fires when the agent is about to run a shell command - `git commit` among them. The `$CLAUDE_PROJECT_DIR` placeholder resolves to your repo root, so the path holds no matter where the session was launched.
+The `matcher: "Bash"` means this fires only when the agent is about to run a shell command, `git commit` among them. The `$CLAUDE_PROJECT_DIR` placeholder resolves to the repo root, so the path holds no matter where the session was launched.
 
-Now the script. Claude Code hands every hook a JSON blob on **stdin** describing the call it's about to make - for a Bash call, that includes the exact command string under `tool_input.command`. The script reads it, decides, and signals its verdict through its **exit code**. For `PreToolUse`, **exit code 2 blocks the action**; other nonzero codes report a non-blocking hook error, while zero allows the call. Whatever the script wrote to stderr is fed back to the agent as the reason.
+The escaped quotes inside the JSON are load-bearing, not decoration. The command runs through a shell, and an unquoted expansion splits on spaces - clone the repo into a directory called `payments project` and the hook dies with command not found, another non-blocking error leaving the gate open. Quoted, the path stays one word wherever the project lives.
+
+## The script, and the exit-code contract
+
+Claude Code hands the hook a JSON payload on **stdin** describing the call it is about to make; for a Bash call, the exact command string sits at `tool_input.command`. The script reads it, decides, and answers through its **exit code**. For `PreToolUse`, **exit code 2 blocks the action**, and whatever the script wrote to stderr goes back to the agent as the reason. Exit 0 means no opinion: the call continues through the normal permission flow.
+
+Every other outcome is a non-blocking error - a different nonzero code, a crash, a timeout. The hook ran, but it did not block; the tool call proceeds as if the gate were not there. The docs' own warning deserves emphasis: a mistyped script path fails the same way, leaving the gate open. After wiring the hook, test both directions before trusting it.
 
 ```bash
 #!/bin/bash
@@ -56,43 +61,80 @@ command=$(echo "$input" | jq -r '.tool_input.command')
 echo "$command" | grep -q 'git commit' || exit 0
 
 staged=$(git diff --cached --name-only)
-touches_ledger=$(echo "$staged" | grep -E 'ledger/' || true)
-touches_test=$(echo "$staged"   | grep -E '(test|spec)' || true)
+touches_ledger=$(echo "$staged" | grep -E 'src/payments/ledger' || true)
+touches_test=$(echo "$staged"   | grep -E 'tests/' || true)
 
 if [ -n "$touches_ledger" ] && [ -z "$touches_test" ]; then
-  echo "Blocked: this commit changes ledger/ but stages no test. \
-Add a test for the ledger change before committing." >&2
+  echo "Blocked: this commit changes src/payments/ledger.ts but stages no \
+test. Add a test in tests/ for the ledger change before committing." >&2
   exit 2
 fi
 exit 0
 ```
 
-It's plain shell, which is the point - nothing here is AI. It reads the staged files, and if the ledger changed but no test did, it exits 2 and the commit never happens.
+It is plain shell, which is the point - nothing in it is AI. The script narrows the repo's written rule to a mechanically checkable form: if the staged changes touch `src/payments/ledger` and nothing under `tests/` is staged with them, refuse. Note what it does *not* check: that the test covers the change, or that tests pass. `CLAUDE.md` still carries the spirit; the hook enforces the letter.
 
-## Watch the wall hold
+## Make it executable, then test both directions
 
-Now the agent finishes a ledger tweak and reaches for a commit:
+The settings invoke the file directly, and a file saved from an editor does not arrive executable. Without the execute bit the shell refuses to run it - a permission error, exit 126 on macOS and Linux - and that is a non-blocking error like any other: the call proceeds, the gate stays open. The [hooks reference](https://code.claude.com/docs/en/hooks)'s own walkthrough closes its example with the same step, and the script has one more dependency: its second line pipes through `jq`, so `jq` must be on `PATH`:
+
+```bash
+chmod +x .claude/hooks/ledger-needs-test.sh
+command -v jq || echo "jq missing - the script depends on it"
+```
+
+Then prove both directions with the very payload Claude Code would send on stdin - no session required. The drill needs a Git repository with at least one commit (if your copy has no history, create the baseline commit from [the install lesson](/course/claude-code/getting-started/install/)). It runs in a throwaway worktree - branchless (`--detach`), and wrapped in a `( set -e ... )` subshell so the block is atomic: if the first line fails because `gate-drill` is already taken by something of yours, nothing later runs, and the `--force` removal can only ever delete a worktree this block created:
+
+```bash
+( set -e
+  git worktree add --detach -q ../gate-drill
+  mkdir -p ../gate-drill/.claude/hooks
+  cp .claude/hooks/ledger-needs-test.sh ../gate-drill/.claude/hooks/
+  cd ../gate-drill
+  echo "// gate drill" >> src/payments/ledger.ts
+  git add src/payments/ledger.ts
+  echo '{"tool_input":{"command":"git commit -m \"drill\""}}' \
+    | .claude/hooks/ledger-needs-test.sh && rc=0 || rc=$?
+  echo "exit: $rc"     # 2 - blocked, reason on stderr
+
+  echo "// gate drill" >> tests/ledger.test.ts
+  git add tests/ledger.test.ts
+  echo '{"tool_input":{"command":"git commit -m \"drill\""}}' \
+    | .claude/hooks/ledger-needs-test.sh && rc=0 || rc=$?
+  echo "exit: $rc"     # 0 - allowed
+
+  cd - > /dev/null
+  git worktree remove --force ../gate-drill
+)
+```
+
+Both directions, proven by hand. The script blocked with exit 2 and its reason on stderr, then stepped aside with exit 0 the moment a test rode along - and a non-commit command such as `npm test` meets the script's first check and gets no opinion (exit 0). The subshell brackets the whole drill: any step failing stops the block before the removal runs, the worktree is branchless so there is no drill branch to delete, and your working tree and staged work were never in the blast radius. The wall is live.
+
+## The wall holding
+
+The agent finishes a ledger tweak and reaches for a commit. Here is an illustrative exchange showing the shape of the block and the recovery - invented particulars, real mechanism:
 
 ```text
-> commit the rounding fix
+> commit the ledger change
 
-  ● Bash  git commit -m "fix: correct rounding in ledger balance"
+  ● Bash  git commit -m "fix: keep ledger amounts in integer cents"
 
   ⊘ Blocked by PreToolUse hook (ledger-needs-test.sh):
-    Blocked: this commit changes ledger/ but stages no test.
-    Add a test for the ledger change before committing.
+    Blocked: this commit changes src/payments/ledger.ts but stages no
+    test. Add a test in tests/ for the ledger change before committing.
 
   The commit was refused - the hook requires a test alongside any
-  ledger change. Let me add one for the rounding case and re-stage.
+  ledger change. I'll add a cents-rounding case to tests/ledger.test.ts
+  and re-stage.
 
-  ● Write  ledger/balance.test.ts
-  ● Bash   git add ledger/balance.test.ts
-  ● Bash   git commit -m "fix: correct rounding in ledger balance"
+  ● Edit  tests/ledger.test.ts
+  ● Bash  git add tests/ledger.test.ts
+  ● Bash  git commit -m "fix: keep ledger amounts in integer cents"
     ✓ committed
 ```
 
-Watch what the agent did with the rejection. It didn't get stuck - it read the stderr message the hook fed back, understood *why* it was blocked, wrote the missing test, and committed cleanly. The gate didn't just stop a bad action; it steered the agent toward the right one. When the hook is configured and loaded, it does not depend on the model remembering the rule or on a human being present. The simple `grep 'git commit'` check is still a heuristic: alternate command forms could evade it, so production gates should parse and validate the payload more robustly.
+The agent read the stderr reason, understood *why* it was blocked, wrote the missing case into the repo's real `tests/ledger.test.ts`, re-staged, and committed cleanly. The gate did not just stop a bad action; it steered the agent toward the right one. And the steering is deterministic: the same staged files always produce the same verdict, with no model in the decision path.
 
-Beyond the exit-code path, a `PreToolUse` hook can return structured JSON for finer control - `permissionDecision: "deny"` with a reason, or even rewrite the tool input - all documented on the [hooks page](https://code.claude.com/docs/en/hooks). But exit 2 is the whole gate, and it's enough for the wall we needed.
+Two honest limits. The `grep 'git commit'` check is a heuristic - alternate command forms could evade it, so a production gate should parse the payload more robustly. And beyond exit codes, a `PreToolUse` hook can answer in structured JSON for finer control: `permissionDecision: "deny"` with a reason, `"allow"` to skip the permission prompt, even rewritten tool input. All of it is documented on the [hooks reference](https://code.claude.com/docs/en/hooks). Exit 2 is the whole gate here, and it is enough for the wall we needed.
 
-You've now built something categorically different from everything earlier in this chapter. The deny rules and the scoped connection *constrained* the agent; this *overrules* it. That difference is sharp enough to be worth naming precisely - because knowing when to reach for a hook instead of a rule is its own skill, and it's [the next lesson](/course/claude-code/extending/hooks-vs/).
+You have now built something categorically different from a rule or a permission. A scoped MCP connection (a deliberately limited external-tool bridge) and a permission deny rule *constrain* the agent inside lines you draw; this *overrules* it on the content of a specific action. That difference is sharp enough to be worth naming precisely - knowing when to reach for a hook instead of a rule is its own skill, and it is [the next lesson](/course/claude-code/extending/hooks-vs/).

@@ -1,32 +1,46 @@
 ---
-title: "Rules & memory"
-description: "Give the agent standing knowledge that survives every session - the build command, the domain facts, the conventions it currently rediscovers each time."
+title: "Give the agent standing knowledge with rules and memory"
+description: "Rules in CLAUDE.md and the notes Claude writes for itself both walk into every session as context. This chapter audits an existing CLAUDE.md, weighs what each rule costs, layers scopes, and shows the one thing no rule can do: enforce."
 ---
 
-The last chapter was about thinking *inside* a session - researching, proposing, agreeing on an approach before any code moved. But every move you've made so far evaporates the moment you close the terminal. Plan mode makes the agent smart for one conversation; this chapter makes it smart across *all* of them. It's the difference between an engineer who's sharp today and one who actually knows your codebase.
+Every Claude Code session starts without your project's knowledge. The agent does not know your test command, how your team represents money, or which module is fragile, until something tells it. Two mechanisms carry that knowledge into a session without you retyping it:
 
-Here's the friction this fixes, and you've almost certainly felt it. Every session on the payments service opens the same way: you tell the agent the test command is `npm test`, you remind it that charges are stored in **cents** not dollars so it stops generating off-by-100 bugs, you re-explain that your team writes commit messages in Conventional Commits format. It listens, it complies - and tomorrow it's forgotten all of it, because tomorrow is a fresh context window. You are paying the same tax, in tokens and in typing, every single day.
+- **Rules** are instructions you write in `CLAUDE.md` files. Claude Code reads them at launch (subdirectory files load when the agent works in that directory) and places them in the model's context, the information it can draw on when it decides what to do. One line of such a file is a rule.
+- **Auto memory** is notes Claude writes for itself from your corrections and from what it learns while working. You do not author it; you audit it.
 
-The fix is the whole point of this site: write the context down **once** so the agent always has it. A fact you establish in a `CLAUDE.md` file is a fact you never re-establish. That's context engineering at its most concrete - you stop renting the agent its knowledge of your project by the session and start owning it.
+Both are context. Neither is a check that stops a wrong edit. That distinction is the core teaching of this chapter, and one small example makes it concrete.
 
-## The two ways context persists
+## A rule and the code that ignores it
 
-Claude Code carries knowledge across sessions through two complementary mechanisms, and the distinction runs through this whole chapter:
+The example is a small TypeScript payments service (the example this course returns to; each page restates the facts it needs). Its `CLAUDE.md` at the repo root already exists, and near the top it carries two lines someone wrote on purpose:
 
-- **CLAUDE.md files** - instructions *you* write. Ancestor/project rules are loaded into the session; nested rules load on demand when Claude reads matching directories. Rules, conventions, and architecture belong here.
-- **Auto memory** - notes *Claude* writes for itself, based on your corrections and what it learns as it works. You don't author it; you audit it.
+```markdown
+- Use integer cents for all money calculations. Never use floating point for currency.
+- Store amounts as `number` representing cents (e.g. $19.99 = 1999).
+```
 
-You guide the agent's behavior with the first and let it accumulate learnings with the second. Most of this chapter is about the first, because that's the lever you control directly. ([the canonical reference for both](https://code.claude.com/docs/en/memory).)
+In `src/payments/processor.ts`, the fee on every payment comes out of floating-point arithmetic:
 
-## The project we'll equip
+```ts
+const FEE_RATE = 0.029;
 
-Same payments service you've been living in. Over the next few lessons you'll stop re-explaining it and start writing it down:
+const fee = req.amount * FEE_RATE;
+const total = req.amount + fee;
+```
 
-- [Generate the first `CLAUDE.md` from the repo](/course/claude-code/rules-memory/init/) with `/init`, so the agent's baseline knowledge of the project is captured automatically
-- [Learn what actually belongs in a rule](/course/claude-code/rules-memory/good-rules/) - the durable, project-specific facts worth their place in context, versus the vague filler that just burns tokens
-- [Layer rules across scopes](/course/claude-code/rules-memory/hierarchy/) - personal preferences, team-shared project rules, and per-subsystem files, and how they stack
-- [Let the agent keep its own notes](/course/claude-code/rules-memory/memory/) with auto memory and `/memory`, and learn when that fits better than a rule you write by hand
+The fee is `amount * FEE_RATE`. The total the caller is charged is the amount plus the fee, which is `amount * 1.029`. A 1999-cent charge returns a total of `2056.971`, a fraction of a cent that integer arithmetic could never produce. The test suite accepts it: `tests/payments.test.ts` asserts that exact number, and all six tests pass on it. The cents rule loads into every session, and the code floats anyway.
 
-By the end, the payments service will explain itself to the agent. You'll start each session not by re-teaching it the basics, but already past them.
+That is not a defect in Claude Code. A rule is context the model reads and weighs. It is not a check that runs against the file. The agent will usually honor the rule in code it writes next, and it may point out the discrepancy if you ask, but nothing forces either outcome. When an outcome must not depend on the model deciding well, you need a gate on the action itself, and [the hooks chapter](/course/claude-code/extending/) builds one. This chapter builds the knowledge the gate protects.
 
-Start with [generating the first `CLAUDE.md`](/course/claude-code/rules-memory/init/).
+## What the chapter covers
+
+Four lessons, on a repo whose rules file already exists, so the work is an audit rather than a blank page:
+
+- [Improve an existing CLAUDE.md with /init](/course/claude-code/rules-memory/init/): on a repo with a `CLAUDE.md`, `/init` suggests improvements instead of overwriting. You keep what is true and reject what is invented.
+- [Write rules that earn their tokens](/course/claude-code/rules-memory/good-rules/): the file loads into every session, so every line costs context every time. Learn which lines pay for themselves.
+- [Layer CLAUDE.md across scopes](/course/claude-code/rules-memory/hierarchy/): managed policy, user, project, local, and subdirectory files concatenate into one context. Pick the scope that gives each rule the right audience.
+- [Let Claude keep its own notes](/course/claude-code/rules-memory/memory/): where auto memory lives, how to inspect it with `/memory` and `/context`, and the fork between "remember X" and "add this to CLAUDE.md".
+
+In the course's vocabulary this chapter is about **context**: what information is available when the agent decides, how fresh it is, and how much authority it carries. It touches **cost** as well, because a rule line is paid in context on every session whether or not the session needs it. And the gate it points forward to is the course's **control** principle - what guides execution, enforces boundaries, or allows intervention. The [Claude Code memory reference](https://code.claude.com/docs/en/memory) is the primary source for every mechanism described here.
+
+Start with [running /init on a repo that already has rules](/course/claude-code/rules-memory/init/).

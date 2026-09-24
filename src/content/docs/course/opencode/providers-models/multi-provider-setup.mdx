@@ -1,17 +1,15 @@
 ---
 title: Wire up more than one provider
 description: "One subscription locks you into one vendor's pricing. Connect several providers in opencode.json - keys in the environment, not the file - and choose per task."
-sidebar:
-  label: "Multi-provider · connect several"
 ---
 
-You inherited `feedmill` and a habit that came with it: one provider's model for everything, billed against one subscription. That's fine until the work stops being one shape. Onboarding a new feed's parser is fiddly, judgment-heavy work where a frontier model earns its price. Re-running the dedupe pass over a thousand cached items, or asking "where does the sync server retry a failed pull," is bulk reading where a cheap, fast model is the right call and the expensive one is just a tax. Locked to a single vendor, you pay the frontier rate for the cheap work or you do the hard work on the cheap model - either way you're choosing per subscription, not per task.
+Most agents assume one vendor's model for everything, billed against one subscription. That's fine until the work stops being one shape. Onboarding a new feed parser in `feedmill` - the course's illustrative Go feed aggregator, but any repo you own works the same - is fiddly, judgment-heavy work where a frontier model earns its price. Re-running the dedupe pass over a thousand cached items, or asking "where does the sync server retry a failed pull," is bulk reading where a cheap, fast model is the right call and the expensive one is just a tax. Locked to a single vendor, you pay the frontier rate for the cheap work or you do the hard work on the cheap model - either way you're choosing per subscription, not per task. The decision you want to make per task is **capability** against **cost**: a model strong enough for the work, and no more expensive than the work needs.
 
-OpenCode is built the other way around. It isn't tied to a model; it talks to ~75 providers out of the [Models.dev](https://models.dev) catalog, and which one runs a given turn is your call. But before you can choose, the providers have to be connected. That's this lesson: get two of them wired up, with credentials that never touch a file you'd commit.
+OpenCode is built the other way around. It isn't tied to a model; it talks to 75+ providers (as of September 2026) sourced from the [Models.dev](https://models.dev) catalog, and which one runs a given turn is your call. But before you can choose, the providers have to be connected. That's this page: get two of them wired up, with credentials that never touch a file you'd commit.
 
 ## Add credentials first - they don't live in config
 
-The keys and the configuration are two separate things, and conflating them is how secrets end up in git. Credentials are added with the `/connect` command from inside the TUI:
+The keys and the configuration are two separate things, and conflating them is how secrets end up in git. Credentials are added with the `/connect` command from inside the TUI (OpenCode's full-screen terminal interface) - with `feedmill` open in OpenCode, that is: run `opencode` in the repo if you haven't launched it yet. An illustrative rendering of the picker:
 
 ```text
 > /connect
@@ -29,23 +27,27 @@ The keys and the configuration are two separate things, and conflating them is h
 ```
 
 
-Run it again for a second provider - say OpenRouter, which fronts a wide spread of models behind one key - and you've got two sets of credentials on disk. The same thing works headless if you'd rather script it: `opencode auth login --provider anthropic` walks the same flow from the shell, prompting for the key, and `opencode auth login` on its own gives you the interactive picker. The exact provider and login-method flags are CLI-version details; check the current [provider documentation](https://opencode.ai/docs/providers/) and `opencode auth login --help` before scripting a noninteractive flow.
+Run it again for a second provider - say OpenRouter, which fronts a wide spread of models behind one key - and you've got two sets of credentials on disk. The same thing works headless if you'd rather script it: `opencode auth login --provider anthropic` skips the picker and goes straight to the key prompt for that provider, and `opencode auth login` on its own gives you the interactive picker. As of September 2026 the [CLI reference](https://opencode.ai/docs/cli/) documents the flags for noninteractive use: `--provider` / `-p` ("Provider ID or name to log in to") and `--method` / `-m` ("Login method label to use, skipping method selection").
 
-Note *where* those keys landed: `~/.local/share/opencode/auth.json`, not your project. Confirm it whenever you want:
+Note *where* those keys landed: `~/.local/share/opencode/auth.json`, not your project. Confirm it whenever you want from your shell (`opencode` commands run there, not at the TUI prompt). An illustrative listing:
 
 ```text
-> opencode auth list
+$ opencode auth list
 
   Anthropic     api-key
   OpenRouter    api-key
 ```
 
 
-This is the clean default, and it's worth saying out loud - the credentials you just added are not in `opencode.json` and never will be. Connecting a provider this way is enough to *use* its models. The config file is for something else: telling OpenCode which providers and models you want surfaced, and how. You only reach for it when `/connect`'s defaults aren't enough - a custom endpoint, a model the catalog doesn't list, or a key you'd rather pull from the environment than store in `auth.json`.
+This is the clean default, and it's worth saying out loud - the credentials you just added are not in `opencode.json` and never will be. Connecting a provider this way is enough to *use* its models. The config file is for something else: telling OpenCode which providers and models you want surfaced, and how. You only reach for it when `/connect`'s defaults aren't enough - a custom endpoint, a model the catalog doesn't list, or a key in an environment variable OpenCode wouldn't otherwise look for.
+
+One more way in needs no config at all. At startup OpenCode loads providers from `auth.json` and also from keys defined in your environment or in a `.env` file in the project (as of September 2026; [CLI reference](https://opencode.ai/docs/cli/)). Keep that `.env` file in `.gitignore`. A CI runner with `ANTHROPIC_API_KEY` exported can call Anthropic with no `/connect` step and no `provider` block.
 
 ## Declare providers in opencode.json
 
-The `provider` block in `opencode.json` is where you describe the providers you want available in this repo. For the catalog providers you just connected, you often don't need to declare anything - `/connect` is sufficient. Where the block earns its place is when you want to be explicit about it living *with the project*: anyone who clones `feedmill` sees which models the work expects, even before they've connected their own keys.
+The `provider` block in `opencode.json` is where you describe the providers you want available in this repo. It adds to the providers you have connected and does not hide the others; the separate `enabled_providers` key is the allowlist ([config documentation](https://opencode.ai/docs/config/), as of September 2026). For the catalog providers you just connected, you often don't need to declare anything - `/connect` is sufficient. Where the block earns its place is when you want to be explicit about it living *with the project*: anyone who clones `feedmill` sees which providers the work expects, even before they've exported their own keys.
+
+Before you add this block, export `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` in the shell that launches OpenCode: an `apiKey` in config replaces the key you stored with `/connect` for that provider, as the paragraph after the block explains. Then send a one-line prompt to a model from each provider; an auth error means that provider's variable isn't set.
 
 ```json
 {
@@ -65,16 +67,16 @@ The `provider` block in `opencode.json` is where you describe the providers you 
 }
 ```
 
-The thing to see here is `{env:ANTHROPIC_API_KEY}`. OpenCode substitutes that token with the value of the environment variable at load time, so the *reference* lives in the file and the *secret* lives in your shell. This is the move that lets `opencode.json` be committed safely - a teammate cloning `feedmill` gets the shape of your provider setup with none of your keys, and supplies their own through their environment. If the variable isn't set, OpenCode substitutes an empty string rather than erroring, so a missing key surfaces as an auth failure at call time, not a parse failure at startup.
+The thing to see is `{env:ANTHROPIC_API_KEY}`. OpenCode substitutes that token with the value of the environment variable at load time, so the *reference* lives in the file and the *secret* lives in your shell. It is how you point a provider at a variable with any name you choose, and how you make the expected key explicit in committed config. This is the move that lets `opencode.json` be committed safely - a teammate cloning `feedmill` gets the shape of your provider setup with none of your keys, and supplies their own through their environment. If the variable isn't set, OpenCode substitutes an empty string rather than erroring, so a missing key surfaces as an auth failure at call time, not a parse failure at startup (both behaviors documented as of September 2026 in the [config documentation](https://opencode.ai/docs/config/)). That empty value also beats a key stored with `/connect`: OpenCode falls back to the `auth.json` key only when the config sets no `apiKey` at all ([`provider.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/provider/provider.ts) in source, as of September 2026; the docs do not state the order). Once this block is committed, each teammate exports the variable; `/connect` alone no longer works for these two providers.
 
-So you have two ways in, and they're complementary rather than competing: `/connect` stashes a key in `auth.json` for quick personal use, and `{env:...}` in `opencode.json` references a key the project expects without ever holding it. For `feedmill` - a repo you'll commit and maybe hand off - lean on the environment reference for anything that ships.
+So `/connect` and `{env:...}` do different jobs, and for a provider that sets `apiKey` in config the environment reference wins: `/connect` stashes a key in `auth.json` for quick personal use, and `{env:...}` in `opencode.json` references a key the project expects without ever holding it. For `feedmill` - a repo you'll commit and maybe hand off - lean on the environment reference for anything that ships.
 
 ## Project config layers on top of global, it doesn't replace it
 
-You almost certainly already have a global config at `~/.config/opencode/opencode.json` - your personal defaults, the providers you reach for across every repo. The natural worry is that dropping an `opencode.json` into `feedmill` clobbers all of that. It doesn't.
+If you have a global config at `~/.config/opencode/opencode.json` - your personal defaults, the providers you reach for across every repo - the natural worry is that dropping an `opencode.json` at `feedmill`'s root clobbers all of that. It doesn't.
 
-OpenCode **merges** the config sources rather than replacing them. Your global file and the project file are combined; where the two set the *same* key, the project file wins. So `feedmill`'s `opencode.json` can pin down the providers this project cares about - the parsing-grade model and the cheap bulk-read model - and quietly inherit everything else from your global config. Nothing you've set up machine-wide is lost by adding a per-repo file; you're layering project specifics over a personal base, not starting from scratch.
+OpenCode **merges** the config sources rather than replacing them, with the more specific source winning where both set the same key: remote organization config (served by your organization's domain) at the bottom, then your global file, then per-project files, with managed system settings (files an administrator installs on the machine) overriding everything (the full order is in the [config documentation](https://opencode.ai/docs/config/), as of September 2026). So `feedmill`'s `opencode.json` can pin down the providers this project cares about - the ones behind the parsing-grade model and the cheap bulk-read model - and quietly inherit everything else from your global config. Nothing you've set up machine-wide is lost by adding a per-repo file; you're layering project specifics over a personal base, not starting from scratch.
 
 That precedence is the whole reason a project file is the right home for `feedmill`'s provider choices. A decision that belongs to *this codebase* - these are the models this repo's work wants - lives with the codebase and overrides your personal defaults only where it needs to, for anyone who opens the repo.
 
-You've now got more than one provider connected, keys kept out of anything you'd commit, and a project config that layers cleanly over your global one. The point of all this was choice: now that feedmill can reach several models, you want to move between them mid-task without restarting. [Next: switch models without leaving the session](/course/opencode/providers-models/switch-models/).
+With several models reachable, the next step is to move between them mid-task without restarting - [switch models without leaving the session](/course/opencode/providers-models/switch-models/).

@@ -1,16 +1,24 @@
 ---
-title: "Allowlist and denylist: superseded, not guarantees"
+title: "Allowlist and denylist: friction controls, not the boundary"
 description: "Allow and deny rules reduce friction, but they are pattern-based controls rather than a complete security boundary. Trust the sandbox and environment isolation for containment."
 ---
 
-Cursor historically gave you two fine-grained lists:
+Cursor gives you two fine-grained lists. The **allowlist** names commands that run without an approval prompt under Cursor's run modes (Allowlist: only allowlisted commands run freely; Auto-review: the recommended default, which runs known-safe calls and reviews the rest; [run modes documentation](https://cursor.com/docs/agent/security/run-modes), as of September 2026) - set in the editor under **Settings > Agents > Approvals & Execution**. Beside it, the permissions system accepts a **denylist** - patterns that should be blocked. In the CLI (`agent`; older material spells the command `cursor-agent`, [CLI changelog](https://cursor.com/changelog/cli-jan-08-2026)), both live in the permissions configuration; the editor surface exposes the allowlist through the run modes. These look like the way to say "let it run `npx vitest run` and `git status` freely on `budgetcli` (the course's illustrative personal-finance API), but never `git push` or `rm -rf`." They are useful as intent, but you have to know exactly how much weight they can bear. What follows is this course's judgment, argued below: treat them as pattern-based workflow controls, not as your security boundary. (The [CLI permissions reference](https://cursor.com/docs/cli/reference/permissions), as of September 2026, is the source for the grammar and configuration facts in the next paragraphs - pattern shapes, config locations, and the deny-over-allow rule.)
 
-- a **command allowlist** - patterns that are permitted to run, and
-- a **command denylist** - patterns that should be blocked.
+Concretely, the CLI side is configured in `~/.cursor/cli-config.json` (global) or `<project>/.cursor/cli.json` (per project), under `permissions.allow` and `permissions.deny`. A rule names a tool and a pattern - `Shell(commandBase)` for the first token of a command line, `Read(pathOrGlob)`, `Write(pathOrGlob)`, `WebFetch(domain)`, `Mcp(server:tool)` (rules for tools exposed by connected MCP servers - Cursor's mechanism for plugging in external tools) - with `*` wildcards, and deny rules take precedence over allow rules. One consequence deserves its own sentence: `commandBase` matching is *subcommand-blind*. The reference's own example is `Shell(git)` - "Allow any git subcommand" - which includes `git push`. If your intent is "git status yes, git push never," a first-token allow cannot express it; use the documented `command:args` syntax for finer control (the reference's example is `Shell(curl:*)`, "Allow curl with any arguments" - the pattern matches command and arguments with globs), or put the forbidden subcommand in the deny list. An illustrative project file:
 
-These look like the way to express "let it run `npx vitest run` and `git status` freely on budgetcli, but never `git push` or `rm -rf`." They are useful as intent, but you have to know exactly how much weight they can bear. Current Cursor CLI permissions still expose `allow` and `deny` rules; treat them as pattern-based workflow controls, not as the only security boundary. ([CLI permissions](https://docs.cursor.com/cli/reference/permissions))
+```json
+{
+  "permissions": {
+    "allow": ["Shell(npx)", "Shell(git:status)", "Read(src/**)"],
+    "deny": ["Read(.env*)", "Write(.github/workflows/**)", "Shell(git:push)"]
+  }
+}
+```
 
-**Sandboxing and command rules answer different questions.** The sandbox constrains filesystem and network reach where supported; allow/deny rules control command approval and execution policy. Their exact interaction depends on the current editor/CLI surface and settings, so verify it in the current permissions reference before relying on a particular fallback or approval path.
+One deliberate coarseness to notice: `Shell(npx)` admits every npx subcommand - the same subcommand-blindness - kept here because test runners are the classic trusted case. Narrow it with `command:args` the way the git entries do if your intent is finer.
+
+**Sandboxing and command rules answer different questions.** This is the course's control distinction - what guides execution versus what enforces a boundary - in miniature: the sandbox constrains filesystem and network reach where supported; allow/deny rules control command approval and execution policy. Their exact interaction depends on the current editor and CLI surface and settings, so verify it in the current permissions reference before relying on a particular fallback or approval path.
 
 **A deny rule is not a security boundary.** A pattern can block an obvious command while missing an equivalent shell expression, script, alias, or indirect tool call. Use deny rules to express intent and reduce accidental execution, but do not treat them as proof that an irreversible action is impossible. The sandbox, a disposable environment, and least-privilege credentials are the stronger controls.
 

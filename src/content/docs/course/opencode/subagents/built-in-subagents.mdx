@@ -1,29 +1,26 @@
 ---
-title: The three built-in subagents
-description: "About to burn your main context on a hundred-file scan? Hand it to a read-only worker instead - @explore, @scout and @general each run in an isolated context."
-sidebar:
-  label: "Built-ins · general, explore, scout"
+title: The built-in subagents
+description: "About to burn your main context on a whole-directory scan? Hand it to a read-only worker instead - @explore and @general each run in an isolated context."
 ---
 
-You have the dedupe-hash question in front of you: *which adapters across `feedmill` feed into the dedupe hash, and where?* It's a real question - you're about to touch that hash and you need the call sites before you do - but answering it means reading the better part of a hundred adapter files. Ask it in your main thread and every one of those reads lands in your context window: grep output, file dumps, the whole noisy trawl, sitting there for the rest of the session crowding out the actual work. And you will never reread a line of it. You want the *map*, not the trawl that produced it.
+You have the dedupe-hash question in front of you: *which parser adapters across `feedmill` - the course's illustrative Go feed aggregator - feed into the dedupe hash (the key feedmill computes to drop duplicate items), and where?* It's a real question - you're about to touch that hash and you need the call sites before you do - but answering it means reading every adapter file. (For this page, assume three of `feedmill`'s adapters call `dedupe.Key`: RSS in `internal/feed/rss.go`, JSON Feed in `internal/feed/json.go`, and Atom, normalized in `internal/adapter/normalise.go`.) Ask it in your main thread and every one of those reads lands in your context window: grep output, file dumps, the whole noisy trawl, sitting there for the rest of the session crowding out the actual work. And you will never reread a line of it. You want the *map*, not the trawl that produced it.
 
-That gap - between the reading a job takes and the reading you actually need back - is exactly what a subagent closes. It's a separate session with its own context window that does the scoped job off to the side and reports back, so the noisy intermediate reads stay in the child rather than landing in your thread. OpenCode ships three of them ready to use, no setup, invoked by `@mention` right in your prompt.
+That gap - between the reading a job takes and the reading you actually need back - is exactly what a subagent closes. It's a separate session with its own context window that does the scoped job off to the side and reports back, so the noisy intermediate reads stay in the child rather than landing in your thread. The agents documentation lists three of them, ready to use with no setup and invoked by `@mention` right in your prompt (as of September 2026; [agents documentation](https://opencode.ai/docs/agents/)). The current release ships two: the source removed `scout` in June 2026, and the docs page still lists it (v1.18.32; [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts), [removal pull request](https://github.com/anomalyco/opencode/pull/30435)).
 
-## The three, and what separates them
+## The built-ins, and what separates them
 
 ```text
   @general   full tool access - reads, edits, runs commands
-  @explore   read-only - scans your codebase, can't write
-  @scout     read-only - external docs & dependency research
+  @explore   read-only (no edit tools) - scans your codebase
 ```
 
 The line that matters is **what each can touch**:
 
-- **`@general`** is a full-access worker. It has the same tools your `build` agent does - read, edit, bash - so it can actually *change* things. Reach for it when the side job is real work that needs to write, not just look: a self-contained fix you want done in its own context so it doesn't clutter the main thread.
-- **`@explore`** is read-only by construction, tuned for one thing: scanning *your* codebase fast. The docs describe it as "a fast, read-only agent for exploring codebases" that "cannot modify files" - you reach for it to find files by pattern, search code for a keyword, or answer a question about the repo. It reads; it can't edit. That's not a setting you trust the agent to respect; it's the agent's permission profile. You can hand it a hundred-file scan and know with certainty the worst it can do is tell you something wrong, never write something wrong.
-- **`@scout`** is also read-only, but its job points *outward* - external docs and dependency research. Where `explore` knows your repo, `scout` goes and looks at the libraries you depend on: it can clone a dependency's source into OpenCode's managed cache and read it, so you can cross-check your code against what upstream actually does.
+- **`@general`** is a full-access worker. It has the same tools as your `build` agent (except the todo tool) - `build` is OpenCode's default primary agent, the one you normally type at - so it can read, edit, and run bash, and it can actually *change* things. Reach for it when the side job is real work that needs to write, not just look: a self-contained fix you want done in its own context so it doesn't clutter the main thread.
+- **`@explore`** is tuned for one thing: scanning *your* codebase fast. The docs describe it as "a fast, read-only agent for exploring codebases" that "cannot modify files" - you reach for it to find files by pattern, search code for a keyword, or answer a question about the repo. Read "read-only" precisely. Its shipped permission profile denies the edit tools, but it allows `bash` (as of September 2026; [OpenCode source, `agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts)), and a shell command such as `sed -i` can still change a file. So a stray edit through the edit tools is off the table, unless your config allows it: a top-level `permission` rule for `edit` (or `"*"`) in `opencode.json` is applied after the built-in profile, and the last matching rule wins. A write through the shell is unlikely for a scan prompt but is not blocked. When you need a hard wall, write a custom subagent that denies `bash` too (the next page).
+The docs page also lists **`@scout`**, a read-only worker for external docs and dependency source. The v1.18.32 source no longer defines it (see above), so check that `@scout` appears in the `@` autocomplete before you plan around it.
 
-Three workers, two of them read-only, one full-access. Most of the time on `feedmill` you'll want one of the read-only two - because most of the noise you want out of your thread is *reading*, not writing.
+In the current release that leaves two workers, one read-only and one full-access. Most of the time on `feedmill` you'll want the read-only one - because most of the noise you want out of your thread is *reading*, not writing.
 
 ## Send the scan to @explore
 
@@ -35,67 +32,65 @@ The dedupe-hash question is a pure read job, so it goes to `@explore`. You don't
   Don't change anything.
 ```
 
-OpenCode spins the work off into a **child session**. The trawl happens *there*, in the subagent's own context window, not yours:
+OpenCode spins the work off into a **child session**. The trawl happens *there*, in the subagent's own context window, not yours. An illustrative exchange - the behavior that matters is the isolated reads and the call-site map that comes back, not this exact wording:
 
 ```text
   ⏺ @explore  running…
 
-      ⏺ grep "dedupeKey\|DedupeHash" internal/adapter/
-      ⏺ read internal/adapter/rss.go
-      ⏺ read internal/adapter/atom.go
-      ⏺ read internal/adapter/json.go
-      … 41 files read
+      ⏺ grep "dedupe.Key" internal/
+      ⏺ read internal/feed/rss.go
+      ⏺ read internal/adapter/normalise.go
+      ⏺ read internal/feed/json.go
+      … 12 files read
 
   ⏺ @explore  done
 
   Call sites that feed the dedupe hash:
 
-  • internal/adapter/rss.go   → buildItem()    item.DedupeHash = dedupeKey(guid, link)
-  • internal/adapter/atom.go  → buildItem()    item.DedupeHash = dedupeKey(id, link)
-  • internal/adapter/json.go  → buildItem()    item.DedupeHash = dedupeKey(id, url)
-  • internal/dedupe/store.go  → Seen()         keys on item.DedupeHash
-  • internal/adapter/shared.go→ dedupeKey()    the hash itself (FNV-1a of the args)
+  • internal/feed/rss.go          → buildItem()   dedupe.Key(feedURL, item.Link)
+  • internal/adapter/normalise.go → Normalise()   dedupe.Key(feedURL, entry.Link)
+  • internal/feed/json.go         → buildItem()   dedupe.Key(feedURL, item.ID)
+  • internal/dedupe/hash.go       → Key(), Hash()   the FNV-64a key helper
 
-  All three adapters set DedupeHash in buildItem(); the JSON adapter is
-  the odd one out - it hashes `url`, where the others hash `link`.
+  All three adapters call dedupe.Key; the JSON adapter is the odd one
+  out - it hashes the item `id`, where the others hash the link.
 ```
 
-Look at what came back versus what it cost. Your thread got five call sites and one genuinely useful observation - the JSON adapter hashing a different field. What it *didn't* get is the forty-one file reads and the grep dump that produced them. Those happened in the child session and stayed there. The job that would have buried your context in trawl handed you back only the answer.
+Look at what came back versus what it cost. Your thread got three call sites, the helper they call, and one genuinely useful observation - the JSON adapter hashing a different field. What it *didn't* get is the twelve file reads and the grep dump that produced them. Those happened in the child session and stayed there. The job that would have buried your context in trawl handed you back only the answer.
 
-If you want to *watch* the worker rather than just read its result, the child session is right there in the TUI. From the parent, `<Leader>+Down` (`session_child_first`) drops you into the first child session; from inside a child, the bare arrow keys take over - `right`/`left` (`session_child_cycle` / `_reverse`) move between children if you've spawned more than one, and bare `up` (`session_parent`) returns you to the parent thread.
+If you want to *watch* the worker rather than just read its result, the child session is right there in the TUI. From the parent, `<Leader>+Down` (`session_child_first`; the leader key defaults to `ctrl+x`) drops you into the first child session; from inside a child, the bare arrow keys take over - `right`/`left` (`session_child_cycle` / `_reverse`) move between children if you've spawned more than one, and bare `up` (`session_parent`) returns you to the parent thread (session-navigation bindings as of September 2026; [keybinds documentation](https://opencode.ai/docs/keybinds/)).
 
 ## Why isolation is the whole point
 
-The instinct is to read "separate session" as a UI detail. It isn't - it's the mechanism. The subagent runs on its own context window, so the volume of reading it does has *no effect* on yours. A scan that would have eaten thirty percent of your main thread's budget eats thirty percent of a throwaway one instead, and your thread comes out exactly as clean as it went in, plus an answer.
+The instinct is to read "separate session" as a UI detail. It isn't - it's the mechanism. The subagent runs on its own context window, so the volume of reading it does has *no effect* on yours. A scan that would have eaten a large part of your main thread's budget eats that part of a throwaway one instead, and your thread comes out exactly as clean as it went in, plus an answer. That is the **context** principle at work: what sits in an agent's context window is what it has to think with, so reading you'll never reread takes room from the work. Isolation moves that reading out of your window, not off your bill: the child still spends tokens on every read, and the next section makes that spend cheaper.
 
-That's what makes this a habit worth building rather than a party trick. Every time you're about to ask your main agent something that's mostly *gathering* - find all the call sites, where does X get set, does any other adapter have this shape - you're about to trade context you'll want later for reading you'll never reread. Routing it through `@explore` is how you stop paying that tax.
+That's what makes this a habit worth building rather than a party trick. Every time you're about to ask your main agent something that's mostly *gathering* - find all the call sites, where does X get set, does any other adapter have this shape - you're about to trade context you'll want later for reading you'll never reread. Routing it through `@explore` is how you keep that room.
 
-## Run the read-only scouts cheap
+## Run the read-only workers cheap
 
-There's a second lever, and it's the one that makes a read-only worker genuinely cheap to lean on. Because OpenCode is provider-agnostic, every agent can carry its own `model` - so a worker whose only job is to grep and report doesn't need to run on your most expensive reasoning model. The cleanest place to pull that lever is a *custom* subagent (the next lesson), where you define the agent and pin its model in one block:
+There's a second lever, and it's the one that makes a read-only worker genuinely cheap to lean on. Because OpenCode is provider-agnostic, every agent can carry its own `model` - so a worker whose only job is to grep and report doesn't need to run on your most expensive reasoning model. That trade is the **cost** principle: pay for reasoning only where the work needs it, and route everything else to something cheaper. Know the default first: a subagent with no `model` of its own runs on the model of the primary agent that invoked it (as of September 2026; [agents documentation](https://opencode.ai/docs/agents/)). So built-in `@explore` runs on your `build` model, which is often your most expensive one, until you set a model for it. You can set `model` on a built-in in `opencode.json`, `"agent": { "explore": { "model": "<provider/model-id>" } }` (the [per-agent model page](/course/opencode/providers-models/per-agent-model/) works through it). A *custom* subagent (the next page) lets you define the agent, its model, and its permissions in one block:
 
-```jsonc
-// opencode.json
+```json title="opencode.json"
 {
   "agent": {
     "scan": {
       "description": "Read-only codebase scanner",
       "mode": "subagent",
       "model": "anthropic/claude-haiku-4-5",
-      "permission": { "edit": "deny" }
+      "permission": { "edit": "deny", "bash": "deny" }
     }
   }
 }
 ```
 
-Now the noisy scans can run on a cheaper model and your main `build` loop can keep the expensive one for the work that actually needs reasoning. The [agents documentation](https://opencode.ai/docs/agents/) documents the `model` option for configured agents; exact model IDs depend on the connected provider catalog.
+Now the noisy scans can run on a cheaper model and your main `build` loop can keep the expensive one for the work that actually needs reasoning. The `bash` denial is what lets the description say read-only: `edit` covers only the edit, write, and patch tools. The `model` option for configured agents, built-ins included, is documented as of September 2026 in the [agents documentation](https://opencode.ai/docs/agents/); exact model IDs depend on the connected provider catalog.
 
 ## When each one fits
 
 The built-ins cover three clean cases, and naming them is most of knowing which to reach for:
 
 - A **codebase scan** - call sites, where something's defined, which files match a shape - goes to `@explore`. Read-only, fast, your repo.
-- A **docs or dependency question** - what does this version of the library actually do, does upstream handle this case - goes to `@scout`. Read-only, but pointed outward.
-- A **self-contained piece of work that needs to write** - a fix you want done in its own context, off your main thread - goes to `@general`. Full access, so the same review discipline from chapter one applies to what it hands back.
+- A **docs question** - what does this version of the library actually do, does upstream handle this case - can also go to `@explore`. On v1.18.32 its permission profile allows `webfetch`, and `websearch` where your provider enables that tool ([`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts)), so it can read a docs page by URL. Write a custom subagent when the job needs its own prompt or tighter permissions.
+- A **self-contained piece of work that needs to write** - a fix you want done in its own context, off your main thread - goes to `@general`. Full access, so review what it hands back the way you'd review any edit you didn't watch being made.
 
-That covers the common shapes. But the dedupe scan exposed the limit too: `@explore` is read-only and cheap, which is right, but its leash and its model are whatever OpenCode shipped - you don't get to scope it to *exactly* the job. When the built-in is close but not quite the worker you want, you write your own. [Next: write a custom subagent](/course/opencode/subagents/custom-subagent/).
+That covers the common shapes. But the dedupe scan exposed the limit too: `@explore` has a general-purpose prompt and a permission profile built for any codebase question. You can pin its model, but it doesn't know your one rule, and its shell stays open unless you change it. When the job needs its own instructions and a tighter permission map, you write your own worker, scoped to *exactly* that job. [Next: write a custom subagent](/course/opencode/subagents/custom-subagent/).

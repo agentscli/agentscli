@@ -1,75 +1,70 @@
 ---
-title: The LSP channel the agent already has
-description: "An edit that compiles in the agent's head can still break types you never see in a diff. OpenCode spawns LSP servers by extension and feeds it live diagnostics."
-sidebar:
-  label: "LSP · diagnostics without an MCP wrapper"
+title: Turn on the LSP channel
+description: "An edit that compiles in the agent's head can still break types you never see in a diff. OpenCode spawns LSP servers by extension and feeds the agent live diagnostics."
 ---
 
-The last lesson sent OpenCode out over MCP to reach systems it can't see on its own. This one is the opposite move: a channel into your codebase that the agent *already has*, sitting one config field away, that most people never turn on because they assume it'd need wiring.
+MCP (Model Context Protocol) servers are how OpenCode reaches *outward*, to systems the repo can't see. This page is the opposite move: a channel into your own code that OpenCode already ships, sitting one config field away, and off by default.
 
-Here's the failure it prevents. `feedmill` parses a dozen differently-shaped feed sources, and you ask the agent to teach the JSON-feed parser to handle a new `published_at` field. It reads `internal/parse/jsonfeed.go`, proposes a clean-looking edit, applies it, and tells you it's done. The diff reads fine. It even *compiles in the agent's head* - the change is locally sensible. But `published_at` comes off the wire as a string and the struct field it's being assigned to is a `time.Time`, and nothing in the diff shows you that, because a type mismatch isn't a textual property of the edited lines - it's a property of the whole typed program around them. You find out at `go build`. Or worse, your reviewer does.
+Here's the failure it prevents. `feedmill` - the course's illustrative Go feed aggregator - parses several differently-shaped feed formats (RSS, Atom, JSON Feed), and you ask the agent to teach the JSON-feed parser to handle a new `published_at` field. It reads `internal/feed/json.go`, proposes a clean-looking edit, applies it, and tells you it's done. The diff reads fine. It even *compiles in the agent's head* - the change is locally sensible. But `published_at` comes off the wire as a string and the struct field it's being assigned to is a `*time.Time`, and nothing in the diff shows you that, because a type mismatch isn't a textual property of the edited lines - it's a property of the whole typed program around them. You find out at `go build`. Or worse, your reviewer does.
 
 ## OpenCode hands the agent the compiler's eyes
 
-OpenCode ships native Language Server Protocol integration. When the agent touches a file, OpenCode looks at the extension, spawns the matching language server if it isn't already running, and pipes that server's **diagnostics** - the same errors, warnings, and hints your editor underlines in red - straight back to the agent as feedback while it works. For a `.go` file that server is `gopls`, the standard Go language server. The agent isn't guessing whether its edit type-checks. It's being told.
+OpenCode ships native Language Server Protocol integration (as of September 2026; [LSP documentation](https://opencode.ai/docs/lsp/)). When the agent touches a file, OpenCode looks at the extension, spawns the matching language server if it isn't already running, and pipes that server's error **diagnostics** - the same errors your editor underlines in red - straight back to the agent as feedback while it works (warnings and hints are left out of the tool result). For a `.go` file that server is `gopls`, the standard Go language server. The agent isn't guessing whether its edit type-checks. It's being told.
 
-This is not MCP. There's no server to declare in the `mcp` field, no wrapper to write, no tool the model has to remember to call. LSP is a separate, first-class channel configured through its own `lsp` field in `opencode.json`. It's disabled by default, and the docs are deliberate about when it earns its keep: language servers can drift out of sync, eat memory, vary by version, and slow the agent down, so OpenCode actually suggests that in many projects you let the agent run `lint`/`typecheck` CLI tools directly instead. Where it shines is a typed codebase like `feedmill`, where in-loop type feedback is worth the overhead. Turn it on for the whole project:
+This is not MCP. There's no server to declare in the `mcp` field, no wrapper to write, no tool the model has to remember to call. LSP is a separate, first-class channel configured through its own `lsp` field in `opencode.json`, OpenCode's main config file. It's disabled by default, and the docs are deliberate about when it earns its keep: language servers can drift out of sync, eat memory, and slow the agent down, so OpenCode itself suggests that in many projects you let the agent run `lint`/`typecheck` CLI tools directly instead, and document those commands in `AGENTS.md` (the instructions file OpenCode loads into every session) or a skill so the agent knows what to run. The difference is who starts the check. LSP errors come back in the result of every file edit, with no call for the model to remember, and you pay for a running server's memory and latency. A documented `go build ./...` costs nothing until the agent decides to run it, and runs only then. Pick LSP when a correction on every edit is worth a server that stays up, as on a typed codebase like feedmill. Turn it on for the whole project:
 
-```jsonc
-// opencode.json
+```json title="opencode.json"
 {
   "lsp": true
 }
 ```
 
-That enables OpenCode's built-in servers - there are dozens, keyed by extension - so the moment the agent edits a `.go` file in `feedmill`, `gopls` is in the loop.
+That enables OpenCode's built-in servers - there are dozens, keyed by extension - so the moment the agent edits a `.go` file in feedmill, `gopls` is in the loop.
 
-OpenCode does not replace the language server or the Go toolchain. Install `gopls` and make sure it is on your `PATH`, then verify it with `which gopls`; if either `go` or `gopls` is missing, install the Go tooling before debugging the OpenCode configuration. The one thing this setting controls is whether OpenCode starts the configured server and feeds its diagnostics into the loop.
+OpenCode does not replace the Go toolchain. The docs list the `gopls` requirement as the `go` command being available on your machine. The source goes one step further: if `gopls` is not on your `PATH` and `go` is, OpenCode runs `go install golang.org/x/tools/gopls@latest` into its own bin directory, unless the `OPENCODE_DISABLE_LSP_DOWNLOAD` environment variable is set to `true` (as of September 2026; [`lsp/server.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/lsp/server.ts)). So `go` is the one hard prerequisite. A `gopls` on your `PATH` is optional; OpenCode uses it when present. If diagnostics never arrive, check `which go` before you debug the OpenCode configuration, and set the download variable only if you want to manage `gopls` yourself. The one thing this setting controls is whether OpenCode starts the configured server and feeds its diagnostics into the loop.
 
 ## Watch the same edit go differently
 
-Now re-run that `published_at` request with `lsp` on. The shape of the turn changes in one important place - the agent catches its own mistake before you ever see it:
+Now re-run that `published_at` request with `lsp` on. The shape of the turn changes in one important place - the agent catches its own mistake before you ever see it. An illustrative exchange:
 
 ```text
 > teach the JSON-feed parser to read the new published_at field
   into the item's timestamp
 
-  Read  internal/parse/jsonfeed.go, internal/feed/item.go
+  Read  internal/feed/json.go
 
-  I'll map published_at onto Item.Published.
+  I'll decode published_at into a new JSONItem field and use it
+  when date_published is absent.
 
-  Edit  internal/parse/jsonfeed.go
-    + item.Published = raw.PublishedAt
+  Edit  internal/feed/json.go
+    + PublishedAtRaw string `json:"published_at"`
+    + item.DatePublished = item.PublishedAtRaw
 
-  Diagnostics  internal/parse/jsonfeed.go
-    ✗ cannot use raw.PublishedAt (variable of type string) as
-      time.Time value in assignment  [gopls]
+  Diagnostics  internal/feed/json.go
+    ✗ cannot use item.PublishedAtRaw (variable of type string) as
+      *time.Time value in assignment  [gopls]
 
-  That doesn't type-check - PublishedAt is a string off the wire and
-  Item.Published is a time.Time. I'll parse it as RFC 3339 first and
-  handle the error.
+  That doesn't type-check - published_at is a string off the wire and
+  DatePublished is a *time.Time. I'll parse it as RFC 3339 first and
+  skip a value that does not parse.
 
-  Edit  internal/parse/jsonfeed.go
-    + ts, err := time.Parse(time.RFC3339, raw.PublishedAt)
-    + if err != nil {
-    +     return nil, fmt.Errorf("jsonfeed: bad published_at %q: %w", raw.PublishedAt, err)
+  Edit  internal/feed/json.go
+    + if ts, err := time.Parse(time.RFC3339, item.PublishedAtRaw); err == nil {
+    +     item.DatePublished = &ts
     + }
-    + item.Published = ts
-
-  Diagnostics  internal/parse/jsonfeed.go
-    ✓ no errors
 ```
 
-The agent applied an edit, the diagnostic came back, and it **reacted to the diagnostic** - corrected course on the spot instead of finishing the turn on broken code and leaving the type error for `go build` to find. That feedback beat is the whole point. Without LSP the loop is *read → propose → apply → (you discover the type error later)*. With it, a compiler-grade check lands inside the agent's own loop, so the version that reaches your diff is one that already type-checks.
+The agent applied an edit, the diagnostic came back, and it **reacted to the diagnostic** - corrected course on the spot instead of finishing the turn on broken code and leaving the type error for `go build` to find. Without LSP the loop is *read → propose → apply → (you discover the type error later)*. With it, a compiler-grade check lands inside the agent's own loop, so the version that reaches your diff usually already type-checks.
 
-It matters more on `feedmill` than on most codebases. A feed aggregator is mostly parsers - a dozen of them, each marshalling untrusted, differently-shaped input into one shared `Item` struct. That's exactly the terrain where a textually-plausible edit is silently the wrong type, and exactly where a diff lies to you most convincingly. LSP turns "looks right" into "the type checker agrees," which is a different and much stronger claim.
+Diagnostics are feedback, not a gate. They enter the agent's context, and the model usually acts on them, but nothing forces it to fix an error before it ends the turn. They also have a scope: in the current source, the `edit` tool's result carries the diagnostics for the file it just changed, so an edit that breaks a caller in another file may not show up there. Keep `go build` and the tests as the check that must pass.
+
+It matters more on feedmill than on most codebases. A feed aggregator is mostly parsers - one per feed format, each funneling untrusted, differently-shaped input into one shared `Item` struct. That's exactly the terrain where a textually-plausible edit is silently the wrong type, and exactly where a diff lies to you most convincingly. LSP adds "the type checker agrees" to "looks right," as feedback the agent reads while it still has the file open.
 
 ## Tune it without losing the built-ins
 
-`"lsp": true` is the right default. When you need to adjust something, switch to an object - that keeps the built-ins active while you override one server:
+`"lsp": true` is the simplest form. When you need to adjust something, switch to an object - that keeps the built-ins active while you override one server:
 
-```jsonc
-// opencode.json
+```json title="opencode.json"
 {
   "lsp": {
     "typescript": { "disabled": true }
@@ -77,10 +72,9 @@ It matters more on `feedmill` than on most codebases. A feed aggregator is mostl
 }
 ```
 
-`feedmill` is pure Go, so you'd rarely disable anything - but the same object form is how you'd register a server OpenCode doesn't ship, by giving it a launch `command` and the file `extensions` that should trigger it:
+feedmill is pure Go, so you'd rarely disable anything - but the same object form is how you'd register a server OpenCode doesn't ship, by giving it a launch `command` and the file `extensions` that should trigger it:
 
-```jsonc
-// opencode.json
+```json title="opencode.json"
 {
   "lsp": {
     "my-lsp": {
@@ -93,6 +87,6 @@ It matters more on `feedmill` than on most codebases. A feed aggregator is mostl
 
 Server entries also take `env` for environment variables at launch and `initialization` for options sent to the server on startup.
 
-You don't need any of that to get the payoff. The reason this lesson is short is that the move is short: one field, `"lsp": true`, and the agent edits your typed code with the type checker watching over its shoulder - caught in its own loop instead of in your review. On the right codebase it's one of the cheapest correctness upgrades you can make.
+You don't need any of that to get the payoff. The reason this lesson is short is that the move is short: one field, `"lsp": true`, and the agent edits your typed code with the type checker watching over its shoulder - caught in its own loop instead of in your review. On a typed codebase it is a cheap correctness upgrade, once you accept the server's memory and latency.
 
 Diagnostics keep the agent honest about *types*. The next lesson is about keeping it honest about *actions* - running your own deterministic code at the edges of the agent's loop, to gate or react to what it does. [Next: gate moves with plugin hooks](/course/opencode/extending/plugins-hooks/).

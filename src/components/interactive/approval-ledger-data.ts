@@ -20,7 +20,7 @@ import type { TrBeat, TrChoice, TrScript } from './terminal-replay';
 
 const intro: TrBeat[] = [
   {
-    lines: [{ kind: 'sys', text: 'agent cli · new session · repo: orders-api · permissions: default' }],
+    lines: [{ kind: 'sys', text: 'agent cli · new session · repo: orders-api' }],
     panel: {
       add: [
         { id: 'auto-read', slot: 'auto', label: 'Read anything in the repo - auto' },
@@ -118,7 +118,7 @@ const choices: TrChoice[] = [
     replay: 'replay: allow once',
     verdictTone: 'good',
     verdict:
-      'Right call - if, and only if, you actually read the prompt. “Once” is the correct size of grant for a destructive command: it authorises this run, on this machine, and leaves nothing standing behind it. The real risk was never this command; it was the streak - five routine yeses make the sixth automatic. The discipline that keeps once safe: the word `destructive` cancels autopilot, every time it appears.',
+      'Right call - if, and only if, you actually read the prompt. “Once” is the correct size of grant for a destructive command: it authorises this run, on this machine, and leaves nothing standing behind it. The real risk was never this command; it was the streak - three routine yeses make the fourth automatic. The discipline that keeps once safe: the word `destructive` cancels autopilot, every time it appears.',
     beats: [
       {
         lines: [
@@ -209,7 +209,7 @@ export const approvalLedgerScript: TrScript = {
   },
   intro,
   decisionPrompt:
-    'Your finger is already moving toward yes - the last five approvals were all routine. This one drops your local database. Your move:',
+    'Your finger is already moving toward yes - the last three approvals were all routine. This one drops your local database. Your move:',
   choices,
   footnote:
     'The prompt wears different clothes across tools - allow/always/deny buttons, allow rules in a settings file, approval modes, sandbox flags - but underneath every one is this same ledger: a standing policy you edit one decision at a time. Grants sized to an exact command age well. Grants sized to a wildcard, approved under fatigue, are how an agent ends up with more rope than anyone remembers giving it.',

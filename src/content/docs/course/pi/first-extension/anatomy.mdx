@@ -1,11 +1,15 @@
 ---
 title: The shape of a Pi extension
 description: "One default-exported function, no build step, and two folders Pi checks on startup. That's the whole surface area before your first line of extension code."
-sidebar:
-  label: "Anatomy · the factory function"
 ---
 
-Before you write the `/stash` command or the re-extract tool, it's worth seeing the skeleton every Pi extension shares - and worth stating exactly what that skeleton buys you, so you can check the claim instead of taking it on faith. Every extension you build this chapter is a file that gets discovered, gets loaded, and gets wired into the session by calling exactly one of three functions: `registerCommand`, `registerTool`, or `on`. Those are the only three doors in. And each of the ways an extension can go wrong maps to one of those same three stages: put the file in the wrong place, or work in a project Pi doesn't trust, and it's never discovered; make a mistake Pi's loader can't parse, and it's discovered but never loaded; call the wrong one of the three functions - or call it with the wrong arguments - and it loads but doesn't do what you meant. Keep that three-stage map in mind. The next two lessons are just filling in the details at stage three: `/stash` calls `registerCommand`, the re-extract tool calls `registerTool`, and the hook that ties them together calls `on`.
+Before you write the `/stash` command or the resync tool for `stash` (the course's running example, a small FastAPI feed reader), it's worth seeing the skeleton every Pi extension shares. An extension is a file that gets discovered, gets loaded, and gets wired into the session by calling methods on one object: the `ExtensionAPI` your factory function receives.
+
+`registerCommand`, `registerTool`, and `on` are the three doors this course walks through - a slash command, a tool the model calls, a lifecycle hook - and they are the only three this chapter uses. They are not the only three that exist: the same API also registers message renderers, markdown transformers, entry renderers, keyboard shortcuts, custom flags, model providers. Real surfaces, all of them. None on this chapter's path.
+
+Each way an extension can go wrong maps to one of three stages. Put the file in the wrong place, or work in a project Pi doesn't trust, and it's never discovered. Make a mistake Pi's loader can't parse, and it's discovered but never loaded. Call the right registration method with the wrong arguments, and it loads but doesn't do what you meant.
+
+Keep that map in mind. The next two lessons are just filling in stage three: `/stash` calls `registerCommand`, the resync tool calls `registerTool`, and the hook that ties them together calls `on`.
 
 ## The factory function
 
@@ -22,34 +26,37 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-That's a complete, working extension. It does almost nothing - it just proves it loaded - but every extension you'll build this chapter is this same shape with more calls inside the function body: `pi.registerCommand(...)` for a slash command, `pi.registerTool(...)` for something the model can call, `pi.on(...)` for a lifecycle hook. The factory can also be `async`, which matters if an extension needs to do setup work - reading a config file, warming a cache - before the session continues; Pi will `await` it.
+That's a complete, working extension. It does almost nothing - it just proves it loaded - but every extension you'll build this chapter is this same shape with more calls inside the function body: `pi.registerCommand(...)` for a slash command, `pi.registerTool(...)` for something the model can call, `pi.on(...)` for a lifecycle hook. The factory can also be `async`, which matters if an extension needs to do setup work - reading a config file, warming a cache - before the session continues; Pi will `await` it before `session_start` fires.
 
 Top-level registration is the simplest pattern because the tool, command, or shortcut is available throughout startup. It is not a universal restriction, though: Pi also supports registering resources from event handlers when you intentionally want dynamic behavior. Use `session_start` for setup work, and make any later registration explicit about when it becomes available.
 
 ## Most of the time, Pi writes this for you
 
-Everything above is real, and this chapter has you type it by hand - the `/stash` command, the re-extract tool, the hook that wires them together - because there's no substitute for having built one yourself at least once. But once you've done that, it's not how you'll spend most of your time with Pi extensions. The common workflow, once you know the shape, is to describe the extension you want and let Pi write the file.
+Everything above is real, and this chapter has you type it by hand - the `/stash` command, the resync tool, the hook that wires them together - because there's no substitute for having built one yourself at least once. But once you've done that, it's not how you'll spend most of your time with Pi extensions. The common workflow, once you know the shape, is to describe the extension you want and let Pi write the file.
 
-You'd say something like: "Write a Pi extension at `.pi/extensions/stash-tools.ts` that registers a tool called `reextract_url` - it takes an entry ID, looks up the saved URL in stash's SQLite database, re-runs the fetch-and-extract pipeline against it, and replaces the mangled content with the fresh result." Pi will produce a file that looks close to what you've seen in this lesson - a default-exported factory, a `registerTool` call with a schema, maybe a `ctx.ui.notify` on success.
+You'd say something like: "Write a Pi extension at `.pi/extensions/stash-tools.ts` that registers a tool called `resync_feed` - it takes a feed id, fetches and parses the feed before mutating `stash.db`, then replaces only that feed's backlog rows (missing `published`, empty `link`, blank `summary`) in one transaction under the unique-link constraint, and reports the counts." Pi will produce a file that looks close to what you've seen in this lesson - a default-exported factory, a `registerTool` call with a schema, maybe a `ctx.ui.notify` on success.
 
-The reason to have just read through the factory function, the registration pattern, and the discovery folders isn't so you can recite them - it's so you can look at what Pi hands back and catch the things that go wrong. A tool registered dynamically when you expected it during startup. A hook wired to `session_start` when the chore actually needs to run on every turn. A tool with no input schema, so the model can call it with anything. Knowing the shape is what lets you spot the mismatch instead of shrugging and re-describing the whole thing from scratch.
+The reason to have just read through the factory function, the registration pattern, and the discovery folders isn't so you can recite them - it's so you can look at what Pi hands back and catch the things that go wrong.
+
+A tool registered dynamically when you expected it during startup. A hook wired to `session_start` when the chore actually needs to run on every turn. A tool with no input schema, so the model can call it with anything. Knowing the shape is what lets you spot the mismatch instead of re-describing the whole thing from scratch.
 
 Once you're comfortable with the pattern, extensions worth asking Pi for on `stash` start looking like this:
 
-- A `/digest` command that lists the week's saved-but-unread entries, so you stop scrolling to find them.
-- A tool that flags likely duplicate saves - same URL, different tracking parameters - before they clutter the database.
-- A hook that runs a lightweight tag-suggestion pass on every new save, using the domain and title alone.
-- A shortcut that jumps straight to re-extracting whatever entry you're currently looking at, without typing an ID.
+- A `/counts` command that lists each feed and how many articles it holds - one real query, printed on demand.
+- A tool that flags suspected duplicate saves - the same title arriving via two feeds - before they clutter the table.
+- A hook that appends one line to the system prompt on sessions where the feed tests matter, pointing the model at `tests/test_feeds.py`.
 
-One more thing worth knowing before you trust either your own code or Pi's: `ExtensionAPI` is not a frozen contract. Pi is young and the surface has already moved once - the npm scope rename above is one visible sign of it - and a method's shape can change between releases the same way any actively developed API's can. If an extension that worked last month throws after you upgrade Pi, check what changed before you assume your own code is what broke.
+One more thing worth knowing before you trust either your own code or Pi's: `ExtensionAPI` is not a frozen contract. Pi is young and the surface has already moved once - the npm scope rename below is one visible sign of it - and a method's shape can change between releases the same way any actively developed API's can. If an extension that worked last month throws after you upgrade Pi, check what changed before you assume your own code is what broke.
 
-So treat the rest of this chapter as calibration, not a script to memorize: read what Pi writes, `/reload`, test it against a real entry, and iterate - the same loop you'd use whether you typed the file yourself or Pi did.
+So treat the rest of this chapter as calibration, not a script to memorize: read what Pi writes, `/reload` (Pi's command for reloading extensions and other resources without restarting the session - its own section below), test it against a real feed, and iterate - the same loop you'd use whether you typed the file yourself or Pi did.
 
 ## No build step
 
 Notice the file above is plain `.ts` - no `dist/` folder, no `tsconfig` you have to wire up, nothing to run before Pi will pick it up. Pi loads extensions through [`jiti`](https://github.com/unjs/jiti), a TypeScript runtime transpiler, so you write TypeScript and Pi transpiles it on load. Change the file, and the change is live the moment you reload - there's no compile-and-restart cycle standing between an idea and it running.
 
-If your extension needs an npm dependency beyond what Pi bundles, drop a `package.json` next to it and run `npm install` - imports resolve out of `node_modules/` normally, and Node's own built-ins (`node:fs`, `node:path`, `node:child_process`) work without any install at all. A handful of Pi's own packages are importable without installing anything, because Pi bundles them for extensions to use directly: `@earendil-works/pi-coding-agent` (the types you'll use constantly, like `ExtensionAPI`), `typebox` (the schema library `registerTool` expects), `@earendil-works/pi-ai` (includes a `StringEnum` helper you'll need in the next lesson), and `@earendil-works/pi-tui` (components for building custom UI, if you go that far).
+If your extension needs an npm dependency beyond what Pi bundles, drop a `package.json` next to it and run `npm install` - imports resolve out of `node_modules/` normally, and Node's own built-ins (`node:fs`, `node:path`, `node:child_process`) work without any install at all.
+
+A handful of Pi's own packages are importable without installing anything, because Pi bundles them for extensions to use directly: `@earendil-works/pi-coding-agent` (the types you'll use constantly, like `ExtensionAPI`), `typebox` (the schema library `registerTool` expects), `@earendil-works/pi-ai` (includes a `StringEnum` helper you'll meet in the tool lesson), and `@earendil-works/pi-tui` (components for building custom UI, if you go that far).
 
 :::note[A note on the package name]
 If you see `@mariozechner/pi-*` in older blog posts or forks, that's the project's previous npm scope - it moved to `@earendil-works` in a rename. Functionally the same project; just make sure new code imports from the current scope.
@@ -58,7 +65,7 @@ If you see `@mariozechner/pi-*` in older blog posts or forks, that's the project
 **Write the file, save it, and the next reload runs exactly what's on disk - nothing cached, nothing pre-compiled, nothing standing between the two.**
 
 :::caution[What silently breaks]
-No build step also means no separate check. `tsc` never runs against the file, and your editor's type errors never block anything - the only place a mistake in the file actually surfaces is the load itself, at `session_start` or the `/reload` that follows a save. Watch for the notification your extension is supposed to fire (or its absence) right after you reload: a typo you'd normally catch at compile time here just means the extension never came up, with nothing else telling you so.
+No build step also means no separate check. `tsc` never runs against the file, and your editor's type errors never block anything - the only place a mistake in the file actually surfaces is the load itself, at `session_start` or the `/reload` that follows a save. Watch for the notification your extension is supposed to fire (or its absence) right after you reload: a typo you'd normally catch at compile time here just means the extension never came up - nothing in the conversation tells you so, but the session log carries the load error (the [troubleshooting page](/course/pi/troubleshooting/)'s first move).
 :::
 
 ## Where Pi looks
@@ -69,16 +76,20 @@ Extensions have a global home and a project-local one, and the split matters - a
 |---|---|---|
 | Extensions | `~/.pi/agent/extensions/` | `.pi/extensions/` |
 
-Both accept either a single `*.ts` file or a subdirectory containing an `index.ts`. For a chore that only makes sense inside `stash` - like re-extracting a saved URL - the project-local folder is the right home: `.pi/extensions/stash-tools.ts`.
+Both accept either a single `*.ts` file or a subdirectory containing an `index.ts`. For a chore that only makes sense inside `stash` - like re-syncing a stored feed - the project-local folder is the right home: `.pi/extensions/stash-tools.ts`.
 
-There's a catch on the project side worth knowing before you're confused by an extension that silently doesn't load: `.pi/extensions/` is only scanned **after the project is trusted**. Trust is Pi's one gate on "will I run code from this directory automatically," and it exists for exactly the reason you'd guess - an extension is arbitrary TypeScript with full system permissions, the same reach as `bash` itself. Loading one from a project you don't trust is functionally the same as running its code. If you cloned `stash` from somewhere and haven't seen this project prompt trust you yet, that's the first thing to check.
+There's a catch on the project side worth knowing before you're confused by an extension that silently doesn't load: `.pi/extensions/` is only scanned **after the project is trusted**. Trust is Pi's one gate on "will I run code from this directory automatically," and it exists for exactly the reason you'd guess - an extension is arbitrary TypeScript with full system permissions, the same reach as `bash` itself.
 
-While you're iterating, you don't have to touch either folder at all - `pi -e ./stash-tools.ts` loads a specific file for just that run, which is the fastest way to try an idea before you've decided it's worth keeping around permanently. It also doubles as your test bed: point `-e` at a half-finished tool and check what it actually does against a throwaway case before you ever let it run loose in a session that touches real data.
+Loading one from a project you don't trust is functionally the same as running its code. If you cloned `stash` from somewhere and haven't seen Pi prompt you to trust this project yet, that's the first thing to check.
+
+While you're iterating, you don't have to touch either folder at all - `pi -e ./stash-tools.ts` loads a specific file for just that run, which is the fastest way to try an idea before you've decided it's worth keeping around permanently. One boundary the docs are explicit about: `-e` is for quick tests, and the auto-discovered folders are what `/reload` re-scans. A file loaded via `-e` is gone when the run ends, so once an extension has earned a permanent home, move it into `.pi/extensions/` and iterate there.
 
 **Two folders, one trust gate, and a single-file escape hatch for the extension you haven't decided to keep yet.**
 
 ## Reload instead of restart
 
-Once a file is saved in one of the discovery folders (or you've pointed at it with `-e`), running `/reload` inside your session picks up every change - extensions, skills, prompt templates, themes - without losing your conversation. Under the hood it fires `session_shutdown` on whatever was loaded, then `session_start` again with `reason: "reload"`, so any cleanup or setup logic in those hooks runs exactly like it would on a fresh launch. You'll use `/reload` after nearly every edit for the rest of this chapter - it's the difference between "iterate on an extension" feeling like a five-second loop instead of a five-minute one.
+Once a file is saved in one of the discovery folders, running `/reload` inside your session picks up every change - extensions, skills, prompt templates, themes - without losing your conversation. Under the hood it fires `session_shutdown` on whatever was loaded, then `session_start` again with `reason: "reload"`, so any cleanup or setup logic in those hooks runs exactly like it would on a fresh launch.
+
+You'll use `/reload` after nearly every edit for the rest of this chapter - it's the difference between "iterate on an extension" feeling like a five-second loop instead of a five-minute one.
 
 You now know the shape every extension takes and the two places Pi will find one. Time to fill that shape in with something `stash` actually needs - starting with the one a human triggers on purpose. [Next: build the `/stash` command](/course/pi/first-extension/a-command/).

@@ -1,17 +1,15 @@
 ---
 title: Write the description so Codex invokes the Skill at the right moment
 description: "A Skill that never fires is wasted. The description is the trigger surface - write it to name the situation, so the import fires and stays quiet otherwise."
-sidebar:
-  label: "Trigger · the description"
 ---
 
-The Skill runs when you name it, but the whole point was that you *wouldn't have to* - that Codex would notice you're loading a new bank's export and run the import procedure on its own. Whether that happens, and whether it happens at the *right* time, comes down almost entirely to one field: the `description`. This is the lesson where the six turns you counted two lessons back either become two turns for real, or stay a claim you haven't tested.
+The Skill exists on disk now, but the whole point was that you *wouldn't have to* name it - that Codex would notice a new export landing and run the import procedure on its own. Whether that happens, and whether it happens at the *right* time, comes down almost entirely to one field: the `description`. This is the lesson where the chapter's baseline - six exchanges to onboard a new bank's CSV into `budgetcli` (the course's running example, a small self-hosted personal-finance API in Python and FastAPI) when the rules file and a saved profile are in place but the procedure is narrated by hand (the [chapter opening](/course/codex/skills/) traces all six) - either becomes two, or stays a claim you haven't tested.
 
 ## How Codex decides
 
-Codex keeps every Skill's frontmatter - its `name` and `description` - loaded so it always knows what's on the shelf. The full body of a Skill only loads when the Skill actually fires. So the description does double duty: it's both the menu Codex reads and the trigger it matches against. When your message looks like the situation a description names, Codex pulls in that Skill's instructions and follows them. When it doesn't, the Skill stays closed and costs almost nothing.
+Codex starts every session with an initial skills list in context: each skill's name, description, and path. The list is capped - roughly two percent of the context window, or 8,000 characters when the window is unknown - and on large catalogs Codex shortens descriptions first, then omits skills from the list entirely, with a warning. The full body of a Skill loads only when the Skill actually fires. So the description does double duty: it is both the menu Codex reads and the trigger it matches against.
 
-That means the description isn't documentation - it's the *interface*. A vague one is the number-one reason a Skill sits there and never fires. To keep the menu from crowding the context window, Codex caps how much room the loaded Skill list can take, so a long-winded description competes for space with every other Skill's. The mechanics and the limits are on the [Codex Skills page](https://learn.chatgpt.com/docs/build-skills); the craft is in what you put in the field.
+When your message looks like the situation a description names, Codex pulls in that Skill's instructions and follows them. When it doesn't, the body stays on disk and the Skill costs its stub and nothing more. That makes the description less documentation than *interface*. A vague one is the most common reason a Skill sits there and never fires. The mechanics and the limits are on the [Codex Skills page](https://learn.chatgpt.com/docs/build-skills); the craft is in what you put in the field.
 
 Name what's actually happening here: Codex reading a plain description of your situation and matching it, on its own, to a procedure it was never told to run by name. Call that **recognition**. It's the one trick this whole chapter is building toward - everything from the frontmatter split to the wording rules below exists to make recognition fire on the situation you meant and stay silent on everything else.
 
@@ -33,66 +31,74 @@ description: >-
   or import transactions from an unfamiliar CSV shape.
 ```
 
-The pattern that works: **what it does, then when to use it, in the user's words.** That second half - "onboard a new bank… add support for a statement export… an unfamiliar CSV shape" - is a list of the phrasings you actually reach for. Front-load the key use case, because the loaded listing is space-capped and gets truncated if it runs long, so the first sentence has to carry the trigger.
+The pattern that works: **what it does, then when to use it, in the user's words.** That second half - "onboard a new bank... add support for a statement export... an unfamiliar CSV shape" - is a list of the phrasings you actually reach for. Front-load the key use case: the listing is space-capped and descriptions get shortened first when the catalog grows, and the docs' own advice is to put the trigger words where shortening can't eat them.
 
 ## Test that it actually fires
 
-A Skill you only ever invoke by name might as well be a saved prompt. So prove recognition works, on the same job you traced by hand in the chapter opening: a new bank, cold. Open `budgetcli`, point Codex at a sample export from a bank it hasn't seen, and say the kind of thing you'd really say - without naming the Skill:
+A Skill you only ever invoke by name might as well be a saved prompt. So prove recognition works, on the same job the chapter opening traced: a new format, cold. The run below is the defined scenario's two-turn route, reconstructed - the prompt is yours to send; the reply shows the shape a real run takes, not a captured log. Say the kind of thing you'd really say, without naming the Skill:
 
 ```text
 > got a statement export from my new credit card in data/newcard.csv.
   can you get these transactions into budgetcli?
 
-  ⎿ Using skill: import-bank-csv
-    Read 6 rows of data/newcard.csv
-    date → column "Posted Date" (MM/DD/YYYY)
-    amount → column "Amount" (single signed column)
-    description → column "Description"
+  • Read SKILL.md (import-bank-csv skill)
+  • Read data/newcard.csv
+  • Read app/importers/csv.py
 
-    Sample mapping (raw → stored):
-      04/12/2026, "-42.50", "CORNER MARKET"
-        → 2026-04-12 · -4250 cents · "CORNER MARKET"
-      04/13/2026,  "18.00", "REFUND - ACME"
-        → 2026-04-13 · 1800 cents · "REFUND - ACME"
+  date -> column "Posted Date" (MM/DD/YYYY)
+  amount -> column "Amount" (single signed column)
+  description -> column "Description"
+
+  Sample mapping (raw -> stored):
+    04/12/2026, "-42.50", "CORNER MARKET"
+      -> 2026-04-12 | -4250 cents | "CORNER MARKET"
+    04/13/2026, "18.00", "REFUND - ACME"
+      -> 2026-04-13 | 1800 cents | "REFUND - ACME"
 
   Mapping looks right? I'll write the importer and run the full file.
 ```
 
-That's turn one: you described the situation in your own words, `Using skill: import-bank-csv` fired without you naming it, and step four of the body - convert to integer cents, no floats - already ran on this bank's amount column before you said a word about money. Confirm, and turn two closes it:
+Turn one, read closely. There is no announcement banner - Codex doesn't print one. What you see instead is the read of the skill's instructions annotated right on the tool line: `SKILL.md (import-bank-csv skill)`. That annotation is how implicit use surfaces in the CLI; the recognition itself is tracked inside the run. And step three of the body - cents without a float - already ran on this bank's amount column before you said a word about money.
+
+Confirm, and turn two closes it:
 
 ```text
 > looks right, go ahead
 
-  ⏵ Edit .agents/skills/... → write importer, run against sample   → approved
-  ⏵ Run  pytest tests/test_import_newcard.py
-    • 4 passed
+  • Edited app/importers/newcard.py
+  • Edited tests/test_import.py - amount-format pin
+  • Ran pytest - green
 
   Done. Importer written for the new card format, sample verified,
-  tests passing.
+  suite green including the new pin.
 ```
 
-**Two turns.** Count them against the six from the chapter opening: no clarifying question about the column layout, because the body's first two steps already ask for it before Codex reports back. No thousands-separator slip to catch in review, because step four's rounding rule is sitting in the window at the exact moment the amount column gets parsed - the same miss that cost you two full turns the long way, gone before it happened. Same bank-shaped job, a third of the cost. That's the payoff this chapter opened on, and this time it isn't an estimate - it's a transcript you can count.
+**Two turns.** Count them against the six from the chapter opening: no clarifying question about the column layout, because the body's first step already asks for it before Codex reports back. No thousands-separator slip to catch in review, because the cents step is sitting in the window at the exact moment the amount column gets parsed - the miss that cost two full turns the long way, gone before it happened.
 
-It should feel like the loop got smarter. It didn't - it just stopped asking you questions the body already answers, and stopped guessing at a rule the body already states. You're still the one who reads "mapping looks right?" and says go ahead. Recognition removed the re-narration. It didn't remove you from the review.
+State the basis plainly, because the numbers carry it. The six exchanges came from running the import job with the repo's rules file and a saved trust profile in place but the procedure narrated in a plain prompt; the two is the same job with the skill added on top. Both are the defined teaching scenario's checkpoints, not a captured log - reconstructions you can count against, not runs that happened.
+
+It should feel like the loop got smarter. It didn't - it just stopped asking you questions the body already answers, and stopped guessing at details the body already states. You're still the one who reads "mapping looks right?" and says go ahead. Recognition removed the re-narration. It didn't remove you from the review.
 
 ## The opposite failure: firing too often
 
-A description tuned too broad has the reverse problem - the Skill fires when you didn't want it. Imagine you'd written "use whenever working with a CSV." Now Codex tries to run the full import procedure the moment you so much as *open* a CSV to glance at it, even when you only wanted to read a couple of rows. The cure is to make the description *narrower and more specific* - pin it to the genuine onboarding moment ("a new bank," "a layout budgetcli doesn't already handle") rather than any mention of CSVs.
+A description tuned too broad has the reverse problem - the Skill fires when you didn't want it. Imagine you'd written "use whenever working with a CSV." Now Codex tries to run the full import procedure the moment you so much as *open* a CSV to glance at a couple of rows. The cure is to make the description *narrower and more specific* - pin it to the genuine onboarding moment ("a new bank," "a layout budgetcli doesn't already handle") rather than any mention of CSVs.
 
 If a Skill you expect to fire *doesn't*, the fix is almost always the same field, from the other direction: the description is missing the words you actually used. Add the phrasing you'd really type and try again.
 
-You can also invoke a Skill on purpose - by referencing it by name in your prompt, or from the `/skills` picker in the TUI - which is the fallback when you want the procedure right now regardless of how you phrased the ask.
+You can also invoke a Skill on purpose, and the syntax is a contract, not a suggestion: type `$import-bank-csv` in the prompt, or pick the Skill from the `/skills` picker in the CLI and the IDE extension (ChatGPT surfaces use `@` to select one). A plain-name mention in prose is not the reliable form - for a Skill configured explicit-only, the `$` form is what still works.
 
 ## Taking a Skill off the automatic menu
 
-Some procedures you never want Codex deciding to run on its own - anything expensive, slow, or state-changing where a mistimed trigger is costly. Codex gives each Skill an optional companion config file, `agents/openai.yaml`, inside the Skill directory, for exactly this kind of Codex-specific control. Treat the filename and the field names as version-sensitive, the same way you treat hook payloads: check the docs before you depend on either. Among other things it carries an invocation-policy switch - set implicit invocation off and the Skill drops off the agent's automatic menu while staying available when you name it explicitly. That turns the Skill from "fires on recognition" back into "fires only when you ask" - the line between a Skill the agent reaches for and one you keep on a leash.
+Some procedures you never want Codex deciding to run on its own - anything expensive, slow, or state-changing where a mistimed trigger is costly. Codex gives each Skill an optional config file, `agents/openai.yaml` inside the Skill directory, for exactly this kind of control. Treat the filename and the field names as version-sensitive, the same way you treat hook payloads: check the docs before you depend on either.
 
-Our `import-bank-csv` doesn't need that - it ends in a *preview* and waits for your "looks right" before the full import, so a mistimed trigger costs nothing but a glance. But it's the knob to know about, and the exact field is on the [Codex Skills page](https://learn.chatgpt.com/docs/build-skills). The `agents/openai.yaml` file is also where a Skill declares dependencies on tools it needs, which is one of the threads the [next chapter](/course/codex/extending/) picks up.
+Among its keys is an invocation policy: `allow_implicit_invocation`, true by default. Set it false and the Skill drops off the agent's automatic menu while staying available the moment you invoke it with `$` - the line between a Skill the agent reaches for and one you keep on a leash.
+
+`import-bank-csv` doesn't need the leash. It ends in a *preview* and waits for your "looks right" before the full import, so a mistimed trigger costs nothing but a glance. The same config file also declares dependencies on tools a Skill needs, and that is one of the threads the [next chapter](/course/codex/extending/) picks up.
 
 :::tip[Try it]
 Take the `description` you already wrote and try to break it in both directions. First write the situation in words you would actually use on a Tuesday, never the words in the file, and see whether the Skill still fires. Then describe a job it should stay out of and check that it does. A `description` that only fires on its own vocabulary has not been tuned yet.
 :::
 
-Look at what just moved, on all four questions this course keeps asking. Tokens: the Skill's stub cost about 80 every session, the body about 280 more only in the two sessions above that actually needed it - against six turns' worth of re-explaining, re-asking, and re-correcting the long way. Turns: six down to two. Blast radius: unchanged - you still approve the write and read the mapping before it runs. Recurrence: this is the one that changed the most. The procedure now holds *every* time a new bank shows up, not just the time you happened to remember every step.
+Count what just moved. The Skill's stub costs about ninety estimated tokens every session (derived from the SKILL.md frontmatter at the course's four-characters-per-token prose rule) and its body roughly three hundred more, only in the sessions that need it - against six turns of re-explaining and re-correcting the long way. Six turns become two. The safety shape is unchanged: you still confirm the mapping before any write. And the biggest change is durability - the procedure now holds *every* time a new format shows up, not just when you remembered every step.
 
 Keeping a Skill scoped to the right moment is half the discipline. The other half is knowing when a Skill is the wrong container entirely - when the thing you're about to write down is really a rule, or doesn't need writing down at all. [Skill, rule, or plain prompt - when does each one fit?](/course/codex/skills/vs/)

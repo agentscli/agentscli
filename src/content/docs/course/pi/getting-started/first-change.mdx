@@ -1,94 +1,101 @@
 ---
 title: Ship your first fix with Pi
 description: "Hand Pi the feed-date bug in plain English and watch the loop close without ever asking your permission - then read the diff, because nothing else will."
-sidebar:
-  label: "First change · fix, read, commit"
 ---
 
-Now the actual ticket. You already have a lead from the last lesson: dates come from `app/worker/extract.py`, which parses whatever date string it finds in a page's metadata with no fallback if the format doesn't match. That's exactly the shape of bug that makes some saved articles sort into the wrong place in your reading queue. Describe the outcome you want, the same way you'd hand it to a teammate, and let the loop you just watched do the legwork - knowing, this time, that nothing is going to stop and ask you first.
+Now the ticket. The lead from the last lesson held up: dates flow through `stash/feeds.py` (`stash` is the course's running example, a small FastAPI feed reader) into `parse_date()` in `stash/extract.py`, and the failing test - `tests/test_extract.py::test_parse_date_preserves_offset` - pins what "fixed" means. It feeds the function `Mon, 03 Feb 2026 09:00:00 +0530` and expects a datetime that still carries its offset; today the function returns `None`. Describe the outcome the way you'd hand a ticket to a teammate, and let the loop - Pi picks a tool, runs it, reads what comes back, and repeats until a reply needs no tool - do the legwork, knowing nothing will stop and ask you first.
 
-Here's the claim to check once you've read the transcript below: this whole fix closes in five tool calls - two reads, two edits, one `bash` run - and not one of them pauses to ask if it should proceed. Count them as you go.
+Here's the claim to check once you've read the two transcripts below: the whole fix closes in five tool calls - two reads, one edit, two `pytest` runs - and not one of them pauses to ask whether it should proceed. Count them as you go.
 
 ## Describe the outcome, not the steps
 
 ```text
-> saved articles are sorting into the wrong place in the reading queue -
-  looks like the date extractor can't handle every date format sites
-  actually use, and silently gets it wrong instead of failing loudly.
-  Fix the parsing and add a test that pins down a format it currently
-  gets wrong.
+> articles with timezone-offset dates are sorting into the wrong place
+  in my reading queue - the date parse silently returns None for them.
+  There's a failing test pinning the behavior I want. Make it pass
+  without weakening the test, run the tests to show me where we
+  stand, and don't fix anything else today.
 ```
 
-You didn't name a function, didn't paste the parsing code, didn't specify a test framework. Pi runs the loop from the last lesson to close the gap itself:
+You didn't say how to fix it, didn't paste code, didn't pick formats. The one instruction you did set - don't weaken the test - is what keeps "make it pass" honest; it's guidance the model weighs, not an enforced gate, which is exactly why you'll read the diff in a moment. Pi runs the loop from the last lesson to close the gap itself; the shape of the session looks like this:
 
 ```text
-  read: app/worker/extract.py
+  read: stash/extract.py
   read: tests/test_extract.py
 
-  Found it - parse_page_date() tries exactly one strptime format
-  ("%B %d, %Y") and returns None silently if it doesn't match, which
-  the caller then falls back to "now" for. I'll try a small ordered
-  list of common formats before giving up, and add a test for an
-  ISO-8601 date, which currently falls through to the "now" fallback.
-```
+  Found it. parse_date() tries two strptime formats,
+  "%a, %d %b %Y %H:%M:%S" and "%Y-%m-%dT%H:%M:%S" - neither has %z,
+  so "Mon, 03 Feb 2026 09:00:00 +0530" dies with "unconverted data
+  remains" and falls through to None. The test wants the offset
+  kept. I'll put two offset-aware formats ahead of the naive ones
+  and change nothing else.
 
-Predict the fix before you scroll further: a short ordered list of fallback formats, tried in turn, and a new ISO-8601 test that should flip from failing to passing the moment it lands - with nothing else touched. Watch the test run below to see whether that prediction holds.
+  edit: stash/extract.py
+    -     formats = ["%a, %d %b %Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]
+    +     formats = [
+    +         "%a, %d %b %Y %H:%M:%S %z",
+    +         "%Y-%m-%dT%H:%M:%S%z",
+    +         "%a, %d %b %Y %H:%M:%S",
+    +         "%Y-%m-%dT%H:%M:%S",
+    +     ]
 
-```text
-  edit: app/worker/extract.py
-    - def parse_page_date(raw: str) -> date | None:
-    -     try:
-    -         return datetime.strptime(raw, "%B %d, %Y").date()
-    -     except ValueError:
-    -         return None
-    + DATE_FORMATS = ("%B %d, %Y", "%Y-%m-%d", "%m/%d/%Y", "%d %b %Y")
-    +
-    + def parse_page_date(raw: str) -> date | None:
-    +     for fmt in DATE_FORMATS:
-    +         try:
-    +             return datetime.strptime(raw, fmt).date()
-    +         except ValueError:
-    +             continue
-    +     return None
-
-  edit: tests/test_extract.py
-    + def test_parse_page_date_handles_iso8601():
-    +     assert parse_page_date("2026-03-14") == date(2026, 3, 14)
-
-  bash: pytest tests/test_extract.py
-  → 6 passed
+  bash: pytest tests/test_extract.py -q
+  → 1 passed
 ```
 
 :::note[About the numbers]
-The transcript above is an authored illustration of a Pi session, not a captured recording. The tool-call count, the `6 passed`, and (further down) the diff stats and commit hash are declared toy numbers, built to be internally consistent with each other, not measurements of a real run. Reproduce the shape on your own `stash` clone if you want a real count.
+The transcript above is an authored illustration of a Pi session, not a captured recording; the tool-call count, the wording of the model's reply, and the commit hash further down are declared toy numbers, built to stay consistent with the real repo. The pytest outcomes are not invented - with this exact edit applied to the staged `stash`, the focused run reports `1 passed`, and the full suite, shown further down, reports `1 failed, 1 passed`. Reproduce both on your own working copy if you want numbers you watched yourself. The staged project and its starting state are described in [this module's opener](/course/pi/getting-started/); no public checkpoint is published, so any repo with a failing test you understand carries the exercise.
 :::
 
-Notice the shape: read, then a plan stated in two sentences, then edits, then a verify step it ran on its own - and at no point did it stop and wait for you to say yes. That's the loop from the last lesson, minus the beat you already know is missing, and the same five calls the opening claim asked you to count: two reads, two edits, one `bash` run. The edit to `extract.py` was already sitting on disk and the test already ran before you read a single line of it.
+Count what happened before you read a single line of the change: two reads, a plan stated in two sentences, one edit, one focused `pytest` run - four calls, each executed the instant Pi decided on it. The verify step ran because the ticket asked for it. By the time you caught up, the fix was already on disk and already green.
 
 ## Read the diff - this is the beat you have to supply yourself
 
-On an agent with an approve gate, the pause before "apply" is where you'd normally look closely. Pi doesn't give you that pause, which means the corresponding discipline has to come from you, after the fact instead of before it:
+On an agent with an approve gate, the pause before "apply" is where you'd look closely. Pi doesn't give you that pause, so the same discipline moves to after the fact:
 
 ```text
 > show me everything you changed
 ```
 
-You're reading for the same two things you'd check anywhere - *does this do what I asked*, and *did it touch anything I didn't ask about* - except here it's the only check that exists. For a self-contained date-parsing fix in a service you've only just inherited, that's a genuinely small read. **Read the diff every time regardless of how small the change looks, because the next fix you hand Pi might not be this contained, and the loop won't warn you either way.**
+You're reading for the two things you'd check anywhere - *does this do what the ticket asked*, and *did it touch anything the ticket didn't mention*. Here the read is small: one list in one function. The two original formats are still present, two offset-aware ones now sit ahead of them, and nothing else in the file moved.
+
+One detail worth noticing while you're there: `%z` also accepts a trailing `Z`, the shorthand Atom feeds use for UTC, so the second new format covers ISO dates that end in one. That comes back in the next chapter.
+
+Read the diff every time regardless of how small the change looks. The next fix you hand Pi might not be this contained, and nothing in the loop will warn you either way.
+
+## Run the whole suite before you call it done
+
+The focused run tells you your test passes; it says nothing about the rest of the repo. You inherited two failing tests when you took the project on, and this ticket only ever claimed one of them, so ask for the wider run yourself - an agent's scope rarely grows beyond its ticket unless you widen it:
+
+```text
+> now run the whole suite
+
+  bash: pytest -q
+  → 1 failed, 1 passed
+```
+
+The failure is `tests/test_feeds.py::test_fetch_feed_parses_entries`, the second inherited failure, the one the README never mentions. It hands `fetch_feed()` a sample Atom feed containing one entry and asserts one article comes back; zero do. Your fix neither caused nor cured it - the baseline was two failures, exactly one flipped, nothing new appeared. That comparison, full suite after versus baseline before, is what "done" honestly means on a codebase you just inherited.
+
+Why not chase it now? It's a different function, `fetch_feed()` in `stash/feeds.py`, and likely a different species of bug - working out what's actually wrong with it is the next chapter's opening job. The disciplined move at this moment is to stop while the working tree contains exactly one reviewed change, and put a floor under it.
 
 ## Commit the moment it's right
 
 ```text
 > commit this with a sensible message
 
-  bash: git commit -am "Try multiple date formats when parsing article dates"
-  → [main a91f2c3] Try multiple date formats when parsing article dates
-     2 files changed, 9 insertions(+), 3 deletions(-)
+  bash: git add stash/extract.py && git commit -m "Preserve timezone offsets when parsing feed dates"
+  → [main a91f2c3] Preserve timezone offsets when parsing feed dates
+     1 file changed, 6 insertions(+), 1 deletion(-)
 ```
 
-This matters more with Pi than with almost any other agent you've used. There's no approve gate holding the next instruction back, which means the very next thing you type could just as easily be a mistake as this one was a fix - and nothing built into the loop will stop it from landing. A commit at every reviewed, working checkpoint is the only floor that doesn't move: however badly the next experiment goes, the cost is capped at whatever changed since your last commit. On a codebase you've had for exactly one hour, that floor is doing a lot of the work "trust" would otherwise have to do.
+Commit now, while the tree holds exactly the change you just read - and stage that file by name rather than reaching for `git commit -a`, which would sweep in every other tracked modification you haven't reviewed. There is no approve gate holding your next instruction back, so the next thing you type could as easily be a mistake as this was a fix - and nothing built into the loop will stop it from landing.
+
+A commit at every reviewed, working checkpoint is the one floor that doesn't move. However badly the next experiment goes - including tomorrow's visit to `fetch_feed()` - the cost is capped at whatever changed since the last commit. On a codebase you've had for exactly one hour, that floor is doing a lot of the work "trust" would otherwise have to do.
 
 :::tip[Try it]
-Open stash (or your own repo) and describe the date-parsing fix to Pi in plain English. When it proposes a change, read the diff before you approve - that's the beat you have to supply yourself. If the fix looks right, commit immediately. If not, press Enter to steer and explain what you expected instead.
+Hand the date bug to Pi on your own working copy, in plain English. When the edit lands, read the diff before you type anything else - that's the beat you have to supply yourself. Then run the full suite yourself, compare failures against the two you started with, and commit if, and only if, the arithmetic matches: one flipped, none added.
 :::
 
-You just shipped a real fix - described, resolved, verified, reviewed, and committed - without Pi ever once asking your permission. That should feel like a genuine capability and a little bit unsettling at the same time. It worked, but you had almost no visibility into *why* it made the calls it made along the way - you only saw the parts it chose to print. **You shipped a change you could not see into. Now open the box** - the next module is the same four tools and the same loop, with every read, every token, and every decision it made sitting somewhere you can go look at instead of narrated after the fact. [Next: see everything](/course/pi/the-core/).
+You shipped a real fix - described in plain English, closed in five tool calls, verified against the inherited baseline, read as a diff, committed - and Pi never once asked your permission. That should feel like a capability and a small vertigo at the same time. It worked, but you watched it from the outside: you saw the parts it chose to print, not why it made the calls it made along the way.
+
+One inherited failure is still red, and it's the first thing the next chapter picks up. Before you go after it, open the box: the next chapter opens the box on those tools - the three you just watched plus the fourth this page never fired - and the same loop, with every read, every token, and every decision sitting somewhere you can go look at instead of narrated after the fact. [Next: see every read and every decision](/course/pi/the-core/).

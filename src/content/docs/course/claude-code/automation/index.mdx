@@ -1,30 +1,26 @@
 ---
-title: "Automation"
-description: "Take Claude Code unattended - on every pull request and as a nightly job - without losing the permission discipline that makes that safe."
-sidebar:
-  label: "Automation · headless, CI, loops"
+title: Run the review when nobody is watching
+description: "Take the payments review unattended - a headless Claude Code pass that reviews each pull request, and a nightly job that reruns the checks - by making the permission posture carry the weight you used to."
 ---
 
-In [Extending](/course/claude-code/extending/) you taught the agent new tricks - skills, MCP servers, the things that widen what a single session can reach. Every one of those still assumed *you* were sitting there, typing the prompt and reading the replies. This chapter cuts that cord. We take the same agent you've been driving by hand and let it run with nobody watching: once on every pull request in CI, and again as a nightly job that flags regressions before the team is awake.
+Before you trust a change to the payments service - the small TypeScript service this course uses as its running example - you run a pass by hand: `npm test`, read the diff, ask whether anything regressed. It works, and it only happens when you remember. This chapter takes that pass unattended, in two places:
 
-That shift sounds like a small thing - same tool, no terminal - but it changes the stakes completely. In an interactive session, the permission system is a safety net you mostly ignore: when the agent reaches for something dicey, it stops and asks, and you decide. Take the human out of the room and that net disappears. There is no one to answer the prompt. So everything you set up in [Permissions & modes](/course/claude-code/permissions-modes/) - allow rules, deny rules, locked-down modes - stops being a convenience and becomes the *only* thing standing between an unattended agent and a bad afternoon. Automation doesn't introduce a new safety model; it makes the one you already have load-bearing.
+- **On every trusted, same-repository pull request**, as a CI check - a headless Claude Code run (headless meaning no interactive interface: a script starts the agent, it does the work, prints its result, and exits) reviews the diff and comments before a human ever looks at it. Fork contributions need a separate workflow because GitHub withholds repository secrets from their ordinary `pull_request` jobs.
+- **Every night against `main`**, as a scheduled job - the agent reruns the checks and reviews the tree for regressions, and a fresh issue is waiting for whoever is first online when it finds one.
 
-## The job we'll automate
+In an interactive session, permissions are mostly a rhythm. The agent reaches past its rules, a prompt appears, you answer. Take the human out of the room and the prompt has nowhere to go. What you tuned in [Permissions & modes](/course/claude-code/permissions-modes/) - allow rules, deny rules, the mode dial (how much the agent may do before it has to ask) - stops being a convenience and becomes the entire safety story. Nothing ahead introduces a new safety model. The chapter removes the backstop and checks what holds.
 
-Same payments service we've been working in all course. You've got a test-and-review pass you keep running by hand before you trust a change: run the suite, look at the diff, flag anything that smells like a regression. It works, but it only happens when you remember to do it. We're going to make it run on its own, two ways:
+## The pass has to review, not merely run
 
-- **On every pull request**, as a CI check - the agent reviews the diff and comments before a human ever looks at it.
-- **Every night**, as a headless job - the agent runs the full suite against `main` and reports any regression it finds, so the first person online sees a flag instead of a surprise.
+One fact about the repo shapes both designs. The suite is green today - six tests, six passing - while known defects are still in the code: a race in `allowAsync` (`src/payments/rate-limiter.ts`, where a read and a write sit across an `await`, so two callers can both pass the limit check) and a zero-balance reporting bug ([the subagents chapter](/course/claude-code/subagents/) traces how the second one was run down). The tests catch neither. A job that only runs `npm test` would sleep as soundly as the tests do. The automated pass has to review, not merely run: the checks are one input to its verdict, not the verdict.
 
-The trick the whole chapter circles is the one above: non-interactive means no human to approve prompts, so the run either has permission to do what it needs *in advance*, or it dies the moment it reaches for something it wasn't granted. Getting that pre-grant exactly right - generous enough to finish the job, tight enough that a hijacked run can't hurt you - is the real skill of running an agent unattended.
+The trick the whole chapter circles: non-interactive means no human to approve prompts, so the run either holds permission for what it needs in advance, or it hits a wall you did not mean to build. Getting that pre-grant generous enough to finish the job and tight enough to contain a hijacked run is the real skill of running unattended. And the failure mode when you get it wrong is stranger than a crash - which is why the permissions lesson comes before the CI one:
 
-We'll build it up in order:
+- [Run Claude Code headless with the `-p` flag](/course/claude-code/automation/headless/) - drive the agent from a script, pipe the diff in, read the verdict back as text or JSON
+- [Make permissions hold when no one is there to approve](/course/claude-code/automation/permissions/) - what actually happens to a denied call in `-p`, and the three-layer posture that refuses by default
+- [Run the review on trusted pull requests with GitHub Actions](/course/claude-code/automation/ci/) - the action, its credential paths, the fork boundary, and a workflow whose permissions are actually correct
+- [Build the nightly regression loop and fence it in](/course/claude-code/automation/loops/) - compose the headless call into a scheduled job, with the guardrails that keep an unwatched run honest
 
-- [Run Claude Code headless with the `-p` flag](/course/claude-code/automation/headless/) - drive the agent from a script, pipe a prompt in, and read the result back as text or JSON
-- [Make permissions hold when no one's there to approve](/course/claude-code/automation/permissions/) - why pre-approved allow rules, `dontAsk`, and deny rules are what keep an unattended run safe
-- [Wire it into CI on every pull request with GitHub Actions](/course/claude-code/automation/ci/) - the action, the secret, and the workflow that runs the review on each PR
-- [Build the nightly regression loop and fence it in](/course/claude-code/automation/loops/) - compose headless calls into a repeatable job, with the guardrails that stop an unattended loop from doing damage
-
-By the end you'll have the payments review running in two places without you, and - more durably - a feel for the line between *delegating* a task to an agent and *abandoning* one.
+This is the course's **control** principle - what guides execution, enforces boundaries, or lets you intervene - at its widest reach. Removing yourself is justified exactly while the run stays verifiable and reversible: success checkable by evidence the run had to produce, errors recoverable because its reach is small. Every job ahead is built that way on purpose. By the end, the review runs in two places without you, and you can say where the line sits between delegating a task to an agent and abandoning one.
 
 Start with [the headless flag](/course/claude-code/automation/headless/).

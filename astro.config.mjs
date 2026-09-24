@@ -151,7 +151,7 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/claude-code/getting-started' },
 										{ label: 'Install · launch in your repo', slug: 'course/claude-code/getting-started/install' },
 										{ label: 'Sign in · first prompt', slug: 'course/claude-code/getting-started/authenticate' },
-										{ label: 'First change · read→edit→approve', slug: 'course/claude-code/getting-started/first-change' },
+										{ label: 'First change · read, edit, verify', slug: 'course/claude-code/getting-started/first-change' },
 										{ label: 'Review · diff, undo, commit', slug: 'course/claude-code/getting-started/review' },
 										{ label: 'Editor · IDE integration', slug: 'course/claude-code/getting-started/editor' },
 									],
@@ -163,10 +163,10 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/claude-code/sessions-context' },
 										{ label: 'Resume · --continue / --resume', slug: 'course/claude-code/sessions-context/resume' },
 										{ label: '/clear · reset window', slug: 'course/claude-code/sessions-context/clear' },
-										{ label: '/rewind · undo a run', slug: 'course/claude-code/sessions-context/rewind' },
-										{ label: 'Branch · checkpoints + git', slug: 'course/claude-code/sessions-context/branch' },
+										{ label: '/rewind · choose what to restore', slug: 'course/claude-code/sessions-context/rewind' },
+										{ label: 'Branch · conversation + worktrees', slug: 'course/claude-code/sessions-context/branch' },
 										{ label: '/context · /usage', slug: 'course/claude-code/sessions-context/inspect' },
-										{ label: '/compact · shrink thread', slug: 'course/claude-code/sessions-context/compact' },
+										{ label: '/compact · preserve a handoff', slug: 'course/claude-code/sessions-context/compact' },
 									],
 								},
 								{
@@ -189,7 +189,7 @@ export default defineConfig({
 										{ label: 'Enter · Shift+Tab / /plan', slug: 'course/claude-code/planning/enter' },
 										{ label: 'Approve · review, then build', slug: 'course/claude-code/planning/approve' },
 										{ label: 'Persist · save + resume a plan', slug: 'course/claude-code/planning/persist' },
-										{ label: 'Ultraplan · plan in the cloud', slug: 'course/claude-code/planning/ultraplan' },
+										{ label: 'Cloud · claude --cloud', slug: 'course/claude-code/planning/ultraplan' },
 									],
 								},
 								{
@@ -197,7 +197,7 @@ export default defineConfig({
 									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/rules-memory' },
-										{ label: 'Init · /init drafts CLAUDE.md', slug: 'course/claude-code/rules-memory/init' },
+										{ label: 'Init · /init audits your rules', slug: 'course/claude-code/rules-memory/init' },
 										{ label: 'Good rules · what earns its place', slug: 'course/claude-code/rules-memory/good-rules' },
 										{ label: 'Hierarchy · how rules layer', slug: 'course/claude-code/rules-memory/hierarchy' },
 										{ label: 'Memory · auto memory & /memory', slug: 'course/claude-code/rules-memory/memory' },
@@ -254,7 +254,7 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/claude-code/automation' },
 										{ label: 'Headless · -p, output formats', slug: 'course/claude-code/automation/headless' },
 										{ label: 'Headless permissions · dontAsk, allow, deny', slug: 'course/claude-code/automation/permissions' },
-										{ label: 'CI · GitHub Actions on every PR', slug: 'course/claude-code/automation/ci' },
+										{ label: 'CI · GitHub Actions on trusted PRs', slug: 'course/claude-code/automation/ci' },
 										{ label: 'Loops · nightly job, guardrails', slug: 'course/claude-code/automation/loops' },
 									],
 								},
@@ -263,7 +263,7 @@ export default defineConfig({
 									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/claude-code/daily-workflow' },
-										{ label: 'Inline · ! @ paste', slug: 'course/claude-code/daily-workflow/inline-input' },
+										{ label: 'Inline · ! @ input', slug: 'course/claude-code/daily-workflow/inline-input' },
 										{ label: 'Images & multi-line', slug: 'course/claude-code/daily-workflow/images-and-multiline' },
 										{ label: 'Flow · /btw /recap history', slug: 'course/claude-code/daily-workflow/staying-in-flow' },
 										{ label: 'Ergonomics · vim · /config', slug: 'course/claude-code/daily-workflow/ergonomics' },
@@ -414,10 +414,10 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/modes' },
 										{ label: 'Ask · understand before you touch', slug: 'course/copilot/modes/ask' },
-										{ label: 'Edit · a scoped change', slug: 'course/copilot/modes/edit' },
+										{ label: 'Scoped edits · name the files', slug: 'course/copilot/modes/edit' },
 										{ label: 'Agent · hand off the whole task', slug: 'course/copilot/modes/agent' },
 										{ label: 'Plan · see the plan first', slug: 'course/copilot/modes/plan' },
-										{ label: 'Switch · match the mode to the risk', slug: 'course/copilot/modes/switching' },
+										{ label: 'Switch · match the role to the risk', slug: 'course/copilot/modes/switching' },
 									],
 								},
 								{
@@ -470,7 +470,7 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/copilot/extending' },
 										{ label: 'Connect · .vscode/mcp.json', slug: 'course/copilot/extending/connect' },
 										{ label: 'Trust · confirm before it runs', slug: 'course/copilot/extending/trust' },
-										{ label: 'Scope · per-agent servers', slug: 'course/copilot/extending/scope' },
+										{ label: 'Scope · per-agent tool access', slug: 'course/copilot/extending/scope' },
 									],
 								},
 								{
@@ -478,7 +478,7 @@ export default defineConfig({
 									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/permissions' },
-										{ label: 'Levels · default, bypass, autopilot', slug: 'course/copilot/permissions/levels' },
+										{ label: 'Levels · manual, assisted, allow all', slug: 'course/copilot/permissions/levels' },
 										{ label: 'The checkpoint · risky commands', slug: 'course/copilot/permissions/the-checkpoint' },
 										{ label: 'Match · autonomy to blast radius', slug: 'course/copilot/permissions/match-to-stakes' },
 									],
@@ -498,7 +498,7 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/automation' },
 										{ label: 'Assign · hand an issue to Copilot', slug: 'course/copilot/automation/assign' },
-										{ label: 'Draft PRs · it proposes, you merge', slug: 'course/copilot/automation/draft-prs' },
+										{ label: 'Pull requests · it proposes, you merge', slug: 'course/copilot/automation/draft-prs' },
 										{ label: 'Environment · copilot-setup-steps.yml', slug: 'course/copilot/automation/environment' },
 									],
 								},
@@ -508,7 +508,7 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/copilot/beyond-vscode' },
 										{ label: 'JetBrains · near-parity, called out', slug: 'course/copilot/beyond-vscode/jetbrains' },
-										{ label: 'CLI · the terminal footnote', slug: 'course/copilot/beyond-vscode/cli' },
+										{ label: 'CLI · the terminal surface', slug: 'course/copilot/beyond-vscode/cli' },
 									],
 								},
 								{
@@ -553,7 +553,7 @@ export default defineConfig({
 									],
 								},
 							{
-								label: 'Modes · Ask, Plan, Agent, Debug',
+								label: 'Modes · Agent, Ask, Plan, Debug',
 								collapsed: true,
 								items: [
 									{ label: 'Module intro', slug: 'course/cursor/modes' },
@@ -572,12 +572,12 @@ export default defineConfig({
 								],
 							},
 							{
-								label: 'Models · Auto, Composer, MAX',
+								label: 'Models · Auto, Composer, billing',
 								collapsed: true,
 								items: [
 									{ label: 'Module intro', slug: 'course/cursor/models' },
 									{ label: 'Picker · Auto routing', slug: 'course/cursor/models/picker-and-auto' },
-									{ label: 'Pricing · Composer, pools, MAX', slug: 'course/cursor/models/pricing-pools' },
+										{ label: 'Pricing · Composer and context limits', slug: 'course/cursor/models/pricing-pools' },
 									{ label: 'Mixing · Plan then build', slug: 'course/cursor/models/mixing-models' },
 								],
 							},
@@ -598,7 +598,7 @@ export default defineConfig({
 								items: [
 									{ label: 'Module intro', slug: 'course/cursor/permissions' },
 									{ label: 'Auto-run & sandbox', slug: 'course/cursor/permissions/auto-run' },
-									{ label: 'Lists · Superseded', slug: 'course/cursor/permissions/allowlist' },
+									{ label: 'Lists · Friction controls', slug: 'course/cursor/permissions/allowlist' },
 									{ label: 'Isolation · Cloud Agents', slug: 'course/cursor/permissions/isolation' },
 								],
 							},
@@ -610,7 +610,7 @@ export default defineConfig({
 										{ label: 'Fan-out · Parallel worktrees', slug: 'course/cursor/composer-multi-agent/local-fan-out' },
 										{ label: 'Subagents · Delegated work', slug: 'course/cursor/composer-multi-agent/subagents' },
 										{ label: 'Cloud Agents · Remote VMs', slug: 'course/cursor/composer-multi-agent/cloud-agents' },
-										{ label: 'Taxonomy · Which flavour', slug: 'course/cursor/composer-multi-agent/taxonomy' },
+										{ label: 'Taxonomy · Which flavor', slug: 'course/cursor/composer-multi-agent/taxonomy' },
 									],
 								},
 								{
@@ -739,7 +739,7 @@ export default defineConfig({
 										{ label: 'MCP servers', slug: 'course/opencode/extending/mcp-servers' },
 										{ label: 'The LSP channel', slug: 'course/opencode/extending/lsp-diagnostics' },
 									{ label: 'Plugin hooks', slug: 'course/opencode/extending/plugins-hooks' },
-									{ label: 'Custom tools · registerTool', slug: 'course/opencode/extending/custom-tools' },
+									{ label: 'Custom tools · tool()', slug: 'course/opencode/extending/custom-tools' },
 								],
 							},
 							{
@@ -759,7 +759,7 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/opencode/daily-workflow' },
 										{ label: 'Codify the chore', slug: 'course/opencode/daily-workflow/custom-commands' },
 										{ label: 'Prompt well & move fast', slug: 'course/opencode/daily-workflow/prompting-and-reflexes' },
-									{ label: 'The week back', slug: 'course/opencode/daily-workflow/the-week-back' },
+									{ label: 'The OpenCode difference', slug: 'course/opencode/daily-workflow/the-week-back' },
 								],
 							},
 							{ label: 'Config reference', slug: 'course/opencode/reference' },

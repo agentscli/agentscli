@@ -1,47 +1,55 @@
 ---
 title: "Plan mode: the one Pi doesn't have"
 description: "Pi has no planning posture at all. The alternative is a PLAN.md that survives forks and restarts - build the habit, then wire it in so it sticks."
-sidebar:
-  label: "Plan mode · PLAN.md"
 ---
 
 import PlanModeStepper from '../../../../../components/interactive/PlanModeStepper.tsx';
 
-The task-discipline gate from the last lesson makes the agent finish one thing before starting the next. It says nothing about whether the *plan itself* - the shape of the three tasks, the order, what got left out - was ever any good. That's the job most tools hand to a dedicated planning mode: switch in, the agent researches read-only, drafts a plan, you approve it, then it executes. Here's what that posture looks like across the tools that have it:
+The [task-discipline gate](/course/pi/rebuild-the-defaults/task-discipline/) - a different gate from [the damage-control one](/course/pi/rebuild-the-defaults/permissions/), which guards *what* may run; this one guards *how many things at once* - makes the agent finish one thing before starting the next. It says nothing about whether the *plan itself* - the shape of the three tasks, the order, what got left out - was ever any good. That's the job most tools hand to a dedicated planning mode: switch in, the agent researches read-only, drafts a plan, you approve it, then it executes. Here's what that posture looks like across the tools that have it:
 
 <PlanModeStepper client:visible />
 
-Pi has none of this. No toggle, no read-only posture the tool enforces for you, no plan artifact the system generates on your behalf. That's not an oversight - it's the same minimalism you've been running into all module. The stated reasoning: a dedicated plan mode tends to be heavier and more permission-prompt-heavy than it needs to be, and a plain `PLAN.md` file gets you the parts that actually matter - persistence across sessions, and something you and the agent can both read and edit directly - without the mode-switching machinery on top.
+Pi has none of this. No toggle, no read-only posture the tool enforces for you, no plan artifact the system generates on your behalf. That's not an oversight - it's the same minimalism that runs through the whole module. The reasoning: a dedicated plan mode tends to be heavier and more permission-prompt-heavy than it needs to be, and a plain `PLAN.md` file gets you the parts that actually matter without the mode-switching machinery - persistence across sessions, and something you and the agent can both read and edit directly.
 
-Here's the claim to test: a plan that only ever existed in the chat transcript does not survive a `/fork` - the fork inherits the conversation, but nothing forces the model to keep re-reading an old message the way it re-reads a file. A plan written to `PLAN.md` does survive, because it isn't part of the conversation at all - it's a file on disk that gets reread. That's the whole argument for this lesson, stated as something you can go check yourself instead of a claim to take on faith.
+Here's the claim to test, stated as something you can go check rather than take on faith: a plan that only ever existed in the chat transcript stops being a reliable constraint the moment you `/fork` - the fork inherits the conversation, so the words are still there, but nothing forces the model to keep re-reading an old message the way it re-reads a file. A plan written to `PLAN.md` does survive, because it isn't part of the conversation at all - it's a file on disk that *can* be reread, and the "Trace three turns" section below wires up something that rereads it every turn. The bare file alone buys persistence, not attention; the habit is the asking, the hook is the getting.
+
+Walk the file side of that check by hand, turn by turn, below. The chat side is worth running too, with an honest label on what it tests: plan in a message, `/fork`, ask on the new branch what the plan was - and notice you are testing recall, not constraint. The fork can recite the plan perfectly from the inherited transcript and still never consult it again.
 
 ## The habit: ask for the file, not the feature
 
-There's no API here to learn, which is the point. Before a multi-step change to `stash`, you just ask for the plan as an artifact:
+There's no API here to learn, which is the point. Before a multi-step change to `stash` (the course's running example, a small FastAPI feed reader), you just ask for the plan as an artifact. The shape of the exchange looks like this (illustrative, not captured):
 
 ```text
-> Before you touch anything, write your plan for re-extracting all 300
-  saved URLs with the new rate-limited fetch worker to PLAN.md. Don't
-  start until I've reviewed it.
+> Before you touch anything, write your plan for clearing the re-sync
+  backlog to PLAN.md. Don't start until I've reviewed it.
 
   Wrote PLAN.md:
 
-  # Re-extraction: rate-limited fetch worker
-  1. Add exponential backoff + a per-domain rate limiter to worker.py
-  2. Dry-run against 5 URLs from the same domain, confirm no 429s
-  3. Batch-migrate the remaining 295 in groups of 20, sleep between groups
-  4. Re-run full-text index rebuild once extraction is clean
+  # Backlog cleanup: re-sync, backfill, README
+  1. Query /stash for feeds still holding entries with no published date
+  2. Re-sync those feeds via resync_feed, in small batches, pausing
+     between batches so one host isn't hammered
+  3. Backfill rows the re-sync skipped - the ON CONFLICT clause leaves
+     old rows stale - by re-parsing and updating them
+  4. Update the README's known-failing-test note (the suite is green)
+  5. Run pytest, then confirm /stash comes back empty
 
   Ready for your go-ahead on the plan above.
 ```
 
-Nothing about this required a mode switch. The agent used its ordinary `write` tool on an ordinary file, and stopped because you asked it to, not because a posture forced it to. That's a weaker guarantee than Claude Code's mode-enforced block on writes - an agent that ignores your instruction can still reach for `edit` mid-plan, and only the damage-control gate from two lessons ago would actually stop it. What you get in exchange: the plan is a real file, in git, that survives a `/fork`, a compaction, or a session restart in a way a chat-only plan never does.
+Nothing about this required a mode switch. The agent used its ordinary `write` tool on an ordinary file, and stopped because you asked it to, not because a posture forced it to. That's a weaker guarantee than Claude Code's mode-enforced block on writes - an agent that ignores your instruction can still reach for `edit` mid-plan, and only the enforced damage-control gate would actually stop it.
+
+What you get in exchange: the plan is a real file on disk - committed to git if you commit it - that survives a `/fork`, a compaction, or a session restart in a way a chat-only plan never does.
 
 ## Trace three turns and watch an edit stick
 
-Predict this before you trace it: you write `PLAN.md` in turn 1, hand-edit it yourself in turn 2 - say you decide the dry-run in step 2 is overkill and delete it, renumbering what's left - and in turn 3 you ask the model, in a fresh message, to restate the plan. Does it recite the version it originally wrote, or the version sitting on disk after your edit? Plant the claim: **the edit sticks by turn 3**, because nothing about the mechanism cares which turn wrote the file last.
+Predict this before you trace it: you write `PLAN.md` in turn 1, hand-edit it yourself in turn 2 - say you decide the batch pause in step 2 is overkill and delete it, renumbering what's left - and in turn 3 you ask the model, in a fresh message, to restate the plan. Does it recite the version it originally wrote, or the version sitting on disk after your edit?
 
-Turn 1: the model runs `write` on `PLAN.md` with the four-step plan above. Turn 2: you open the file yourself and delete step 2, renumbering the rest down to three steps. Turn 3: you ask "what's the plan again?" - no reference to your edit, nothing in the chat transcript mentions it happened. If the model answers with the original four-step version, the injection is stale; if it answers with your three-step version, it's reading live. Now the mechanism, which is a `before_agent_start` hook - the one you first saw in Module 5, the one that rewrites the system prompt on every turn:
+Plant the claim: **the edit sticks by turn 3**, because nothing about the mechanism cares which turn wrote the file last.
+
+Turn 1: the model runs `write` on `PLAN.md` with the five-step plan above. Turn 2: you open the file yourself and delete step 2, renumbering the rest down to four steps. Turn 3: you ask "what's the plan again?" - no reference to your edit, nothing in the chat transcript mentions it happened. If the model answers with the original five-step version, the injection is stale; if it answers with your four-step version, it's reading live.
+
+Now the mechanism, which is a `before_agent_start` hook - the one you first saw in [the hooks lesson](/course/pi/first-extension/hooks/), the one that rewrites the system prompt on every turn. Setup entry, if you dropped in here: Pi loads TypeScript files from `.pi/extensions/` at session start, so save this file there and start a fresh session (or `/reload` the open one) to activate it:
 
 ```typescript
 // .pi/extensions/plan-injector.ts
@@ -63,12 +71,20 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-The name for this is worth having, because it's the decision that makes the trace come out the way it does: call it **the open-book trick**. `readFile` runs fresh, from disk, on every single `before_agent_start` call - not once at session start, not cached anywhere in between. By turn 3, the file on disk has your three-step edit in it, so the system prompt the model sees for turn 3 has your three-step edit in it too, with no memory of the original four-step version required anywhere in the pipeline. The model isn't remembering your edit - it's re-reading the book every time instead of memorizing page one and never checking again. **Confirmed**: the edit sticks by turn 3, exactly as predicted, because the mechanism was never capable of doing anything else.
+The name for this is worth having, because it's the decision that makes the trace come out the way it does: call it **the open-book trick**. `readFile` runs fresh, from disk, on every single `before_agent_start` call - not once at session start, not cached anywhere in between. By turn 3, the file on disk has your four-step edit in it, so the system prompt the model sees for turn 3 has your four-step edit in it too. The stale five-step reply is still sitting in the conversation history - nothing can scrub that - but nothing re-injects it either, and the prompt's fresh copy is the one with the standing.
 
-Combine this with the task-discipline gate from two lessons ago and you've rebuilt most of what a dedicated plan mode buys you, minus the mode switch: the agent drafts a plan you can see and edit, commits to it in a durable file, gets reminded of it every turn, and can't skip ahead to task three before task two is marked done. The one thing you gave up is the enforced read-only research phase - on Pi, that's still a matter of you reading the plan before you say "go," not a wall the tool puts up for you. For the spec-level version of plan mode across tools, see [Foundations: Plan mode](/foundations/plan-mode/).
+The model isn't remembering your edit - the hook is re-reading the book to it every turn, instead of trusting anyone's memory of page one. **Follows by construction - for the injection.** The code above entails that turn 3's system prompt carries your four-step edit; what the model *says* remains behavior (it could still echo the stale five-step version from history, which is exactly what the two-outcome check above distinguishes). Deduction, not a captured run - and the guarantee covers the prompt, not the reply.
+
+Combine this with the task-discipline gate and you've rebuilt most of what a dedicated plan mode buys you, minus the mode switch: the agent drafts a plan you can see and edit, commits to it in a durable file, gets reminded of it every turn, and can't skip ahead to task three before task two is marked done.
+
+The one thing you gave up is the enforced read-only research phase - on Pi, a wall is available (the damage-control gate would stop a mid-plan edit), but nothing couples any wall to a planning phase: you would have to raise and lower it yourself, so in practice the check is still you reading the plan before you say "go." For the spec-level version of plan mode across tools, see [Foundations: Plan mode](/foundations/plan-mode/).
 
 ## What the open-book trick costs
 
-Zero turns - the injection never blocks anything, never asks anything, just rewrites the system prompt silently before the model sees it. But it isn't free, and the cost shows up somewhere the turn count doesn't: every character in `PLAN.md` gets re-sent as part of the system prompt, on *every single turn*, for as long as the file exists and the hook keeps reading it - whether or not that turn has anything to do with planning. Count it yourself: run `wc -w PLAN.md` after Pi writes one for a real `stash` change, and picture that word count re-entering the prompt on every remaining turn of the session, not just the ones where you're actually thinking about the plan. A four-step plan is cheap. A `PLAN.md` you never trim back down after the job is mostly done is a small, silent tax you're paying on every turn from then on - the same shape of cost as the damage-control rule file, just paid in tokens instead of turns.
+Zero turns - the injection never blocks anything, never asks anything, just rewrites the system prompt silently before the model sees it. But it isn't free, and the cost shows up somewhere the turn count doesn't: every character in `PLAN.md` gets re-sent as part of the system prompt, on *every single turn*, for as long as the file exists and the hook keeps reading it - whether or not that turn has anything to do with planning.
 
-Three gates down: what's allowed, how many things at once, and what the shape of the work is. One piece is still missing - you can't see any of this working without reading the transcript line by line. [Next: a live statusline](/course/pi/rebuild-the-defaults/statusline/).
+Count it yourself: run `wc -w PLAN.md` after Pi writes one for a real `stash` change, and picture that word count re-entering the prompt on every remaining turn of the session, not just the ones where you're actually thinking about the plan.
+
+A five-step plan is cheap. A `PLAN.md` you never trim back down after the job is mostly done is a small, silent tax you're paying on every turn from then on - the same shape of cost as the damage-control gate when idle, just paid in tokens instead of turns.
+
+Three defaults rebuilt: what's allowed, how many things at once, and what the shape of the work is. One piece is still missing - you can't see any of this working without reading the transcript line by line. [Next: a live statusline](/course/pi/rebuild-the-defaults/statusline/).

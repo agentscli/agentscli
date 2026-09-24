@@ -1,54 +1,54 @@
 ---
 title: Rewind to a checkpoint with /rewind
-description: "You came back from coffee to twenty minutes of work built on a misread. Step back to a checkpoint with /rewind instead of starting over."
-sidebar:
-  label: "/rewind · undo a run"
+description: "Choose whether to restore code, conversation, or both, then verify what the selected checkpoint actually changed."
 ---
 
-You handed the agent the next chunk of the rate-limiter feature - "add role-based checks to the API" - and went to refill your coffee. Five minutes turned into fifteen. When you sit back down, Claude Code has been *busy*: it has wired role checks into the top-level middleware, refactored three handlers around that, and written tests for the whole arrangement. There's just one problem. You meant the checks to be *per-route* - the middleware approach is exactly wrong, and it's now load-bearing under fifteen minutes of confident follow-on work.
+Back in the health session - adding `GET /healthz` beside `GET /health` in the payments service, the small TypeScript service this course uses as its running example - suppose a cleanup removes `/health` and leaves only `/healthz`. The new address still works. The older address that existing callers still use is gone, and the session is no longer tracking the requirement to keep both. This is a hypothetical wrong turn to reason through, not a claim about an edit your agent made.
 
-This is the failure mode that makes people nervous about letting an agent run: not that it does nothing, but that it does a lot, well, in the wrong direction. The instinct is to start typing corrections - "no, move those into the handlers" - and patch forward. Resist it. Patching forward from a broken base means the agent is now reasoning about *your correction* on top of *its mistake*, and the conversation fills with the tension between the two. There's a cleaner way out, and it's to pretend the last fifteen minutes didn't happen.
+A small deletion may need only a small correction. Claude Code saves a checkpoint of the session's tracked edits before each prompt you send; `/rewind` lists them. If several follow-on edits depend on the mistaken removal, inspect the checkpoint before that turn instead. Enter `/rewind`; pressing `Esc` twice with an empty prompt also opens the menu. Choose the relevant point and read the available actions before confirming. The [checkpointing reference](https://code.claude.com/docs/en/checkpointing) documents what each restores.
 
-## Stepping back
+## Choose the state that needs to change
 
-Press **Esc** twice - or type `/rewind` - to open the checkpoint picker. Claude Code quietly snapshots state at each of your turns, so the picker is a list of moments you can return to:
+The three restoration choices answer different questions:
 
-```text
-> [Esc][Esc]
+| Choice | Tracked file edits | Conversation |
+| --- | --- | --- |
+| Restore code | Return eligible files to the checkpoint | Keep the discussion |
+| Restore conversation | Leave current files in place | Return to the selected point |
+| Restore code and conversation | Return eligible files to the checkpoint | Return to the selected point |
 
-  Rewind to checkpoint:
-    now
-    "write tests for the role checks"        2 min ago
-    "add the admin override too"             9 min ago
-  ❯ "add role-based checks to the API"      16 min ago   ← right before the misread
-    "wire the limiter into /login"          40 min ago
+For the route-removal example, restoring only the conversation would leave `/health` missing. If you want to retain the explanation of the mistake while undoing eligible edits, choose code restoration. If the later discussion and edits both follow the wrong requirement, restoring both may be useful.
 
-  Restore:  ❯ code + conversation     conversation only     code only
+The code choices appear only when the checkpoint has tracked edits available to restore. Do not select a more distant checkpoint merely to find a button: it may also undo good work that followed it.
+
+## Check what came back
+
+After a restoration, inspect the working tree yourself (these commands assume the Git baseline from [the install lesson](/course/claude-code/getting-started/install/)):
+
+```bash
+git status --short
+git diff
+git diff --cached
 ```
 
-Land on the checkpoint just before the misread, and choose what comes back with you. Usually you want **code + conversation** - the files revert and the dead-end discussion vanishes, as if you'd never sent that prompt. Occasionally you'll want *conversation only* (keep the agent's reasoning visible but undo the edits) or *code only* (roll back files while keeping a note of what went wrong) - but the default is the clean slate. Pick it, and the sixteen-minute detour is gone, files and chatter both, while everything before it stays exactly intact:
+Open the file that registers the health routes. Check that the restored state is the one you intended, then run the relevant tests. If your health test file exists, use the focused command from the opening chapter, `npm test -- tests/health.test.ts`, followed by `npm test`. A success message from the rewind operation is not a test result.
+
+If you restored the conversation too, supply the requirement again before continuing:
 
 ```text
-  ⎿ Restored to 16 min ago. 4 files reverted, conversation trimmed.
-
-> the role checks are per-route, not global - add them in each handler that
-  needs them, not in the top-level middleware
-
-  [picks up from the good checkpoint, this time with the right framing]
+Keep both GET /health and GET /healthz. Before editing, inspect which
+routes currently exist and explain the smallest change still needed.
+Do not change unrelated behavior or report checks you have not run.
 ```
 
-You didn't argue the agent out of its mistake. You removed the mistake and re-asked the question better.
+This makes the next action depend on the restored files. It also keeps a correction from becoming a request to redo work that already survived.
 
-## Where the safety net has holes
+## Know when the checkpoint is the wrong tool
 
-It's worth being precise about what rewind actually covers, because getting this wrong is how people lose work. **Rewind is the agent's undo, not git.** It rolls back eligible Claude Code file changes during this session. It does not reliably restore Bash-created changes, background or subagent edits, external/manual edits, symlink or hard-link changes, anything you'd already committed, or side effects that escaped the session - a migration that already ran against your database, a branch you pushed. Those live outside the checkpoint and stay exactly as they are.
+Checkpoints cover eligible edits through Claude's file-editing tools. Shell changes, external effects, and some other editing paths are outside that coverage. Rewinding does not undo a database request or reset Git history. Use the documented [checkpoint limitations](https://code.claude.com/docs/en/checkpointing#limitations) to determine whether the change you need is covered.
 
-Which is why the habit that makes rewind *safe* lives in git. Commit at green checkpoints: every time the agent reaches a genuinely working state, lock it in with a commit. Then the two undo systems cover different scales - rewind cleans up the agent's mess *within* a working block, git holds the line *between* blocks - and there's almost no amount of agent flailing that can cost you real work. With that rhythm in place you can let the agent run on a much longer leash, because a wrong turn now costs one keystroke instead of an afternoon.
+If the expected snapshot is absent or no files are restored, stop and inspect the diff. Preserve any useful work before choosing a Git recovery operation. Do not assume repeated rewind attempts can reconstruct an unavailable version.
 
-One restraint, though: don't over-rewind. If only the *last* turn went sideways, step back one checkpoint, not five. It's tempting to nuke a big stretch out of frustration, but every checkpoint you jump past throws away good work along with the bad. Rewind to the mistake - not to before you were having a good day.
+Try the distinction on this case: the route implementation is correct, but a later discussion incorrectly claims it was never tested. Which restoration would alter the conversation without altering that code? Conversation-only restoration has that purpose; rerunning the test may be an even simpler way to establish the fact. The right move depends on what is wrong.
 
-## Back on track
-
-The role checks are right now, per-route, and the agent is moving cleanly again. The feature's nearly done - except you've reached the kind of decision the agent can't make for you. The validation layer could go two ways, and you genuinely don't know which is better until you've seen both.
-
-So instead of guessing, you're going to [build it both ways at once](/course/claude-code/sessions-context/branch/) - without letting either version contaminate the other.
+A checkpoint can help you retreat from a bad direction. [Keeping two good directions available for comparison requires a different kind of preservation](/course/claude-code/sessions-context/branch/).

@@ -1,45 +1,53 @@
 ---
 title: Clear the conversation with /clear
-description: "An unrelated bug jumps the queue. Don't drag the refactor into it - wipe the conversation with /clear and start fresh in the same session."
-sidebar:
-  label: "/clear · reset window"
+description: "Set the health-check discussion aside for a separate payments investigation without confusing a fresh conversation with a clean working tree."
 ---
 
-You're an hour into Monday's rate-limiter work when Slack lights up: the submit button on the contact form is overlapping the footer on mobile, and someone wants it fixed before a demo at noon. It's unrelated to the payments refactor in every way - different files, different part of the stack, different headspace.
+Say the health-check patch is parked: the work is recorded in a handoff note, and the discussion that produced it can wait. Before continuing it, you want to answer a separate question in the same service: where does a payment key become marked as seen? The old conversation contains route registration, app extraction, and test-server cleanup. None of those details answers this question.
 
-Here's the trap. Your session is right there, warm and full of context, so you just start typing the bug into it. But that session is saturated with the refactor: middleware code, the in-memory-LRU decision, the rate-limiting test output. All of it is still in the window, and all of it now works against you. You're paying tokens to carry it on every turn, and - worse - it's quietly steering the agent, which now reasons about a *CSS bug* through the lens of payments middleware. Ask it to fix the button and don't be surprised when it wonders aloud whether the change affects the limiter.
-
-You learned last lesson not to *resume* unrelated work. This is the same principle one step further in: don't even keep unrelated work in the *current* window. You want a clean slate - without quitting and losing your place in the terminal.
-
-## Wiping the slate
+The starting condition is an active Claude Code conversation open in a repository; the health patch and the payments service are the running example, but any parked task in your own repository serves the same purpose ([the install lesson](/course/claude-code/getting-started/install/) covers opening a session in a repo). Keep the health handoff you made ([the resume lesson](/course/claude-code/sessions-context/resume/) shows how), then enter at the prompt of that conversation:
 
 ```text
 /clear
 ```
 
-That empties the conversation and starts fresh in the same working directory, same running process. The window drops back to just the system prompt, your [rules](/foundations/rules/), and the tool definitions - none of the refactor chatter. Then you describe the actual problem into a context that has room for it and no opinions about payments:
+This starts a new conversation; the old one remains accessible through `/resume`. It does not undo the health patch. The [command reference](https://code.claude.com/docs/en/commands) documents the reset and return path. Use a separate terminal to check `git status --short` before and after if you want to see the distinction directly.
+
+## Give the new question its own evidence
+
+The new task can be read-only, so there is no need to disturb unfinished edits. An idempotency key identifies one logical request so that a retry with the same key can be recognized instead of charging twice. If you have the payments example source prepared for this course (an Express + TypeScript service with payment code under `src/payments/`), send this prompt; otherwise read the excerpt that follows, or ask the same shape of question about a function in your own repository:
 
 ```text
-> /clear
-
-  ⎿ Conversation cleared. Starting fresh.
-
-> the submit button on the contact form overlaps the footer on mobile -
-  find it and fix it
-
-  [reads src/styles/contact.css, src/components/ContactForm.tsx ...]
+Trace how this service handles a repeated idempotency key.
+Read src/payments/processor.ts and the helpers it calls.
+Where is a key first recorded? Does checking the key change any state?
+Show the supporting lines. Do not edit files or run payment requests.
 ```
 
-The agent goes straight to the stylesheet. It doesn't reach for a migration file, doesn't ask whether the button change needs a schema update, doesn't burn three thousand tokens re-reading database context it will never need. The button gets fixed, you make the demo, and when you reopen the refactor afterward it's untouched - `/clear` reset what the agent *knew*, not what it had *done*. One caveat on getting back to it: `/clear` doesn't delete the old thread, it just leaves the current window. The refactor session is still on disk, reachable from the [`/resume`](/course/claude-code/sessions-context/resume/) picker (or `claude --resume`). Don't reach for `--continue` to find it - that always reopens the *most recent* session, which after the CSS fix is the bug, not the refactor.
+In the example source, `processPayment` calls `checkIdempotency`. That helper lives in `src/utils/idempotency.ts`. Its name suggests a question, but its body also performs an action. The following is an excerpt from that starting source, not a captured agent response:
 
-## The line between clear and rewind
+```typescript
+export function checkIdempotency(key: string): boolean {
+  if (seen.has(key)) {
+    return true;
+  }
+  seen.set(key, Date.now());
+  return false;
+}
+```
 
-`/clear` starts a new conversation in the same process. It does not delete the previous transcript: the old session remains resumable through [`/resume`](/course/claude-code/sessions-context/resume/) or `claude --resume`. Still, save decisions and useful findings to disk before clearing if you need them in the new conversation. This is different from [`/rewind`](/course/claude-code/sessions-context/rewind/), which steps through checkpoints in the current session. Rewind changes session state; clear starts a fresh conversation.
+Trace a new key through those lines. It is absent, so the helper records it and returns `false`. A second call with the same key finds the entry and returns `true`. The first "check" has changed the state that the second check observes.
 
-Two smaller things, quickly. `/clear` never touches your files - every edit, staged or not, sits exactly where it was; it resets the agent's memory, not the working tree. And don't confuse it with `Ctrl+L`: that just scrolls the visible output off your screen while the entire conversation stays in context, costing exactly what it did before. If your goal is a cheaper, sharper agent and not merely a tidy terminal, `/clear` is the one that actually empties the window.
+That is a useful finding even before you decide whether it is the right design. It also limits the claim you can make: these lines show an in-memory key check with a write. They do not prove the entire payment path handles retries correctly across failures, restarts, or multiple processes. A familiar function name is not a substitute for tracing its effects.
 
-## The decision you're really making
+## The files did not get a fresh start
 
-Step back and the choice between `/clear` and the [`/compact`](/course/claude-code/sessions-context/compact/) you'll meet at the end of this chapter is the same question asked from two sides: *am I done with this line of work, or continuing it?* Done and moving to something unrelated - like that button - and you clear, dropping the thread entirely. Still on the same task but running low on room, and you'll compact, keeping the thread but condensing it. Pick the wrong one and you either throw away context you needed or keep paying for context you didn't.
+The health changes remain in the working tree throughout this investigation. A new conversation could still edit them if you asked it to. For independent code changes, you would need to manage the working files as well; the [branching lesson](/course/claude-code/sessions-context/branch/) will show that separation.
 
-For now the button is fixed and the refactor is waiting. So you `/resume` back into it, hand the agent the next chunk of the feature, and let it run while you grab coffee - which is precisely when it [misreads what you asked for](/course/claude-code/sessions-context/rewind/).
+Clearing also does not mean the model runs without system instructions, tools, or applicable project guidance. It replaces the conversation: the agent's context no longer contains the earlier discussion, while files, tools, and project guidance still enter it. Avoid treating "fresh" as either "isolated" or "unconfigured." And `Ctrl+L` is only a terminal-display action, not a substitute for a conversation reset; see the [keyboard reference](https://code.claude.com/docs/en/interactive-mode).
+
+## Bring back the right discussion
+
+Record the key-check finding in your notes, then use `/resume` to select the earlier health conversation. `--continue` would select the most recent conversation, which may now be this investigation. Before trusting the resumed discussion, compare what it or your handoff claims is finished and unfinished with the current `git status --short` and `git diff`.
+
+You have changed what you were discussing without claiming to repair the payment processor. The health patch may still be waiting exactly where you left it. [Next, consider a different problem: the conversation is right, but the agent's latest edit is wrong](/course/claude-code/sessions-context/rewind/).

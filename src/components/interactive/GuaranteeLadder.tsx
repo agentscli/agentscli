@@ -36,7 +36,7 @@ function status(
   if (sit === 'watch') return { label: 'held - you’re the gate', tone: 'good' };
   if (sit === 'late')
     return {
-      label: 'one compaction from gone',
+      label: 'slips - outweighed, not erased',
       tone: highStakes ? 'bad' : 'warn',
     };
   return { label: 'nobody in the loop', tone: highStakes ? 'bad' : 'warn' };
@@ -78,7 +78,7 @@ export default function GuaranteeLadder() {
       sit === 'watch'
         ? 'All four look fine - and that’s the trap state. While you watch, an instruction is indistinguishable from a guarantee, because you’re the enforcement. The file didn’t hold the line; you did. Move the clock.'
         : sit === 'late'
-          ? 'Hour three is where instructions quietly stop being guarantees: the session compacted, and whether any given line survived isn’t something you can see from here. The two high-stakes constraints are now running on hope.'
+          ? 'Hour three is where instructions quietly stop being guarantees: the session compacted. Your project-root rules re-enter from disk - it is the conversation around them that thins to a summary - and an instruction that is merely present still loses turns to a strong prior. The two high-stakes constraints are now running on hope.'
           : 'The 2am run: the only thing between the secrets, the untested money commit, and a mistake is the model’s memory of a file it read at session start. Nothing here holds because nothing here enforces.';
   } else if (allBest) {
     reading =

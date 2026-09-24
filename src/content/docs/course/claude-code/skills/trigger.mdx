@@ -1,17 +1,17 @@
 ---
 title: Write the description so the agent invokes the skill at the right moment
-description: "The description is the trigger surface Claude matches your request against. Tune it so the ritual fires when a PR is ready and stays quiet otherwise."
-sidebar:
-  label: "Trigger · the description"
+description: "The description is the trigger surface Claude matches your request against. Tune it so the ritual fires when a branch is ready and stays quiet otherwise."
 ---
 
-The skill runs fine when you type `/finish-pr`. But the whole point was that you *wouldn't have to* - that the agent would notice a branch is ready and run the ritual on its own. Whether that happens, and whether it happens at the *right* time, comes down almost entirely to one field: the `description`.
+A skill you have to summon is only a slash command with a longer name. The point of packaging a procedure as a skill is that the agent notices, mid-conversation, that the moment has arrived and runs it unprompted. Whether that happens - and whether it happens at the right time, rather than at every mention of the word PR - comes down almost entirely to one frontmatter field: the `description`.
 
-## How the agent decides
+The skill this lesson tunes is a branch wrap-up for a small TypeScript payments service, the example this course returns to. It lives at `.claude/skills/finish-pr/SKILL.md` in the repo, and its body runs four steps in order and stops on the first failure: `npm test`, a check that any bug fix names its regression test, `npm run lint`, `npm run build`. The [create lesson](/course/claude-code/skills/create/) shows the whole file; you can also write your own from that description alone. Typing `/finish-pr` runs it by hand. The question here is how it runs without that.
 
-Claude Code keeps every skill's `description` loaded so it always knows what's on the shelf - but the full body of a skill only loads when the skill actually fires. So the description does double duty: it's both the menu the agent reads and the trigger it matches against. When your message looks like the situation a description names, the agent pulls in that skill's instructions and follows them. When it doesn't, the skill stays closed and costs almost nothing.
+## The shelf, and its budget
 
-That means the description isn't documentation - it's the *interface*. A vague one is the number-one reason a skill sits there and never fires. The mechanics and the truncation limits are spelled out on the [skills page](https://code.claude.com/docs/en/skills); the craft is in what you put in the field.
+Claude Code loads a listing of skill names and descriptions into context - the model's working memory for the conversation - so the agent always knows what is on the shelf; a skill's full body loads only when it is invoked. The `description` therefore does double duty: it is the menu the agent reads *and* the pattern it matches your request against. When your message looks like the situation a description names, the agent pulls in that skill's instructions and follows them. When it does not, the skill stays closed and costs its menu line.
+
+The shelf has rules of its own, and they shape the field. Every skill *name* is always in the listing, but descriptions are budgeted: a skill's `description` and its optional `when_to_use` field together are truncated at 1,536 characters per skill by default. Separately, when the listing outgrows a budget that scales at about one percent of the context window, Claude Code drops descriptions starting with the skills you invoke least. Front-load the trigger - the tail of a long description is the first thing to go. The mechanics are on the [skills page](https://code.claude.com/docs/en/skills); the craft is in the field.
 
 ## Describe the situation, not the skill
 
@@ -21,7 +21,7 @@ The instinct is to write a description that says what the skill *is*:
 description: Finishes a pull request.
 ```
 
-True, useless. It names the skill; it doesn't name the *moment you'd want it*. The agent has nothing to match against, because you'd never say "finish a pull request" in those words. Compare the version from the last lesson, which names the situation and the things you'd actually type:
+True, useless. It names the skill, not the moment you would want it - and you would never say *finish a pull request* in those words. Compare the field `finish-pr` carries, which names the situation and the phrasings you actually reach for:
 
 ```text
 description: >-
@@ -30,29 +30,36 @@ description: >-
   open or push a PR, or asks to finish up a branch.
 ```
 
-The pattern that works: **what it does, then when to use it, in the user's words.** That second half - "use when the user says a change is done… ready to open or push a PR… finish up a branch" - is a list of the phrasings you actually reach for at the end of a task. Front-load the key use case, because the listing the agent sees gets truncated if it runs long, so the first sentence has to carry the trigger. You can also split the *when* into a separate `when_to_use` field if you want to keep the lead sentence tight; it's appended to the description for matching either way, and the field reference is on the [skills page](https://code.claude.com/docs/en/skills).
+The pattern: what it does, then when to use it, in your words. That second half is a list of the phrasings a wrap-up moment actually produces - *the change is done*, *ready to open the PR*, *finish up the branch*. If you want the lead sentence tight, the *when* can move to a separate `when_to_use` field; it is appended to the description in the listing and counts toward the same 1,536-character cap, so it is organization, not extra budget.
 
-## Test that it actually fires
+## Prove the recognition works
 
-A skill you only ever run by hand might as well be a slash command. So prove the recognition works. Open the project, finish some trivial change, and say the kind of thing you'd really say - without naming the skill:
+A skill you only ever run by hand might as well be a plain command. So test the trigger, not the steps: finish some small change, then say the kind of thing you would really say, without naming the skill. An illustrative run on a bug-fix branch - the wording and counts are constructed; the step order is the skill's:
 
 ```text
-> I think this charge fix is done. ready to open the PR.
+> I think the ledger fix is done - ready to open the PR
 
-  ⎿ Using skill: finish-pr
-    1. npm test - 84 passed
-    2. npm run snapshot - no change
-    3. CHANGELOG.md - added "Fix double-charge on retried requests"
-    4. npm run format:check - clean
+  Skill(finish-pr)
+  ⎿ Successfully loaded skill
 
-  All four checks pass. Snapshot is unchanged, so no contract change for
-  consumers. Ready to open the PR.
+  1. npm test - 7 passed (7)
+  2. This branch fixes a bug. Regression test: "files ledger entries
+     under the account id" in tests/ledger.test.ts.
+  3. npm run lint - clean
+  4. npm run build - compiled without errors
+
+  All four pass. The reviewer should look at the new ledger test
+  first - it fails against the old route code.
 ```
 
-The `Using skill: finish-pr` line is the recognition firing - you described a *situation*, and the agent matched it to the skill and ran the body without being told which one. That's the behavior the whole chapter is building toward. If it *doesn't* fire when you expect it to, the fix is almost always the description: it's missing the words you actually used. Add the phrasing you'd really type and try again.
+The `Skill(finish-pr)` header with its `Successfully loaded skill` subline is the recognition firing: Claude loaded the skill itself, matched from the description alone, and ran all four steps without being told which skill to use. Note what step two did on a bug-fix branch - it named the test that proves the fix, because the body told it to stop otherwise.
+
+If the skill does *not* fire when you expect it to, the fix is nearly always the description: it is missing the words you actually used. Add your real phrasing and try again. A skill that never appears at all has a configuration problem rather than a wording one, and the debugging steps are on the [debug-your-config page](https://code.claude.com/docs/en/debug-your-config).
 
 ## The opposite failure: firing too often
 
-A description tuned too broad has the reverse problem - the skill fires when you didn't want it. Imagine you'd written "use whenever working on a pull request." Now the agent runs the full four-step ritual the moment you *mention* a PR, even when you're just asking a question about one. The cure is to make the description *narrower and more specific* - pin it to the genuine end-of-work moment ("ready to open or push," "finish up the branch") rather than any mention of PRs.
+A description tuned too broad fails the other way: the skill fires when you did not want it. Write *use whenever working on a pull request* and the agent runs the full ritual the moment you mention a PR - including the moment you ask a question about one. The cure is narrowing: pin the description to the genuine end-of-work moment (*ready to open or push*, *finish up the branch*) rather than to any appearance of the topic.
 
-And for a procedure with real side effects - one that pushes, deploys, or sends - you may not want the agent deciding *on its own* that the moment has come at all. Claude Code has a switch for exactly that: a frontmatter flag that takes a skill off the agent's automatic menu while leaving `/finish-pr` working by hand. That turns the skill from "fires on recognition" back into "fires only when I say so" - which is precisely the line between a skill and a slash command. Which is the distinction worth getting straight, because it's the same question for half the things you might build. [Skill, command, or subagent - when does each one fit?](/course/claude-code/skills/vs/)
+There is a stronger form of that worry. A procedure with real side effects - one that pushes, deploys, sends, or spends - should arguably not fire on the agent's judgment at all. Claude Code has a switch for exactly that: `disable-model-invocation: true` takes the skill out of the listing entirely, so recognition is off and the ritual runs only when you type `/finish-pr`.
+
+That is command behavior restored - fires when I say so - and drawing that line deliberately is what the next lesson is for. [Skill, command, or subagent: which one does the job want?](/course/claude-code/skills/vs/)

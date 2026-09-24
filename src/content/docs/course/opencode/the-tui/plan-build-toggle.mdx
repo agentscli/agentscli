@@ -1,26 +1,24 @@
 ---
 title: Tab between plan and build
 description: "Outline the restructure before a line gets written, then execute it in the same thread. One Tab each way - and because these are agents, the policy moves too."
-sidebar:
-  label: "Plan ⇄ build · one key"
 ---
 
-The dedupe layer is the part of `feedmill` you trust least. Two feeds publish the same story under different GUIDs, a third re-syndicates it with a tweaked title, and the current code catches maybe half of them - so your reading queue fills with the same article three times. You want to restructure it. But this is exactly the kind of change where letting the agent start editing on its first instinct is how you end up with a clever rewrite of the wrong thing. You want a plan first - a real one, that you read and push back on - and *then* the execution, without losing the thread between them.
+The dedupe layer is the part of `feedmill` - the course's illustrative Go feed aggregator - that you trust least. Two feeds publish the same story under different GUIDs, a third re-syndicates it with a tweaked title, and the current code catches maybe half of them - so your reading queue fills with the same article three times. You want to restructure it. But this is exactly the kind of change where letting the agent start editing on its first instinct is how you end up with a clever rewrite of the wrong thing. You want a plan first - a real one, that you read and push back on - and *then* the execution, without losing the thread between them.
 
-In a lot of agents that means two separate sessions: one to think, one to do. OpenCode collapses it into a single keystroke, because planning and building aren't two modes of one agent - they're two agents you switch between with **Tab**.
+OpenCode keeps both in one thread and one keystroke apart, because planning and building aren't two modes of one agent - they're two agents you switch between with **Tab**.
 
 ## Plan and build are agents, not a switch
 
-OpenCode ships two primary agents out of the box:
+OpenCode ships two primary agents out of the box - the agents you talk to directly, as opposed to the subagents they can delegate to (as of September 2026; [agents documentation](https://opencode.ai/docs/agents/)):
 
 - **`build`** - the default. Full edit access; it can write files and run commands.
-- **`plan`** - gated by design. It reads, greps, and reasons freely, but file edits and bash are set to *ask*, so every change is held behind an approval prompt - nothing lands silently while it's supposed to be thinking about the dedupe layer.
+- **`plan`** - restricted by design. It reads, greps, and reasons freely, but its permission map denies the edit tools, so no edit-tool call lands in your code while it's supposed to be thinking about the dedupe layer (it can still write its own plan files under `.opencode/plans/`). It does not gate bash unless you add a rule, so a shell command such as `gofmt -w` can still change files (as of September 2026, v1.18.32, per the `plan` definition in [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts); the agents documentation describes edits and bash as set to *ask*).
 
-`Tab` cycles between them - the default binding for the `agent_cycle` keybind - and `Shift+Tab` cycles back (`agent_cycle_reverse`). This is the thing to internalize: you're not flipping a "plan mode" flag on one agent. You're handing the same conversation to a *different* agent with a *different* permission policy. That distinction is the whole reason the workflow below is safe.
+`Tab` cycles between them - the default binding for the `agent_cycle` keybind - and `Shift+Tab` cycles back (`agent_cycle_reverse`; [keybinds documentation](https://opencode.ai/docs/keybinds/)). This is the thing to internalize: you're not flipping a "plan mode" flag on one agent. You're handing the same conversation to a *different* agent with a *different* permission policy. That distinction is why edit-tool calls in `plan` are refused while edits in `build` go through.
 
-## Plan the restructure behind an approval gate
+## Plan the restructure where edits are refused
 
-Tab into `plan` and describe the outcome, not the steps - the same way you would in `build`, except now you know nothing gets written without your say-so while you're talking:
+Tab into `plan` and describe the outcome, not the steps - the same way you would in `build`, except now no edit-tool call can change your code while you're talking, unless your config allows it. A top-level `"permission"` rule for `edit` (or `"*"`) in `opencode.json` is applied after `plan`'s built-in deny, and the last matching rule wins, so a global `"edit": "ask"` turns the refusal into a prompt and a global `"allow"` removes it; put a rule meant for one agent under `"agent"` instead. Bash is still allowed, so if shell commands must wait for you too, add `"agent": { "plan": { "permission": { "bash": "ask" } } }` to your `opencode.json` (as of September 2026; agent permissions merge over the defaults in [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts)). An illustrative exchange:
 
 ```text
 plan ›
@@ -28,22 +26,21 @@ plan ›
   dedupe works today and sketch how you'd restructure it to catch those -
   don't change anything yet, just the approach.
 
-  • Read internal/dedupe/dedupe.go, internal/dedupe/hash.go,
-    internal/feed/item.go                                        (3 files)
+  • Read internal/dedupe/hash.go, internal/adapter/normalise.go  (2 files)
 
-  Today dedupe keys on a SHA-1 of the raw GUID, so a story re-syndicated
-  under a new GUID - or the same GUID with an edited title - reads as new.
-  How I'd restructure it:
+  Today dedupe keys on an FNV-64a hash of the feed URL plus the entry ID,
+  so a story re-syndicated into another feed - or under a new ID - reads
+  as new. Here's how I'd restructure it:
 
   1. Split dedupe into two passes: an exact pass (GUID/link) and a fuzzy
      pass (normalized title + published-date window).
-  2. Move the hashing out of dedupe.go into a Fingerprint type in hash.go
-     so both passes share one normalization path.
+  2. Add a Fingerprint type in hash.go so both passes share one
+     normalization path.
   3. Add a small content-similarity check behind an interface, so the
      fuzzy pass is swappable later without touching the caller.
 
-  This touches dedupe.go, hash.go, and the Store call in sync.go. I have
-  not changed any files.
+  This edits hash.go and adds a new dedupe.go beside it. I have not
+  changed any files.
 ```
 
 It read the real code before sketching anything - you can see which files - and came back with a plan you can actually argue with, not a vague intention. So argue with it, still in `plan`:
@@ -60,7 +57,7 @@ plan ›
   No code written.
 ```
 
-That second turn is the payoff of the gated agent. You shaped the design - narrowed it away from a genuinely dangerous behavior for a feed reader - across two turns, and not once did an edit slip in mid-conversation while you were still reasoning. The `plan` agent's permission policy held every change behind a prompt for you.
+That second turn is the payoff of the restricted agent. You shaped the design - narrowed it away from a genuinely dangerous behavior for a feed reader - across two turns, and no edit tool was available to slip a change in while you were still reasoning. The `plan` agent's permission policy denied the edit tools for the whole exchange.
 
 ## Tab back to build and execute the same plan
 
@@ -73,22 +70,20 @@ build ›
 
   ⏵ Edit internal/dedupe/hash.go
     + type Fingerprint struct { ... }
-  Allow this edit? › Yes / No
-
-  ⏵ Edit internal/dedupe/dedupe.go        → approved
-  ⏵ Edit internal/feed/sync.go            → approved
+  ⏵ Create internal/dedupe/dedupe.go
+  ⏵ Create internal/dedupe/dedupe_test.go
 
   ⏵ Run  go test ./internal/dedupe/...
-    • ok  feedmill/internal/dedupe  0.21s
+    • ok  github.com/example/feedmill/internal/dedupe  0.21s
 
   Done. dedupe now runs an exact pass then a conservative fuzzy pass;
   the fuzzy pass records a merged-into pointer instead of dropping items.
 ```
 
-The permission policy is the difference between the two agents: `build` carries full edit access - edits land unless you've gated them yourself, as you did in chapter one - where `plan` gates file edits and bash behind that prompt by default. Same thread, same context, different agent, different rules. You planned with one and built with the other, and the handoff cost you exactly one keystroke and zero re-explaining.
+That illustrative transcript runs on stock permissions, so the edits and the test run landed without a prompt. The permission policy is the difference between the two agents: `build` edits files and runs commands without asking by default, because most permissions default to allow, while `plan` denies file edits and leaves bash at allow ([permissions documentation](https://opencode.ai/docs/permissions/) for the defaults and [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts) for `plan`, as of September 2026). If your `opencode.json` (the project's config file) gates `build`'s edits with `"agent": { "build": { "permission": { "edit": "ask" } } }`, as the [first-change lesson](/course/opencode/getting-started/first-change/) does, each of those edits waits for your approval instead. Same thread, same context, different agent, different rules. That is the **control** principle, the part of the setup that decides what the agent may do without asking, and here it travels with the agent while the context travels with the conversation. You planned with one and built with the other, and the handoff cost you exactly one keystroke and zero re-explaining.
 
 ## When two agents aren't enough, make a third
 
-`plan` and `build` are just the two primary agents that ship by default - the design isn't limited to them. A custom primary agent can define its own permission profile and sit in the same `Tab` cycle. On `feedmill` the obvious one is a `review` primary: gated like `plan`, but with a prompt and a model tuned for auditing diffs rather than designing them, so after a `build` run you can Tab to `review` for a cold second read before you commit. You'll write one in [Make the TUI yours](/course/opencode/the-tui/keybinds-and-themes/); for now the point is just that the plan/build toggle is the *visible* case of a general mechanism - primary agents you cycle through, each with its own leash.
+`plan` and `build` are just the two primary agents that ship by default - the design isn't limited to them. A custom agent can define its own permission profile and join the same `Tab` cycle: what puts an agent in the cycle is its `mode` field, which takes the values `primary`, `subagent`, or `all` (`primary` and `all` join the cycle, `subagent` does not; the default is `all` when unset; as of September 2026, [agents documentation](https://opencode.ai/docs/agents/)). On `feedmill` the obvious one is a `review` primary: restricted like `plan`, but with a prompt and a model tuned for auditing diffs rather than designing them, so after a `build` run you can Tab to `review` for a cold second read before you commit. You'll write one in [the custom agents lesson](/course/opencode/subagents/custom-subagent/); for now the point is just that the plan/build toggle is the *visible* case of a general mechanism - primary agents you cycle through, each with its own leash.
 
-The move you just learned - outline behind an approval gate, Tab, execute - is the one you'll reach for on every change big enough to deserve a plan. That's the last of the TUI's default behaviours. What's left is bending the ones you've met to fit your hands. [Next: make the TUI yours](/course/opencode/the-tui/keybinds-and-themes/).
+The move you just learned - outline where the edit tools are denied, Tab, execute - is the one you'll reach for on every change big enough to deserve a plan. The last TUI lesson changes the keys and the theme themselves. [Next: make the TUI yours](/course/opencode/the-tui/keybinds-and-themes/).
