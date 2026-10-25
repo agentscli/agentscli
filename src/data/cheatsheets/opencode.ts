@@ -2,9 +2,10 @@
  * OpenCode cheatsheet facts - the single source of truth for the cheatsheet
  * renderer and the foundations page.
  *
- * FACT-BOUND. Verification, 2026-08-18:
- *   - CLI flags and subcommands: read from the installed `opencode --help`
- *     and subcommand help, v1.4.7; marked `firsthand`.
+ * FACT-BOUND. Verification, 2026-10-25:
+ *   - CLI flags and subcommands: read from `opencode --help` and every
+ *     subcommand's help on opencode-ai@1.19.4 (capture in the research
+ *     folder, cli-help-v1.19.4.txt); marked `firsthand`.
  *   - TUI, config, agents, permissions, MCP, plugins, skills, and server:
  *     official docs at opencode.ai/docs; marked `documented`.
  *   - This page describes the v1 config shape used by the installed binary.
@@ -45,12 +46,12 @@ const OC = "https://opencode.ai/docs";
 export const opencodeCheatsheet: Cheatsheet = {
   tool: "opencode",
   label: "OpenCode",
-  version: "1.4.7",
-  checkedAt: "2026-08-18",
+  version: "1.19.4",
+  checkedAt: "2026-10-25",
   sources: [
-    "Installed binary: opencode --help and subcommand help (v1.4.7, first-hand)",
+    "Installed binary: opencode --help and subcommand help (v1.19.4, first-hand)",
     "GitHub repository: https://github.com/anomalyco/opencode",
-    "Installed-version release: https://github.com/anomalyco/opencode/releases/tag/v1.4.7",
+    "Installed-version release: https://github.com/anomalyco/opencode/releases/tag/v1.19.4",
     `${OC}/cli`,
     `${OC}/tui`,
     `${OC}/config`,
@@ -63,7 +64,7 @@ export const opencodeCheatsheet: Cheatsheet = {
     `${OC}/server`,
   ],
   intro:
-    "OpenCode is a provider-agnostic, terminal-first coding agent. Rows marked binary were checked against installed v1.4.7; rows marked docs are from current OpenCode v1 documentation and may describe features added after that binary. OpenCode 2 is GA (`@opencode/cli`, docs at opencode.ai/v2/docs); the config examples here target v1, and rows with an `OpenCode 2:` note differ there (as of October 2026).",
+    "OpenCode is a provider-agnostic, terminal-first coding agent. Rows marked binary were checked against v1.19.4 (the npm `opencode-ai` latest on 2026-10-25); rows marked docs are from the OpenCode v1 documentation. OpenCode 2 is GA (`@opencode/cli`, docs at opencode.ai/v2/docs); the config examples here target v1, and rows with an `OpenCode 2:` note differ there (as of October 2026).",
 
   categories: [
     {
@@ -98,6 +99,7 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "opencode upgrade [target]",
           desc: "Upgrade to the latest release or a specific target version.",
+          note: "Choose the installer with `--method` (`curl`, `npm`, `pnpm`, `bun`, `brew`, `choco`, `scoop`). `--major` upgrades to OpenCode 2 and removes OpenCode 1.",
           conf: "firsthand",
         },
         {
@@ -108,14 +110,14 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "opencode auth login",
           desc: "Alias for provider login; choose a provider and authenticate.",
-          note: "The canonical v1 command is also `opencode providers login`.",
+          note: "`auth` is an alias of `opencode providers`; `opencode providers login [url]` is the canonical form.",
           conf: "firsthand",
           doc: `${OC}/providers`,
         },
         {
           cmd: "opencode auth list",
           desc: "List configured providers and credentials.",
-          note: "Alias: `opencode providers list`.",
+          note: "Alias: `opencode providers list` (also `ls`).",
           conf: "firsthand",
           doc: `${OC}/providers`,
         },
@@ -181,11 +183,11 @@ export const opencodeCheatsheet: Cheatsheet = {
           cmd: "opencode export [sessionID]",
           desc: "Export session data as JSON.",
           conf: "firsthand",
-          note: "OpenCode 2: `opencode session export <id>` (adds `--sanitize`).",
+          note: "Add `--sanitize` to redact sensitive transcript and file data. OpenCode 2: `opencode session export <id>`.",
         },
         {
           cmd: "opencode import <file>",
-          desc: "Import session data from a JSON file or URL.",
+          desc: "Import session data from a JSON file.",
           conf: "firsthand",
           note: "OpenCode 2: `opencode session import <file>`.",
         },
@@ -347,14 +349,14 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "opencode --auto",
           desc: "Auto-approve requests that are not explicitly denied.",
-          note: "Current v1 docs feature; not advertised by installed v1.4.7. Explicit `deny` rules still win; `opencode run --auto` works too.",
+          note: "Listed in v1.19.4 `--help` for both `opencode` and `opencode run`. Explicit `deny` rules still win.",
           conf: "documented",
           doc: `${OC}/permissions`,
         },
         {
-          cmd: 'opencode run --dangerously-skip-permissions "<prompt>"',
+          cmd: 'opencode run --auto "<prompt>"',
           desc: "Auto-approve permissions that are not explicitly denied in a headless run.",
-          note: "Dangerous: use only in a deliberately isolated environment. OpenCode 2: use `opencode run --auto`.",
+          note: "Dangerous: use only in a deliberately isolated environment. Earlier v1 builds called this `--dangerously-skip-permissions`; v1.19.4 `opencode run --help` lists only `--auto`. OpenCode 2 also uses `opencode run --auto`.",
           conf: "firsthand",
           doc: `${OC}/permissions`,
         },
