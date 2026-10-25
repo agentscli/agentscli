@@ -1645,7 +1645,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "shift+tab",
         "macKeys": "shift+tab",
-        "desc": "Cycle the collaboration mode.",
+        "desc": "Cycle the collaboration mode (Default or Plan; those are the only two visible in the TUI).",
         "ctx": "global",
         "origin": "tool-specific",
         "conf": "source-code",
@@ -9083,7 +9083,7 @@ export const KM_TASKS: KmTask[] = [
         "k": "Shift+Tab",
         "m": "Shift+Tab",
         "all": "shift+tab",
-        "d": "Cycle the collaboration mode."
+        "d": "Cycle the collaboration mode (Default or Plan; those are the only two visible in the TUI)."
       },
       "copilot:tui": {
         "k": "Shift+Tab",

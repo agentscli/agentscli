@@ -747,7 +747,7 @@ export default defineConfig({
 									collapsed: true,
 									items: [
 										{ label: 'Module intro', slug: 'course/opencode/share-and-headless' },
-										{ label: 'Share a session', slug: 'course/opencode/share-and-headless/share-links' },
+										{ label: 'Sharing (discontinued)', slug: 'course/opencode/share-and-headless/share-links' },
 										{ label: 'Run headless', slug: 'course/opencode/share-and-headless/headless-run' },
 										{ label: 'Server, CI & GitHub', slug: 'course/opencode/share-and-headless/server-and-ci' },
 									],

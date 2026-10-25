@@ -277,7 +277,7 @@ trust_level = "trusted"`,
                 example: `name = "reviewer"
 description = "Reviews a diff for bugs, performance, and security issues."
 developer_instructions = "..."
-model = "gpt-5.4"`,
+model = "gpt-6.1-sol"`,
                 chapter: CHAPTER.subagents,
               },
               {
@@ -894,7 +894,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 example: `---
 description: Read-only auditor for security findings
 mode: subagent
-model: anthropic/claude-sonnet-4-6
+model: anthropic/claude-sonnet-5-5
 permission:
   edit: deny
   bash: { "*": ask, "git *": allow }
@@ -1061,7 +1061,7 @@ permission:
                 oneLiner: 'TypeScript extensions: custom tools, commands, and hooks in one API.',
                 when: 'Scanned at startup - but only after the project is trusted.',
                 description:
-                  'Each extension is a `.ts` file (or a directory with an `index.ts`) exporting a function over `ExtensionAPI` - no build step; Pi transpiles on load. This one surface carries what other tools split across MCP configs, hook files, and command directories. An untrusted clone skips the folder silently.',
+                  'Each extension is a `.ts` file (or a directory with an `index.ts`) exporting a function over `ExtensionAPI` - no build step; Pi transpiles on load. This one surface carries what other tools split across hook files and command directories. An untrusted clone skips the folder silently.',
                 tips: [
                   '`pi -e ./file.ts` loads one extension for a single run - the fast way to try an idea.',
                   '`/reload` picks up extension edits without losing the conversation.',
@@ -1143,7 +1143,7 @@ next step (retry, skip, or needs a new source adapter).`,
             type: 'folder',
             oneLiner: 'Your entire personal Pi setup - settings, models, credentials, trust.',
             description:
-              'The global tier of Pi\'s two-tier config. Notably absent from this map: no `mcp.json` and no `agents/` directory - MCP arrives via community extensions, and a subagent is just `pi` spawning `pi`. Mirrored `prompts/` and `themes/` directories work exactly like their project copies.',
+              'The global tier of Pi\'s two-tier config. Notably absent from this map: no `agents/` directory - a subagent is just `pi` spawning `pi`. MCP is built in since 0.99.0: user-level servers live in `~/.pi/agent/mcp.json` (project overrides in `.pi/mcp.json` once trusted). Mirrored `prompts/` and `themes/` directories work exactly like their project copies.',
             chapter: CHAPTER.configuration,
             children: [
               {

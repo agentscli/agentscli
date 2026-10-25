@@ -5,7 +5,7 @@ import './lever-staircase.css';
 import { useWidgetFrame } from './widget-frame';
 
 /**
- * LeverStaircase — the six context-engineering levers drawn as a climbable
+ * LeverStaircase - the six context-engineering levers drawn as a climbable
  * staircase. Steps are buttons (native keyboard access); the selected rung
  * details its cost, assumption, and first win, with a link to the owning
  * foundations chapter. No auto-play, no state to reset beyond selection.

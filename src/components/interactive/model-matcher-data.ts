@@ -147,15 +147,15 @@ export const mmtTools: MmtToolSpec[] = [
     label: 'OpenCode',
     tiers: {
       flagship: {
-        model: 'anthropic/claude-opus-4-7',
+        model: 'anthropic/claude-opus-5-5',
         note: 'An example - OpenCode refs are `provider/model`, and any of ~75 providers can fill either side. Zen curates the tested combinations.',
       },
       default: {
-        model: 'anthropic/claude-sonnet-4-6',
+        model: 'anthropic/claude-sonnet-5-5',
         note: 'An example - every agent carries its own `model`, so “the default” is whatever your build agent says it is.',
       },
       light: {
-        model: 'anthropic/claude-haiku-4-5',
+        model: 'anthropic/claude-haiku-5-5',
         note: 'An example - a small Gemini, Groq-hosted model, or a local Ollama model slots in the same way.',
       },
     },
@@ -183,15 +183,15 @@ export const mmtTools: MmtToolSpec[] = [
     label: 'Cursor',
     tiers: {
       flagship: {
-        model: 'Opus 4.7 · GPT-5 · Gemini 3 Pro',
+        model: 'Opus 5.5 · GPT-5.6 Sol · Gemini 4 Argon',
         note: 'Caveat: MAX Mode changes context and pricing behavior; model-specific activation and per-request override availability vary by Cursor release.',
       },
       default: {
-        model: 'Sonnet 4.6 · Composer',
+        model: 'Sonnet 5.5 · Composer 2.5',
         note: 'Or skip the choice: Auto Mode has Cursor pick a model balancing intelligence, cost, and reliability from a discounted pool.',
       },
       light: {
-        model: 'Haiku 4.5 · Gemini Flash',
+        model: 'Haiku 5.5 · Gemini 3.8 Flash',
         note: 'The fast end of the built-in roster.',
       },
     },
@@ -210,7 +210,7 @@ export const mmtTools: MmtToolSpec[] = [
       },
     },
     roster:
-      'Multi-vendor built-in roster: Anthropic, OpenAI, Google, xAI, Moonshot, plus Cursor’s own Composer family. Auto Mode draws from a discounted Auto + Composer pool.',
+      'Multi-vendor built-in roster: Anthropic, OpenAI, Google, xAI, and others, plus Cursor’s own Composer family. Auto Mode draws from a discounted Auto + Composer pool.',
   },
   {
     id: 'copilot',
@@ -232,7 +232,7 @@ export const mmtTools: MmtToolSpec[] = [
     scopes: {
       session: {
         code: '/model',
-        how: 'VS Code: the model picker in chat. CLI: `/model` at runtime - the default is Claude Sonnet 4.5.',
+        how: 'VS Code: the model picker in chat. CLI: `/model` at runtime - the default is `claude-sonnet-5.5`; `--model=auto` lets Copilot pick.',
       },
       launch: {
         how: 'The CLI can point at custom providers via environment variables - OpenAI-compatible, Azure, Anthropic, or a local Ollama.',

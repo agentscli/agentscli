@@ -5,7 +5,7 @@
  * with src/content/tool-instructions/<tool>/permissions.mdx.
  *
  * Claude Code: allow/ask/deny rule lists, evaluated deny > ask > allow,
- * unmatched actions fall through to the default (ask). The example policy
+ * unmatched actions fall through to the permission mode (Manual: ask; auto: classifier). The example policy
  * and the per-command walks below are hand-authored against that order.
  */
 
@@ -103,7 +103,7 @@ export const ccScenarios: CcScenario[] = [
       { list: 'allow', text: 'No allow rule matches either.' },
       {
         list: 'default',
-        text: 'Nothing matched - falls through to the default: ask you.',
+        text: 'Nothing matched - falls through to the permission mode. In Manual mode that means ask you; since v2.1.283 sessions start in auto mode, where a classifier reviews the action instead.',
       },
     ],
   },
@@ -130,7 +130,7 @@ export const cxSandboxes = [
 ];
 
 export const cxApprovals = [
-  { id: 'untrusted', label: 'untrusted', blurb: 'ask for every action' },
+  { id: 'granular', label: 'granular', blurb: 'keep chosen prompt categories interactive, auto-reject the others' },
   { id: 'on-request', label: 'on-request', blurb: 'agent decides when to ask' },
   { id: 'never', label: 'never', blurb: 'never ask' },
 ];
@@ -189,7 +189,7 @@ export const ocAgents = [
   {
     id: 'plan',
     label: 'plan',
-    permissions: { read: 'allow', edit: 'ask', bash: 'ask' } as Record<string, Verdict>,
+    permissions: { read: 'allow', edit: 'deny', bash: 'ask' } as Record<string, Verdict>,
   },
 ];
 

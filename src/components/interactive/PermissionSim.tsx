@@ -132,10 +132,10 @@ function CodexPanel() {
     verdict = 'blocked';
     explanation =
       'The sandbox rejects this before the approval policy is ever consulted. Two gates, in sequence - the sandbox is the outer one.';
-  } else if (approval === 'untrusted') {
+  } else if (approval === 'granular') {
     verdict = 'ask';
     explanation =
-      'The sandbox permits it, and the `untrusted` policy asks before every action.';
+      'The sandbox permits it. A `granular` policy keeps chosen prompt categories interactive and rejects the rest automatically; this sketch assumes the category for this action is left interactive, so it asks.';
   } else if (approval === 'on-request') {
     verdict = 'allow';
     explanation =

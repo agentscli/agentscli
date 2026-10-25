@@ -69,7 +69,9 @@ export const hookTools: HookTool[] = [
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "command": "scripts/check-bash-command.sh"
+        "hooks": [
+          { "type": "command", "command": "scripts/check-bash-command.sh" }
+        ]
       }
     ]
   }
@@ -113,7 +115,7 @@ export const hookTools: HookTool[] = [
     label: 'Codex',
     configNote:
       'Declared in `config.toml` under `[hooks]` (or a standalone `hooks.json`), at user (`~/.codex/`) or project (`.codex/`) level; managed hooks via `requirements.toml`. Hooks receive a JSON payload on stdin (`session_id`, `cwd`, `hook_event_name`, `model`, …).',
-    phases: ['Session opens', 'Each turn', 'Each tool call', 'Session ends'],
+    phases: ['Session opens', 'Each turn', 'Each tool call', 'Special moments', 'Session ends'],
     events: [
       {
         id: 'cx-session-start',
@@ -162,6 +164,20 @@ matcher = "Bash"
         blocking: 'The hook can decide allow or deny instead of prompting you.',
       },
       {
+        id: 'cx-pre-compact',
+        name: 'PreCompact',
+        phase: 'Special moments',
+        kind: 'reactive',
+        fires: 'Before the context window is compacted.',
+      },
+      {
+        id: 'cx-subagent-stop',
+        name: 'SubagentStop',
+        phase: 'Special moments',
+        kind: 'reactive',
+        fires: 'When a subagent terminates.',
+      },
+      {
         id: 'cx-stop',
         name: 'Stop',
         phase: 'Session ends',
@@ -185,7 +201,7 @@ matcher = "Bash"
         phase: 'Files',
         kind: 'reactive',
         fires: 'After the agent edits a file. Classic use: lint the touched file.',
-        exampleTitle: '.opencode/plugin/lint.ts',
+        exampleTitle: '.opencode/plugins/lint.ts',
         example: `export default ({ project, client, $ }) => ({
   'file.edited': async (event) => {
     await $\`pnpm lint \${event.path}\`;

@@ -1,5 +1,5 @@
 /**
- * LeverStaircase — the six context-engineering levers in climb order for
+ * LeverStaircase - the six context-engineering levers in climb order for
  * the blog post "The Gap".
  *
  * Evergreen widget: encodes the site's own lever model (rules → skills →
@@ -33,7 +33,7 @@ export const levers: Lever[] = [
     key: 'skills',
     name: 'Skills',
     cost: 'A day, once. Package the procedure, not just the fact.',
-    assumes: 'The team repeats this workflow — the agent should follow your runbook, not improvise a generic one.',
+    assumes: 'The team repeats this workflow - the agent should follow your runbook, not improvise a generic one.',
     firstWin: 'A repeated task comes back done your way, first try.',
     href: '/foundations/skills/',
   },
@@ -41,7 +41,7 @@ export const levers: Lever[] = [
     key: 'mcp',
     name: 'MCP servers',
     cost: 'A server install plus scopes. The heaviest lift of the middle rungs.',
-    assumes: 'The knowledge lives in other systems — Jira, Postgres, Figma — not in the repo.',
+    assumes: 'The knowledge lives in other systems - Jira, Postgres, Figma - not in the repo.',
     firstWin: 'The agent checks the actual schema itself; you stop copy-pasting `\d users`.',
     href: '/foundations/mcp-servers/',
   },
@@ -49,7 +49,7 @@ export const levers: Lever[] = [
     key: 'subagents',
     name: 'Subagents',
     cost: 'A config and a prompt per chamber.',
-    assumes: 'Exploration is polluting the main thread — the messy search belongs in isolation.',
+    assumes: 'Exploration is polluting the main thread - the messy search belongs in isolation.',
     firstWin: 'The main line stays clean; the haystack search happens off-stage.',
     href: '/foundations/subagents/',
   },
@@ -57,7 +57,7 @@ export const levers: Lever[] = [
     key: 'hooks',
     name: 'Hooks',
     cost: 'One hook entry per check. Deterministic, so cheap to reason about.',
-    assumes: 'A rule must hold even when the model ignores it — format, lint, the migration rule.',
+    assumes: 'A rule must hold even when the model ignores it - format, lint, the migration rule.',
     firstWin: 'The check fires on every save, no arguing, no forgetting.',
     href: '/foundations/hooks/',
   },
@@ -65,7 +65,7 @@ export const levers: Lever[] = [
     key: 'permissions',
     name: 'Permissions',
     cost: 'A permissions block, decided once, reviewed rarely.',
-    assumes: 'The agent now touches real systems — the blast radius must be bounded before autonomy.',
+    assumes: 'The agent now touches real systems - the blast radius must be bounded before autonomy.',
     firstWin: 'The first autonomous run that could not have hurt anything.',
     href: '/foundations/permissions/',
   },
@@ -73,7 +73,7 @@ export const levers: Lever[] = [
 
 export const staircaseCopy = {
   title: 'The levers, in climb order',
-  climb: 'Climb in this order — each rung assumes the ones below it.',
+  climb: 'Climb in this order - each rung assumes the ones below it.',
   costLabel: 'Cost',
   assumesLabel: 'Assumes',
   firstWinLabel: 'First win',

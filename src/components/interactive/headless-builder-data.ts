@@ -179,7 +179,7 @@ export const hlbTools: HlbToolSpec[] = [
   {
     id: 'cursor',
     label: 'Cursor',
-    base: 'cursor-agent -p "{prompt}"',
+    base: 'agent -p "{prompt}"',
     outputs: {
       text: { note: 'Clean final-answer text - the default, no flag needed.' },
       json: {
@@ -196,11 +196,11 @@ export const hlbTools: HlbToolSpec[] = [
         note: 'The default is the guardrail: without `--force`, the agent only proposes changes - nothing is applied.',
       },
       edit: {
-        part: '--force --auto-run auto-run-in-sandbox',
-        note: '`--force` applies file changes directly (`--yolo` is a synonym); commands run inside the sandbox without prompting. Cursor’s own guidance: run CI jobs in a container or VM, not on your machine.',
+        part: '--force --sandbox enabled',
+        note: '`--force` applies file changes and allows commands unless explicitly denied (`--yolo` is a synonym); `--sandbox enabled` keeps commands inside the sandbox. Cursor’s own guidance: run CI jobs in a container or VM, not on your machine.',
       },
       full: {
-        part: '--force --auto-run always-run-everything',
+        part: '--force --sandbox disabled',
         note: 'No gating at all - the historical "YOLO mode". Environment isolation is the only guardrail left.',
       },
     },
@@ -212,12 +212,14 @@ export const hlbTools: HlbToolSpec[] = [
     label: 'Copilot',
     base: 'copilot --prompt "{prompt}"',
     outputs: {
-      text: { note: 'Pipe-friendly text - the only documented output format.' },
+      text: { note: 'Pipe-friendly text - the default, no flag needed.' },
       json: {
-        note: 'No structured-output flag is documented for the Copilot CLI. Post-process the text - or use the Coding Agent, whose "output format" is a draft PR.',
+        part: '--output-format json',
+        note: 'JSONL: one JSON object per line. Add `--silent` to keep progress output out of the stream.',
       },
       stream: {
-        note: 'No streaming format is documented for the Copilot CLI.',
+        part: '--output-format json',
+        note: 'Same flag - JSONL is already a line-by-line stream; there is no separate streaming format.',
       },
     },
     postures: {
@@ -229,11 +231,11 @@ export const hlbTools: HlbToolSpec[] = [
       },
       full: {
         part: '--allow-all-tools',
-        note: 'Unattended, everything allowed. The safer unattended surface is the Coding Agent - it runs in a GitHub Actions sandbox behind a firewall.',
+        note: 'Unattended, everything allowed. The safer unattended surface is the cloud agent - it runs in a GitHub Actions sandbox behind a firewall.',
       },
     },
     footnote:
-      'For CI, the canonical Copilot surface is the Coding Agent: assign an issue to Copilot or `@copilot` a PR, and it comes back with a draft PR.',
+      'For CI, the canonical Copilot surface is the cloud agent: assign an issue to Copilot or `@copilot` a PR, and it comes back with a draft PR.',
   },
 ];
 
