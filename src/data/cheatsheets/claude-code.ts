@@ -3,9 +3,9 @@
  * `components/Cheatsheet.astro` (static render + search enhancement) and the
  * `foundations/cheatsheets/claude-code` page.
  *
- * FACT-BOUND. Verification, 2026-08-18:
+ * FACT-BOUND. Verification, 2026-10-23:
  *   - CLI flags: read first-hand from the installed binary (`claude --help`,
- *     v2.1.234). Entries marked conf 'firsthand' exist in that help output.
+ *     v2.1.309). Entries marked conf 'firsthand' exist in that help output.
  *   - Slash commands and subcommand behavior: official docs at
  *     code.claude.com/docs (commands + cli-reference pages), conf 'documented'.
  *   - Config/skills/context behavior: the site's own verified
@@ -66,10 +66,10 @@ const CC = 'https://code.claude.com/docs/en';
 export const claudeCodeCheatsheet: Cheatsheet = {
   tool: 'claude-code',
   label: 'Claude Code',
-  version: '2.1.234',
-  checkedAt: '2026-08-18',
+  version: '2.1.309',
+  checkedAt: '2026-10-23',
   sources: [
-    'Installed binary: claude --help (v2.1.234, first-hand)',
+    'Installed binary: claude --help (v2.1.309, first-hand)',
     `${CC}/cli-reference`,
     `${CC}/commands`,
     `${CC}/setup`,
@@ -118,6 +118,12 @@ export const claudeCodeCheatsheet: Cheatsheet = {
           cmd: 'claude doctor',
           desc: 'Check installation health without a trust prompt.',
           note: 'For a checkup that can also fix issues, run `/doctor` inside a session.',
+          conf: 'firsthand',
+        },
+        {
+          cmd: 'claude purge [path]',
+          desc: 'Delete all Claude Code state for a project (transcripts, tasks, file history, config entry).',
+          note: '`--dry-run` lists what would go; `--all` covers every project.',
           conf: 'firsthand',
         },
         {
@@ -203,8 +209,19 @@ export const claudeCodeCheatsheet: Cheatsheet = {
           conf: 'firsthand',
         },
         {
+          cmd: 'claude agents',
+          desc: 'Manage background agents; `--json` prints active sessions as a JSON array for scripting.',
+          note: 'Companions: `claude attach <id>`, `claude logs <id>`, `claude stop <id>`, `claude rm <id>`, `claude respawn <id>`.',
+          conf: 'firsthand',
+        },
+        {
           cmd: 'claude --safe-mode',
           desc: 'Start with all customizations (CLAUDE.md, skills, plugins, hooks, MCP) disabled - for troubleshooting a broken config.',
+          conf: 'firsthand',
+        },
+        {
+          cmd: 'claude --restricted',
+          desc: 'Remove the code-running tools (Bash, PowerShell) and WebFetch, ignore user/project/local settings, and confine file tools to the working directories.',
           conf: 'firsthand',
         },
         {
@@ -214,7 +231,7 @@ export const claudeCodeCheatsheet: Cheatsheet = {
         },
         {
           cmd: 'claude import <source>',
-          desc: 'Import config from another AI coding agent into Claude Code.',
+          desc: 'Import config from another AI coding agent (codex, gemini, or cursor) into Claude Code; `--dry-run` previews.',
           conf: 'firsthand',
         },
       ],

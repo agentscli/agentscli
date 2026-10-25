@@ -2,9 +2,9 @@
  * Codex CLI cheatsheet facts - the single source of truth for the static
  * cheatsheet renderer.
  *
- * FACT-BOUND. Verification, 2026-08-18:
+ * FACT-BOUND. Verification, 2026-10-23:
  *   - CLI flags and subcommands: installed binary `codex --help` and
- *     subcommand help, codex-cli 0.147.0.
+ *     subcommand help, codex-cli 0.163.0.
  *   - Workflow, configuration, MCP, skills, and agents: official OpenAI Docs.
  *
  * Re-verify on the next CLI/docs pass: run `codex --version`, `codex --help`,
@@ -18,12 +18,12 @@ const DOCS = 'https://developers.openai.com/codex';
 export const codexCheatsheet: Cheatsheet = {
   tool: 'codex',
   label: 'Codex CLI',
-  version: '0.147.0',
-  checkedAt: '2026-08-18',
+  version: '0.163.0',
+  checkedAt: '2026-10-23',
   sources: [
-    'Installed binary: codex --help and subcommand help (codex-cli 0.147.0, first-hand)',
+    'Installed binary: codex --help and subcommand help (codex-cli 0.163.0, first-hand)',
     'GitHub repository: https://github.com/openai/codex',
-    'GitHub release: https://github.com/openai/codex/releases/tag/rust-v0.147.0',
+    'GitHub release: https://github.com/openai/codex/releases/tag/rust-v0.163.0',
     `${DOCS}/cli`,
     `${DOCS}/developer-commands`,
     `${DOCS}/sandboxing`,
@@ -33,7 +33,7 @@ export const codexCheatsheet: Cheatsheet = {
     `${DOCS}/subagents`,
     `${DOCS}/non-interactive-mode`,
   ],
-  intro: 'Verified against installed codex-cli 0.147.0, the official OpenAI Docs, and the OpenAI Codex GitHub repository on 2026-08-18. This is an installed-version snapshot, not a claim about the latest CLI. CLI flags are first-hand; config, MCP, skills, and agent behavior is marked docs when it is not exposed by --help.',
+  intro: 'Verified against installed codex-cli 0.163.0, the official OpenAI Docs, and the OpenAI Codex GitHub repository on 2026-10-23. This is an installed-version snapshot, not a claim about the latest CLI. CLI flags are first-hand; config, MCP, skills, and agent behavior is marked docs when it is not exposed by --help.',
   categories: [
     {
       id: 'install',
@@ -60,6 +60,7 @@ export const codexCheatsheet: Cheatsheet = {
         { cmd: 'codex -C <dir> "run the tests"', desc: 'Use a specific directory as the working root.', note: 'Long form: `--cd`.', conf: 'firsthand' },
         { cmd: 'codex --add-dir <dir>', desc: 'Add another writable directory alongside the primary workspace.', conf: 'firsthand' },
         { cmd: 'codex -m <model>', desc: 'Choose the model for the session.', note: 'Long form: `--model`.', conf: 'firsthand' },
+        { cmd: 'codex --worktree', desc: 'Run the session in a new managed Git worktree.', note: 'Also works with `codex exec` and `codex fork`.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
         { cmd: 'codex -i screenshot.png "fix the layout"', desc: 'Attach one or more images to the initial prompt.', note: 'Repeat `-i`/`--image` for multiple files.', conf: 'firsthand' },
         { cmd: '/model', desc: 'Choose or change the model and reasoning effort in the TUI.', conf: 'documented', doc: `${DOCS}/cli` },
         { cmd: '/status', desc: 'Show current session configuration.', conf: 'documented', doc: `${DOCS}/cli` },
@@ -74,10 +75,11 @@ export const codexCheatsheet: Cheatsheet = {
       entries: [
         { cmd: 'codex -s read-only', desc: 'Allow read-only inspection; edits and commands requiring approval remain blocked unless approved.', note: 'Other modes: `workspace-write` and `danger-full-access`.', conf: 'firsthand', doc: `${DOCS}/sandboxing` },
         { cmd: 'codex -s workspace-write -a on-request', desc: 'Use the common local-work preset: workspace writes plus approval when Codex needs escalation.', note: '`-a` is short for `--ask-for-approval`.', conf: 'firsthand', doc: `${DOCS}/sandboxing` },
-        { cmd: 'codex -a untrusted', desc: 'Ask before commands outside the trusted command set.', conf: 'firsthand', doc: `${DOCS}/sandboxing` },
+        { cmd: 'codex -a on-request', desc: 'Let the model decide when to ask for approval.', note: 'Valid `-a` values in this build: `on-request` and `never`.', conf: 'firsthand', doc: `${DOCS}/sandboxing` },
         { cmd: 'codex -a never', desc: 'Never ask for approval; command failures return to the model.', note: 'Pairing this with `danger-full-access` removes the safety boundary.', conf: 'firsthand', doc: `${DOCS}/sandboxing` },
         { cmd: 'codex --approve-for-me', desc: 'Route eligible approval requests through automatic review with workspace-write sandboxing.', conf: 'firsthand' },
         { cmd: 'codex --dangerously-bypass-approvals-and-sandbox', desc: 'Skip confirmation prompts and sandboxing.', note: 'Use only inside an external sandbox; it is explicitly dangerous.', conf: 'firsthand', doc: `${DOCS}/sandboxing` },
+        { cmd: 'codex --dangerously-bypass-hook-trust', desc: 'Run enabled hooks without persisted hook trust for this invocation.', note: 'Only for automation that already vets hook sources.', conf: 'firsthand' },
         { cmd: 'codex --search', desc: 'Enable live web search for the session.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
         { cmd: 'codex --strict-config', desc: 'Fail when config.toml contains fields this CLI version does not recognize.', conf: 'firsthand' },
       ],
@@ -123,10 +125,10 @@ export const codexCheatsheet: Cheatsheet = {
         { cmd: 'codex mcp list', desc: 'List configured MCP servers.', conf: 'firsthand', doc: `${DOCS}/mcp` },
         { cmd: 'codex mcp get <name>', desc: 'Show one configured MCP server.', conf: 'firsthand' },
         { cmd: 'codex mcp login <name>', desc: 'Start OAuth login for an MCP server that supports it.', conf: 'firsthand', doc: `${DOCS}/mcp` },
+        { cmd: 'codex mcp logout <name>', desc: 'Clear stored OAuth credentials for an MCP server.', conf: 'firsthand' },
         { cmd: 'codex mcp remove <name>', desc: 'Remove an MCP server registration.', conf: 'firsthand' },
         { cmd: '/mcp', desc: 'Show active MCP servers in the TUI.', conf: 'documented', doc: `${DOCS}/mcp` },
         { cmd: '[mcp_servers.<name>]', desc: 'Configure a server in config.toml; use `command`/`args` for stdio or `url` for Streamable HTTP.', conf: 'documented', doc: `${DOCS}/mcp` },
-        { cmd: 'codex mcp-server', desc: 'Run Codex itself as an MCP server over stdio.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
       ],
     },
     {
@@ -141,7 +143,7 @@ export const codexCheatsheet: Cheatsheet = {
         { cmd: 'spawn two agents ...', desc: 'Ask Codex to delegate independent work to parallel subagents and combine the results.', note: 'Subagents inherit the parent sandbox and approval policy.', conf: 'documented', doc: `${DOCS}/subagents` },
         { cmd: '~/.codex/agents/<name>.toml', desc: 'Define a personal custom agent.', note: 'Project-scoped agents live in `.codex/agents/`.', conf: 'documented', doc: `${DOCS}/subagents` },
         { cmd: '[agents]', desc: 'Configure multi-agent enablement, concurrency, default model, and reasoning effort.', conf: 'documented', doc: `${DOCS}/subagents` },
-        { cmd: 'codex plugin', desc: 'Install, list, and remove Codex plugins from marketplace sources.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
+        { cmd: 'codex plugin', desc: 'Add, list, and remove Codex plugins; `codex plugin marketplace` manages marketplace sources.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
       ],
     },
     {
@@ -151,6 +153,8 @@ export const codexCheatsheet: Cheatsheet = {
       entries: [
         { cmd: 'codex completion zsh', desc: 'Generate shell completion scripts.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
         { cmd: 'codex apply <TASK_ID>', desc: 'Apply a diff generated by a Codex cloud task to the local working tree.', note: 'Alias: `codex a <TASK_ID>`.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
+        { cmd: 'codex agents', desc: 'Browse all agent sessions on the shared local app-server daemon.', note: '`--no-daemon` runs the CLI without that shared background server.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
+        { cmd: 'codex queue --thread <session> --message "<text>"', desc: 'Queue a message for an existing session.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
         { cmd: 'codex archive <session>', desc: 'Archive a saved session by ID or name.', conf: 'firsthand' },
         { cmd: 'codex unarchive <session>', desc: 'Restore an archived session.', conf: 'firsthand' },
         { cmd: 'codex delete <session>', desc: 'Permanently delete a saved session.', note: 'Destructive; verify the session identifier first.', conf: 'firsthand' },
