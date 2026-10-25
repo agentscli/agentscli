@@ -87,7 +87,7 @@ Check it against the earlier count: same twelve calls, same one irreversible act
 
 Read the three buckets as a policy statement. **`allow`** is everything reversible - silent, full speed, no interruption. **`ask`** is the reversible-but-consequential middle - it pauses for a yes. **`deny`** is the irreversible class that never runs from inside the agent loop at all; a human does it by hand, or it runs through a path you gate separately.
 
-Here is the split as a Claude Code `settings.json`. opencode keys the same three actions, `allow` / `ask` / `deny`, directly off each tool (`edit`, `bash`, `webfetch`) with per-command patterns underneath. Codex draws the line a layer down, through its sandbox mode plus an approval policy (`untrusted`, `on-request`, `never`, or a `granular` policy that sets the level per category). The mechanisms differ; the reversibility logic you encode into them is identical.
+Here is the split as a Claude Code `settings.json`. opencode keys the same three actions, `allow` / `ask` / `deny`, directly off each tool (`edit`, `bash`, `webfetch`) with per-command patterns underneath. Codex draws the line a layer down, through its sandbox mode plus an approval policy (`on-request`, `never`, or a `granular` policy that sets the level per category; stricter per-command review now lives in exec-policy rules). The mechanisms differ; the reversibility logic you encode into them is identical.
 
 ```json
 {
@@ -120,7 +120,7 @@ Here is the split as a Claude Code `settings.json`. opencode keys the same three
 
 One thing the matcher won't do for you: catch a `DROP` buried inside a `psql -c "..."` string. Claude Code's patterns match on the command prefix, not arbitrary substrings, so `Bash(psql:*)` matches any `psql` call with no way to fire only when the payload contains `DROP TABLE`. Don't fake it with a glob that looks like it works. Mid-string content is the hook's job, in Step 3.
 
-But `deny` is blunt. It bans the tool outright, so the agent can't even propose call 12 as the last step of a plan - fine for `rm -rf`, too blunt for the one destructive action you actually want to happen, once, after you've seen it coming. **Permissions get you the count. Seeing the call coming and enforcing it are the next two layers' jobs.**
+But `deny` is blunt. It blocks the call outright, so the agent can't get call 12 executed as the last step of a plan (a bare `Bash` deny would even hide the tool; a scoped pattern like the one above blocks only matching calls) - fine for `rm -rf`, too blunt for the one destructive action you actually want to happen, once, after you've seen it coming. **Permissions get you the count. Seeing the call coming and enforcing it are the next two layers' jobs.**
 
 ## Step 2 - Force a plan so the action is visible before it runs
 
@@ -223,7 +223,7 @@ Four things worth naming, so you don't assume they're covered here.
 
 **Claude Code's Auto Mode, and any AI classifier playing the same role, has the same ceiling as the blocklist, just a smarter one.** Auto Mode, as Anthropic's 2026 documentation describes it, reads your permission rules in prose and decides allow-versus-ask per call from context, rather than by static pattern. That's real progress over a blocklist. But a classifier still can't know that `payments_ledger` is append-only by internal policy, or that your staging alias points at prod during the Friday migration window. Those facts aren't in the command text for anything to infer. The `allow`/`ask`/`deny` split is where a human writes those facts down as rules instead of leaving them to be inferred.
 
-**MCP tool annotations solve a version of this one layer down.** A server that marks a tool `destructiveHint` and pauses for confirmation puts the same kind of gate inside the tool itself, so it travels to any client that respects the annotation - see [Elicitation plus tool annotations](/blog/elicitation-plus-tool-annotations/). This piece's gate sits in the harness instead, which is the only place that reaches raw shell calls no MCP server ever got a chance to annotate.
+**MCP tool annotations solve a version of this one layer down.** A server that marks a tool `destructiveHint` hands any client that respects the annotation the cue to pause for confirmation, which puts the same kind of gate at the tool boundary, so it travels with the tool - see [Elicitation plus tool annotations](/blog/elicitation-plus-tool-annotations/). This piece's gate sits in the harness instead, which is the only place that reaches raw shell calls no MCP server ever got a chance to annotate.
 
 **Regulatory human-oversight requirements are a different job entirely.** The EU AI Act's Article 14 and the NIST AI RMF both ask for human oversight of consequential automated decisions, and a regulated org will want an audit trail on top of this, not instead of it. This piece is the mechanical gate. The paperwork a compliance team wants sits above it.
 
