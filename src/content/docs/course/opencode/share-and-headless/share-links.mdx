@@ -1,69 +1,30 @@
 ---
-title: Share a session, and govern what leaves
-description: "Hand a coworker the whole stuck session as a public URL with /share, revoke it with /unshare - then turn sharing off for a proprietary repo."
+title: Sharing is discontinued - govern what leaves
+description: "OpenCode retired /share and its public links in v1.19.1. What changed, what to do instead for a second opinion, and how to keep a proprietary repo's sessions from leaving."
 ---
 
-You're deep in a stuck `feedmill` session - `feedmill` being the course's illustrative Go feed aggregator. One source, a German news Atom feed, keeps landing its entries an hour off, and you're now fairly sure it's a timezone bug somewhere between the parser and the dedupe key, but you can't see it. A coworker has fixed exactly this class of bug before. They're not at your terminal, they don't have your branch checked out, and pasting a wall of scrollback into chat would lose the half of the story that matters - which files OpenCode read, which fixes it tried, where each one fell down.
+You're deep in a stuck `feedmill` session - `feedmill` being the course's illustrative Go feed aggregator. One source, a German news Atom feed, keeps landing its entries an hour off, and you're now fairly sure it's a timezone bug somewhere between the parser and the dedupe key, but you can't see it. A coworker has fixed exactly this class of bug before, and the instinct is to hand them the whole session as a link.
 
-This is the spot where a share link earns its keep. The session you're standing in - the prompts, the model's reasoning, the diffs, the dead ends - can become a single URL your coworker opens in a browser, no OpenCode install required. But you also work somewhere that forbids proprietary code on servers outside the services your company approved, and a public link to a session full of internal feed URLs and parser source is *exactly* the thing your security team means by that. So this lesson is two moves that belong together: how to share, and how to make sure you can never share by accident.
+Until October 2026 OpenCode did exactly that: `/share` synced the conversation to OpenCode's servers and minted a public `opncd.ai/s/<id>` link. **That feature has been discontinued.** The v1.19.1 release notes (2026-10-15) say: "Session sharing has been discontinued. Existing share links and session-sharing commands are no longer available, and importing sessions from share URLs is unsupported" ([release v1.19.1](https://github.com/anomalyco/opencode/releases/tag/v1.19.1), as of October 2026). The source agrees. In v1.19.4 the share service fails with `Session sharing has been discontinued`, `unshare` only clears the local link, and `opencode run --share` is a hidden deprecated flag that prints the same message ([`share/session.ts`](https://github.com/anomalyco/opencode/blob/v1.19.4/packages/opencode/src/share/session.ts), [`run.ts`](https://github.com/anomalyco/opencode/blob/v1.19.4/packages/opencode/src/cli/cmd/run.ts)). The GitHub integration no longer attaches a session link to its comments either.
 
-## Share the session you're stuck in
+Two caveats on how current the rest of the web is. The public [sharing documentation](https://opencode.ai/docs/share/), the `/share` entry on the TUI page, and the `share` row of the config page still describe the old behavior at v1.19.4; the release notes and source are the newer evidence. And whether a pre-1.19.1 client can still publish a link depends on the share service, which this course did not test. Treat sharing as gone.
 
-Under that policy, the share below is not for the proprietary checkout itself. Run it in a session you are allowed to publish, such as a minimal reproduction of the parser bug with the internal feed URLs removed; the sharing documentation also lists enterprise options that restrict shares to users authenticated through SSO or self-host them (as of September 2026; [sharing documentation](https://opencode.ai/docs/share/)). From that session, run the slash command (an illustrative transcript; the clipboard line is the part to notice):
+## Get a second opinion without a share link
 
-```text
-> /share
+The need did not go away; the transport did. Three substitutes, in order of how much leaves your machine:
 
-  ✓ Session shared
-    https://opncd.ai/s/a1b9f2c4
-    (copied to clipboard)
-```
+- **Describe the bug, with evidence.** The coworker needs the failing input, the observed and expected output, and the two fixes you tried. For the Atom case that is the feed entry with its offset, the stored time, and the dedupe key it produced. Paste that into chat. It is smaller than a transcript and easier to answer.
+- **Export the session to a file.** `opencode export [sessionID]` writes the session as JSON, and the TUI has a `session_export` keybind that opens it in your editor ([CLI documentation](https://opencode.ai/docs/cli/), [`keybind.ts`](https://github.com/anomalyco/opencode/blob/v1.19.4/packages/tui/src/config/keybind.ts), as of October 2026). You choose who receives the file. A JSON export is raw (prompts, tool output, file contents the agent read), so review it before sending it anywhere.
+- **Reproduce in a clean directory.** A minimal repro of the parser bug with the internal feed URLs removed can go to anyone, and the person helping can run it themselves.
 
-That's it. `/share` syncs this conversation to OpenCode's servers and mints a public link at `opncd.ai/s/<id>`, and it drops the URL straight onto your clipboard so the next thing you do is paste it to your coworker. They open it in a browser and see the session as a readable page - your prompt, OpenCode reading the repro's parser and dedupe files, the two fixes it tried, the test that still fails an hour off. The sharing documentation describes the synced data as the full conversation history, all messages and responses, and session metadata, and says a shared conversation is publicly accessible to anyone with the link, so your coworker needs neither the repo nor an OpenCode install (as of September 2026; [sharing documentation](https://opencode.ai/docs/share/)). They reply: "your dedupe key is built from the parsed time *after* you normalize to UTC, but the Atom parser is reading the offset as local - fix the parse, the key follows." A quick answer, because they saw the actual session instead of your summary of it.
+## What still leaves the machine
 
-The link is live for as long as you leave it live. When the conversation has served its purpose, take it back down (again illustrative):
+Ending the share feature does not make a session local-only. Every turn sends your prompts, the files the agent read, and tool output to whichever model provider answers it. That traffic is governed by your provider choice and your permission map, not by anything sharing-related. For `feedmill`, the controls that matter are the ones from earlier chapters: a local model for private feeds ([local and custom models](/course/opencode/providers-models/local-and-custom/)) and `webfetch`/`websearch` gated in the permission map.
 
-```text
-> /unshare
+The `share` key (`manual`, `auto`, `disabled`) is still accepted by the v1.19.4 config schema ([`config.ts`](https://github.com/anomalyco/opencode/blob/v1.19.4/packages/core/src/v1/config/config.ts)), but with sharing removed the setting no longer controls any upload. If you committed `"share": "disabled"` to a repo's `opencode.json` as a guard, it is harmless; it is no longer doing a job, and it is not a substitute for the controls above.
 
-  ✓ Share link removed
-    Synced conversation data deleted
-```
+## Enforce it above the project
 
-`/unshare` removes the public link *and* deletes the conversation data that was synced to make it work - so revoking is a real takedown, not just hiding the URL. Make `/unshare` the reflex that closes every share: the moment your coworker has what they need, revoke it, and the repro session no longer exists on OpenCode's share servers.
-
-## Sharing is manual by default - know the three modes
-
-Before you trust this on a proprietary repo, know what the *default* posture is, because it's the one you're relying on every session you *don't* run `/share` in. Sharing is governed by the `share` key in `opencode.json`, OpenCode's main config file, and it has three settings - "By default, OpenCode uses manual sharing mode," as the doc puts it (as of September 2026; [sharing documentation](https://opencode.ai/docs/share/)):
-
-- **`"manual"`** - the default. Nothing is shared unless you explicitly run `/share`. A session you don't share never reaches OpenCode's share servers. (Your prompts and the files the agent reads still go to your model provider on every turn; the `share` key doesn't govern that traffic.)
-- **`"auto"`** - every new session is shared automatically and a link is generated the moment it starts. That includes headless `opencode run` sessions from cron and CI (as of September 2026, v1.18.32, per [`run.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/cli/cmd/run.ts)). Convenient for an open-source project where the whole point is public sessions; a quiet disaster for proprietary work.
-- **`"disabled"`** - sharing is turned off entirely. `/share` won't mint a link, and nothing syncs to the share servers.
-
-The default being `manual` is the right default for most people: opt-in, one deliberate command, nothing reaches the share servers without you typing `/share`. But "nothing is shared *unless someone types a command*" is not a guarantee a security team accepts, because the thing they're worried about is precisely someone - you, a teammate, a pairing guest - typing that command on the wrong repo. For `feedmill`, manual isn't enough. You want the accidental share ruled out, not merely made deliberate.
-
-## Turn sharing off for the whole repo
-
-The fix is one line, checked into the repo:
-
-```json title="opencode.json"
-{
-  "$schema": "https://opencode.ai/config.json",
-  "share": "disabled"
-}
-```
-
-Commit that to `feedmill`'s root. Now `/share` is off by default for anyone who works in a clone of this repo - you, your coworker, a new teammate on a fresh laptop. Nobody has to know the policy, remember a setting, or resist a habit. Because project config in OpenCode layers *above* the user's global config - config sources load in a fixed order, with project settings overriding global ones ([configuration documentation](https://opencode.ai/docs/config/), as of September 2026) - this checked-in `disabled` overrides whatever a teammate has in their own `~/.config/opencode/opencode.json`: even someone who set `"share": "auto"` in that global file gets sharing turned off the moment they're working inside `feedmill`. Three personal sources still load after the project file and can turn it back on: an `opencode.json` in `~/.opencode/`, one in the directory that `OPENCODE_CONFIG_DIR` names, and the `OPENCODE_CONFIG_CONTENT` environment variable (as of September 2026, v1.18.32, per [`config/paths.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/config/paths.ts) and [`config/config.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/config/config.ts)). The checked-in setting stops accidents, not a deliberate override. The policy travels with the code. It also reaches a repro you start inside the clone: OpenCode loads every project `opencode.json` from the directory you launch in up to the Git root ([`config/paths.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/config/paths.ts) at v1.18.32), so keep the publishable repro in its own directory outside the feedmill clone. Type `/share` anyway and the refusal is immediate (illustrative):
-
-```text
-> /share
-
-  ✗ Sharing is disabled for this project
-    (set in opencode.json)
-```
-
-That's the difference between a rule and a default. "Don't share proprietary sessions" is a rule someone can forget at 6pm on a Friday. `{ "share": "disabled" }` in version control is a shared default that stops the *accidental* share for everyone who clones the repo. It is not an enforcement boundary against someone who wants to share: the same documented load order places `.opencode` directories and the inline `OPENCODE_CONFIG_CONTENT` environment variable above project config, and anyone with a clone can edit the file.
-
-One layer up exists for when a rule must hold across *every* repo, not just this one. OpenCode loads a managed/system config layer at the highest priority tier - admin-placed files under `/Library/Application Support/opencode/` (macOS), `/etc/opencode/` (Linux), or `%ProgramData%\opencode` (Windows), plus macOS MDM `.mobileconfig` preferences. The directories "require admin/root access to write, so users cannot modify them," and managed preference keys "cannot be overridden by user or project configuration" ([configuration documentation](https://opencode.ai/docs/config/), as of September 2026). That's where an organization enforces `"share": "disabled"`, so no project's `opencode.json` and no user's own config can re-enable it on a managed machine. The choice between the two tiers is a control question: who can change the setting. If the goal is to stop accidental shares on feedmill, the checked-in project setting is enough, and it travels with the code. If the security team needs the rule to hold against a user who wants to share, only the managed tier gives that, and only on machines the organization manages.
+When a rule must hold across *every* repo, not just this one, there is a higher tier. OpenCode loads a managed/system config layer at the highest priority tier - admin-placed files under `/Library/Application Support/opencode/` (macOS), `/etc/opencode/` (Linux), or `%ProgramData%\opencode` (Windows), plus macOS MDM `.mobileconfig` preferences. The directories "require admin/root access to write, so users cannot modify them," and managed preference keys "cannot be overridden by user or project configuration" ([configuration documentation](https://opencode.ai/docs/config/), as of October 2026). That is where an organization enforces rules that must hold against a user who wants to change them, such as a permission map that denies `webfetch`, and only on machines the organization manages. A project `opencode.json` checked into the repo is the lighter tier: it stops accidents and travels with the code, but anyone with a clone can edit it.
 
 Now take that same stuck session and drive it the other way - not opened up for a human to read, but handed to a machine to run. [Next: run OpenCode headless](/course/opencode/share-and-headless/headless-run/).
