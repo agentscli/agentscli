@@ -132,10 +132,10 @@ function CodexPanel() {
     verdict = 'blocked';
     explanation =
       'The sandbox rejects this before the approval policy is ever consulted. Two gates, in sequence - the sandbox is the outer one.';
-  } else if (approval === 'untrusted') {
+  } else if (approval === 'granular') {
     verdict = 'ask';
     explanation =
-      'The sandbox permits it, and the `untrusted` policy asks before every action.';
+      'The sandbox permits it. A `granular` policy keeps chosen prompt categories interactive and rejects the rest automatically; this sketch assumes the category for this action is left interactive, so it asks. A category left out is rejected, not asked.';
   } else if (approval === 'on-request') {
     verdict = 'allow';
     explanation =
@@ -152,7 +152,8 @@ function CodexPanel() {
         Codex separates <strong>what the agent can touch</strong> (sandbox) from{' '}
         <strong>when it must ask</strong> (approval policy). Set with{' '}
         <code>--sandbox</code> and <code>--ask-for-approval</code>, or in{' '}
-        <code>config.toml</code> profiles.
+        <code>config.toml</code> profiles. The CLI flag takes <code>on-request</code> or{' '}
+        <code>never</code>; <code>granular</code> is set in <code>config.toml</code> only.
       </p>
       <div className="psim-control">
         <span className="psim-control-label">Sandbox:</span>

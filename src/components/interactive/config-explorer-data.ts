@@ -277,7 +277,7 @@ trust_level = "trusted"`,
                 example: `name = "reviewer"
 description = "Reviews a diff for bugs, performance, and security issues."
 developer_instructions = "..."
-model = "gpt-5.4"`,
+model = "gpt-6.1-sol"`,
                 chapter: CHAPTER.subagents,
               },
               {
@@ -835,6 +835,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
             tips: [
               'The `instructions` field is the workaround for AGENTS.md not supporting `@path` imports - list extra rule files here.',
               '`OPENCODE_CONFIG` / `OPENCODE_CONFIG_DIR` env vars override the default locations, useful in CI.',
+              'OpenCode 2 (October 2026) still reads this file, but v1 plugins do not run, `lsp` servers are accepted and never started, `external_directory` is allowed by default, and the TUI config moves to a global `~/.config/opencode/cli.json`. See opencode.ai/v2/docs/migrate-v1/.',
             ],
             chapter: CHAPTER.configuration,
           },
@@ -847,6 +848,9 @@ staged diff. Subject under 60 characters, imperative mood.`,
             when: 'Read at session start, every invocation.',
             description:
               'Follows the open `agents.md` spec and is portable from Codex unchanged. Project discovery walks upward and uses the first matching project instruction file; it does not stack every ancestor\'s AGENTS.md. Use `instructions` when you need an explicit additive set.',
+            tips: [
+              'OpenCode 2 (October 2026) differs: it loads the global AGENTS.md plus every AGENTS.md from the workspace toward the home directory or project root, combined in order, and does not fall back to CLAUDE.md. See opencode.ai/v2/docs/instructions/.',
+            ],
             chapter: CHAPTER.rules,
           },
           {
@@ -894,7 +898,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
                 example: `---
 description: Read-only auditor for security findings
 mode: subagent
-model: anthropic/claude-sonnet-4-6
+model: anthropic/claude-sonnet-5-5
 permission:
   edit: deny
   bash: { "*": ask, "git *": allow }
@@ -958,6 +962,9 @@ permission:
                 when: 'Read at session start for every project.',
                 description:
                   'Global rules are combined with the selected project instruction file. Within each category, the first matching filename wins (for example, AGENTS.md before CLAUDE.md).',
+                tips: [
+                  'OpenCode 2 (October 2026) recognizes AGENTS.md only; the CLAUDE.md fallback described here is OpenCode 1 behaviour. See opencode.ai/v2/docs/instructions/.',
+                ],
                 chapter: CHAPTER.rules,
               },
               {
@@ -1061,7 +1068,7 @@ permission:
                 oneLiner: 'TypeScript extensions: custom tools, commands, and hooks in one API.',
                 when: 'Scanned at startup - but only after the project is trusted.',
                 description:
-                  'Each extension is a `.ts` file (or a directory with an `index.ts`) exporting a function over `ExtensionAPI` - no build step; Pi transpiles on load. This one surface carries what other tools split across MCP configs, hook files, and command directories. An untrusted clone skips the folder silently.',
+                  'Each extension is a `.ts` file (or a directory with an `index.ts`) exporting a function over `ExtensionAPI` - no build step; Pi transpiles on load. This one surface carries what other tools split across hook files and command directories. An untrusted clone skips the folder silently.',
                 tips: [
                   '`pi -e ./file.ts` loads one extension for a single run - the fast way to try an idea.',
                   '`/reload` picks up extension edits without losing the conversation.',
@@ -1143,7 +1150,7 @@ next step (retry, skip, or needs a new source adapter).`,
             type: 'folder',
             oneLiner: 'Your entire personal Pi setup - settings, models, credentials, trust.',
             description:
-              'The global tier of Pi\'s two-tier config. Notably absent from this map: no `mcp.json` and no `agents/` directory - MCP arrives via community extensions, and a subagent is just `pi` spawning `pi`. Mirrored `prompts/` and `themes/` directories work exactly like their project copies.',
+              'The global tier of Pi\'s two-tier config. Notably absent from this map: no `agents/` directory - a subagent is just `pi` spawning `pi`. MCP is built in since 0.99.0: user-level servers live in `~/.pi/agent/mcp.json` (project overrides in `.pi/mcp.json` once trusted). Mirrored `prompts/` and `themes/` directories work exactly like their project copies.',
             chapter: CHAPTER.configuration,
             children: [
               {

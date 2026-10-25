@@ -120,15 +120,15 @@ export const hlbTools: HlbToolSpec[] = [
     },
     postures: {
       readonly: {
-        part: '--sandbox read-only --ask-for-approval never',
-        note: 'The OS sandbox is the guardrail: reads work, writes and mutating commands are blocked at the sandbox layer. `never` keeps a headless run from waiting on an approval prompt.',
+        part: '--sandbox read-only -c approval_policy=never',
+        note: 'The OS sandbox is the guardrail: reads work, writes and mutating commands are blocked at the sandbox layer. `approval_policy=never` keeps a headless run from waiting on an approval prompt. `codex exec` has no `--ask-for-approval` flag (checked on 0.163.0), so the policy goes through `-c`.',
       },
       edit: {
-        part: '--sandbox workspace-write --ask-for-approval never',
+        part: '--sandbox workspace-write -c approval_policy=never',
         note: 'File edits and sandboxed commands allowed inside the workspace; the sandbox still bounds everything else.',
       },
       full: {
-        part: '--sandbox danger-full-access --ask-for-approval never',
+        part: '--sandbox danger-full-access -c approval_policy=never',
         note: 'The YOLO combination. The docs’ own advice: only in a throwaway environment.',
       },
     },
@@ -174,12 +174,12 @@ export const hlbTools: HlbToolSpec[] = [
       },
     },
     footnote:
-      'For GitHub, `opencode github install` generates a workflow triggered by `/oc` comments on PRs and issues; a GitLab CI component exists too.',
+      'For GitHub, `opencode github install` generates a workflow triggered by `/oc` comments on PRs and issues; a GitLab CI component exists too. OpenCode 2 (October 2026) has no `github` or `db` subcommand in its CLI, and its permission config is an ordered `permissions` array (actions `shell`, `edit`, `subagent`); v1 config still loads. See opencode.ai/v2/docs/migrate-v1/.',
   },
   {
     id: 'cursor',
     label: 'Cursor',
-    base: 'cursor-agent -p "{prompt}"',
+    base: 'agent -p "{prompt}"',
     outputs: {
       text: { note: 'Clean final-answer text - the default, no flag needed.' },
       json: {
@@ -196,11 +196,11 @@ export const hlbTools: HlbToolSpec[] = [
         note: 'The default is the guardrail: without `--force`, the agent only proposes changes - nothing is applied.',
       },
       edit: {
-        part: '--force --auto-run auto-run-in-sandbox',
-        note: '`--force` applies file changes directly (`--yolo` is a synonym); commands run inside the sandbox without prompting. Cursor’s own guidance: run CI jobs in a container or VM, not on your machine.',
+        part: '--force --sandbox enabled',
+        note: '`--force` applies file changes and allows commands unless explicitly denied (`--yolo` is a synonym); `--sandbox enabled` keeps commands inside the sandbox. Cursor’s own guidance: run CI jobs in a container or VM, not on your machine.',
       },
       full: {
-        part: '--force --auto-run always-run-everything',
+        part: '--force --sandbox disabled',
         note: 'No gating at all - the historical "YOLO mode". Environment isolation is the only guardrail left.',
       },
     },
@@ -212,12 +212,14 @@ export const hlbTools: HlbToolSpec[] = [
     label: 'Copilot',
     base: 'copilot --prompt "{prompt}"',
     outputs: {
-      text: { note: 'Pipe-friendly text - the only documented output format.' },
+      text: { note: 'Pipe-friendly text - the default, no flag needed.' },
       json: {
-        note: 'No structured-output flag is documented for the Copilot CLI. Post-process the text - or use the Coding Agent, whose "output format" is a draft PR.',
+        part: '--output-format json',
+        note: 'JSONL: one JSON object per line. Add `--silent` to keep progress output out of the stream.',
       },
       stream: {
-        note: 'No streaming format is documented for the Copilot CLI.',
+        part: '--output-format json',
+        note: 'Same flag - JSONL is already a line-by-line stream; there is no separate streaming format.',
       },
     },
     postures: {
@@ -229,11 +231,11 @@ export const hlbTools: HlbToolSpec[] = [
       },
       full: {
         part: '--allow-all-tools',
-        note: 'Unattended, everything allowed. The safer unattended surface is the Coding Agent - it runs in a GitHub Actions sandbox behind a firewall.',
+        note: 'Unattended, everything allowed. The safer unattended surface is the cloud agent - it runs in a GitHub Actions sandbox behind a firewall.',
       },
     },
     footnote:
-      'For CI, the canonical Copilot surface is the Coding Agent: assign an issue to Copilot or `@copilot` a PR, and it comes back with a draft PR.',
+      'For CI, the canonical Copilot surface is the cloud agent: assign an issue to Copilot or `@copilot` a PR, and it comes back with a draft PR.',
   },
 ];
 

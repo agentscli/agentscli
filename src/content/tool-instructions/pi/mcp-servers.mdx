@@ -1,8 +1,18 @@
-**Pi has no native MCP support, and that's deliberate.** The whole design is four built-in tools - `read`, `write`, `edit`, `bash` - and everything else grows from `bash`, not from a growing list of first-class integrations. Adding an MCP client would cut against that minimalism.
+**Pi has built-in MCP support (added in 0.99.0).** It is off until you configure a server: Pi still starts with four built-in tools - `read`, `write`, `edit`, `bash` - and nothing is mounted until you add one.
 
-**What to do instead:**
-- For most integrations, a **CLI tool plus a skill or README** covering how to call it gets you the same outcome through `bash` - no protocol layer needed.
-- If you specifically need MCP (e.g. to reuse an existing server you run for other tools), build or install an **extension** that adds an MCP client via the ExtensionAPI. This isn't shipped by default - check the extensions ecosystem for whether one already exists before writing your own.
-- External **bridges** that translate MCP calls into shell invocations are another option if the server you need only speaks MCP.
+**Setup:**
 
-If your workflow leans heavily on MCP servers today, this is the sharpest tradeoff to weigh before adopting Pi as your primary loop.
+```bash
+pi mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem .
+pi mcp add docs --url https://example.com/mcp --bearer-token-env-var DOCS_TOKEN
+pi mcp list
+```
+
+- Servers go to `~/.pi/agent/mcp.json` by default; add `-l` / `--local` to write the project's `.pi/mcp.json` instead. The format matches other MCP clients (`mcpServers` with `command`/`args`/`env` or `url`/`headers`).
+- Transports are stdio and streamable HTTP. The legacy SSE transport is rejected.
+- `.pi/mcp.json` is a trust-gated project resource: it is read only after the project is trusted (see [Permissions](/foundations/permissions/)).
+- `/mcp` inside a session shows connection state, signs in (OAuth), reconnects, and changes exposure; run `/reload` after editing the files by hand.
+
+**Exposure is the design choice that keeps context small.** By default (`exposure: "codemode"`) a server's tools are *not* declared to the model. Pi gives the model a `codemode` tool, and scripts discover MCP tools through `searchTools()` or `ALL_TOOLS`. Set `exposure: "direct"` on a server to declare its tools to the model like built-in tools - suited to a small, frequently used tool set.
+
+**Still true:** the CLI-plus-skill route through `bash` needs no protocol layer, and Pi extensions can add tools through the ExtensionAPI. MCP is the option when you want to reuse a server you already run for other tools.

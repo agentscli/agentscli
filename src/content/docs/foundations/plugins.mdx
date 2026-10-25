@@ -36,17 +36,16 @@ One team setup - a skill, a subagent, a hook, an MCP server, a slash command - a
 <PluginPacker client:visible />
 <noscript><p class="widget-noscript">This plugin packer needs JavaScript. The <a href="#comparison">comparison table</a> below remains available without it.</p></noscript>
 
-Pi isn't in the widget above. Its unit is a **package**, installed with `pi install npm:<pkg>` or `pi install git:<repo>`, carrying extensions, skills, prompt templates and themes together. MCP servers are the one piece it can't bundle, because Pi has no native MCP at all.
+Pi isn't in the widget above. Its unit is a **package**, installed with `pi install npm:<pkg>` or `pi install git:<repo>`, carrying extensions, skills, prompt templates and themes together. MCP servers are the one piece without a package resource type: Pi's built-in MCP support reads servers from `mcp.json` (user `~/.pi/agent/mcp.json`, project `.pi/mcp.json`), though a package's extension can register one with `pi.registerMcpServer()`.
 
-Only Claude Code carries all five pieces. Everywhere else the honest install instruction has a second step - copy the agent files too, register the MCP server yourself, commit the commands directory - and the second step is the one people forget. Write it down somewhere the plugin can't: a README next to the marketplace entry, or the repo it ships from.
+Claude Code, Cursor, and Copilot all list all five pieces in their plugin formats (Cursor's portable Agent Plugin form carries only skills and MCP). Codex plugins don't document subagents as a component, and an OpenCode plugin is code rather than a file bundle. Wherever a piece falls outside the bundle, the honest install instruction has a second step - copy the agent files too, register the MCP server yourself, commit the commands directory - and the second step is the one people forget. Write it down somewhere the plugin can't: a README next to the marketplace entry, or the repo it ships from.
 
 ## What "install this plugin" actually does
 
-The word covers three different kinds of object, and they behave differently the moment you install one.
+The word covers two different kinds of object, and they behave differently the moment you install one.
 
-- **A static bundle of files.** Claude Code, Codex, Copilot, and Pi packages all ship content: directories of skills, hook definitions, MCP configs, agent files, named by a manifest. Codex makes the shape explicit - `.codex-plugin/plugin.json`, one optional field per component type (`skills`, `mcpServers`, `apps`, `hooks`), each a path relative to the plugin root. The gotcha: the installed copy is not the repo you installed from. Claude Code copies plugins into `~/.claude/plugins/cache/`, so a path reaching outside the plugin's own directory stops resolving after install.
+- **A static bundle of files.** Claude Code, Codex, Cursor, Copilot, and Pi packages all ship content: directories of skills, hook definitions, MCP configs, agent files, named by a manifest. Codex makes the shape explicit - `.codex-plugin/plugin.json`, one optional field per component type (`skills`, `mcpServers`, `apps`, `hooks`), each a path relative to the plugin root. The gotcha: the installed copy is not the repo you installed from. Claude Code copies plugins into `~/.claude/plugins/cache/`, so a path reaching outside the plugin's own directory stops resolving after install.
 - **Live code.** An OpenCode plugin is a JS/TS module exporting a function that returns hook handlers and tool definitions. Installing one means the npm packages listed in `opencode.json` are fetched with Bun at startup and cached in `~/.cache/opencode/node_modules/`. You aren't copying content into place; you're adding a program, and its dependencies, to the startup path.
-- **Nothing native.** Cursor has no bundle format for rules plus skills plus subagents plus hooks. Its packaging surfaces are inherited ones: OpenVSX-backed VS Code extensions, and the MCP Marketplace for servers. Sharing a Cursor setup means committing the `.cursor/*` files and letting `git pull` be the installer.
 
 That difference decides what you can check before you trust someone else's bundle: a static bundle reads as files, a live plugin has to be read as code. Either way the install isn't free - every skill a bundle brings in contributes its description to the [always-loaded part of the window](/foundations/how-agents-work/#three-cost-profiles-to-keep-in-mind) in every session afterwards, so a twelve-skill plugin installed for one skill charges you for twelve.
 
@@ -71,11 +70,11 @@ A plugin pays its weight when there are *multiple* extension pieces that belong 
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| First-class plugin format | Yes (static bundle) | **Yes** (skills + apps + MCP + hooks; subagents are not documented as a plugin component) | Yes (live JS/TS) | **No** (no rules + skills + agents + hooks bundle) | Yes (enterprise-managed plugins still preview) | **Yes** - Pi packages |
-| Bundles skills + hooks + agents + MCP | Yes | Partial - skills + hooks + MCP + app connectors; subagents are documented separately | Yes (via plugin code) | - | Yes (skills + agents + hooks + MCP + LSP) | Extensions + skills + prompts + themes (no MCP - no native MCP at all) |
+| First-class plugin format | Yes (static bundle) | **Yes** (skills + apps + MCP + hooks; subagents are not documented as a plugin component) | Yes (live JS/TS) | **Yes** (Cursor Plugin, `.cursor-plugin/plugin.json`) | Yes (enterprise-managed plugins still preview) | **Yes** - Pi packages |
+| Bundles skills + hooks + agents + MCP | Yes | Partial - skills + hooks + MCP + app connectors; subagents are documented separately | Yes (via plugin code) | Yes (rules + skills + agents + commands + hooks + MCP) | Yes (skills + agents + commands + hooks + MCP + LSP) | Extensions + skills + prompts + themes (no MCP resource type; an extension can register a server) |
 | Namespacing | `/plugin:cmd` | Plugin name is the identifier; no documented skill/command invocation-prefix | Slash commands not a documented plugin capability | - | Plugin-scoped | Package-scoped |
-| Distribution mechanism | Marketplaces | Marketplaces (`marketplace.json`: local path, Git repo, or npm source) | npm + community [`awesome-opencode`](https://github.com/awesome-opencode/awesome-opencode) index | OpenVSX extensions + MCP Marketplace (cursor.directory) | Plugin marketplaces (default: [`github/copilot-plugins`](https://github.com/github/copilot-plugins), [`github/awesome-copilot`](https://github.com/github/awesome-copilot)) | `pi install npm:<pkg>` / `pi install git:<repo>` |
-| Closest analogue (if no native plugins) | - | - (has native plugins now) | - | Share `.cursor/*` files directly | - | - (has native packages) |
+| Distribution mechanism | Marketplaces | Marketplaces (`marketplace.json`: local path, Git repo, or npm source) | npm + community [`awesome-opencode`](https://github.com/awesome-opencode/awesome-opencode) index | Cursor Marketplace (reviewed, Git-based) and team marketplaces; cursor.directory is the community directory | Plugin marketplaces (built in: [`github/awesome-copilot`](https://github.com/github/awesome-copilot); [`github/copilot-plugins`](https://github.com/github/copilot-plugins) is no longer a default and is added with `copilot plugin marketplace add`) | `pi install npm:<pkg>` / `pi install git:<repo>` |
+| Closest analogue (if no native plugins) | - | - (has native plugins now) | - | - (has native plugins now) | - | - (has native packages) |
 | Separate `@`-invocable extension surface | - | - | - | - | - (GitHub-App Extensions retired 2025-11-10; use MCP) | - |
 
 ## Name collisions
@@ -85,7 +84,7 @@ A plugin pays its weight when there are *multiple* extension pieces that belong 
 
 Start from what you already have. List the extension files in your busiest repo, check each one against your tool's bundle above, and you end up with two lists: the pieces a plugin will carry, and the pieces your install instruction still has to name out loud. Package the first, write down the second, and the next teammate is one command and one short paragraph away from your setup rather than an afternoon.
 
-<UpstreamRefs checkedAt="2026-08-07"
+<UpstreamRefs checkedAt="2026-10-23"
   links={[
     {
       tool: 'Claude Code',
@@ -107,8 +106,8 @@ Start from what you already have. List the extension files in your busiest repo,
 
     {
       tool: 'Cursor',
-      label: 'Extensions',
-      url: 'https://cursor.com/help/customization/extensions',
+      label: 'Plugins',
+      url: 'https://cursor.com/docs/plugins',
     },
 
     {

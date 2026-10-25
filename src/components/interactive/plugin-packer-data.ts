@@ -67,7 +67,7 @@ export const ppkTools: PpkToolSpec[] = [
       mcp: { status: 'bundle', note: '`.mcp.json` ships in the plugin.' },
       command: {
         status: 'loose',
-        note: 'No dedicated commands field - package it as a skill (standalone custom prompts are deprecated).',
+        note: 'No dedicated commands field - package it as a skill (standalone custom prompts were removed).',
       },
     },
     ship: {
@@ -97,27 +97,27 @@ export const ppkTools: PpkToolSpec[] = [
       code: '// opencode.json\n"plugin": ["@our-org/team-stack"]',
     },
     dist: 'Plugins are live JS/TS modules - closer to a VS Code extension than a static bundle. npm packages auto-install at startup (via Bun); local files load from `.opencode/plugins/` or `~/.config/opencode/plugins/`.',
-    caveat: 'No official registry - the community index is `awesome-opencode` on GitHub.',
+    caveat: 'No official registry - the community index is `awesome-opencode` on GitHub. OpenCode 2 (October 2026) uses a new plugin API and a `plugins` config key, and v1 plugins do not run; see opencode.ai/v2/docs/plugins/.',
   },
   {
     id: 'cursor',
     label: 'Cursor',
     pieces: {
-      skill: { status: 'loose', note: 'Share the `.cursor/skills/` folder directly.' },
-      subagent: { status: 'loose', note: 'A `.cursor/*` file - share it directly.' },
-      hook: { status: 'loose', note: 'A `.cursor/*` file - share it directly.' },
+      skill: { status: 'bundle', note: 'Bundles into the plugin; also valid in the open Agent Plugins format.' },
+      subagent: { status: 'bundle', note: 'Agent configurations bundle in a Cursor Plugin.' },
+      hook: { status: 'bundle', note: 'Bundles in a Cursor Plugin (not in the open Agent Plugins format).' },
       mcp: {
-        status: 'loose',
-        note: 'One-click installs via the MCP Marketplace and cursor.directory.',
+        status: 'bundle',
+        note: 'MCP server configs bundle in both plugin formats.',
       },
-      command: { status: 'loose', note: '`.cursor/commands/*.md` - share the files.' },
+      command: { status: 'bundle', note: 'Command files bundle in a Cursor Plugin.' },
     },
     ship: {
-      text: 'No plugin format yet - commit the `.cursor/*` files to the repo, and the whole team gets the setup on pull.',
+      text: 'Install from the Cursor Marketplace or cursor.directory via the Customize page. Plugins are Git repositories with a `.cursor-plugin/plugin.json` manifest; Teams and Enterprise plans can run team marketplaces.',
     },
-    dist: 'The inherited surfaces: OpenVSX-backed extensions (the VS Code model, with thinner coverage than upstream) and the MCP Marketplace. Neither bundles rules + skills + agents into one unit.',
+    dist: 'Two formats: Cursor Plugins (`.cursor-plugin/plugin.json`, adds rules, agents, commands, hooks) and the open Agent Plugins standard (`plugin.json` at the root, skills and MCP servers). The Cursor Marketplace lists only manually reviewed official plugins; Teams allows 1 team marketplace, Enterprise unlimited.',
     caveat:
-      'Cursor’s public marketplace documentation does not establish a first-class registry that bundles rules, skills, agents, and hooks; verify any such product claim against the current docs.',
+      'Cursor does not expand the Agent Plugins `${PLUGIN_ROOT}` variable in `mcp.json` - use `${CURSOR_PLUGIN_ROOT}` for the plugin root.',
   },
   {
     id: 'copilot',
@@ -136,7 +136,7 @@ export const ppkTools: PpkToolSpec[] = [
       },
     },
     ship: {
-      text: 'Install from a plugin marketplace - `github/copilot-plugins` (official) and `github/awesome-copilot` (community) are registered by default; marketplaces can live on GitHub, any Git server, or disk.',
+      text: 'Install from a plugin marketplace - `github/awesome-copilot` (community) is registered by default and `github/copilot-plugins` (official) is added with `copilot plugin marketplace add github/copilot-plugins`; marketplaces can live on GitHub, any Git server, or disk.',
     },
     dist: 'Plugins bundle agents + skills + hooks + MCP + LSP for both VS Code and the Copilot CLI. Enterprise admins can set baseline plugins for every user (enterprise-managed plugins remain in public preview).',
     caveat:

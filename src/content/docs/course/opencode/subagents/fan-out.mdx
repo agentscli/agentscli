@@ -4,6 +4,7 @@ description: "One thread auditing every adapter serially is slow and drowns its 
 ---
 
 import SubagentFanout from '../../../../../components/interactive/SubagentFanout.tsx';
+import { Aside } from '@astrojs/starlight/components';
 
 A feed adapter can fail quietly: it parses a timestamp and stores the feed's local time instead of UTC, and every item from that source mis-sorts in the reading queue from then on. `feedmill` - the course's illustrative Go feed aggregator - carries one of these parser adapters per source shape, and each parses timestamps its own way, which is exactly how that slip hides in some adapters and not others. So the job isn't to fix adapters one at a time as they surface - it's "audit every adapter for the same UTC-normalization mistake and tell me which ones have it."
 
@@ -21,7 +22,7 @@ The audit passes both. So we split it.
 
 ## Dispatch a worker per slice
 
-In OpenCode the parent agent fans work out through the **Task tool**, the delegation call the model uses to spin up a subagent - the programmatic sibling of the `@mention` you type (typing `@name` in a message invokes that subagent yourself; as of September 2026, [agents documentation](https://opencode.ai/docs/agents/)). You don't drive the Task tool yourself; you describe the partition and the per-worker brief, and the primary agent (the top-level agent you type at, such as `build`) dispatches the workers, calling once per slice so they can run concurrently.
+In OpenCode the parent agent fans work out through the **Task tool**, the delegation call the model uses to spin up a subagent - the programmatic sibling of the `@mention` you type (typing `@name` in a message invokes that subagent yourself; as of October 2026, [agents documentation](https://opencode.ai/docs/agents/)). You don't drive the Task tool yourself; you describe the partition and the per-worker brief, and the primary agent (the top-level agent you type at, such as `build`) dispatches the workers, calling once per slice so they can run concurrently.
 
 The brief names the worker it wants. Assume you've saved a small read-only subagent as `.opencode/agents/audit-worker.md` (its frontmatter is under "Cap each worker with `steps`" below); the file name becomes the agent name, so the brief can say `@audit-worker`. Without a named worker, the primary agent may pick `general`, which has full tool access:
 
@@ -72,9 +73,13 @@ steps: 6
 ---
 ```
 
+<Aside type="caution" title="In OpenCode 2">
+In OpenCode 2 this v1-shaped frontmatter is still translated, and `steps` keeps its name. The delegation tool is the `subagent` tool and its permission action is `subagent`, where v1 says `task`. See [Modes in the v2 agents documentation](https://opencode.ai/v2/docs/agents/#modes), as of October 2026.
+</Aside>
+
 The `bash: deny` line is what makes "read-only" true: `edit` covers only the edit, write, and patch tools, so without it a worker could still change a file through the shell. The "Read only - no edits" line in the brief is guidance the model usually follows; the permission map is what enforces it.
 
-`steps` caps the maximum agentic iterations a worker can take before OpenCode forces it to stop and respond with a summary of where it got - so a stuck worker degrades into "here's what I found and what's left," never an open-ended loop. (The legacy `maxSteps` field did the same job and is deprecated - the docs say plainly to use `steps` instead - and the `model:` ID in the example block is an illustrative catalog entry, not a verified roster ([agents documentation](https://opencode.ai/docs/agents/), as of September 2026).)
+`steps` caps the maximum agentic iterations a worker can take before OpenCode forces it to stop and respond with a summary of where it got - so a stuck worker degrades into "here's what I found and what's left," never an open-ended loop. (The legacy `maxSteps` field did the same job and is deprecated - the docs say plainly to use `steps` instead - and the `model:` ID in the example block is an illustrative catalog entry, not a verified roster ([agents documentation](https://opencode.ai/docs/agents/), as of October 2026).)
 
 The sharp edge follows from the isolation itself: because each worker is its own child session with its own budget, `steps` is best understood as a **per-worker cap, not a per-fan-out one**. Set `steps: 6` and dispatch twenty workers and the per-worker caps permit up to roughly a hundred and twenty iterations across the spread, each one a potential call. So the cap and the width can multiply - which is the practical reason to **start narrow**. Three or four workers may show useful speedup with rate-limit headroom; widen only if the slowdown is genuinely the lack of concurrency and not something else. Pairing a tight `steps` with a cheap model like Haiku on the read-only workers makes each worker cheaper, but it doesn't make width free: every worker still pays its own system prompt and tool setup, so total spend grows with the number of workers. The audit doesn't need your most expensive model to spot a missing `.UTC()`.
 

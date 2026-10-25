@@ -2,9 +2,10 @@
  * OpenCode cheatsheet facts - the single source of truth for the cheatsheet
  * renderer and the foundations page.
  *
- * FACT-BOUND. Verification, 2026-08-18:
- *   - CLI flags and subcommands: read from the installed `opencode --help`
- *     and subcommand help, v1.4.7; marked `firsthand`.
+ * FACT-BOUND. Verification, 2026-10-25:
+ *   - CLI flags and subcommands: read from `opencode --help` and every
+ *     subcommand's help on opencode-ai@1.19.4 (capture in the research
+ *     folder, cli-help-v1.19.4.txt); marked `firsthand`.
  *   - TUI, config, agents, permissions, MCP, plugins, skills, and server:
  *     official docs at opencode.ai/docs; marked `documented`.
  *   - This page describes the v1 config shape used by the installed binary.
@@ -45,12 +46,12 @@ const OC = "https://opencode.ai/docs";
 export const opencodeCheatsheet: Cheatsheet = {
   tool: "opencode",
   label: "OpenCode",
-  version: "1.4.7",
-  checkedAt: "2026-08-18",
+  version: "1.19.4",
+  checkedAt: "2026-10-25",
   sources: [
-    "Installed binary: opencode --help and subcommand help (v1.4.7, first-hand)",
+    "Installed binary: opencode --help and subcommand help (v1.19.4, first-hand)",
     "GitHub repository: https://github.com/anomalyco/opencode",
-    "Installed-version release: https://github.com/anomalyco/opencode/releases/tag/v1.4.7",
+    "Installed-version release: https://github.com/anomalyco/opencode/releases/tag/v1.19.4",
     `${OC}/cli`,
     `${OC}/tui`,
     `${OC}/config`,
@@ -63,7 +64,7 @@ export const opencodeCheatsheet: Cheatsheet = {
     `${OC}/server`,
   ],
   intro:
-    "OpenCode is a provider-agnostic, terminal-first coding agent. Rows marked binary were checked against installed v1.4.7; rows marked docs are from current OpenCode v1 documentation and may describe features added after that binary. OpenCode 2 is a separate beta product using `opencode2`; the config examples here target v1.",
+    "OpenCode is a provider-agnostic, terminal-first coding agent. Rows marked binary were checked against v1.19.4 (the npm `opencode-ai` latest on 2026-10-25); rows marked docs are from the OpenCode v1 documentation. OpenCode 2 is GA (`@opencode/cli`, docs at opencode.ai/v2/docs); the config examples here target v1, and rows with an `OpenCode 2:` note differ there (as of October 2026).",
 
   categories: [
     {
@@ -98,6 +99,7 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "opencode upgrade [target]",
           desc: "Upgrade to the latest release or a specific target version.",
+          note: "Choose the installer with `--method` (`curl`, `npm`, `pnpm`, `bun`, `brew`, `choco`, `scoop`). `--major` upgrades to OpenCode 2 and removes OpenCode 1.",
           conf: "firsthand",
         },
         {
@@ -108,14 +110,14 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "opencode auth login",
           desc: "Alias for provider login; choose a provider and authenticate.",
-          note: "The canonical v1 command is also `opencode providers login`.",
+          note: "`auth` is an alias of `opencode providers`; `opencode providers login [url]` is the canonical form.",
           conf: "firsthand",
           doc: `${OC}/providers`,
         },
         {
           cmd: "opencode auth list",
           desc: "List configured providers and credentials.",
-          note: "Alias: `opencode providers list`.",
+          note: "Alias: `opencode providers list` (also `ls`).",
           conf: "firsthand",
           doc: `${OC}/providers`,
         },
@@ -156,7 +158,7 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "opencode --session <id>",
           desc: "Continue a specific session by ID.",
-          note: "Short form: `-s`; combine with `--fork` to branch it.",
+          note: "Short form: `-s`; combine with `--fork` to branch it. OpenCode 2: bare `opencode` has no `--fork`; it exists on `opencode run` and `opencode mini`.",
           conf: "firsthand",
           doc: `${OC}/cli`,
         },
@@ -165,6 +167,7 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "Fork a session before continuing it.",
           conf: "firsthand",
           doc: `${OC}/cli`,
+          note: "OpenCode 2: use `opencode run --fork` or `opencode mini --fork`; bare `opencode` has no `--fork`.",
         },
         {
           cmd: "opencode session list",
@@ -180,11 +183,13 @@ export const opencodeCheatsheet: Cheatsheet = {
           cmd: "opencode export [sessionID]",
           desc: "Export session data as JSON.",
           conf: "firsthand",
+          note: "Add `--sanitize` to redact sensitive transcript and file data. OpenCode 2: `opencode session export <id>`.",
         },
         {
           cmd: "opencode import <file>",
-          desc: "Import session data from a JSON file or URL.",
+          desc: "Import session data from a JSON file.",
           conf: "firsthand",
+          note: "OpenCode 2: `opencode session import <file>`.",
         },
       ],
     },
@@ -265,7 +270,7 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "Tab",
           desc: "Switch between the built-in `build` and `plan` agents.",
-          note: "`@general` invokes the built-in general subagent in a prompt.",
+          note: "`@general` invokes the built-in general subagent in a prompt. OpenCode 2: agent cycling defaults to `Shift+Tab`.",
           conf: "documented",
           doc: `${OC}/agents`,
         },
@@ -283,23 +288,26 @@ export const opencodeCheatsheet: Cheatsheet = {
           example: "opencode --model anthropic/claude-sonnet-4-5",
           conf: "firsthand",
           doc: `${OC}/cli`,
+          note: "OpenCode 2: the root command has no `--model`; use `opencode run --model` or `opencode mini --model`.",
         },
         {
           cmd: "opencode --agent <name>",
           desc: "Start with a named agent.",
           conf: "firsthand",
           doc: `${OC}/agents`,
+          note: "OpenCode 2: the root command has no `--agent`; use `opencode run --agent` or `opencode mini --agent`.",
         },
         {
           cmd: "opencode models [provider]",
           desc: "List available models, optionally filtered by provider.",
           conf: "firsthand",
           doc: `${OC}/models`,
+          note: "OpenCode 2: `opencode models` takes no provider argument.",
         },
         {
           cmd: "opencode models --refresh",
           desc: "Refresh the model cache from models.dev.",
-          note: "Use `--verbose` to include metadata such as costs.",
+          note: "Use `--verbose` to include metadata such as costs. OpenCode 2: `opencode models` has no `--refresh` flag.",
           conf: "firsthand",
         },
         {
@@ -307,12 +315,14 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "List available built-in and custom agents.",
           conf: "firsthand",
           doc: `${OC}/agents`,
+          note: "OpenCode 2: no `agent` subcommand; use `opencode debug agents`.",
         },
         {
           cmd: "opencode agent create",
           desc: "Interactively create a custom agent.",
           conf: "firsthand",
           doc: `${OC}/agents`,
+          note: "OpenCode 2: no `agent` subcommand; write `.opencode/agents/<name>.md` by hand.",
         },
         {
           cmd: ".opencode/agents/<name>.md",
@@ -326,6 +336,7 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "Select a provider-specific model variant, such as a reasoning effort.",
           conf: "firsthand",
           doc: `${OC}/cli`,
+          note: "OpenCode 2: no `--variant` flag; append it to the model, as `--model provider/model#variant`.",
         },
       ],
     },
@@ -338,21 +349,21 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "opencode --auto",
           desc: "Auto-approve requests that are not explicitly denied.",
-          note: "Current v1 docs feature; not advertised by installed v1.4.7. Explicit `deny` rules still win; `opencode run --auto` works too.",
+          note: "Listed in v1.19.4 `--help` for both `opencode` and `opencode run`. Explicit `deny` rules still win.",
           conf: "documented",
           doc: `${OC}/permissions`,
         },
         {
-          cmd: 'opencode run --dangerously-skip-permissions "<prompt>"',
+          cmd: 'opencode run --auto "<prompt>"',
           desc: "Auto-approve permissions that are not explicitly denied in a headless run.",
-          note: "Dangerous: use only in a deliberately isolated environment.",
+          note: "Dangerous: use only in a deliberately isolated environment. Earlier v1 builds called this `--dangerously-skip-permissions`; v1.19.4 `opencode run --help` lists only `--auto`. OpenCode 2 also uses `opencode run --auto`.",
           conf: "firsthand",
           doc: `${OC}/permissions`,
         },
         {
           cmd: '"permission": { "*": "ask", "bash": "allow", "edit": "deny" }',
           desc: "Set v1 global permission defaults in `opencode.json`.",
-          note: "Actions are `allow`, `ask`, or `deny`.",
+          note: "Actions are `allow`, `ask`, or `deny`. OpenCode 2: V1 maps still load; native form is an ordered `permissions` array of `{ action, resource, effect }` with `shell` for `bash`. `external_directory` is allowed by default.",
           conf: "documented",
           doc: `${OC}/permissions`,
         },
@@ -422,7 +433,7 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "AGENTS.md",
           desc: "Project instructions OpenCode can use as durable context.",
-          note: "OpenCode also supports `CLAUDE.md` and configurable instruction files.",
+          note: "OpenCode also supports `CLAUDE.md` and configurable instruction files. OpenCode 2 reads `AGENTS.md` only; there is no `CLAUDE.md` fallback.",
           conf: "documented",
           doc: `${OC}/rules`,
         },
@@ -431,6 +442,7 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "Separate TUI settings such as theme, cursor, mouse, and attention notifications.",
           conf: "documented",
           doc: `${OC}/config`,
+          note: "OpenCode 2: replaced by one global `~/.config/opencode/cli.json`, auto-migrated.",
         },
       ],
     },
@@ -470,6 +482,7 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "Debug an MCP OAuth connection.",
           conf: "firsthand",
           doc: `${OC}/mcp-servers`,
+          note: "OpenCode 2: no `mcp debug` subcommand (`list`, `add`, `auth`, `logout` only).",
         },
         {
           cmd: '"mcp": { "my-server": { "type": "local", "command": ["npx", "-y", "example"] } }',
@@ -495,7 +508,7 @@ export const opencodeCheatsheet: Cheatsheet = {
         {
           cmd: "opencode plugin <npm-module>",
           desc: "Install a plugin and update config.",
-          note: "Use `--global` for global config or `--force` to replace an installed version.",
+          note: "Use `--global` for global config or `--force` to replace an installed version. OpenCode 2: `opencode plugin add <package>` (also `list`, `check`, `update`, `remove`); V1 plugin code does not run.",
           conf: "firsthand",
           doc: `${OC}/plugins`,
         },
@@ -504,6 +517,7 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "Load a plugin from the v1 config.",
           conf: "documented",
           doc: `${OC}/plugins`,
+          note: "OpenCode 2: key is `plugins`, and V1 plugin code must be ported to `Plugin.define`.",
         },
         {
           cmd: ".opencode/skills/<name>/SKILL.md",
@@ -517,6 +531,7 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "List all skills OpenCode can discover.",
           conf: "firsthand",
           doc: `${OC}/skills`,
+          note: "OpenCode 2: `opencode debug` has `agents`, `config` and `paths` only.",
         },
         {
           cmd: '"permission": { "skill": { "*": "allow", "internal-*": "deny" } }',
@@ -536,6 +551,7 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "Run without external plugins.",
           conf: "firsthand",
           doc: `${OC}/plugins`,
+          note: "OpenCode 2: root command has no `--pure` flag.",
         },
       ],
     },
@@ -570,6 +586,7 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "Send a run to an already-running OpenCode server.",
           conf: "firsthand",
           doc: `${OC}/cli`,
+          note: "OpenCode 2: use `opencode run --server <url>` (or `--standalone` for a private server).",
         },
         {
           cmd: "opencode serve --port 4096",
@@ -583,17 +600,19 @@ export const opencodeCheatsheet: Cheatsheet = {
           desc: "Start the server and open the web interface.",
           conf: "firsthand",
           doc: `${OC}/server`,
+          note: "OpenCode 2: no `web` subcommand; `opencode serve` starts the API and web server.",
         },
         {
           cmd: "opencode attach http://localhost:4096",
           desc: "Attach the TUI to a running server.",
           conf: "firsthand",
           doc: `${OC}/server`,
+          note: "OpenCode 2: no `attach` subcommand; pass `--server <url>` to a client command.",
         },
         {
           cmd: '"server": { "port": 4096, "hostname": "0.0.0.0", "cors": ["http://localhost:5173"] }',
           desc: "Configure server listening and browser CORS in `opencode.json`.",
-          note: "mDNS is available with `mdns: true` and optional `mdnsDomain`.",
+          note: "mDNS is available with `mdns: true` and optional `mdnsDomain`. OpenCode 2: the `server` config key is ignored with a warning; use `opencode serve` flags or `opencode service set`.",
           conf: "documented",
           doc: `${OC}/server`,
         },

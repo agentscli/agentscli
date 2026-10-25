@@ -51,7 +51,7 @@ export const FILES = [
 /** Sample /mcp listing - one healthy, one pending, to show the approval state. */
 export const MCP_SERVERS = [
   { name: 'github', state: 'connected', detail: '47 tools · schemas deferred' },
-  { name: 'sentry', state: 'pending', detail: '⏸ pending approval (.mcp.json) — not connected' },
+  { name: 'sentry', state: 'pending', detail: '⏸ pending approval (.mcp.json) - not connected' },
 ];
 
 /** Sample /skills listing with plausible token costs. */
@@ -113,7 +113,7 @@ export const REPLIES: SandReply[] = [
   {
     match: /plan|design|architect/i,
     tool: [],
-    text: 'Plan: (1) reproduce with the saved filter, (2) fix the cursor to respect the filter, (3) add a regression test for the empty-page case, (4) re-run the suite. No file changes yet — say the word.',
+    text: 'Plan: (1) reproduce with the saved filter, (2) fix the cursor to respect the filter, (3) add a regression test for the empty-page case, (4) re-run the suite. No file changes yet - say the word.',
     costK: 6,
   },
   {
@@ -145,7 +145,7 @@ export const FALLBACK_REPLIES: { tool: string[]; text: string; costK: number }[]
 
 /** Keys the palette teaches beyond slash commands. */
 export const KEY_HINTS = [
-  { keys: 'Shift+Tab', desc: 'cycle permission modes: default → acceptEdits → plan' },
+  { keys: 'Shift+Tab', desc: 'cycle permission modes: default → acceptEdits → plan (auto joins when available)' },
   { keys: 'Esc', desc: 'interrupt the run - work done so far is kept' },
   { keys: 'Esc Esc', desc: 'open the rewind menu from an empty prompt' },
   { keys: '!', desc: 'shell mode: !ls, !cat README.md' },

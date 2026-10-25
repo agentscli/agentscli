@@ -6,7 +6,10 @@
  * monthly WIDGETS.md pass and bump `checkedAt` per tool.
  *
  * Reconciled from six independent research passes (2026-08-05):
- *   8 surfaces, 489 bindings.
+ *   8 surfaces, 574 bindings (489 at the original pass).
+ *
+ * Refreshed 2026-10-25: every surface re-checked against its primary sources;
+ * version, sources and checkedAt bumped per tool (see the per-tool fields).
  *   confidence: source-code > firsthand > documented.
  *
  * `severity` on collisions is assigned per BEHAVIOUR here, deliberately - the
@@ -77,9 +80,9 @@ export const KM_TOOLS: KmTool[] = [
     "label": "Claude Code",
     "surface": "tui",
     "host": null,
-    "version": "2.1.222",
+    "version": "2.1.310",
     "versionNotes": null,
-    "checkedAt": "2026-08-05",
+    "checkedAt": "2026-10-25",
     "sources": [
       "https://code.claude.com/docs/en/keybindings#app-actions",
       "https://code.claude.com/docs/en/keybindings#chat-actions",
@@ -103,13 +106,31 @@ export const KM_TOOLS: KmTool[] = [
       "https://code.claude.com/docs/en/interactive-mode#text-objects-normal-mode",
       "https://code.claude.com/docs/en/keybindings#scroll-actions",
       "https://code.claude.com/docs/en/keybindings#select-actions",
-      "https://code.claude.com/docs/en/keybindings#settings-actions"
+      "https://code.claude.com/docs/en/keybindings#settings-actions",
+      "https://code.claude.com/docs/en/keybindings#footer-actions",
+      "https://code.claude.com/docs/en/keybindings#diff-panel-actions",
+      "https://code.claude.com/docs/en/keybindings#diff-actions",
+      "https://code.claude.com/docs/en/keybindings#model-picker-actions",
+      "https://code.claude.com/docs/en/keybindings#effort-slider-actions",
+      "https://code.claude.com/docs/en/keybindings#plugin-actions",
+      "https://code.claude.com/docs/en/keybindings#above-prompt-actions",
+      "https://code.claude.com/docs/en/keybindings#pane-actions",
+      "https://code.claude.com/docs/en/keybindings#agents-actions",
+      "https://code.claude.com/docs/en/interactive-mode#queue-messages-while-claude-works",
+      "https://code.claude.com/docs/en/interactive-mode#diff-panel",
+      "https://code.claude.com/docs/en/interactive-mode#side-questions-with-btw",
+      "https://code.claude.com/docs/en/interactive-mode#visual-mode",
+      "https://code.claude.com/docs/en/agent-view#switch-sessions-without-leaving-the-terminal",
+      "https://code.claude.com/docs/en/fullscreen#clear-the-conversation",
+      "https://code.claude.com/docs/en/keybindings#history-search-actions",
+      "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+      "https://code.claude.com/docs/en/keybindings#attachments-actions"
     ],
     "bindings": [
       {
         "keys": "ctrl+c",
         "macKeys": "ctrl+c",
-        "desc": "Interrupt a running operation. If nothing is running, first press clears the prompt input; a second press exits Claude Code.",
+        "desc": "Interrupt a running operation. If nothing is running, first press clears the prompt input; a second press exits Claude Code. After clearing, press Up on the empty prompt to bring the draft back (v2.1.288 or later); the ten most recent cleared drafts stay reachable with Up after you send a message or command (v2.1.292 or later).",
         "ctx": "global",
         "origin": "tool-specific",
         "conf": "source-code",
@@ -117,7 +138,7 @@ export const KM_TOOLS: KmTool[] = [
           "app:interrupt"
         ],
         "notes": "Action `app:interrupt`, confirmed present as a string literal in the installed 2.1.222 binary. Reserved - cannot be rebound (hardcoded interrupt/cancel).",
-        "src": 0,
+        "src": 4,
         "cmd": null,
         "intents": [
           "interrupt"
@@ -143,15 +164,15 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+l",
         "macKeys": "ctrl+l",
-        "desc": "Force a full terminal redraw, preserving input. In fullscreen rendering, press twice within two seconds to run /clear.",
+        "desc": "Force a full terminal redraw, preserving input and conversation. Use it to recover a garbled or partially blank display. Cmd+K does the same where the terminal passes it through.",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "source-code",
         "action": [
           "chat:clearInput"
         ],
-        "notes": "Action `chat:clearInput`, confirmed present in the binary. Readline conventionally binds Ctrl+L to clear-screen too, so this overlaps in spirit but the double-tap-to-/clear behavior is tool-specific.",
-        "src": 1,
+        "notes": "Action `chat:clearInput` (Cmd+K is `chat:clearScreen`, same behavior), both confirmed present as string literals in the installed 2.1.310 binary. The old double-press-within-two-seconds-to-run-/clear behavior was removed before v2.1.238 per the fullscreen docs; Ctrl+L now only redraws. Readline conventionally binds Ctrl+L to clear-screen too, so this overlaps in spirit, but Claude Code's redraw keeps the conversation.",
+        "src": 37,
         "cmd": null,
         "intents": []
       },
@@ -169,9 +190,7 @@ export const KM_TOOLS: KmTool[] = [
         "src": 0,
         "cmd": null,
         "intents": [
-          "transcript",
-          "mode-cycle",
-          "model-switch"
+          "transcript"
         ]
       },
       {
@@ -208,16 +227,16 @@ export const KM_TOOLS: KmTool[] = [
         ]
       },
       {
-        "keys": "ctrl+b",
-        "macKeys": "ctrl+b",
-        "desc": "Background the currently running Bash command/agent task.",
+        "keys": "ctrl+b / ctrl+x ctrl+b",
+        "macKeys": "ctrl+b / ctrl+x ctrl+b",
+        "desc": "Background the currently running Bash command, agent task, or skill shell command. Also moves a subagent's running command to the background. Tmux users press twice, or use the Ctrl+X Ctrl+B chord.",
         "ctx": "global",
         "origin": "tool-specific",
-        "conf": "documented",
+        "conf": "source-code",
         "action": [
           "task:background"
         ],
-        "notes": "Action `task:background` - only established from the docs table; the `task:` namespace was not reached by the binary string extraction pass, so this rests on documentation alone. Collides with tmux's default prefix key - tmux users must press twice. A chord alternative `ctrl+x ctrl+b` was added in v2.1.169 specifically to avoid this conflict.",
+        "notes": "Action `task:background`, confirmed present as a string literal in the installed 2.1.310 binary. Collides with tmux's default prefix key. The chord alternative `ctrl+x ctrl+b` (Task context) was added in v2.1.169 specifically to avoid this conflict.",
         "src": 3,
         "cmd": null,
         "intents": []
@@ -240,15 +259,15 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+s",
         "macKeys": "ctrl+s",
-        "desc": "Stash the current prompt text and clear the input. Pressed again on an empty prompt, restores the stashed text, cursor position, and pasted content.",
+        "desc": "Stash the current prompt text and clear the input. Pressed again on an empty prompt, restores the stashed text, cursor position, pasted content, and input mode (a stashed ! shell command returns in shell mode).",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "source-code",
         "action": [
           "chat:stash"
         ],
-        "notes": "Action `chat:stash`, confirmed present in the binary. Also reused as `historySearch:cycleScope` inside the HistorySearch context (fullscreen renderer) - that id itself not confirmed in the binary.",
-        "src": 1,
+        "notes": "Action `chat:stash`, confirmed present in the binary. Reused as `historySearch:cycleScope` in fullscreen history search (now confirmed in the 2.1.310 binary) and as `agents:switchView` in agent view, where the Agents binding wins over Chat.",
+        "src": 4,
         "cmd": null,
         "intents": [
           "clear-input"
@@ -274,7 +293,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "esc",
         "macKeys": "esc",
-        "desc": "Interrupt Claude mid-turn (stop the current response/tool call, keeping work done so far), or close an open dialog (e.g. permission prompt) without interrupting.",
+        "desc": "Interrupt Claude mid-turn (stop the current response/tool call, keeping work done so far; queued messages are then sent), or close an open dialog (e.g. permission prompt) without interrupting. While a footer item is selected, Esc deselects it instead of interrupting. On a permission prompt, Esc declines the action.",
         "ctx": "global",
         "origin": "tool-specific",
         "conf": "source-code",
@@ -304,7 +323,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "shift+tab",
         "macKeys": "shift+tab",
-        "desc": "Cycle permission modes (default/Manual -> acceptEdits -> plan -> any custom modes like auto/bypassPermissions).",
+        "desc": "Cycle permission modes: default (labeled Manual), acceptEdits, plan, and, when available, bypassPermissions and then auto. From auto the first press switches to default.",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "source-code",
@@ -312,7 +331,7 @@ export const KM_TOOLS: KmTool[] = [
           "chat:cycleMode"
         ],
         "notes": "Action `chat:cycleMode`, confirmed present in the binary. On Windows, when the Node/Bun runtime doesn't enable VT input mode, the default falls back to Alt+M (Meta+M) instead.",
-        "src": 1,
+        "src": 4,
         "cmd": null,
         "intents": [
           "mode-cycle"
@@ -338,7 +357,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "option+t (mac) / alt+t (win/linux)",
         "macKeys": "option+t / meta+t",
-        "desc": "Toggle extended thinking mode. No effect on Fable 5, which always uses extended thinking.",
+        "desc": "Toggle extended thinking mode. No effect on Opus 5.5, Sonnet 5.5, Haiku 5.5, or the Fable models, which always use extended thinking.",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "source-code",
@@ -346,7 +365,7 @@ export const KM_TOOLS: KmTool[] = [
           "chat:thinkingToggle"
         ],
         "notes": "Action `chat:thinkingToggle`, confirmed present in the binary. As of v2.1.132, works on macOS without configuring Option-as-Meta.",
-        "src": 1,
+        "src": 4,
         "cmd": null,
         "intents": [
           "mode-cycle"
@@ -429,7 +448,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "chat:externalEditor"
         ],
-        "notes": "Action `chat:externalEditor`, confirmed present in the binary. `Ctrl+X Ctrl+E` is explicitly called out by the docs as 'the readline-native binding' (bash's edit-and-execute-command). Ctrl+G is Claude Code's own added shortcut for the same action. Turning on 'Show last response in external editor' in /config prepends Claude's previous reply as `#`-commented context.",
+        "notes": "Action `chat:externalEditor`, confirmed present in the binary. `Ctrl+X Ctrl+E` is called out by the docs as the readline-native binding; Ctrl+G is Claude Code's own addition. Editors that take a line number open on the line your cursor is on (changelog, version not pinned). Turning on 'Show last response in external editor' in /config prepends Claude's previous reply as #-commented context. Agent view follows the single-keystroke binding only, so use Ctrl+G there.",
         "src": 4,
         "cmd": null,
         "intents": [
@@ -439,14 +458,14 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+x ctrl+k",
         "macKeys": "ctrl+x ctrl+k",
-        "desc": "Stop all running background subagents in this session. Press twice within 3 seconds to confirm.",
+        "desc": "Stop all running background subagents in this session and turn off artifact auto-replies for the rest of it. Press twice within 3 seconds to confirm; works while a background subagent's permission prompt is open.",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "source-code",
         "action": [
           "chat:killAgents"
         ],
-        "notes": "Action `chat:killAgents`, confirmed present in the binary. Part of the Ctrl+X chord family alongside `ctrl+x ctrl+e` (Chat context) and `ctrl+x ctrl+b` (Task context, alternate 'background task' chord, action `task:background` - not confirmed in the binary).",
+        "notes": "Action `chat:killAgents`, confirmed present in the binary. Part of the Ctrl+X chord family in Chat (`ctrl+x ctrl+e`, `ctrl+x enter`, `ctrl+x ctrl+a`, `ctrl+x ctrl+s`, `ctrl+x tab`), Task (`ctrl+x ctrl+b`), DiffPanel (`ctrl+x b`) and Pane (`ctrl+x x` and arrows) contexts. Background agents' permission prompts now show this shortcut.",
         "src": 1,
         "cmd": null,
         "intents": []
@@ -510,7 +529,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+w",
         "macKeys": "ctrl+w",
-        "desc": "Delete the previous word. Stores deleted text for pasting.",
+        "desc": "Delete back to the previous whitespace. One press removes a whole path or --flag=value. Stores deleted text for pasting. To delete only the previous word, use Option+Delete on macOS or Ctrl+Backspace on Windows.",
         "ctx": "input",
         "origin": "readline-inherited",
         "conf": "documented",
@@ -581,7 +600,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "up / down (or ctrl+p / ctrl+n)",
         "macKeys": "up / down (or ctrl+p / ctrl+n)",
-        "desc": "Move cursor within a multi-row prompt first; once the cursor is on the first/last visual row, navigates command history instead.",
+        "desc": "Move cursor within a multi-row prompt first; once the cursor is on the first/last visual row, navigates command history instead. While messages are queued, Up from the first row takes them back into the input box instead.",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "source-code",
@@ -597,17 +616,17 @@ export const KM_TOOLS: KmTool[] = [
         ]
       },
       {
-        "keys": "left / right",
-        "macKeys": "left / right",
-        "desc": "Cycle through dialog tabs (navigate between tabs in permission dialogs and menus).",
+        "keys": "left / right (or shift+tab / tab)",
+        "macKeys": "left / right (or shift+tab / tab)",
+        "desc": "Cycle through dialog tabs: Tab or Right goes to the next tab, Shift+Tab or Left to the previous. In a tabbed dialog the keys switch tabs while the tab row has focus; Up/Down move focus between the tab row and the content.",
         "ctx": "dialog",
         "origin": "tool-specific",
-        "conf": "documented",
+        "conf": "source-code",
         "action": [
           "tabs:previous",
           "tabs:next"
         ],
-        "notes": "The `tabs:` namespace was not reached by the binary string extraction pass, so this rests on the docs table alone. Also reused for word-navigation-adjacent purposes in ModelPicker (`modelPicker:decreaseEffort`/`increaseEffort`), Attachments, Footer, and DiffDialog contexts with different meanings per-context (none of those confirmed in the binary either).",
+        "notes": "Actions `tabs:next` and `tabs:previous`, confirmed present as string literals in the installed 2.1.310 binary. In some dialogs, such as /help and /sandbox, the tab keys also work from inside the tab content. Left/Right are reused for model-picker effort, attachments, footer and diff-source navigation in their own contexts.",
         "src": 4,
         "cmd": null,
         "intents": []
@@ -628,9 +647,9 @@ export const KM_TOOLS: KmTool[] = [
         ]
       },
       {
-        "keys": "y / n",
-        "macKeys": "y / n",
-        "desc": "Confirm (Y) or decline (N) a permission/confirmation dialog.",
+        "keys": "enter / esc",
+        "macKeys": "enter / esc",
+        "desc": "Confirm (Enter) or decline (Esc) a permission or confirmation dialog. Y and N are no longer default bindings (removed in v2.1.280), though a dialog that displays y and n as its keys reads them itself and you can rebind them in the Confirmation context. Ctrl+C or Ctrl+D twice closes most dialogs.",
         "ctx": "permission-prompt",
         "origin": "tool-specific",
         "conf": "source-code",
@@ -638,28 +657,10 @@ export const KM_TOOLS: KmTool[] = [
           "confirm:yes",
           "confirm:no"
         ],
-        "notes": "Both `confirm:yes` (Y or Enter) and `confirm:no` (N or Escape) confirmed present in the binary.",
+        "notes": "Actions `confirm:yes` and `confirm:no`, confirmed present in the binary. If your keybindings.json was created with /keybindings before v2.1.280 it still lists y and n and keeps them in effect until you delete those lines.",
         "src": 8,
         "cmd": null,
         "intents": []
-      },
-      {
-        "keys": "ctrl+e",
-        "macKeys": "ctrl+e",
-        "desc": "Toggle a model-generated explanation of the command on Bash/PowerShell permission prompts.",
-        "ctx": "permission-prompt",
-        "origin": "tool-specific",
-        "conf": "source-code",
-        "action": [
-          "confirm:toggleExplanation"
-        ],
-        "notes": "Action `confirm:toggleExplanation`, confirmed present in the binary. Note: the previous default of Ctrl+D for `permission:toggleDebug` was removed in v2.1.146 because it shadowed `app:exit` (`permission:toggleDebug` itself not confirmed in the binary).",
-        "src": 9,
-        "cmd": null,
-        "intents": [
-          "mode-cycle",
-          "model-switch"
-        ]
       },
       {
         "keys": "q / ctrl+c / esc",
@@ -822,9 +823,9 @@ export const KM_TOOLS: KmTool[] = [
         "intents": []
       },
       {
-        "keys": "esc",
-        "macKeys": "esc",
-        "desc": "In vim editing mode: switch from INSERT or VISUAL back to NORMAL mode.",
+        "keys": "esc / ctrl+[",
+        "macKeys": "esc / ctrl+[",
+        "desc": "In vim editing mode: switch from INSERT or VISUAL back to NORMAL mode. Ctrl+[ does the same.",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "documented",
@@ -850,27 +851,27 @@ export const KM_TOOLS: KmTool[] = [
         "intents": []
       },
       {
-        "keys": "h j k l, w e b, 0 $ ^, gg G, f/F/t/T{char}, ; ,",
+        "keys": "h j k l, space, w e b, 0 $ ^, gg G, f/F/t/T{char}, ; , %",
         "macKeys": "same",
-        "desc": "Vim NORMAL-mode navigation motions (left/down/up/right, word/end/back-word, line start/end/first-non-blank, buffer start/end, find-char motions, repeat motion).",
+        "desc": "Vim NORMAL-mode navigation motions (left/down/up/right, Space moves right, word/end/back-word, line start/end/first-non-blank, buffer start/end, find-char motions, repeat motion, % jumps to the matching bracket). / opens reverse history search, same as Ctrl+R.",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "No action id: internal vim-motion engine, not keybindings.json actions. If cursor is at input start/end and can't move further, j/k and Up/Down fall through to command-history navigation. Left on an empty prompt opens agent view from NORMAL mode too (as of v2.1.219).",
+        "notes": "No action id: internal vim-motion engine, not keybindings.json actions. % requires v2.1.301 or later. If the cursor is at input start/end and can't move further, j/k and Up/Down fall through to command-history navigation. Left on an empty prompt opens agent view from NORMAL mode too (as of v2.1.219).",
         "src": 17,
         "cmd": null,
         "intents": []
       },
       {
-        "keys": "x, dd, D, dw/de/db, cc, C, cw/ce/cb, s, S, yy/Y, yw/ye/yb, p, P, >>, <<, J, u, .",
+        "keys": "x, r{char}, dd, D, dw/de/db, df/dt{char}, dj/dk, dgg/dG, d0/c0/y0, d%/c%/y%, cc, C, cw/ce/cb, s, S, yy/Y, yw/ye/yb, p, P, >>, <<, J, u, .",
         "macKeys": "same",
-        "desc": "Vim NORMAL-mode editing operators (delete char/line/to-end/word variants, change line/to-end/word variants, substitute char/line, yank line/word variants, paste after/before, indent/dedent, join lines, undo, repeat last change).",
+        "desc": "Vim NORMAL-mode editing operators (delete char/line/to-end/word variants, replace char, delete to a character or across lines, delete/change/yank to line start or through a bracket, change line/to-end/word variants, substitute char/line, yank line/word variants, paste after/before, indent/dedent, join lines, undo, repeat last change).",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "No action id: internal vim engine. `s`/`S` (substitute) require v2.1.211+. Before v2.1.216, `.` (repeat) had bugs with change-operators and paste-repeat that have since been fixed.",
+        "notes": "No action id: internal vim engine. `s`/`S` require v2.1.211+; `d0`/`c0`/`y0` require v2.1.281+; `d%`/`c%`/`y%` require v2.1.301+. Before v2.1.216, `.` (repeat) had bugs with change-operators and paste-repeat that have since been fixed.",
         "src": 18,
         "cmd": null,
         "intents": [
@@ -942,9 +943,9 @@ export const KM_TOOLS: KmTool[] = [
         ]
       },
       {
-        "keys": "up/down/left/right, ctrl+n/ctrl+p, j/k",
+        "keys": "up/down, ctrl+n/ctrl+p, j/k, pageup/pagedown, home/end",
         "macKeys": "same",
-        "desc": "Move selection up/down in generic select lists and the rewind/summarize message selector.",
+        "desc": "Move selection up/down in generic select lists and the rewind/summarize message selector; PageUp/PageDown page and Home/End jump to the first or last option. Enter accepts and Esc cancels.",
         "ctx": "dialog",
         "origin": "readline-inherited",
         "conf": "source-code",
@@ -952,7 +953,7 @@ export const KM_TOOLS: KmTool[] = [
           "select:next",
           "select:previous"
         ],
-        "notes": "Both `select:next`/`select:previous` (Down/J/Ctrl+N and Up/K/Ctrl+P) confirmed present in the binary. In MessageSelector context specifically the docs list separate actions `messageSelector:up`/`down`/`top`/`bottom` (not confirmed in the binary) for the same physical keys. Ctrl+N/Ctrl+P are the classic readline next-line/previous-line bindings repurposed for list navigation.",
+        "notes": "Actions `select:next`, `select:previous`, `select:pageUp`, `select:pageDown`, `select:first`, `select:last`, `select:accept`, `select:cancel`, confirmed present in the binary. Since v2.1.283 the rewind menu's message list uses the Select actions (the old `messageSelector:*` names still work as aliases) and the diff file list uses them too; bind a Select action inside a MessageSelector or DiffDialog block to change one list only. Home/End and your select:first/last bindings apply in most lists since v2.1.280. Ctrl+N/Ctrl+P are the classic readline next/previous-line bindings repurposed for lists.",
         "src": 21,
         "cmd": null,
         "intents": []
@@ -986,6 +987,459 @@ export const KM_TOOLS: KmTool[] = [
         "src": 22,
         "cmd": null,
         "intents": []
+      },
+      {
+        "keys": "ctrl+enter / ctrl+x ctrl+s",
+        "macKeys": "ctrl+enter / ctrl+x ctrl+s",
+        "desc": "Send your queued messages (and your draft with them) right away instead of waiting for the turn to end. If Claude is running shell commands or subagents they move to the background; if it is only writing a response, the turn is interrupted. In terminals that do not report extended keys Ctrl+Enter arrives as plain Enter; Ctrl+X Ctrl+S works everywhere.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "chat:sendNow"
+        ],
+        "notes": "Action `chat:sendNow`, confirmed present as a string literal in the installed 2.1.310 binary. Requires v2.1.275 or later. In shell mode the key only queues the command.",
+        "src": 32,
+        "cmd": null,
+        "intents": [
+          "queue"
+        ]
+      },
+      {
+        "keys": "ctrl+x enter",
+        "macKeys": "ctrl+x enter",
+        "desc": "Submit the message marked to wait its turn: while Claude is working, Claude Code queues it and never interrupts the turn. Unlike plain Enter, it submits the draft even while an autocomplete suggestion is highlighted.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "chat:queueSubmit"
+        ],
+        "notes": "Action `chat:queueSubmit`, confirmed present as a string literal in the installed 2.1.310 binary. Requires v2.1.247 or later. Plain Enter also queues while Claude is working; this binding exists so the intent is explicit and so it can be rebound.",
+        "src": 1,
+        "cmd": null,
+        "intents": [
+          "queue",
+          "submit"
+        ]
+      },
+      {
+        "keys": "ctrl+x ctrl+a",
+        "macKeys": "ctrl+x ctrl+a",
+        "desc": "Collapse the band above the prompt (where mods draw buttons, inputs and selects) to a one-row hint, or expand it again.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "abovePrompt:toggle"
+        ],
+        "notes": "Action `abovePrompt:toggle`, confirmed present as a string literal in the installed 2.1.310 binary. Requires v2.1.260 or later. Only does something when a mod has drawn into the band.",
+        "src": 29,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+x tab",
+        "macKeys": "ctrl+x tab",
+        "desc": "Move keyboard focus into the band above the prompt, then to each open mod pane, and from the last pane back to the prompt.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "abovePrompt:focus"
+        ],
+        "notes": "Action `abovePrompt:focus`, confirmed present as a string literal in the installed 2.1.310 binary. Requires v2.1.260 or later.",
+        "src": 29,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+x x",
+        "macKeys": "ctrl+x x",
+        "desc": "Close the focused mod pane. Ctrl+X Left/Right/Up/Down grow or shrink the pane (width beside the transcript, height above the prompt).",
+        "ctx": "pane",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "pane:close",
+          "pane:grow",
+          "pane:shrink"
+        ],
+        "notes": "Actions `pane:close`, `pane:grow`, `pane:shrink`, confirmed present as a string literal in the installed 2.1.310 binary. Ctrl+X Left and Ctrl+X Up grow; Ctrl+X Right and Ctrl+X Down shrink. Pane contexts are active only while a mod's pane has focus.",
+        "src": 30,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+x b",
+        "macKeys": "ctrl+x b",
+        "desc": "In the diff panel, cycle the comparison base: this session's changes, then your uncommitted changes, then everything since the branch split from the default branch.",
+        "ctx": "diff-panel",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "app:cycleDiffBase"
+        ],
+        "notes": "Action `app:cycleDiffBase`, confirmed present as a string literal in the installed 2.1.310 binary. Requires v2.1.260 or later. The diff panel opens with /diff in fullscreen rendering (v2.1.287 or later, 110+ columns, git repo). Claude Code remembers the choice per repository.",
+        "src": 33,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+up / ctrl+down (or alt+up / alt+down)",
+        "macKeys": "ctrl+up / ctrl+down (or meta+up / meta+down)",
+        "desc": "Scroll the diff panel's file list when it is too long to fit.",
+        "ctx": "diff-panel",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "app:diffFileListUp",
+          "app:diffFileListDown"
+        ],
+        "notes": "Actions `app:diffFileListUp` and `app:diffFileListDown`, confirmed present as a string literal in the installed 2.1.310 binary. Defaults Ctrl+Up/Meta+Up and Ctrl+Down/Meta+Down. Also the default for `agents:previousGroup`/`agents:nextGroup` inside agent view.",
+        "src": 24,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "up / down / j / k, left / right, enter, esc",
+        "macKeys": "up / down / j / k, left / right, enter, esc",
+        "desc": "Diff viewer (/diff in the classic renderer): Up/Down or K/J pick a file, Enter opens its diff, Left/Right switch the diff source, Esc goes back from a file to the list and then closes the dialog. Tab moves to the source picker and, in a file's diff, to the ask button.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "diff:dismiss",
+          "diff:previousSource",
+          "diff:nextSource",
+          "diff:previousFile",
+          "diff:nextFile"
+        ],
+        "notes": "Actions `diff:dismiss`, `diff:previousSource`, `diff:nextSource`, `diff:previousFile`, `diff:nextFile`, confirmed present as a string literal in the installed 2.1.310 binary. Enter goes through `select:accept` since v2.1.283. The Left-to-go-back default in the detail view was removed in v2.1.203.",
+        "src": 25,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "space / shift+space / b / g / G / home / end",
+        "macKeys": "space / shift+space / b / g / G / home / end",
+        "desc": "Pager keys in a file's diff detail view: Space and Shift+Space or B page down and up a full viewport, G and Shift+G or Home and End jump to top and bottom, PageUp/PageDown scroll half a viewport.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "scroll:fullPageDown",
+          "scroll:fullPageUp",
+          "scroll:top",
+          "scroll:bottom",
+          "scroll:pageUp",
+          "scroll:pageDown"
+        ],
+        "notes": "Same `scroll:` actions as the conversation scroll, with a different default set inside the DiffDialog context only; the Scroll context defaults are unchanged. confirmed present as a string literal in the installed 2.1.310 binary.",
+        "src": 25,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "left / right / up / down / enter / esc / x (footer selected)",
+        "macKeys": "left / right / up / down / enter / esc / x (footer selected)",
+        "desc": "Navigate the footer indicators below the prompt (tasks, agents, diff, artifacts): arrows or Ctrl+P/Ctrl+N move, Enter opens the selected item, Esc clears the selection instead of interrupting. X stops the selected agent or workflow, or dismisses its row if it is no longer running.",
+        "ctx": "footer",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "footer:next",
+          "footer:previous",
+          "footer:up",
+          "footer:down",
+          "footer:openSelected",
+          "footer:clearSelection",
+          "footer:close"
+        ],
+        "notes": "Actions `footer:next`, `footer:previous`, `footer:up`, `footer:down`, `footer:openSelected`, `footer:clearSelection`, `footer:close`, confirmed present as a string literal in the installed 2.1.310 binary. Enter opens a selected footer item even when Enter is rebound to `chat:queueSubmit` or `chat:newline`. Backspace/Delete no longer dismiss an artifact link (removed in v2.1.281).",
+        "src": 23,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "left / right / backspace / delete / down / esc (attachment selected)",
+        "macKeys": "left / right / backspace / delete / down / esc (attachment selected)",
+        "desc": "Navigate image attachments in select dialogs: Left/Right move between attachments, Backspace or Delete removes the selected one, Down or Esc leaves attachment navigation.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "attachments:next",
+          "attachments:previous",
+          "attachments:remove",
+          "attachments:exit"
+        ],
+        "notes": "Actions `attachments:next`, `attachments:previous`, `attachments:remove`, `attachments:exit`, confirmed present as a string literal in the installed 2.1.310 binary.",
+        "src": 40,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "left / right, s (model picker)",
+        "macKeys": "left / right, s (model picker)",
+        "desc": "In the model picker, Left/Right lower or raise the effort level and S applies the highlighted model to this session only.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "modelPicker:decreaseEffort",
+          "modelPicker:increaseEffort",
+          "modelPicker:thisSessionOnly"
+        ],
+        "notes": "Actions `modelPicker:decreaseEffort`, `modelPicker:increaseEffort`, `modelPicker:thisSessionOnly`. `modelPicker:thisSessionOnly` confirmed present as a string literal in the installed 2.1.310 binary.",
+        "src": 26,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "left / right / tab / s (/effort slider)",
+        "macKeys": "left / right / tab / s (/effort slider)",
+        "desc": "In the slider that /effort opens with no argument, Left/Right move to the next lower or higher effort level, Tab turns ultracode on or off for this session when the slider offers it, and S applies the focused level to this session only.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "effortSlider:decreaseEffort",
+          "effortSlider:increaseEffort",
+          "effortSlider:toggleUltracode",
+          "effortSlider:thisSessionOnly"
+        ],
+        "notes": "Actions `effortSlider:decreaseEffort`, `effortSlider:increaseEffort`, `effortSlider:toggleUltracode`, `effortSlider:thisSessionOnly`; `toggleUltracode` confirmed present as a string literal in the installed 2.1.310 binary. Slider actions need v2.1.284 or later (`thisSessionOnly` v2.1.257). Enter and Esc on the slider cannot be rebound.",
+        "src": 27,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "space / i / f (plugin dialog)",
+        "macKeys": "space / i / f (plugin dialog)",
+        "desc": "In the plugin dialog, Space toggles plugin selection, I installs the selected plugins, and F favorites the selected plugin so it sorts near the top of the Installed tab.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "plugin:toggle",
+          "plugin:install",
+          "plugin:favorite"
+        ],
+        "notes": "Actions `plugin:toggle`, `plugin:install`, `plugin:favorite`; `plugin:favorite` confirmed present as a string literal in the installed 2.1.310 binary.",
+        "src": 28,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "r / f (settings)",
+        "macKeys": "r / f (settings)",
+        "desc": "In the /config settings panel, R retries loading usage data after an error and F sends your session the /usage recommendations Claude Code can apply, when the usage footer offers a fix.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "settings:retry",
+          "settings:fixUsage"
+        ],
+        "notes": "Actions `settings:retry`, `settings:fixUsage`; `settings:fixUsage` confirmed present as a string literal in the installed 2.1.310 binary. `settings:fixUsage` requires v2.1.305 or later.",
+        "src": 22,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+s / ctrl+t / ctrl+f / ctrl+r / ctrl+up / ctrl+down (agent view)",
+        "macKeys": "ctrl+s / ctrl+t / ctrl+f / ctrl+r / ctrl+up / ctrl+down (agent view)",
+        "desc": "In agent view (claude agents): Ctrl+S switches grouping between state and directory, Ctrl+T pins or unpins the selected session, Ctrl+F finds sessions by name, Ctrl+R renames the selected session, Ctrl+Up/Ctrl+Down (or Alt+Up/Alt+Down) jump between group headers.",
+        "ctx": "agent-view",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "agents:switchView",
+          "agents:togglePin",
+          "agents:find",
+          "agents:rename",
+          "agents:previousGroup",
+          "agents:nextGroup"
+        ],
+        "notes": "Actions `agents:switchView`, `agents:togglePin`, `agents:find`, `agents:rename`, `agents:previousGroup`, `agents:nextGroup`, confirmed present as a string literal in the installed 2.1.310 binary. Agent view is a research preview; keys may change. Needs v2.1.257 or later (find/rename/group jump v2.1.288). While agent view is open its bindings win over Chat/Global on the same key, so Ctrl+S does not stash there. Bindings fire on single keystrokes only, so the Ctrl+X Ctrl+E chord does not open the editor in agent view; Ctrl+G does.",
+        "src": 31,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "left (empty prompt)",
+        "macKeys": "left (empty prompt)",
+        "desc": "On an empty prompt, background the session and open agent view with its row selected. In an attached background session the same key detaches back to agent view. If you just deleted the last of the prompt text or browsed history, a second press confirms.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "No action id documented: governed by the `leftArrowOpensAgents` setting in /config, not a keybindings.json action. Also works from vim NORMAL mode (since v2.1.219). Esc undoes the switch from agent view. Ctrl+Z also detaches.",
+        "src": 36,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+s (history search)",
+        "macKeys": "ctrl+s (history search)",
+        "desc": "In the fullscreen history-search dialog opened by Ctrl+R, cycle the search scope through this session, this project, and all projects. The classic inline search always searches all projects.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "historySearch:cycleScope"
+        ],
+        "notes": "Action `historySearch:cycleScope`, confirmed present as a string literal in the installed 2.1.310 binary. Fullscreen rendering only. The other HistorySearch defaults are Ctrl+R (next match), Tab or Esc (accept), Enter (execute), Ctrl+C (cancel).",
+        "src": 38,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+e (classic renderer)",
+        "macKeys": "ctrl+e (classic renderer)",
+        "desc": "In the transcript viewer, toggle showing all content.",
+        "ctx": "transcript",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "transcript:toggleShowAll"
+        ],
+        "notes": "Action `transcript:toggleShowAll`, confirmed present as a string literal in the installed 2.1.310 binary. Classic renderer only; the fullscreen transcript viewer has no show-all toggle. Replaces the old permission-prompt Ctrl+E binding in this table.",
+        "src": 11,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "wheelup / wheeldown",
+        "macKeys": "wheelup / wheeldown",
+        "desc": "Scroll the conversation one line per wheel event in fullscreen rendering.",
+        "ctx": "transcript",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "scroll:lineUp",
+          "scroll:lineDown"
+        ],
+        "notes": "Actions `scroll:lineUp` and `scroll:lineDown`, confirmed present as a string literal in the installed 2.1.310 binary. Fullscreen rendering only.",
+        "src": 20,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "shift+left / shift+right / shift+up / shift+down / shift+home / shift+end",
+        "macKeys": "shift+left / shift+right / shift+up / shift+down / shift+home / shift+end",
+        "desc": "Extend the active text selection by a column, a row, or to the line start or end in fullscreen rendering. Shift+Up and Shift+Down scroll the viewport when the selection reaches an edge.",
+        "ctx": "transcript",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "selection:extendLeft",
+          "selection:extendRight",
+          "selection:extendUp",
+          "selection:extendDown",
+          "selection:extendLineStart",
+          "selection:extendLineEnd"
+        ],
+        "notes": "Actions `selection:extend*`; `selection:extendLeft` confirmed present as a string literal in the installed 2.1.310 binary. Copy with Ctrl+Shift+C or Cmd+C (`selection:copy`).",
+        "src": 20,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "space / enter / esc, up / down, shift+left / shift+right, c, f, x (/btw overlay)",
+        "macKeys": "space / enter / esc, up / down, shift+left / shift+right, c, f, x (/btw overlay)",
+        "desc": "Keys in the /btw side-question overlay: Space, Enter or Esc dismiss it; Up/Down scroll; Shift+Left/Shift+Right (or [ and ], Tab and Shift+Tab) step between earlier /btw answers; C copies the answer as raw Markdown; F forks a subagent that inherits the conversation plus this exchange; X clears the earlier exchanges list.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "No action id documented. Shift+arrow stepping needs v2.1.257 or later (plain Left/Right between v2.1.187 and v2.1.256). Fork is available in local sessions only. In an attached background session, Left detaches even while the answer is still arriving.",
+        "src": 34,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "tab (permission prompt)",
+        "macKeys": "tab (permission prompt)",
+        "desc": "On most permission prompts with Yes or No focused, open a comment field on that option; pressing it again closes the field. The comment goes to Claude with your answer.",
+        "ctx": "permission-prompt",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Documented in interactive-mode General controls; the tabs:next/Tab rebindable action is for tabbed dialogs, this is a permission-prompt behavior. In the /fast dialog, Tab (confirm:nextField) turns fast mode on or off instead.",
+        "src": 4,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "shift+tab (permission prompt)",
+        "macKeys": "shift+tab (permission prompt)",
+        "desc": "On a file permission prompt, close an open comment field; with no field open, select the option that allows the action for the rest of the session, when the prompt offers it.",
+        "ctx": "permission-prompt",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "confirm:cycleMode"
+        ],
+        "notes": "Action `confirm:cycleMode`, confirmed present as a string literal in the installed 2.1.310 binary. On Windows without VT mode the default is Meta+M.",
+        "src": 8,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "alt+d",
+        "macKeys": "option+d / meta+d",
+        "desc": "Delete to the end of the current word (or the end of the next word when the cursor is between words). Stores deleted text for pasting.",
+        "ctx": "input",
+        "origin": "readline-inherited",
+        "conf": "documented",
+        "action": null,
+        "notes": "Word shortcuts (Alt+B, Alt+F, Alt+D, Option+Delete, Ctrl+Backspace) treat a word as a run of letters and digits, so punctuation such as _ . / separates words; Ctrl+W deletes to the previous whitespace instead. These readline conventions apply from v2.1.261; the keybindingFlavor setting that enabled them earlier is deprecated. Requires Option as Meta on macOS. No rebindable action.",
+        "src": 6,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "option+delete (mac) / ctrl+backspace (win/linux)",
+        "macKeys": "option+delete / ctrl+backspace",
+        "desc": "Delete only the previous word (stops at punctuation), unlike Ctrl+W which removes back to the previous whitespace.",
+        "ctx": "input",
+        "origin": "readline-inherited",
+        "conf": "documented",
+        "action": null,
+        "notes": "No action id; documented in the Ctrl+W row of the interactive-mode text-editing table. See the word-boundaries note for the punctuation rule.",
+        "src": 6,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "command:<name> (custom binding)",
+        "macKeys": "command:<name> (custom binding)",
+        "desc": "Bind any key in the Chat context to run a slash command, for example `\"meta+g\": \"command:compact\"` runs /compact.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": [
+          "command:<name>"
+        ],
+        "notes": "Default: unbound. Action pattern `command:<name>` listed under Chat actions; the literal pattern is not a string constant to grep, so confidence rests on the docs plus the Chat action family being present in the 2.1.310 binary.",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "v / V (visual mode)",
+        "macKeys": "v / V (visual mode)",
+        "desc": "Vim visual mode: v selects character-wise, V line-wise. Motions extend the selection; d or x delete, y yank, c or s change, p replace with register, r{char} replace every selected char, ~ u U toggle/lower/upper case, > < indent/dedent, J join, o swap cursor and anchor, text objects select, v/V toggle or exit. Block-wise Ctrl+V is not supported.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "No action id: internal vim engine, not keybindings.json actions. In vim mode Esc or Ctrl+[ returns to NORMAL (Ctrl+[ on Kitty-protocol terminals needs v2.1.242 or later).",
+        "src": 35,
+        "cmd": null,
+        "intents": []
       }
     ]
   },
@@ -994,9 +1448,9 @@ export const KM_TOOLS: KmTool[] = [
     "label": "Codex",
     "surface": "tui",
     "host": null,
-    "version": null,
-    "versionNotes": "codex-cli 0.146.0 installed locally; source verified against openai/codex main @ commit 5c44f110649f8811546745bb1635ba0b44a1639e (2026-08-05), which sits between tags rust-v0.146.0-alpha.9.2 and rust-vrust-v0.145.0-alpha.6 in the tag list at clone time. Workspace Cargo.toml pins version = \"0.0.0\" (release version is stamped at build time), so no single crate-internal version string ties main to 0.146.0 exactly, but it is the closest available source to the installed 0.146.0 binary.",
-    "checkedAt": "2026-08-05",
+    "version": "0.164.0",
+    "versionNotes": "codex-cli 0.164.0 (npm @openai/codex latest as of 2026-10-25; git tag rust-v0.164.0, commit fe3b2945). Defaults re-read from codex-rs/tui/src/keymap.rs built_in_defaults() at that tag; the file is byte-identical to openai/codex main @ 970111f6 (2026-10-23). Compared against the 2026-08-05 pass (0.146.0 era): every existing binding row still matches source; new defaults since then are F2 warnings, F3 transcript find, F4 activity focus, F8/F9 voice, prompt_stack_back and skip_question for async questions, the ctrl+x leader chord, Vim find/till/G/replace/undo/redo and search, super-modifier line editing aliases, and the agents dashboard keys. Line-number anchors in older per-row sources and notes (for example keymap.rs:539) refer to the 2026-08-05 commit 5c44f110 and have shifted. The official docs moved from developers.openai.com/codex to learn.chatgpt.com; the docs do not publish a default-key table, so source is the authority.",
+    "checkedAt": "2026-10-25",
     "sources": [
       "codex-rs/tui/src/keymap.rs:1098 (AppKeymap.open_transcript default)",
       "codex-rs/tui/src/keymap.rs:1099",
@@ -1077,7 +1531,16 @@ export const KM_TOOLS: KmTool[] = [
       "codex-rs/tui/src/keymap.rs:1340",
       "codex-rs/tui/src/keymap.rs:1191-1235 (VimNormalKeymap built-in defaults)",
       "codex-rs/tui/src/keymap.rs:1236-1254 (VimOperatorKeymap built-in defaults)",
-      "codex-rs/tui/src/keymap.rs:1255-1281 (VimTextObjectKeymap built-in defaults)"
+      "codex-rs/tui/src/keymap.rs:1255-1281 (VimTextObjectKeymap built-in defaults)",
+      "codex-rs/tui/src/keymap.rs built_in_defaults() AppKeymap + ChatKeymap, tag rust-v0.164.0 (commit fe3b2945, 2026-10); file identical to main @ 970111f6 (2026-10-23) - find_transcript F3, focus_activity F4, open_warnings F2, toggle_voice F8, toggle_voice_mute F9, prompt_stack_back, skip_question",
+      "codex-rs/tui/src/keymap.rs built_in_defaults() VimNormalKeymap and VimOperatorKeymap (find_forward/backward, till_forward/backward, jump_bottom, replace_char, enter_replace_mode, repeat_last_change, undo, redo, motion_*), tag rust-v0.164.0",
+      "codex-rs/tui/src/keymap/vim_search.rs VimSearchKeymap::default(), tag rust-v0.164.0",
+      "codex-rs/tui/src/keymap.rs built_in_defaults() PagerKeymap.find (F3 and /), tag rust-v0.164.0",
+      "codex-rs/tui/src/keymap.rs built_in_defaults() AgentsKeymap; codex-rs/tui/src/slash_command.rs (/agents = \"open the agent command center\"), tag rust-v0.164.0",
+      "codex-rs/tui/src/keymap/leader.rs (default leader ctrl+x) and keymap/chords/quick_dial_defaults.rs (implicit \"leader p\" = chat.open_presets), tag rust-v0.164.0",
+      "codex-rs/tui/src/keymap.rs built_in_defaults() EditorKeymap move_line_start/move_line_end/kill_line_start super bindings, tag rust-v0.164.0",
+      "codex-rs/tui/src/resume_picker.rs handle_key (Tab/BackTab toolbar focus, ctrl+a archive), tag rust-v0.164.0",
+      "https://learn.chatgpt.com/docs/config-file/config-reference (tui.keymap.<context>.<action>; contexts global, chat, composer, editor, vim_normal, vim_operator, vim_text_object, pager, list, approval; checked 2026-10-25; developers.openai.com/codex/* now 308-redirects to learn.chatgpt.com; the page lists no default key table, so defaults come from source)"
     ],
     "bindings": [
       {
@@ -1227,14 +1690,14 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "alt+up  or shift+left",
         "macKeys": "option+up  or shift+left",
-        "desc": "Edit the most recently queued message.",
+        "desc": "Move forward through async questions, then edit the most recently queued message.",
         "ctx": "global",
         "origin": "tool-specific",
         "conf": "source-code",
         "action": [
           "tui.keymap.chat.edit_queued_message"
         ],
-        "notes": null,
+        "notes": "Configurable at tui.keymap.chat.edit_queued_message. Paired with prompt_stack_back (alt+down / shift+right).",
         "src": 9,
         "cmd": null,
         "intents": [
@@ -1434,8 +1897,8 @@ export const KM_TOOLS: KmTool[] = [
         "intents": []
       },
       {
-        "keys": "home / ctrl+a",
-        "macKeys": "home / ctrl+a",
+        "keys": "home / ctrl+a / super+left",
+        "macKeys": "home / ctrl+a / cmd+left",
         "desc": "Move to the beginning of the line.",
         "ctx": "input",
         "origin": "readline-inherited",
@@ -1443,7 +1906,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "tui.keymap.editor.move_line_start"
         ],
-        "notes": null,
+        "notes": "super+left (cmd+left on macOS) is a default alias on move_line_start; a terminal only delivers it if it reports the Super modifier, which was not tested here.",
         "src": 22,
         "cmd": null,
         "intents": [
@@ -1451,8 +1914,8 @@ export const KM_TOOLS: KmTool[] = [
         ]
       },
       {
-        "keys": "end / ctrl+e",
-        "macKeys": "end / ctrl+e",
+        "keys": "end / ctrl+e / super+right",
+        "macKeys": "end / ctrl+e / cmd+right",
         "desc": "Move to the end of the line.",
         "ctx": "input",
         "origin": "readline-inherited",
@@ -1460,7 +1923,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "tui.keymap.editor.move_line_end"
         ],
-        "notes": null,
+        "notes": "super+right (cmd+right on macOS) is a default alias on move_line_end; terminal support for the Super modifier was not tested here.",
         "src": 23,
         "cmd": null,
         "intents": [
@@ -1531,8 +1994,8 @@ export const KM_TOOLS: KmTool[] = [
         "intents": []
       },
       {
-        "keys": "ctrl+u",
-        "macKeys": "ctrl+u",
+        "keys": "ctrl+u / super+backspace",
+        "macKeys": "ctrl+u / cmd+backspace",
         "desc": "Delete from cursor to line start.",
         "ctx": "input",
         "origin": "readline-inherited",
@@ -1540,7 +2003,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "tui.keymap.editor.kill_line_start"
         ],
-        "notes": "Kill-line-start, the classic readline Ctrl+U (unix-line-discard). No default key kills the whole line at once (kill_whole_line ships unbound).",
+        "notes": "Kill-line-start, the classic readline Ctrl+U (unix-line-discard). No default key kills the whole line at once (kill_whole_line ships unbound). super+backspace (cmd+backspace on macOS) is also a default on kill_line_start; terminal support for the Super modifier was not tested here.",
         "src": 28,
         "cmd": null,
         "intents": [
@@ -1645,7 +2108,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "shift+tab",
         "macKeys": "shift+tab",
-        "desc": "Cycle the collaboration mode.",
+        "desc": "Cycle the collaboration mode (Default or Plan; those are the only two visible in the TUI).",
         "ctx": "global",
         "origin": "tool-specific",
         "conf": "source-code",
@@ -3059,6 +3522,526 @@ export const KM_TOOLS: KmTool[] = [
         "src": 79,
         "cmd": null,
         "intents": []
+      },
+      {
+        "keys": "f3",
+        "macKeys": "f3",
+        "desc": "Find text in the full transcript.",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.global.find_transcript"
+        ],
+        "notes": "Configurable at tui.keymap.global.find_transcript. The default yields to an existing custom key on the same physical key.",
+        "src": 80,
+        "cmd": null,
+        "intents": [
+          "transcript"
+        ]
+      },
+      {
+        "keys": "f4",
+        "macKeys": "f4",
+        "desc": "Focus activity groups in the transcript to inspect their details.",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.global.focus_activity"
+        ],
+        "notes": "Configurable at tui.keymap.global.focus_activity. The default is dropped when the key or chord prefix is already used by a custom binding.",
+        "src": 80,
+        "cmd": null,
+        "intents": [
+          "transcript"
+        ]
+      },
+      {
+        "keys": "f2",
+        "macKeys": "f2",
+        "desc": "Open retained warnings without replacing the composer.",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.global.open_warnings"
+        ],
+        "notes": "Default is dropped when the key or chord prefix is already used by a custom binding.",
+        "src": 80,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "f8",
+        "macKeys": "f8",
+        "desc": "Start or stop a voice conversation.",
+        "ctx": "chat",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.chat.toggle_voice"
+        ],
+        "notes": "Same action as the /voice slash command (\"start or stop voice\"). The default is dropped when F8 is already bound elsewhere. Whether voice is available on a given account or build was not tested.",
+        "src": 80,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "f9",
+        "macKeys": "f9",
+        "desc": "Toggle capture (mute) in the active voice session.",
+        "ctx": "chat",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.chat.toggle_voice_mute"
+        ],
+        "notes": "Default is dropped when F9 is already bound elsewhere. Only meaningful during a voice session.",
+        "src": 80,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "alt+down  or shift+right",
+        "macKeys": "option+down  or shift+right",
+        "desc": "Move back through async questions toward the composer.",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.chat.prompt_stack_back"
+        ],
+        "notes": "Pairs with edit_queued_message (alt+up / shift+left), which moves forward through async questions before editing the last queued message. Each alias is dropped individually if the same key is already used on the main surface, a list, or a chord prefix.",
+        "src": 80,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+]",
+        "macKeys": "ctrl+]",
+        "desc": "Skip the focused question.",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.chat.skip_question"
+        ],
+        "notes": "Dropped if ctrl+] is already used elsewhere by a custom binding.",
+        "src": 80,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+x p",
+        "macKeys": "ctrl+x p",
+        "desc": "Open the preset submenu (leader chord: leader key ctrl+x, then p).",
+        "ctx": "chat",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.chat.open_presets"
+        ],
+        "notes": "The leader prefix defaults to ctrl+x (tui.keymap.global.leader) and yields to custom bindings on ctrl+x; the implicit leader p preset chord is installed only when the prefix is free and open_presets is not configured. Chord behavior was read from source, not exercised in a live TUI. ctrl+x is the GUI cut key.",
+        "src": 85,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "f / shift+f / t / shift+t",
+        "macKeys": "f / shift+f / t / shift+t",
+        "desc": "Find a character forward or backward on the line (f, F) or move up to it (t, T) in Vim normal mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_normal.find_forward",
+          "tui.keymap.vim_normal.find_backward",
+          "tui.keymap.vim_normal.till_forward",
+          "tui.keymap.vim_normal.till_backward"
+        ],
+        "notes": "Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode).",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "shift+g / G",
+        "macKeys": "shift+g / G",
+        "desc": "Jump to the bottom of the composer text in Vim normal mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_normal.jump_bottom"
+        ],
+        "notes": "Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode). jump_top ships unbound.",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "r",
+        "macKeys": "r",
+        "desc": "Replace the character under the cursor in Vim normal mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_normal.replace_char"
+        ],
+        "notes": "Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode).",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "shift+r / R",
+        "macKeys": "shift+r / R",
+        "desc": "Enter replace mode in Vim normal mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_normal.enter_replace_mode"
+        ],
+        "notes": "Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode).",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": ".",
+        "macKeys": ".",
+        "desc": "Repeat the last change in Vim normal mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_normal.repeat_last_change"
+        ],
+        "notes": "Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode).",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "u",
+        "macKeys": "u",
+        "desc": "Undo in Vim normal mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_normal.undo"
+        ],
+        "notes": "Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode).",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+r",
+        "macKeys": "ctrl+r",
+        "desc": "Redo in Vim normal mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_normal.redo"
+        ],
+        "notes": "Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode). Same chord as reverse history search in insert mode; scoped to the vim_normal context.",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "f / shift+f / t / shift+t",
+        "macKeys": "f / shift+f / t / shift+t",
+        "desc": "Operator motion to a character (find or till) after d, y or c.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_operator.motion_find_forward",
+          "tui.keymap.vim_operator.motion_find_backward",
+          "tui.keymap.vim_operator.motion_till_forward",
+          "tui.keymap.vim_operator.motion_till_backward"
+        ],
+        "notes": "Active for one keypress after start_delete_operator, start_yank_operator or start_change_operator. Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode).",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "shift+g / G",
+        "macKeys": "shift+g / G",
+        "desc": "Operator motion to the bottom of the text after d, y or c.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_operator.motion_jump_bottom"
+        ],
+        "notes": "Active for one keypress after an operator. Vim mode is opt-in (no default toggle key; tui.vim_mode_default or /vim, or tui.keymap.global.toggle_vim_mode).",
+        "src": 81,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "/  or  ?",
+        "macKeys": "/  or  ?",
+        "desc": "Start a forward (/) or backward (?) search in Vim mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_search.forward",
+          "tui.keymap.vim_search.backward"
+        ],
+        "notes": "Defaults of the vim_search keymap; they yield to explicit bindings. Exact scope (composer Vim normal mode versus transcript pager) not exercised in a live TUI.",
+        "src": 82,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "n  or  N",
+        "macKeys": "n  or  N",
+        "desc": "Jump to the next (n) or previous (N) search match in Vim mode.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.vim_search.next",
+          "tui.keymap.vim_search.previous"
+        ],
+        "notes": "Defaults of the vim_search keymap; shift+n is bound as an alias of N.",
+        "src": 82,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "f3  or  /",
+        "macKeys": "f3  or  /",
+        "desc": "Find text in the transcript pager.",
+        "ctx": "transcript",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.pager.find"
+        ],
+        "notes": "Pager-scope find (tui.keymap.pager.find); the global equivalent is F3 (tui.keymap.global.find_transcript).",
+        "src": 83,
+        "cmd": null,
+        "intents": [
+          "transcript"
+        ]
+      },
+      {
+        "keys": "tab  or  shift+tab",
+        "macKeys": "tab  or  shift+tab",
+        "desc": "Move focus between toolbar controls in the resume picker.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [],
+        "notes": "Hard-coded in the resume picker key handler, not a tui.keymap action.",
+        "src": 87,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+a",
+        "macKeys": "ctrl+a",
+        "desc": "Archive the selected session in the resume picker, when archiving is available.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [],
+        "notes": "Hard-coded in the resume picker key handler; shown as a footer hint only when available. Different from ctrl+a in the approval dialog (open details).",
+        "src": 87,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "o",
+        "macKeys": "o",
+        "desc": "Resume the selected session in the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.resume"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "f3  or  /",
+        "macKeys": "f3  or  /",
+        "desc": "Search the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.search"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "n",
+        "macKeys": "n",
+        "desc": "Start a new task from the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.new_task"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "w",
+        "macKeys": "w",
+        "desc": "Start a new worktree task from the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.new_worktree"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "f",
+        "macKeys": "f",
+        "desc": "Fork the selected session from the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.fork"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "r",
+        "macKeys": "r",
+        "desc": "Rename the selected session in the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.rename"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "x",
+        "macKeys": "x",
+        "desc": "Stop the selected session in the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.stop"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "a",
+        "macKeys": "a",
+        "desc": "Archive the selected session in the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.archive"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "backspace",
+        "macKeys": "backspace",
+        "desc": "Delete the selected session in the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.delete"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "h",
+        "macKeys": "h",
+        "desc": "Hide the selected session in the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.hide"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "p",
+        "macKeys": "p",
+        "desc": "Pin or unpin the selected session in the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.toggle_pin"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "g",
+        "macKeys": "g",
+        "desc": "Toggle grouping in the agents dashboard.",
+        "ctx": "dialog",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.keymap.agents.toggle_grouping"
+        ],
+        "notes": "Agents dashboard shortcut (opened with the /agents slash command, \"open the agent command center\"; tui.keymap.global.open_agents ships unbound). Single-letter keys apply when the dashboard is not taking free-text search input.",
+        "src": 84,
+        "cmd": null,
+        "intents": []
       }
     ]
   },
@@ -3067,9 +4050,9 @@ export const KM_TOOLS: KmTool[] = [
     "label": "OpenCode",
     "surface": "tui",
     "host": null,
-    "version": null,
-    "versionNotes": "v1.18.13 (repo anomalyco/opencode, dev branch commit 4a57013cf8cb163f58638273fd9da8538cd33cb7; sst/opencode 301-redirects to this repo - same project, renamed). First pass used the docs mirror of the default keybinds (packages/web/src/content/docs/keybinds.mdx); this revision reads the actual dispatcher source directly: packages/tui/src/config/keybind.ts (the Definitions/CommandMap source of truth - more complete than the docs sample), packages/tui/src/keymap.tsx (registerOpencodeKeymap, the managed-textarea-layer wiring), packages/tui/src/component/prompt/index.tsx (prompt.history.previous/next decline logic), packages/tui/src/routes/session/index.tsx (session.parent/session.child.* registration), packages/tui/src/component/dialog-model.tsx and dialog-session-list.tsx (dialog-scoped action registration), packages/tui/src/feature-plugins/home/tips.tsx (tips.toggle scope), and packages/opencode/src/cli/cmd/run/footer.view.tsx (session_queued_prompts scope) - plus the underlying keymap engine, @opentui/keymap (github.com/anomalyco/opentui, packages/keymap), for its general layering/priority rules and packages/core/src/renderables/EditBufferRenderable.ts for command return-value semantics. Locally installed opencode is an older v1.4.7 with no local tui.json; not used as a source.",
-    "checkedAt": "2026-08-05",
+    "version": "1.19.4",
+    "versionNotes": "opencode-ai 1.19.4 (npm latest, published 2026-10-22; v1 is the baseline). Defaults re-read from packages/tui/src/config/keybind.ts at tag v1.19.4 (anomalyco/opencode); all 139 binding defaults match the previous pass except session_queued_prompts, which was missing and is added. Earlier detail kept: first pass used the docs mirror (packages/web/src/content/docs/keybinds.mdx), the next read the dispatcher source (packages/tui/src/config/keybind.ts, keymap.tsx, component/prompt/index.tsx, routes/session/index.tsx, dialog-model.tsx, dialog-session-list.tsx, feature-plugins/home/tips.tsx, cli/cmd/run/footer.view.tsx) plus @opentui/keymap. OpenCode 2 (2.1.4, npm @opencode/cli): keybinds live in the global cli.json keyed by command id (for example app.exit, command.palette.show), not by the v1 snake_case names, and leader timeout is leader.timeout; per-row notes mark where the v2 default differs (https://opencode.ai/v2/docs/cli/keybinds/, checked 2026-10-25). Rows whose v2 default is identical carry no v2 note.",
+    "checkedAt": "2026-10-25",
     "sources": [
       "keybinds.mdx L13,190-200; confirmed identical in packages/tui/src/config/keybind.ts L46 (Definitions object, verified against dev branch commit 4a57013c)",
       "keybinds.mdx L14; confirmed identical in packages/tui/src/config/keybind.ts L48 (Definitions object, verified against dev branch commit 4a57013c)",
@@ -3210,7 +4193,11 @@ export const KM_TOOLS: KmTool[] = [
       "packages/tui/src/config/keybind.ts L116 (Definitions object, verified against dev branch commit 4a57013c)",
       "packages/tui/src/config/keybind.ts L211 (Definitions object, verified against dev branch commit 4a57013c)",
       "packages/tui/src/config/keybind.ts L212 (Definitions object, verified against dev branch commit 4a57013c)",
-      "packages/tui/src/config/keybind.ts L213 (Definitions object, verified against dev branch commit 4a57013c)"
+      "packages/tui/src/config/keybind.ts L213 (Definitions object, verified against dev branch commit 4a57013c)",
+      "packages/tui/src/config/keybind.ts Definitions at tag v1.19.4 (anomalyco/opencode): every default value was compared programmatically against the 140 rows; all match except session_queued_prompts, which was missing. The file is identical to the v1.18.13 tag. Per-row L-numbers above refer to commit 4a57013c and may have shifted.",
+      "packages/opencode/src/cli/cmd/run/footer.view.tsx L551-563 at tag v1.19.4 (session.queued_prompts registered with enabled: composer route and queuedPrompts().length > 0)",
+      "https://opencode.ai/v2/docs/cli/keybinds/ (OpenCode 2 keybinds table, fetched 2026-10-25; local copy research/opencode-v2-2026-10/docs/cli-keybinds.md)",
+      "https://opencode.ai/docs/keybinds/ (v1 docs, HTTP 200 2026-10-25) and npm opencode-ai 1.19.4 (published 2026-10-22, dist-tag latest)"
     ],
     "bindings": [
       {
@@ -3289,7 +4276,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "theme_list"
         ],
-        "notes": "Also /themes.",
+        "notes": "Also /themes. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): theme.switch is unbound (none) and <leader>t opens the terminal pane (terminal.toggle).",
         "src": 4,
         "cmd": null,
         "intents": []
@@ -3465,7 +4452,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "session_child_first"
         ],
-        "notes": "Deliberately does not require the leader for the sibling actions below it; see the doc's explicit callout.",
+        "notes": "Deliberately does not require the leader for the sibling actions below it; see the doc's explicit callout. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): session.child.first defaults to down, not <leader>down, and its label is \"Toggle subagent picker\".",
         "src": 15,
         "cmd": null,
         "intents": []
@@ -3644,7 +4631,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "agent_cycle"
         ],
-        "notes": "Tab is also prompt.autocomplete.complete inside autocomplete popups - context-scoped, not a real conflict.",
+        "notes": "Tab is also prompt.autocomplete.complete inside autocomplete popups - context-scoped, not a real conflict. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): agent.cycle defaults to shift+tab (Next agent) and Tab no longer cycles agents.",
         "src": 26,
         "cmd": null,
         "intents": []
@@ -3659,7 +4646,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "agent_cycle_reverse"
         ],
-        "notes": null,
+        "notes": "OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): shift+tab is agent.cycle (next agent) and agent.cycle.reverse is unbound (none).",
         "src": 27,
         "cmd": null,
         "intents": []
@@ -3794,7 +4781,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "messages_first"
         ],
-        "notes": "In the separate OpenCode Desktop app readline table (different surface), ctrl+g instead means 'cancel popovers / abort running response' - a functional divergence between the two OpenCode surfaces for the same key.",
+        "notes": "In the separate OpenCode Desktop app readline table (different surface), ctrl+g instead means 'cancel popovers / abort running response' - a functional divergence between the two OpenCode surfaces for the same key. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): session.first adds alt+home (ctrl+g, home, alt+home).",
         "src": 35,
         "cmd": null,
         "intents": [
@@ -3875,7 +4862,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "messages_toggle_conceal"
         ],
-        "notes": "Same default key (<leader>h) is also listed for tips_toggle (L162) later in the same defaults block. The docs render both with an identical default; this looks like an unresolved duplicate in the shipped default config rather than an intentional shared trigger, but that is not confirmed - flagging as-is rather than guessing which one wins.",
+        "notes": "Same default key (<leader>h) is also listed for tips_toggle (L162) later in the same defaults block. The docs render both with an identical default; this looks like an unresolved duplicate in the shipped default config rather than an intentional shared trigger, but that is not confirmed - flagging as-is rather than guessing which one wins. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): no session.toggle.conceal keybind is listed; concealment is the session.markdown option in cli.json.",
         "src": 40,
         "cmd": null,
         "intents": []
@@ -4216,7 +5203,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "input_buffer_home"
         ],
-        "notes": "Also messages_first and dialog.select.home share 'home' as default in their own contexts.",
+        "notes": "Also messages_first and dialog.select.home share 'home' as default in their own contexts. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): input.buffer.home is unbound (none); home still moves to line start via the textarea.",
         "src": 61,
         "cmd": null,
         "intents": []
@@ -4231,7 +5218,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "input_buffer_end"
         ],
-        "notes": null,
+        "notes": "OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): input.buffer.end is unbound (none).",
         "src": 62,
         "cmd": null,
         "intents": []
@@ -4762,7 +5749,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "plugins.toggle"
         ],
-        "notes": null,
+        "notes": "OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): plugins.toggle defaults to return, not space (v1 plugins do not run in v2).",
         "src": 96,
         "cmd": null,
         "intents": []
@@ -4777,7 +5764,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "dialog.plugins.install"
         ],
-        "notes": null,
+        "notes": "OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): not listed; v2 plugin dialog uses ctrl+u (update) and ctrl+r (check for updates).",
         "src": 97,
         "cmd": null,
         "intents": []
@@ -4809,7 +5796,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "tips_toggle"
         ],
-        "notes": "Shares its default key with messages_toggle_conceal (both default to <leader>h in the docs' own example block) - see that entry's note; flagged, not resolved.",
+        "notes": "Shares its default key with messages_toggle_conceal (both default to <leader>h in the docs' own example block) - see that entry's note; flagged, not resolved. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): no tips keybind is listed in the v2 table.",
         "src": 99,
         "cmd": null,
         "intents": []
@@ -5006,7 +5993,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "diff_toggle"
         ],
-        "notes": "Not in keybinds.mdx docs.",
+        "notes": "Not in keybinds.mdx docs. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): retired: still accepted in config but registers no shortcut.",
         "src": 112,
         "cmd": null,
         "intents": []
@@ -5021,7 +6008,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "diff_expand"
         ],
-        "notes": "Not in keybinds.mdx docs.",
+        "notes": "Not in keybinds.mdx docs. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): retired: still accepted in config but registers no shortcut.",
         "src": 113,
         "cmd": null,
         "intents": []
@@ -5036,7 +6023,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "diff_expand_all"
         ],
-        "notes": "Not in keybinds.mdx docs. Bound to bare 'E' (shift+e), not a ctrl/alt combo.",
+        "notes": "Not in keybinds.mdx docs. Bound to bare 'E' (shift+e), not a ctrl/alt combo. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): retired: still accepted in config but registers no shortcut.",
         "src": 114,
         "cmd": null,
         "intents": []
@@ -5051,7 +6038,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "diff_collapse"
         ],
-        "notes": "Not in keybinds.mdx docs.",
+        "notes": "Not in keybinds.mdx docs. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): retired: still accepted in config but registers no shortcut.",
         "src": 115,
         "cmd": null,
         "intents": []
@@ -5066,7 +6053,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "diff_switch_focus"
         ],
-        "notes": "Not in keybinds.mdx docs.",
+        "notes": "Not in keybinds.mdx docs. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): retired: there is no keyboard focus switch; files and folders are opened by click.",
         "src": 116,
         "cmd": null,
         "intents": []
@@ -5111,7 +6098,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "diff_next_file"
         ],
-        "notes": "Not in keybinds.mdx docs.",
+        "notes": "Not in keybinds.mdx docs. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): diff.next_file adds alt+down (n, alt+down).",
         "src": 119,
         "cmd": null,
         "intents": []
@@ -5126,7 +6113,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "diff_previous_file"
         ],
-        "notes": "Not in keybinds.mdx docs.",
+        "notes": "Not in keybinds.mdx docs. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): diff.previous_file adds alt+up (p, alt+up).",
         "src": 120,
         "cmd": null,
         "intents": []
@@ -5201,7 +6188,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "diff_help"
         ],
-        "notes": "Not in keybinds.mdx docs.",
+        "notes": "Not in keybinds.mdx docs. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): diff.help also accepts shift+? and shift+/ (?, shift+?, shift+/).",
         "src": 125,
         "cmd": null,
         "intents": []
@@ -5399,7 +6386,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "dialog.move_session.new"
         ],
-        "notes": "Not in keybinds.mdx docs.",
+        "notes": "Not in keybinds.mdx docs. OpenCode 2 (cli.json, https://opencode.ai/v2/docs/cli/keybinds/, as of 2026-10-25): dialog.move_session.new is ctrl+a (New worktree) and ctrl+m is dialog.move_session.move (Move session to worktree).",
         "src": 137,
         "cmd": null,
         "intents": []
@@ -5433,6 +6420,23 @@ export const KM_TOOLS: KmTool[] = [
         "src": 139,
         "cmd": null,
         "intents": []
+      },
+      {
+        "keys": "<leader>q",
+        "macKeys": "<leader>q",
+        "desc": "session_queued_prompts - open the queued-prompts menu.",
+        "ctx": "input",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "session_queued_prompts"
+        ],
+        "notes": "Registered in the interactive footer of `opencode run`, and only while at least one prompt is queued (enabled when the route is the composer and queuedPrompts().length > 0). The same <leader>q is also an app_exit alternative; which action wins in that footer was not traced. OpenCode 2: same default (session.queued_prompts, <leader>q), https://opencode.ai/v2/docs/cli/keybinds/.",
+        "src": 141,
+        "cmd": null,
+        "intents": [
+          "queue"
+        ]
       }
     ]
   },
@@ -5441,9 +6445,9 @@ export const KM_TOOLS: KmTool[] = [
     "label": "Pi",
     "surface": "tui",
     "host": null,
-    "version": "0.82.1",
-    "versionNotes": "0.82.1 is what `pi --version` reports on this machine and what the locally installed docs/keybindings.md and dist/core/keybindings.js were read from (/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent). npm registry latest and repo main/HEAD package.json both report 0.83.0 (2026-07-29), which is one release ahead but does not change any keybinding in the tables below except adding ctrl+home/ctrl+end as extra editor-accessible keys (see CHANGELOG #7574). A further 'fullscreen mode' keyset (tui.altScreen.* actions, --ui-mode fullscreen) exists only on repo main under the CHANGELOG's [Unreleased] heading as of this check (2026-08-05) - i.e. ahead of even the 0.83.0 published release, experimental, and not present in the installed 0.82.1 build. Those entries are marked confidence: documented (not source-code) and called out individually.",
-    "checkedAt": "2026-08-05",
+    "version": "1.4.0",
+    "versionNotes": "1.4.0 (npm @earendil-works/pi-coding-agent latest, published 2026-10-21; `pi --version` reports 1.4.0 on this machine). Defaults re-read from the 1.4.0 package: docs/keybindings.md, dist/core/keybindings.js, @earendil-works/pi-tui 1.4.0 dist/keybindings.js and dist/modes/interactive/interactive-mode.js. The 2026-08-05 pass read 0.82.1 plus unreleased main. Changes since: Pi 1.0.0 (2026-10-01) made fullscreen the default TUI mode, so the tui.altScreen.* keyset is released (rows previously marked documented are now source-code); Pi 1.0.3 made Home/End always move the editor cursor and moved transcript top/bottom to Ctrl+Home/Ctrl+End; fullscreen transcript search, previous/next marked message and ctrl+pageUp/ctrl+pageDown were added; Windows and WSL use different defaults for several actions (alt+v image paste, alt+p previous model, ctrl+q follow-up, alt+q dequeue, ctrl+z or alt+z editor undo, ctrl+up/ctrl+down, ctrl+f search). All other existing rows were re-checked and still match.",
+    "checkedAt": "2026-10-25",
     "sources": [
       "dist/core/keybindings.js via ...TUI_KEYBINDINGS (tui.editor.cursorUp)",
       "dist/core/keybindings.js via ...TUI_KEYBINDINGS (tui.editor.cursorDown)",
@@ -5495,11 +6499,15 @@ export const KM_TOOLS: KmTool[] = [
       "dist/core/keybindings.js (app.session.deleteNoninvasive)",
       "dist/core/keybindings.js (app.tree.filter.cycleBackward)",
       "dist/core/keybindings.js (app.models.reorderDown)",
-      "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/keybindings.md (TUI Fullscreen Viewport table); CHANGELOG #7574",
-      "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/keybindings.md (tui.altScreen.top row of the action table)",
-      "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/keybindings.md (tui.altScreen.bottom)",
-      "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/keybindings.md (tui.altScreen.previousPrompt)",
-      "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/keybindings.md (tui.altScreen.nextPrompt)"
+      "docs/keybindings.md Fullscreen table and pi-tui 1.4.0 dist/keybindings.js (tui.altScreen.top ctrl+home, tui.altScreen.bottom ctrl+end); CHANGELOG 1.0.3 (Home/End always move the editor cursor; transcript top/bottom moved to Ctrl+Home/Ctrl+End) [@earendil-works/pi-coding-agent 1.4.0 npm package, 2026-10-21]",
+      "pi-tui 1.4.0 dist/keybindings.js and dist/core/keybindings.js (tui.altScreen.search: ctrl+shift+f, ctrl+f on Windows/WSL); docs/keybindings.md Fullscreen table",
+      "pi-tui 1.4.0 dist/keybindings.js (tui.altScreen.searchNext enter/ctrl+g; tui.altScreen.searchPrevious shift+enter/ctrl+shift+g); docs/keybindings.md",
+      "dist/core/keybindings.js KEYBINDINGS override (tui.altScreen.previousPrompt: ctrl+shift+up and ctrl+up on non-Windows, ctrl+up only on Windows/WSL); docs/keybindings.md",
+      "dist/core/keybindings.js KEYBINDINGS override (tui.altScreen.nextPrompt: ctrl+shift+down and ctrl+down on non-Windows, ctrl+down only on Windows/WSL); docs/keybindings.md",
+      "pi-tui 1.4.0 dist/keybindings.js (tui.altScreen.searchClose escape); docs/keybindings.md",
+      "dist/modes/interactive/interactive-mode.js handleCtrlC() (first ctrl+c clears the editor; a second within 500 ms calls shutdown()); docs/keybindings.md app.clear \"Clear editor (first) / exit (second)\"",
+      "docs/settings.md tuiMode (\"regular\" | \"fullscreen\", default \"fullscreen\"), fullscreenCopyOnSelect; CHANGELOG 1.0.0 \"Fullscreen by default\" (2026-10-01)",
+      "docs/keybindings.md tui.editor.pageUp/pageDown add ctrl+pageUp/ctrl+pageDown; \"In fullscreen mode, these actions control the transcript and take precedence over editor actions using the same key\""
     ],
     "bindings": [
       {
@@ -5602,7 +6610,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "tui.editor.cursorLineStart"
         ],
-        "notes": "ctrl+a here is emacs/readline 'beginning of line', NOT select-all. See guiCollisions. On main/HEAD (unreleased-ahead-of-0.83.0) this action also gains ctrl+home as an extra default key; 0.82.1 does not have it (CHANGELOG #7574).",
+        "notes": "ctrl+a here is emacs/readline 'beginning of line', NOT select-all. See guiCollisions. Since Pi 1.0.3 Home and End always move the editor cursor; transcript top and bottom use ctrl+home and ctrl+end (tui.altScreen.top, tui.altScreen.bottom).",
         "src": 6,
         "cmd": null,
         "intents": []
@@ -5653,32 +6661,34 @@ export const KM_TOOLS: KmTool[] = [
         "intents": []
       },
       {
-        "keys": "pageUp",
-        "macKeys": "fn+up (pageUp, terminal-dependent)",
-        "desc": "Scroll up by page (editor)",
+        "keys": "pageUp, ctrl+pageUp",
+        "macKeys": "fn+up (pageUp, terminal-dependent), ctrl+pageUp",
+        "desc": "Scroll the transcript up by page (fullscreen, the default); in regular mode or with ctrl+pageUp, page the editor up",
         "ctx": "input",
         "origin": "terminal-level",
         "conf": "firsthand",
         "action": [
+          "tui.altScreen.pageUp",
           "tui.editor.pageUp"
         ],
-        "notes": "In 0.82.1 this is a plain editor binding; on main/HEAD (unreleased) fullscreen mode reroutes unmodified pageUp to scroll the transcript instead (tui.altScreen.pageUp), while ctrl+pageUp becomes an added extra default key on this same action id so the editor stays reachable.",
-        "src": 10,
+        "notes": "Fullscreen is the default TUI mode in Pi 1.x (tuiMode setting, --tui-mode regular to keep terminal scrollback). In fullscreen, tui.altScreen.pageUp takes precedence over tui.editor.pageUp for unmodified pageUp; ctrl+pageUp is an extra default on tui.editor.pageUp that keeps the editor reachable.",
+        "src": 58,
         "cmd": null,
         "intents": []
       },
       {
-        "keys": "pageDown",
-        "macKeys": "fn+down (pageDown, terminal-dependent)",
-        "desc": "Scroll down by page (editor)",
+        "keys": "pageDown, ctrl+pageDown",
+        "macKeys": "fn+down (pageDown, terminal-dependent), ctrl+pageDown",
+        "desc": "Scroll the transcript down by page (fullscreen, the default); in regular mode or with ctrl+pageDown, page the editor down",
         "ctx": "input",
         "origin": "terminal-level",
         "conf": "firsthand",
         "action": [
+          "tui.altScreen.pageDown",
           "tui.editor.pageDown"
         ],
         "notes": "Same fullscreen-mode caveat as pageUp.",
-        "src": 11,
+        "src": 58,
         "cmd": null,
         "intents": []
       },
@@ -5868,7 +6878,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "tui.editor.undo"
         ],
-        "notes": "Classic Emacs/readline undo binding (bash also binds ctrl+_/ctrl+-).",
+        "notes": "Classic Emacs/readline undo binding (bash also binds ctrl+_/ctrl+-). Default is ctrl+z on native Windows and alt+z on WSL.",
         "src": 23,
         "cmd": null,
         "intents": []
@@ -5876,7 +6886,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+c",
         "macKeys": "ctrl+c",
-        "desc": "Copy selection; if no selection, clears the editor",
+        "desc": "Copy selection; if no selection, clear the editor; a second press within 500 ms exits Pi",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "firsthand",
@@ -5884,8 +6894,8 @@ export const KM_TOOLS: KmTool[] = [
           "tui.input.copy",
           "app.clear"
         ],
-        "notes": "IMPORTANT deviation from terminal-level SIGINT expectations - see guiCollisions. Two distinct action ids share this key; actual behavior likely branches on whether a selection exists.",
-        "src": 24,
+        "notes": "IMPORTANT deviation from terminal-level SIGINT expectations - see guiCollisions. Two action ids share this key: tui.input.copy and app.clear. app.clear clears the editor on the first press and calls shutdown() when pressed again within 500 ms (handleCtrlC in interactive-mode.js). It does not interrupt the agent; Escape does.",
+        "src": 56,
         "cmd": null,
         "intents": []
       },
@@ -5961,7 +6971,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+v",
         "macKeys": "cmd+v (native paste)/ctrl+v; alt+v on Windows",
-        "desc": "Paste image from clipboard",
+        "desc": "Paste files (macOS), images, or text from the clipboard",
         "ctx": "input",
         "origin": "tool-specific",
         "conf": "firsthand",
@@ -6006,7 +7016,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "app.model.cycleBackward"
         ],
-        "notes": null,
+        "notes": "Default is alt+p on Windows and WSL (docs/keybindings.md, 1.4.0).",
         "src": 31,
         "cmd": null,
         "intents": [
@@ -6082,7 +7092,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+x",
         "macKeys": "ctrl+x",
-        "desc": "Copy the last assistant message (or the selected message in /tree)",
+        "desc": "Copy the last assistant message (the selected message in /tree; the active text selection in fullscreen when fullscreenCopyOnSelect is false; the sign-in URL on OAuth sign-in screens)",
         "ctx": "transcript",
         "origin": "tool-specific",
         "conf": "firsthand",
@@ -6090,7 +7100,7 @@ export const KM_TOOLS: KmTool[] = [
           "app.message.copy",
           "app.models.clearAll"
         ],
-        "notes": "Deviates hard from GUI ctrl+x ('cut'). See guiCollisions. Second action id applies inside the scoped-models selector (clear all model selections).",
+        "notes": "Deviates hard from GUI ctrl+x (cut). See guiCollisions. Second action id applies inside the scoped-models selector (clear all model selections).",
         "src": 36,
         "cmd": null,
         "intents": [
@@ -6107,7 +7117,7 @@ export const KM_TOOLS: KmTool[] = [
         "action": [
           "app.message.followUp"
         ],
-        "notes": "Distinct from plain Enter, which queues a steering message delivered after the current tool-call turn (not all work). Detail from WebSearch's summary of docs/usage.md.",
+        "notes": "Distinct from plain Enter, which queues a steering message delivered after the current tool-call turn (not all work). Detail from WebSearch's summary of docs/usage.md. Default is ctrl+q on Windows and WSL because Windows Terminal reserves alt+enter for fullscreen.",
         "src": 37,
         "cmd": null,
         "intents": [
@@ -6125,7 +7135,7 @@ export const KM_TOOLS: KmTool[] = [
           "app.message.dequeue",
           "app.models.reorderUp"
         ],
-        "notes": "Second action id applies inside the scoped-models selector (move selected model up in cycle order).",
+        "notes": "Second action id applies inside the scoped-models selector (move selected model up in cycle order). Default is alt+q on Windows and WSL for the dequeue action.",
         "src": 38,
         "cmd": null,
         "intents": [
@@ -6215,7 +7225,7 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+s",
         "macKeys": "ctrl+s",
-        "desc": "Toggle sort mode in the session list; saves current model selection in the scoped-models selector",
+        "desc": "Toggle sort mode in the session list; saves the selected model (scoped-models selector) or the current thinking level (app.thinking.save) to settings",
         "ctx": "dialog",
         "origin": "tool-specific",
         "conf": "firsthand",
@@ -6317,78 +7327,48 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+home",
         "macKeys": "ctrl+home",
-        "desc": "Move cursor to line start / editor top (fullscreen mode)",
-        "ctx": "input",
+        "desc": "Scroll the transcript to the beginning (fullscreen mode)",
+        "ctx": "transcript",
         "origin": "tool-specific",
-        "conf": "documented",
+        "conf": "source-code",
         "action": [
-          "tui.editor.cursorLineStart"
+          "tui.altScreen.top"
         ],
-        "notes": "UNRELEASED / experimental as of this check: an extra default key added to the existing tui.editor.cursorLineStart action, only on repo main under CHANGELOG [Unreleased] (--ui-mode fullscreen), not in the installed 0.82.1 build nor the published 0.83.0 npm release verified locally.",
+        "notes": "Fullscreen is the default TUI mode in Pi 1.x (tuiMode setting, --tui-mode regular to keep terminal scrollback). Moved here from Home in Pi 1.0.3; ctrl+home no longer moves the editor cursor.",
         "src": 50,
         "cmd": null,
-        "intents": []
+        "intents": [
+          "transcript"
+        ]
       },
       {
         "keys": "ctrl+end",
         "macKeys": "ctrl+end",
-        "desc": "Move cursor to editor end (fullscreen mode)",
-        "ctx": "input",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": [
-          "tui.editor.cursorLineEnd"
-        ],
-        "notes": "UNRELEASED / experimental, see ctrl+home note above.",
-        "src": 50,
-        "cmd": null,
-        "intents": []
-      },
-      {
-        "keys": "home (unmodified)",
-        "macKeys": "home",
-        "desc": "Scroll transcript to top (fullscreen mode only; controls editor in default mode)",
+        "desc": "Scroll the transcript to the end and follow new output (fullscreen mode)",
         "ctx": "transcript",
         "origin": "tool-specific",
-        "conf": "documented",
-        "action": [
-          "tui.altScreen.top"
-        ],
-        "notes": "UNRELEASED / experimental, gated behind --ui-mode fullscreen or /settings; not present in installed 0.82.1.",
-        "src": 51,
-        "cmd": null,
-        "intents": [
-          "transcript"
-        ]
-      },
-      {
-        "keys": "end (unmodified)",
-        "macKeys": "end",
-        "desc": "Scroll transcript to bottom and follow new output (fullscreen mode only)",
-        "ctx": "transcript",
-        "origin": "tool-specific",
-        "conf": "documented",
+        "conf": "source-code",
         "action": [
           "tui.altScreen.bottom"
         ],
-        "notes": "UNRELEASED / experimental, see above.",
-        "src": 52,
+        "notes": "Moved here from End in Pi 1.0.3; ctrl+end no longer moves the editor cursor.",
+        "src": 50,
         "cmd": null,
         "intents": [
           "transcript"
         ]
       },
       {
-        "keys": "ctrl+shift+up",
-        "macKeys": "ctrl+shift+up",
+        "keys": "ctrl+shift+up, ctrl+up",
+        "macKeys": "ctrl+shift+up, ctrl+up",
         "desc": "Jump to the previous marked message in the transcript (fullscreen mode)",
         "ctx": "transcript",
         "origin": "tool-specific",
-        "conf": "documented",
+        "conf": "source-code",
         "action": [
           "tui.altScreen.previousPrompt"
         ],
-        "notes": "UNRELEASED / experimental, see above.",
+        "notes": "Fullscreen is the default TUI mode in Pi 1.x (tuiMode setting, --tui-mode regular to keep terminal scrollback). ctrl+up is also bound on non-Windows platforms per dist/core/keybindings.js; on Windows and WSL the default is ctrl+up only. The docs table words this the other way round (\"ctrl+up only on Windows and WSL\"); the source is authoritative.",
         "src": 53,
         "cmd": null,
         "intents": [
@@ -6396,17 +7376,86 @@ export const KM_TOOLS: KmTool[] = [
         ]
       },
       {
-        "keys": "ctrl+shift+down",
-        "macKeys": "ctrl+shift+down",
+        "keys": "ctrl+shift+down, ctrl+down",
+        "macKeys": "ctrl+shift+down, ctrl+down",
         "desc": "Jump to the next marked message in the transcript (fullscreen mode)",
         "ctx": "transcript",
         "origin": "tool-specific",
-        "conf": "documented",
+        "conf": "source-code",
         "action": [
           "tui.altScreen.nextPrompt"
         ],
-        "notes": "UNRELEASED / experimental, see above.",
+        "notes": "Same platform split as ctrl+shift+up: ctrl+down only on Windows and WSL; both keys elsewhere.",
         "src": 54,
+        "cmd": null,
+        "intents": [
+          "transcript"
+        ]
+      },
+      {
+        "keys": "ctrl+shift+f",
+        "macKeys": "ctrl+shift+f",
+        "desc": "Search the rendered transcript (fullscreen mode)",
+        "ctx": "transcript",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.altScreen.search"
+        ],
+        "notes": "Fullscreen is the default TUI mode in Pi 1.x (tuiMode setting, --tui-mode regular to keep terminal scrollback). Default is ctrl+f on Windows and WSL.",
+        "src": 51,
+        "cmd": null,
+        "intents": [
+          "transcript",
+          "history-search"
+        ]
+      },
+      {
+        "keys": "enter, ctrl+g",
+        "macKeys": "enter, ctrl+g",
+        "desc": "Select the next transcript search match while searching",
+        "ctx": "transcript",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.altScreen.searchNext"
+        ],
+        "notes": "Active only while the transcript search is open. ctrl+g is otherwise the external-editor key.",
+        "src": 52,
+        "cmd": null,
+        "intents": [
+          "transcript"
+        ]
+      },
+      {
+        "keys": "shift+enter, ctrl+shift+g",
+        "macKeys": "shift+enter, ctrl+shift+g",
+        "desc": "Select the previous transcript search match while searching",
+        "ctx": "transcript",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.altScreen.searchPrevious"
+        ],
+        "notes": "Active only while the transcript search is open.",
+        "src": 52,
+        "cmd": null,
+        "intents": [
+          "transcript"
+        ]
+      },
+      {
+        "keys": "escape",
+        "macKeys": "esc",
+        "desc": "Close the transcript search",
+        "ctx": "transcript",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": [
+          "tui.altScreen.searchClose"
+        ],
+        "notes": "Active only while the transcript search is open.",
+        "src": 55,
         "cmd": null,
         "intents": [
           "transcript"
@@ -6420,10 +7469,12 @@ export const KM_TOOLS: KmTool[] = [
     "surface": "ide",
     "host": null,
     "version": null,
-    "versionNotes": null,
-    "checkedAt": "2026-08-05",
+    "versionNotes": "Cursor publishes no version number on its docs or changelog; latest changelog entry is dated 2026-10-16 (cursor.com/changelog, checked 2026-10-25). Bindings from the keyboard-shortcuts reference page as of 2026-10-25; that page now lists Windows/Linux keys beside macOS keys.",
+    "checkedAt": "2026-10-25",
     "sources": [
-      "https://cursor.com/docs/reference/keyboard-shortcuts"
+      "https://cursor.com/docs/reference/keyboard-shortcuts",
+      "https://cursor.com/docs/inline-edit/overview",
+      "https://cursor.com/changelog"
     ],
     "bindings": [
       {
@@ -6554,31 +7605,16 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "enter",
         "macKeys": "enter",
-        "desc": "Nudge (default) - send/submit the chat message",
+        "desc": "Queue message (default) - send/submit the chat message",
         "ctx": "chat",
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": null,
+        "notes": "Docs row changed from \"Nudge (default)\" to \"Queue message (default)\" (cursor.com/docs/reference/keyboard-shortcuts, checked 2026-10-25).",
         "src": 0,
         "cmd": null,
         "intents": [
           "submit"
-        ]
-      },
-      {
-        "keys": "ctrl+enter",
-        "macKeys": "ctrl+enter",
-        "desc": "Queue message",
-        "ctx": "chat",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": "On Mac this is documented as the physical Ctrl key (not Cmd) + Return - i.e. it is literally Ctrl+Return on Mac too, not Cmd+Return. Verified directly from the docs' raw data (mac slot = 'Ctrl Return').",
-        "src": 0,
-        "cmd": null,
-        "intents": [
-          "queue"
         ]
       },
       {
@@ -6807,82 +7843,6 @@ export const KM_TOOLS: KmTool[] = [
         "intents": []
       },
       {
-        "keys": "ctrl+k",
-        "macKeys": "cmd+k",
-        "desc": "Open (Inline Edit prompt)",
-        "ctx": "editor",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": "Same chord (Cmd/Ctrl+K) is separately documented under Terminal as 'Open terminal prompt bar' - meaning depends on focus.",
-        "src": 0,
-        "cmd": null,
-        "intents": [
-          "inline-chat"
-        ]
-      },
-      {
-        "keys": "ctrl+shift+k",
-        "macKeys": "cmd+shift+k",
-        "desc": "Toggle input focus (Inline Edit)",
-        "ctx": "editor",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": "Same chord also documented under 'Code Selection & Context' as 'Add selection to Edit'.",
-        "src": 0,
-        "cmd": null,
-        "intents": [
-          "inline-chat"
-        ]
-      },
-      {
-        "keys": "enter",
-        "macKeys": "enter",
-        "desc": "Submit (Inline Edit)",
-        "ctx": "editor",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": null,
-        "src": 0,
-        "cmd": null,
-        "intents": [
-          "submit",
-          "inline-chat"
-        ]
-      },
-      {
-        "keys": "ctrl+shift+backspace",
-        "macKeys": "cmd+shift+backspace",
-        "desc": "Cancel (Inline Edit)",
-        "ctx": "editor",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": "Same chord as Chat's 'Cancel generation'.",
-        "src": 0,
-        "cmd": null,
-        "intents": [
-          "inline-chat"
-        ]
-      },
-      {
-        "keys": "alt+enter",
-        "macKeys": "opt+enter",
-        "desc": "Ask quick question (Inline Edit)",
-        "ctx": "editor",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": null,
-        "src": 0,
-        "cmd": null,
-        "intents": [
-          "inline-chat"
-        ]
-      },
-      {
         "keys": "@",
         "macKeys": "@",
         "desc": "@-mentions - trigger the context-attachment picker (files, docs, symbols, etc.)",
@@ -6922,19 +7882,6 @@ export const KM_TOOLS: KmTool[] = [
         "intents": []
       },
       {
-        "keys": "ctrl+shift+k",
-        "macKeys": "cmd+shift+k",
-        "desc": "Add selection to Edit",
-        "ctx": "editor",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": "Duplicate of Inline Edit section's 'Toggle input focus'.",
-        "src": 0,
-        "cmd": null,
-        "intents": []
-      },
-      {
         "keys": "ctrl+l",
         "macKeys": "cmd+l",
         "desc": "Add selection to new chat",
@@ -6942,20 +7889,7 @@ export const KM_TOOLS: KmTool[] = [
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "Same chord as General section's 'Toggle Sidepanel'; behavior differs by whether code is selected.",
-        "src": 0,
-        "cmd": null,
-        "intents": []
-      },
-      {
-        "keys": "ctrl+m",
-        "macKeys": "cmd+m",
-        "desc": "Toggle file reading strategies",
-        "ctx": "editor",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": null,
+        "notes": "Docs now list this as \"Cmd/Ctrl+L or Cmd/Ctrl+K\" (the K alternative is the separate ctrl+k row).",
         "src": 0,
         "cmd": null,
         "intents": []
@@ -7047,41 +7981,17 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+k",
         "macKeys": "cmd+k",
-        "desc": "Open terminal prompt bar (natural-language -> shell command)",
-        "ctx": "terminal",
+        "desc": "Toggle Sidepanel (unless bound to mode); with code selected, add selection to new chat",
+        "ctx": "global",
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "Same chord as Inline Edit's 'Open' - meaning depends on whether focus is the editor or the terminal.",
+        "notes": "Cursor docs now list Cmd/Ctrl+K beside Cmd/Ctrl+L for both Toggle Sidepanel and Add selection to new chat. The Inline Edit docs page states Cmd/Ctrl+K used to open inline edit, which has been replaced by this workflow (cursor.com/docs/inline-edit/overview, checked 2026-10-25).",
         "src": 0,
         "cmd": null,
-        "intents": []
-      },
-      {
-        "keys": "ctrl+enter",
-        "macKeys": "cmd+enter",
-        "desc": "Run generated command",
-        "ctx": "terminal",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": null,
-        "src": 0,
-        "cmd": null,
-        "intents": []
-      },
-      {
-        "keys": "esc",
-        "macKeys": "esc",
-        "desc": "Accept command",
-        "ctx": "terminal",
-        "origin": "tool-specific",
-        "conf": "documented",
-        "action": null,
-        "notes": "Counter-intuitive: Escape here ACCEPTS/inserts the AI-generated terminal command rather than dismissing it - the opposite of Escape's near-universal 'cancel' convention. See guiCollisions.",
-        "src": 0,
-        "cmd": null,
-        "intents": []
+        "intents": [
+          "inline-chat"
+        ]
       }
     ]
   },
@@ -7090,11 +8000,13 @@ export const KM_TOOLS: KmTool[] = [
     "label": "Cursor",
     "surface": "tui",
     "host": null,
-    "version": null,
-    "versionNotes": null,
-    "checkedAt": "2026-08-05",
+    "version": "2026.10.22",
+    "versionNotes": "Cursor CLI (\"agent\") uses date versions; latest entry in cursor.com/docs/cli/changelog is v2026.10.22 (checked 2026-10-25). Keys beyond the /cli/using page come from changelog entries and the Shell Mode page, dated in each row.",
+    "checkedAt": "2026-10-25",
     "sources": [
-      "https://cursor.com/docs/cli/using"
+      "https://cursor.com/docs/cli/using",
+      "https://cursor.com/docs/cli/shell-mode",
+      "https://cursor.com/docs/cli/changelog"
     ],
     "bindings": [
       {
@@ -7131,12 +8043,12 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+d",
         "macKeys": "ctrl+d",
-        "desc": "Exit the CLI",
+        "desc": "Exit the CLI (double press)",
         "ctx": "global",
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "Docs state it 'follows standard shell behavior, requiring a double-press to exit' (matches the conventional readline/bash Ctrl+D-twice-to-exit-empty-prompt convention).",
+        "notes": "Docs: follows standard shell behavior, requiring a double-press to exit.",
         "src": 0,
         "cmd": null,
         "intents": [
@@ -7151,7 +8063,7 @@ export const KM_TOOLS: KmTool[] = [
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "Documented alongside a second alternative the docs render as literal text '+Enter' with no visible modifier before the '+' - almost certainly a rendering bug on Cursor's own page (the modifier glyph, likely Cmd, appears to have been dropped from the source). Could not verify what the intended modifier is; recorded as a gap rather than guessed.",
+        "notes": "Docs wording is \"Ctrl+J or +Enter\" (second key name is missing on the page, so the second alternative is UNVERIFIED). Shift+Enter works in iTerm2, Ghostty, Kitty, Warp, Zed, not tmux; use Ctrl+J there.",
         "src": 0,
         "cmd": null,
         "intents": [
@@ -7166,7 +8078,7 @@ export const KM_TOOLS: KmTool[] = [
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "Opens the diff-review flow after the agent completes tasks.",
+        "notes": "Opens the review flow (/changes with a Session tab per changelog v2026.06.09). Inside review: i adds follow-up instructions, up/down scroll, left/right switch files.",
         "src": 0,
         "cmd": null,
         "intents": []
@@ -7224,6 +8136,183 @@ export const KM_TOOLS: KmTool[] = [
         "src": 0,
         "cmd": null,
         "intents": []
+      },
+      {
+        "keys": "ctrl+g",
+        "macKeys": "ctrl+g",
+        "desc": "Open the prompt in $EDITOR",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Cursor CLI changelog v2026.06.09 (cursor.com/docs/cli/changelog, checked 2026-10-25).",
+        "src": 2,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+l",
+        "macKeys": "ctrl+l",
+        "desc": "Clear the screen and scrollback; the session keeps running",
+        "ctx": "global",
+        "origin": "readline-inherited",
+        "conf": "documented",
+        "action": null,
+        "notes": "Cursor CLI changelog v2026.06.09 (cursor.com/docs/cli/changelog, checked 2026-10-25).",
+        "src": 2,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+v",
+        "macKeys": "ctrl+v",
+        "desc": "Paste a clipboard image into the prompt",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Cursor CLI changelog v2026.06.09 (cursor.com/docs/cli/changelog, checked 2026-10-25). Pasting a copied image file resolves the actual image.",
+        "src": 2,
+        "cmd": null,
+        "intents": [
+          "paste-image"
+        ]
+      },
+      {
+        "keys": "ctrl+y",
+        "macKeys": "ctrl+y",
+        "desc": "Open the /resume session picker",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Cursor CLI changelog v2026.06.09 (cursor.com/docs/cli/changelog, checked 2026-10-25). Described there as \"/resume (Ctrl+Y)\".",
+        "src": 2,
+        "cmd": null,
+        "intents": [
+          "session-switch"
+        ]
+      },
+      {
+        "keys": "ctrl+b ctrl+b",
+        "macKeys": "ctrl+b ctrl+b",
+        "desc": "Send a running shell command to the background (double press)",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Cursor CLI changelog v2026.06.09 (cursor.com/docs/cli/changelog, checked 2026-10-25). Described as \"Double Ctrl+B\".",
+        "src": 2,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+z",
+        "macKeys": "ctrl+z",
+        "desc": "Suspend the CLI to the shell; fg resumes it",
+        "ctx": "global",
+        "origin": "readline-inherited",
+        "conf": "documented",
+        "action": null,
+        "notes": "Cursor CLI changelog v2026.07.06 (cursor.com/docs/cli/changelog, checked 2026-10-25). Entry covers restoring terminal state after Ctrl+Z; resume with fg.",
+        "src": 2,
+        "cmd": null,
+        "intents": [
+          "suspend"
+        ]
+      },
+      {
+        "keys": "ctrl+o",
+        "macKeys": "ctrl+o",
+        "desc": "Expand truncated output (Shell Mode) and subagent rows",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Shell Mode page: \"For truncated output, use Ctrl+O to expand\" (cursor.com/docs/cli/shell-mode, checked 2026-10-25). Changelog v2026.07.20 says the shortcut still works on subagent rows.",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+c",
+        "macKeys": "ctrl+c",
+        "desc": "Cancel (shell command hang, prompts, goal); exit Shell Mode on empty input",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Shell Mode page: cancel a hanging command with Ctrl+C; Ctrl+C clears and exits Shell Mode. Changelog v2026.08.11: /goal pauses on Ctrl+C. Whether Ctrl+C interrupts a running agent turn is not stated on the /cli/using page: UNVERIFIED.",
+        "src": 1,
+        "cmd": null,
+        "intents": [
+          "interrupt"
+        ]
+      },
+      {
+        "keys": "esc",
+        "macKeys": "esc",
+        "desc": "Exit Shell Mode when the input is empty (Backspace/Delete on empty input also exits)",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "cursor.com/docs/cli/shell-mode FAQ, checked 2026-10-25. Docs do not document Esc as an agent-stop key.",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "enter",
+        "macKeys": "enter",
+        "desc": "In the / menu, attach the highlighted skill to one message",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "cursor.com/docs/cli/using \"Custom Modes\" section, checked 2026-10-25.",
+        "src": 0,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "alt+enter",
+        "macKeys": "opt+enter",
+        "desc": "In the / menu, invoke the highlighted skill as a Custom Mode that stays active until you exit it",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "cursor.com/docs/cli/using \"Custom Modes\" section; changelog v2026.08.11 calls it a sticky custom mode.",
+        "src": 0,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "y / n",
+        "macKeys": "y / n",
+        "desc": "Approve or reject a terminal command before it runs",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "cursor.com/docs/cli/using \"Command approval\": CLI asks you to approve (y) or reject (n) execution.",
+        "src": 0,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "& then message",
+        "macKeys": "& then message",
+        "desc": "Prefix a message with & to send it to a Cloud Agent",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Text-input prefix, not a modifier chord. cursor.com/docs/cli/using \"Cloud Agent handoff\".",
+        "src": 0,
+        "cmd": null,
+        "intents": []
       }
     ]
   },
@@ -7233,15 +8322,17 @@ export const KM_TOOLS: KmTool[] = [
     "surface": "ide",
     "host": "vscode",
     "version": null,
-    "versionNotes": null,
-    "checkedAt": "2026-08-05",
+    "versionNotes": "VS Code Copilot Chat; no version pinned (docs are rolling). VS Code docs now describe an Agents window and an Agent Host / Copilot harness alongside the Chat view; surface label left as \"ide\" (not renamed on thin evidence). Docs reference checked 2026-10-25.",
+    "checkedAt": "2026-10-25",
     "sources": [
       "https://docs.github.com/en/copilot/reference/keyboard-shortcuts-for-github-copilot-in-the-ide",
       "https://docs.github.com/en/copilot/how-tos/get-code-suggestions/get-ide-code-suggestions?tool=vscode",
-      "https://code.visualstudio.com/docs/copilot/ai-powered-suggestions",
+      "https://code.visualstudio.com/docs/editing/ai-powered-suggestions",
       "https://code.visualstudio.com/docs/agents/reference/ai-features-cheat-sheet",
       "https://github.com/microsoft/vscode/issues/230364",
-      "https://code.visualstudio.com/docs/chat/chat-overview"
+      "https://code.visualstudio.com/docs/chat/chat-overview",
+      "https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/browser/actions/chatActions.ts",
+      "https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/browser/actions/chatExecuteActions.ts"
     ],
     "bindings": [
       {
@@ -7316,13 +8407,13 @@ export const KM_TOOLS: KmTool[] = [
       {
         "keys": "ctrl+right",
         "macKeys": "cmd+right",
-        "desc": "Accept the suggestion word-by-word",
+        "desc": "Partially accept the suggestion: next word (docs also say next line)",
         "ctx": "completion",
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "This is the word-by-word accept the user asked to capture.",
-        "src": 1,
+        "notes": "Current VS Code page (editing/ai-powered-suggestions) says Cmd/Ctrl+Right accepts \"either the next word of a suggestion, or the next line\". Precise word-vs-line behavior (setting-dependent?) UNVERIFIED; the separate acceptNextLine row stays unbound by default per the GitHub docs.",
+        "src": 2,
         "cmd": "editor.action.inlineSuggest.acceptNextWord",
         "intents": [
           "accept-suggestion"
@@ -7345,15 +8436,15 @@ export const KM_TOOLS: KmTool[] = [
       },
       {
         "keys": "ctrl+enter",
-        "macKeys": "cmd+enter",
+        "macKeys": "ctrl+enter",
         "desc": "Open the Copilot completions panel showing multiple suggestions in a new editor tab",
         "ctx": "completion",
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": null,
-        "src": 1,
-        "cmd": null,
+        "notes": "GitHub docs: Open multiple suggestions in a separate pane = github.copilot.generate; on macOS the docs list Ctrl+Return (physical Ctrl), not Cmd+Return. Set macKeys to ctrl+enter.",
+        "src": 0,
+        "cmd": "github.copilot.generate",
         "intents": [
           "external-editor"
         ]
@@ -7436,10 +8527,10 @@ export const KM_TOOLS: KmTool[] = [
         "desc": "Switch the Chat view into Agent mode",
         "ctx": "chat",
         "origin": "tool-specific",
-        "conf": "documented",
+        "conf": "source-code",
         "action": null,
-        "notes": "Windows and Linux defaults differ from each other (Ctrl+Shift+I vs Ctrl+Shift+Alt+I) - verify per-OS before publishing as a single row.",
-        "src": 3,
+        "notes": "No longer in the VS Code cheat sheet. VS Code source main still binds it: CtrlCmd+Shift+I, Linux override CtrlCmd+Alt+Shift+I; only when the agent-enabled setting is on. VS Code source, main branch (checked 2026-10-25); defaults can be overridden and are not in the docs reference.",
+        "src": 6,
         "cmd": null,
         "intents": [
           "mode-cycle"
@@ -7451,11 +8542,11 @@ export const KM_TOOLS: KmTool[] = [
         "desc": "Open the model picker in the Chat view",
         "ctx": "chat",
         "origin": "tool-specific",
-        "conf": "documented",
+        "conf": "source-code",
         "action": null,
-        "notes": null,
-        "src": 3,
-        "cmd": null,
+        "notes": "No longer in the VS Code cheat sheet. OpenModelPickerAction is bound to CtrlCmd+Alt+Period in VS Code source main. VS Code source, main branch (checked 2026-10-25); defaults can be overridden and are not in the docs reference.",
+        "src": 7,
+        "cmd": "workbench.action.chat.openModelPicker",
         "intents": [
           "model-switch"
         ]
@@ -7513,6 +8604,71 @@ export const KM_TOOLS: KmTool[] = [
         "src": 5,
         "cmd": null,
         "intents": []
+      },
+      {
+        "keys": "ctrl+. (chat input)",
+        "macKeys": "cmd+. (chat input)",
+        "desc": "Open the Agent picker (chat mode picker) with focus in the Chat input",
+        "ctx": "chat",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": null,
+        "notes": "OpenModePickerAction (\"Open Agent Picker\") is bound to CtrlCmd+Period when focus is in the chat input in the Chat view. VS Code source, main branch (checked 2026-10-25); defaults can be overridden and are not in the docs reference.",
+        "src": 7,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+shift+enter (chat input)",
+        "macKeys": "cmd+shift+enter (chat input)",
+        "desc": "Send the message to a new chat",
+        "ctx": "chat",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": null,
+        "notes": "SendToNewChatAction, workbench.action.chat.sendToNewChat, when focus is in chat input. VS Code source, main branch (checked 2026-10-25); defaults can be overridden and are not in the docs reference.",
+        "src": 7,
+        "cmd": "workbench.action.chat.sendToNewChat",
+        "intents": []
+      },
+      {
+        "keys": "ctrl+enter (chat input)",
+        "macKeys": "cmd+enter (chat input)",
+        "desc": "Send with #codebase",
+        "ctx": "chat",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": null,
+        "notes": "ChatSubmitWithCodebaseAction, when focus is in chat input. VS Code source, main branch (checked 2026-10-25); defaults can be overridden and are not in the docs reference.",
+        "src": 7,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "alt+backspace (win) / ctrl+escape (linux)",
+        "macKeys": "ctrl+escape",
+        "desc": "Cancel the in-progress chat request",
+        "ctx": "chat",
+        "origin": "tool-specific",
+        "conf": "source-code",
+        "action": null,
+        "notes": "Cancel action keybinding: CtrlCmd+Escape, mac override WinCtrl+Escape, win override Alt+Backspace; active only while a request is running. VS Code source, main branch (checked 2026-10-25); defaults can be overridden and are not in the docs reference.",
+        "src": 7,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+f",
+        "macKeys": "cmd+f",
+        "desc": "Search the whole chat conversation (Chat view, chat editor tabs, Agents window)",
+        "ctx": "chat",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "code.visualstudio.com/docs/chat/chat-overview, checked 2026-10-25.",
+        "src": 5,
+        "cmd": null,
+        "intents": []
       }
     ]
   },
@@ -7521,11 +8677,14 @@ export const KM_TOOLS: KmTool[] = [
     "label": "Copilot",
     "surface": "tui",
     "host": "copilot-cli",
-    "version": null,
-    "versionNotes": "@github/copilot npm package, referenced at v1.0.68 (July 2026) by a secondary source; not independently verified against a locally installed binary in this research pass",
-    "checkedAt": "2026-08-05",
+    "version": "1.0.103",
+    "versionNotes": "@github/copilot on npm: latest 1.0.103 (published 2026-10-22; prerelease 1.0.104-3); GitHub release v1.0.103 dated 2026-10-22. Checked 2026-10-25. Reference text read from the github/docs command-reference markdown, which was not run against an installed binary.",
+    "checkedAt": "2026-10-25",
     "sources": [
-      "https://raw.githubusercontent.com/github/docs/main/content/copilot/reference/copilot-cli-reference/cli-command-reference.md"
+      "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference",
+      "https://raw.githubusercontent.com/github/docs/main/content/copilot/reference/copilot-cli-reference/cli-command-reference.md",
+      "https://github.com/github/copilot-cli/blob/main/changelog.md",
+      "https://www.npmjs.com/package/@github/copilot"
     ],
     "bindings": [
       {
@@ -7537,7 +8696,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "The Copilot CLI TUI has no VS Code-style command-id system; it is a bespoke terminal UI, not an Electron/VS Code extension. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "mode-cycle"
@@ -7551,8 +8710,8 @@ export const KM_TOOLS: KmTool[] = [
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "In diff mode (entered via /diff), Esc (or Ctrl+C) instead just exits diff mode rather than canceling the agent turn - a separate, mode-scoped meaning documented under 'Diff mode shortcuts'. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "notes": "In a local session, if the model has not started answering the turn, the second Esc puts the submitted prompt back in the prompt box for editing; once the model has started, the second Esc interrupts the turn. With an empty prompt box, up then restores the prompt. In diff mode (/diff), Esc (or Ctrl+C) exits diff mode instead. Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
         "cmd": null,
         "intents": [
           "interrupt"
@@ -7566,8 +8725,8 @@ export const KM_TOOLS: KmTool[] = [
         "origin": "readline-inherited",
         "conf": "documented",
         "action": null,
-        "notes": "Verbatim doc text: 'Cancel operation / clear input. Press twice to exit.' A single press does NOT quit the CLI - it cancels the in-flight operation or clears whatever is typed in the prompt; a second press within the session ends it. Also separately documented for shell-mode ('!' at an empty prompt: press Esc or Ctrl+C to exit shell mode) and for diff mode (Esc/Ctrl+C exits diff mode). [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "notes": "Press twice to exit; changelog 1.0.100 says double Ctrl+C exits immediately even when the UI is busy. Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
         "cmd": null,
         "intents": [
           "quit"
@@ -7582,7 +8741,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Verbatim doc text is just 'Shutdown.' - no press-count qualifier, no confirmation prompt, and no mention of what happens to an in-flight agent turn or unsaved input, in contrast to Ctrl+C which explicitly documents 'press twice to exit'. Best-evidence reading is a single, immediate, unconfirmed shutdown, but that is an inference from the absence of a press-count word, not an explicit statement. Two other Ctrl+D meanings exist in different sub-contexts: (1) inside the lone-'$'-spawned real interactive shell, 'Ctrl+D on Unix' exits that sub-shell back to the Copilot CLI (recoverable, not a full shutdown); (2) inside diff mode, Ctrl+D scrolls the diff view down half a page. Neither of those is the main-prompt 'Shutdown' meaning. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "quit"
@@ -7597,7 +8756,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Matches the standard bash/readline clear-screen convention. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7610,7 +8769,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "[Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "queue"
@@ -7625,7 +8784,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Classic GNU readline reverse-i-search convention. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "history-search"
@@ -7640,7 +8799,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Documented under 'Navigation shortcuts in the interactive interface'. Ctrl+P/Ctrl+N (the emacs/readline equivalents for history up/down) are not mentioned anywhere in the doc - only the arrow keys are documented for this. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7653,7 +8812,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Standard emacs/readline line-editing binding. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "cursor-home"
@@ -7667,8 +8826,8 @@ export const KM_TOOLS: KmTool[] = [
         "origin": "readline-inherited",
         "conf": "documented",
         "action": null,
-        "notes": "Two separately documented meanings depending on prompt state: 'Navigation shortcuts' table says 'Move to end of the line (when typing)'; 'Timeline shortcuts' table says 'While there is nothing in the prompt input, this expands all items in Copilot's response timeline.' Both are verbatim from the same source file. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "notes": "Three meanings by state: end of line when typing; expands all timeline items on an empty prompt; and, before the first message of a new session, opens the local-or-cloud environment picker (changelog 1.0.92). Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
         "cmd": null,
         "intents": [
           "kill-to-end",
@@ -7684,7 +8843,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Standard emacs/readline character-left binding. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7697,7 +8856,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Two separately documented meanings: 'Navigation shortcuts' table says 'Move to the next character'; 'Timeline shortcuts' table says 'Open timeline search.' This is also the key GUI users most associate with in-page Find, which this CLI does not use it for at the input-line level. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7710,7 +8869,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Standard emacs/readline backspace-equivalent binding. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7723,7 +8882,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Standard readline kill-to-end-of-line. No undo mechanism is documented. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "kill-to-end",
@@ -7740,7 +8899,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Standard readline kill-to-beginning-of-line at the main prompt, no undo documented. Note: inside diff mode (/diff) this same key instead means 'Scroll up half a page' - a separate, mode-scoped meaning documented under 'Diff mode shortcuts'. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "cursor-home"
@@ -7755,7 +8914,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Standard readline kill-previous-word, no undo documented. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "delete-word-back"
@@ -7770,7 +8929,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Documented under 'Navigation shortcuts' alongside the other emacs/readline bindings, but this is NOT the readline meaning of Ctrl+Y (yank/paste the most recently killed text from Ctrl+U, Ctrl+K, or Ctrl+W) - the CLI repurposes it to accept a completion instead, breaking the readline pattern the surrounding keys otherwise follow. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "accept-suggestion"
@@ -7785,7 +8944,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Not a plain-text paste - pastes clipboard content (e.g. a screenshot) as an attachment rather than inserting text at the cursor. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "paste-image"
@@ -7800,7 +8959,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Standard Unix job-control SIGTSTP behavior (fg to resume), same as most readline-based shells/REPLs. Docs explicitly scope this to '(Unix)' - Windows behavior for this key is not stated anywhere in the reference. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "suspend"
@@ -7815,7 +8974,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Two-key chord (prefix key Ctrl+X, then a follow-up key), not a simultaneous combo. Ctrl+X itself performs no action alone. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7828,7 +8987,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Ctrl+G is documented as an alternate, single-key shortcut for this same action. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "external-editor"
@@ -7843,7 +9002,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "[Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7856,7 +9015,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "[Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7869,7 +9028,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Duplicate action of the Ctrl+X then e chord. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "external-editor"
@@ -7884,7 +9043,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "[Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7897,7 +9056,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "[Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "model-switch"
@@ -7912,7 +9071,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "[Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "newline",
@@ -7928,7 +9087,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Text-input trigger character rather than a keyboard chord; listed because the task brief asked for context-attach mechanisms explicitly. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7941,7 +9100,7 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "Text-input trigger character, not a keyboard chord. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7953,8 +9112,8 @@ export const KM_TOOLS: KmTool[] = [
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "Text-input trigger character, not a keyboard chord. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "notes": "Text-input trigger, not a chord. Esc or Ctrl+C on an empty prompt exits shell mode (changelog 1.0.61; Backspace also works). Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
         "cmd": null,
         "intents": []
       },
@@ -7966,8 +9125,8 @@ export const KM_TOOLS: KmTool[] = [
         "origin": "tool-specific",
         "conf": "documented",
         "action": null,
-        "notes": "Disabled by default; must be enabled via the shellShortcut setting, and can be blocked entirely by enterprise managed settings. Only activates for a local, trusted, idle session on a real TTY. Exit via 'exit' or Ctrl+D (Unix) to return to the CLI. [Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "notes": "Enabled by default (the old note said disabled by default). Disable it with the shellShortcut setting; enterprise managed settings can also disable it. Only activates for a local, trusted, idle session on a real TTY; changelog 1.0.74 says it works while the agent is busy. Exit with exit or Ctrl+D (Unix). Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
         "cmd": null,
         "intents": [
           "suspend"
@@ -7982,12 +9141,194 @@ export const KM_TOOLS: KmTool[] = [
         "conf": "documented",
         "action": null,
         "notes": "[Sourced from the github/docs documentation repo, not the Copilot CLI implementation - documented, not source-verified.]",
-        "src": 0,
+        "src": 1,
         "cmd": null,
         "intents": [
           "dismiss-suggestion",
           "help"
         ]
+      },
+      {
+        "keys": "ctrl+space",
+        "macKeys": "ctrl+space",
+        "desc": "Toggle voice dictation on or off",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Alias for Ctrl+X then v; only works if the terminal and OS pass the key through. Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified]. Added in changelog 1.0.81.",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+x then v",
+        "macKeys": "ctrl+x then v",
+        "desc": "Toggle voice dictation on or off",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "alt+v",
+        "macKeys": "alt+v",
+        "desc": "Paste an image from the clipboard as an attachment",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": [
+          "paste-image"
+        ]
+      },
+      {
+        "keys": "ctrl+x then g",
+        "macKeys": "ctrl+x then g",
+        "desc": "Collapse or expand the autopilot goal panel",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+x then h",
+        "macKeys": "ctrl+x then h",
+        "desc": "Hide the current-session sidebar",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "ctrl+x then x",
+        "macKeys": "ctrl+x then x",
+        "desc": "Close the current session",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": [
+          "session-switch"
+        ]
+      },
+      {
+        "keys": "ctrl+p",
+        "macKeys": "ctrl+p",
+        "desc": "Navigate submitted command history without triggering queued-prompt recall",
+        "ctx": "global",
+        "origin": "readline-inherited",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": [
+          "history-prev"
+        ]
+      },
+      {
+        "keys": "up (empty prompt)",
+        "macKeys": "up (empty prompt)",
+        "desc": "Recall the most recently queued or steering prompt for editing",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": [
+          "history-prev"
+        ]
+      },
+      {
+        "keys": "left / right (empty prompt)",
+        "macKeys": "left / right (empty prompt)",
+        "desc": "Walk the sidebar focus cycle: closed, timeline-focused, sidebar-focused",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified]. Inside the sidebar: up/down (j/k) move, Enter switches session, n new, x twice closes.",
+        "src": 1,
+        "cmd": null,
+        "intents": [
+          "session-switch"
+        ]
+      },
+      {
+        "keys": "ctrl+e (empty prompt, new session)",
+        "macKeys": "ctrl+e (empty prompt, new session)",
+        "desc": "Before the first message, choose a local or cloud environment",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Requires cloud sessions on the account. Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified]. Changelog 1.0.92.",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "home / end",
+        "macKeys": "home / end",
+        "desc": "Move to the start / end of the current visual line",
+        "ctx": "global",
+        "origin": "readline-inherited",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified]. Ctrl+Home / Ctrl+End jump to the start / end of the text.",
+        "src": 1,
+        "cmd": null,
+        "intents": [
+          "cursor-home",
+          "cursor-end"
+        ]
+      },
+      {
+        "keys": "alt+left / alt+right",
+        "macKeys": "opt+left / opt+right",
+        "desc": "Move the cursor by a word",
+        "ctx": "global",
+        "origin": "readline-inherited",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": []
+      },
+      {
+        "keys": "pageup / pagedown",
+        "macKeys": "pageup / pagedown",
+        "desc": "Scroll the timeline by one page",
+        "ctx": "global",
+        "origin": "tool-specific",
+        "conf": "documented",
+        "action": null,
+        "notes": "Sourced from the github/docs Copilot CLI command reference, checked 2026-10-25 [documented, not source-verified].",
+        "src": 1,
+        "cmd": null,
+        "intents": []
       }
     ]
   }
@@ -8016,7 +9357,7 @@ export const KM_COLLISIONS: KmCollision[] = [
         "expect": "varies (browser: focus search bar; VS Code: chord prefix for many commands)"
       },
       "cursor:ide": {
-        "actual": "Cursor rebinds bare Cmd/Ctrl+K (no second key needed) to immediately open Inline Edit in the editor, or the terminal AI prompt bar when the integrated terminal has focus.",
+        "actual": "Cursor binds bare Cmd/Ctrl+K to Toggle Sidepanel (and, with code selected, Add selection to new chat), the same as Cmd/Ctrl+L. It no longer opens Inline Edit. Docs say Cmd/Ctrl+K used to open inline edit, which has been replaced by the Agent workflow.",
         "expect": "In stock VS Code, Cmd/Ctrl+K is a chord prefix (e.g. Cmd+K Cmd+S for Keyboard Shortcuts, Cmd+K Cmd+C to comment a block, Cmd+K Cmd+F to format selection, etc.) - pressing it alone does nothing visible, it just arms the second key."
       },
       "copilot:tui": {
@@ -8070,7 +9411,7 @@ export const KM_COLLISIONS: KmCollision[] = [
         "expect": "copy"
       },
       "pi": {
-        "actual": "copies selection if one exists (tui.input.copy), otherwise clears the editor (app.clear) rather than sending SIGINT/interrupt like a typical terminal ctrl+c. To actually abort/cancel the agent, use Escape (app.interrupt), not ctrl+c.",
+        "actual": "copies the selection if one exists (tui.input.copy); otherwise clears the editor (app.clear), and a second ctrl+c within 500 ms exits Pi. It does not send SIGINT or interrupt the agent; use Escape (app.interrupt) to abort a running turn.",
         "expect": "copy"
       },
       "copilot:tui": {
@@ -8139,7 +9480,7 @@ export const KM_COLLISIONS: KmCollision[] = [
     "reflex": "close tab/window (browsers, many GUI apps)",
     "tools": {
       "claude-code": {
-        "actual": "deletes the previous word in the input (readline word-rubout)",
+        "actual": "deletes back to the previous whitespace in the input (one press removes a whole path or --flag=value; readline unix-word-rubout behavior)",
         "expect": "close tab/window"
       },
       "codex": {
@@ -8178,7 +9519,7 @@ export const KM_COLLISIONS: KmCollision[] = [
         "expect": "undo"
       },
       "pi": {
-        "actual": "suspends the process to the background (job control, action id app.suspend), matching standard Unix shell behavior, not GUI undo. Editor undo is instead ctrl+- (tui.editor.undo).",
+        "actual": "suspends the process to the background (job control, action id app.suspend), matching standard Unix shell behavior, not GUI undo. Editor undo is ctrl+- (tui.editor.undo); on native Windows ctrl+z is editor undo and app.suspend has no default, on WSL undo is alt+z.",
         "expect": "undo"
       },
       "copilot:tui": {
@@ -8201,7 +9542,7 @@ export const KM_COLLISIONS: KmCollision[] = [
         "expect": "paste"
       },
       "pi": {
-        "actual": "pastes an IMAGE from clipboard (action id app.clipboard.pasteImage) with text fallback; plain text paste is presumably handled by normal terminal bracketed-paste rather than this binding, which is documented specifically as the image-paste action.",
+        "actual": "pastes files (macOS), images, or text from the clipboard (action id app.clipboard.pasteImage; alt+v on Windows and WSL). Ordinary typed text paste still arrives through the terminal bracketed-paste path.",
         "expect": "paste (text)"
       },
       "copilot:tui": {
@@ -8216,7 +9557,7 @@ export const KM_COLLISIONS: KmCollision[] = [
     "reflex": "Cut the current selection to the clipboard",
     "tools": {
       "claude-code": {
-        "actual": "not a standalone binding - enters chord-wait mode as a prefix for ctrl+x ctrl+k / ctrl+x ctrl+e / ctrl+x ctrl+b; no text is cut",
+        "actual": "not a standalone binding - enters chord-wait mode as a prefix for ctrl+x ctrl+k / ctrl+x ctrl+e / ctrl+x ctrl+b / ctrl+x enter / ctrl+x ctrl+s / ctrl+x b / ctrl+x x and more; no text is cut",
         "expect": "cut"
       },
       "opencode": {
@@ -8224,12 +9565,16 @@ export const KM_COLLISIONS: KmCollision[] = [
         "expect": "cut"
       },
       "pi": {
-        "actual": "copies the last assistant message to the clipboard (action id app.message.copy); in /tree, copies the selected message; in the scoped-models selector, clears all model selections instead (app.models.clearAll). No 'cut' semantics anywhere.",
+        "actual": "copies the last assistant message to the clipboard (action id app.message.copy); in /tree, copies the selected message; in fullscreen with fullscreenCopyOnSelect set to false, copies the active text selection; on OAuth sign-in screens, copies the sign-in URL; in the scoped-models selector, clears all model selections instead (app.models.clearAll). No cut semantics anywhere.",
         "expect": "cut (text)"
       },
       "copilot:tui": {
-        "actual": "Does nothing by itself - it is only a chord prefix key that waits for a follow-up key (/, e, b, or o) to run a specific action (slash command, external editor, background task, or open last link). No cut/clipboard behavior at all",
+        "actual": "Does nothing by itself - it is only a chord prefix key that waits for a follow-up key (/, e, b, g, h, o, v, x) to run a specific action (slash command, external editor, background task, goal panel, hide sidebar, open last link, voice dictation, close session). No cut/clipboard behavior at all",
         "expect": "Cut the current selection to the clipboard"
+      },
+      "codex": {
+        "actual": "is the default leader prefix: arms a chord and waits for the next key (for example p opens the preset menu); no text is cut. Configurable at tui.keymap.global.leader, and the default is dropped when ctrl+x is already bound elsewhere.",
+        "expect": "cut the selection to the clipboard"
       }
     }
   },
@@ -8258,7 +9603,7 @@ export const KM_COLLISIONS: KmCollision[] = [
     "reflex": "toggle the browser's bookmarks bar (most browsers)",
     "tools": {
       "claude-code": {
-        "actual": "backgrounds the current running Bash task; also collides with tmux's own Ctrl+B prefix (tmux users must press twice)",
+        "actual": "backgrounds the current running Bash task or agent; also collides with tmux's own Ctrl+B prefix (tmux users press twice or use the Ctrl+X Ctrl+B chord)",
         "expect": "bold (rich text editors)"
       },
       "opencode": {
@@ -8330,15 +9675,11 @@ export const KM_COLLISIONS: KmCollision[] = [
   {
     "key": "escape",
     "severity": "silent-difference",
-    "reflex": "Escape is a near-universal 'cancel/dismiss' convention across all editors and OSes - including elsewhere in this same Cursor shortcuts table, where Escape means 'Unfocus field' (Chat) and is commonly used to dismiss dialogs.",
+    "reflex": "Escape is a near-universal 'cancel/dismiss' convention across editors and OSes, and is commonly used to close dialogs and popups.",
     "tools": {
-      "cursor:ide": {
-        "actual": "In the Terminal AI-command flow specifically, Escape is documented as 'Accept command' - it inserts/confirms the AI-generated shell command rather than dismissing it. A reflexive Escape press to back out of the flow instead confirms it.",
-        "expect": "Escape is a near-universal 'cancel/dismiss' convention across all editors and OSes - including elsewhere in this same Cursor shortcuts table, where Escape means 'Unfocus field' (Chat) and is commonly used to dismiss dialogs."
-      },
       "copilot:ide": {
         "actual": "Dismisses the active inline suggestion without any confirmation",
-        "expect": "Close a widget/popup, exit an input field, or do nothing in a plain editor"
+        "expect": "Escape is a near-universal 'cancel/dismiss' convention across editors and OSes, and is commonly used to close dialogs and popups."
       }
     }
   }
@@ -8781,7 +10122,7 @@ export const KM_TASKS: KmTask[] = [
     "keys": {
       "claude-code:tui": {
         "k": "Ctrl+V",
-        "m": "Ctrl+V (",
+        "m": "Ctrl+V (Cmd+V in iTerm2)",
         "all": "ctrl+v",
         "d": "Paste an image from the clipboard, inserting a `[Image #N]` chip at the cursor."
       },
@@ -8795,7 +10136,7 @@ export const KM_TASKS: KmTask[] = [
         "k": "Ctrl+V",
         "m": "Ctrl+V",
         "all": "ctrl+v",
-        "d": "Paste image from clipboard"
+        "d": "Paste files (macOS), images, or text from the clipboard"
       }
     }
   },
@@ -8861,7 +10202,7 @@ export const KM_TASKS: KmTask[] = [
         "k": "Ctrl+K",
         "m": "Ctrl+K",
         "all": "ctrl+k",
-        "d": "Open (Inline Edit prompt)"
+        "d": "Toggle Sidepanel (add selection to new chat with code selected)"
       },
       "opencode:tui": {
         "k": "Ctrl+K",
@@ -8885,7 +10226,7 @@ export const KM_TASKS: KmTask[] = [
         "k": "Ctrl+W",
         "m": "Ctrl+W",
         "all": "ctrl+w",
-        "d": "Delete the previous word. Stores deleted text for pasting."
+        "d": "Delete back to the previous whitespace (a whole path in one press). Stores deleted text for pasting."
       },
       "codex:tui": {
         "k": "Ctrl+W",
@@ -9083,7 +10424,7 @@ export const KM_TASKS: KmTask[] = [
         "k": "Shift+Tab",
         "m": "Shift+Tab",
         "all": "shift+tab",
-        "d": "Cycle the collaboration mode."
+        "d": "Cycle the collaboration mode (Default or Plan; those are the only two visible in the TUI)."
       },
       "copilot:tui": {
         "k": "Shift+Tab",
@@ -9107,7 +10448,7 @@ export const KM_TASKS: KmTask[] = [
         "k": "Shift+Tab",
         "m": "Shift+Tab",
         "all": "shift+tab",
-        "d": "agent_cycle_reverse - cycle to the previous agent."
+        "d": "agent_cycle_reverse - cycle to the previous agent. In OpenCode 2, shift+tab is agent.cycle (next agent) and Tab no longer cycles agents."
       },
       "pi:tui": {
         "k": "Shift+Tab",
@@ -9143,7 +10484,7 @@ export const KM_TASKS: KmTask[] = [
         "k": "Ctrl+D",
         "m": "Ctrl+D",
         "all": "ctrl+d",
-        "d": "Exit the CLI"
+        "d": "Exit the CLI (double press)"
       },
       "opencode:tui": {
         "k": "Ctrl+D",

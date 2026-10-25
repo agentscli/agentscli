@@ -44,7 +44,7 @@ export const pmsStages: PmsStage[] = [
         text: 'A session toggle on the active agent - cycle into Plan mode mid-conversation. `/plan` on a single prompt is the lighter cousin: one prompt in the posture without switching modes - the prefix requests the plan, the mode enforces it.',
       },
       codex: {
-        code: 'codex --sandbox read-only --ask-for-approval untrusted',
+        code: 'codex --sandbox read-only --ask-for-approval on-request',
         text: 'No dedicated toggle - you compose the posture from permission primitives. Mid-session, the `/permissions` picker switches to the "Read Only" preset.',
       },
       opencode: {
@@ -56,7 +56,7 @@ export const pmsStages: PmsStage[] = [
         text: 'A first-class IDE mode: `Shift+Tab` in the chat input, the mode dropdown, or `/plan`. It sits alongside Ask, Agent, and Debug modes.',
       },
       copilot: {
-        text: 'Pick "Plan" from the mode dropdown in VS Code Chat - one of four first-class modes alongside Ask, Edit, and Agent.',
+        text: 'Pick "Plan" from the mode dropdown in VS Code Chat - a first-class mode alongside Ask and Agent (Edit mode was folded into Agent).',
       },
     },
   },
@@ -91,7 +91,7 @@ export const pmsStages: PmsStage[] = [
         text: 'Write and Edit are blocked by the mode itself - even if the model reaches for an edit, the tool call can’t land. Bash is gated, not blocked: commands are prompted or classifier-reviewed, and approved commands run.',
       },
       codex: {
-        text: 'The sandbox blocks file writes and mutating commands. With `--ask-for-approval untrusted`, an attempted escalation surfaces as an approval prompt instead of executing silently.',
+        text: 'The sandbox blocks file writes and mutating commands. With `--ask-for-approval on-request`, an attempted escalation surfaces as an approval prompt instead of executing silently.',
       },
       opencode: {
         text: 'Edits are gated to ask/deny - an edit proposal surfaces for your explicit approval instead of landing. Deny it and the agent keeps planning.',

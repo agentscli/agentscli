@@ -2,9 +2,9 @@
  * Cursor cheatsheet facts - the single source of truth for the Cursor
  * cheatsheet page.
  *
- * Verification, 2026-08-18:
+ * Verification, 2026-10-23:
  *   - CLI flags and subcommands: read first-hand from the installed
- *     `cursor-agent --help` and subcommand help, v2026.08.11-e8db854.
+ *     `cursor-agent --help` and subcommand help, v2026.10.01-e373342.
  *   - Editor features and CLI behavior: official Cursor documentation.
  *
  * Keep editor commands (Command Palette, chat commands, shortcuts, and
@@ -19,17 +19,17 @@ const CLI = `${DOCS}/cli`;
 export const cursorCheatsheet: Cheatsheet = {
   tool: "cursor",
   label: "Cursor",
-  version: "2026.08.11-e8db854",
-  checkedAt: "2026-08-18",
+  version: "2026.10.01-e373342",
+  checkedAt: "2026-10-23",
   sources: [
-    "Installed binary: cursor-agent --help (v2026.08.11-e8db854, first-hand)",
+    "Installed binary: cursor-agent --help (v2026.10.01-e373342, first-hand)",
     "GitHub repository: https://github.com/cursor/cursor",
     `${CLI}/overview`,
     `${CLI}/reference/parameters`,
     `${CLI}/using`,
     `${DOCS}/context/rules-for-ai`,
     `${DOCS}/agent`,
-    `${DOCS}/advanced/keyboard-shortcuts`,
+    `${DOCS}/reference/keyboard-shortcuts`,
     `${DOCS}/bugbot`,
   ],
   intro:
@@ -98,6 +98,12 @@ export const cursorCheatsheet: Cheatsheet = {
           cmd: "cursor-agent --continue",
           desc: "Continue the previous session.",
           conf: "firsthand",
+        },
+        {
+          cmd: "cursor-agent persist [prompt]",
+          desc: "Start a session that survives terminal and SSH disconnects.",
+          conf: "firsthand",
+          note: "Manage with `persist list`, `persist attach <session>`, and `persist stop <session>`.",
         },
         {
           cmd: "cursor-agent update",
@@ -194,6 +200,11 @@ export const cursorCheatsheet: Cheatsheet = {
         {
           cmd: "cursor-agent --add-dir <path>",
           desc: "Add another workspace root; repeat for multiple roots.",
+          conf: "firsthand",
+        },
+        {
+          cmd: "cursor-agent --plugin-dir <path>",
+          desc: "Load a local plugin directory for the session; repeat for multiple.",
           conf: "firsthand",
         },
         {
@@ -316,7 +327,7 @@ export const cursorCheatsheet: Cheatsheet = {
           cmd: "Ctrl+E",
           desc: "Open the Background Agent control panel.",
           conf: "documented",
-          doc: `${DOCS}/advanced/keyboard-shortcuts`,
+          doc: `${DOCS}/reference/keyboard-shortcuts`,
         },
         {
           cmd: "Cloud Agents (formerly Background Agents)",
@@ -363,13 +374,13 @@ export const cursorCheatsheet: Cheatsheet = {
           cmd: "Ctrl+Shift+P",
           desc: "Open the Command Palette.",
           conf: "documented",
-          doc: `${DOCS}/advanced/keyboard-shortcuts`,
+          doc: `${DOCS}/reference/keyboard-shortcuts`,
         },
         {
           cmd: "Ctrl+I / Ctrl+L",
           desc: "Toggle the AI side panel.",
           conf: "documented",
-          doc: `${DOCS}/advanced/keyboard-shortcuts`,
+          doc: `${DOCS}/reference/keyboard-shortcuts`,
         },
         {
           cmd: "Ctrl+.",
@@ -381,26 +392,26 @@ export const cursorCheatsheet: Cheatsheet = {
           cmd: "Ctrl+/",
           desc: "Cycle through AI models.",
           conf: "documented",
-          doc: `${DOCS}/advanced/keyboard-shortcuts`,
+          doc: `${DOCS}/reference/keyboard-shortcuts`,
         },
         {
           cmd: "Ctrl+K",
           desc: "Open Inline Edit; in the terminal, open the terminal prompt bar.",
           conf: "documented",
-          doc: `${DOCS}/advanced/keyboard-shortcuts`,
+          doc: `${DOCS}/reference/keyboard-shortcuts`,
           note: "The active editor surface determines the action.",
         },
         {
           cmd: "@ / # / ! / /",
           desc: "Add symbols/files, invoke shell mode, or open shortcut commands in chat.",
           conf: "documented",
-          doc: `${DOCS}/advanced/keyboard-shortcuts`,
+          doc: `${DOCS}/reference/keyboard-shortcuts`,
         },
         {
           cmd: "Tab",
           desc: "Accept a Cursor Tab suggestion.",
           conf: "documented",
-          doc: `${DOCS}/advanced/keyboard-shortcuts`,
+          doc: `${DOCS}/reference/keyboard-shortcuts`,
         },
         {
           cmd: "Ctrl+R",

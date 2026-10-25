@@ -1,8 +1,8 @@
 /**
  * Pi coding agent cheatsheet facts.
  *
- * Verification, 2026-08-18:
- *   - CLI flags and subcommands: installed pi --help (v0.84.2, first-hand).
+ * Verification, 2026-10-23:
+ *   - CLI flags and subcommands: installed pi --help (v1.4.0, first-hand).
  *   - Interactive commands, settings, resources, compaction, extensions, and
  *     RPC: the official pi repository documentation (documented).
  *
@@ -20,10 +20,10 @@ const DOCS = `${REPO}/docs`;
 export const piCheatsheet: Cheatsheet = {
   tool: "pi",
   label: "Pi coding agent",
-  version: "0.84.2",
-  checkedAt: "2026-08-18",
+  version: "1.4.0",
+  checkedAt: "2026-10-23",
   sources: [
-    "Installed binary: pi --help (v0.84.2, first-hand)",
+    "Installed binary: pi --help (v1.4.0, first-hand)",
     "Official repository: https://github.com/earendil-works/pi",
     `${REPO}/README.md`,
     `${DOCS}/settings.md`,
@@ -32,7 +32,7 @@ export const piCheatsheet: Cheatsheet = {
     `${DOCS}/rpc.md`,
   ],
   intro:
-    "Pi is a deliberately small coding-agent harness: start with read, write, edit, and bash, then add skills, extensions, prompt templates, and packages. The rows marked firsthand were present in the installed v0.84.2 binary; documented rows come from the official repository.",
+    "Pi is a deliberately small coding-agent harness: start with read, write, edit, and bash, then add skills, extensions, prompt templates, and packages. The rows marked firsthand were present in the installed v1.4.0 binary; documented rows come from the official repository.",
   categories: [
     {
       id: "install-session",
@@ -187,6 +187,11 @@ export const piCheatsheet: Cheatsheet = {
           conf: "firsthand",
         },
         {
+          cmd: "pi auth check --provider openai",
+          desc: "Check whether a provider's credentials are ready; refreshes expired OAuth unless `--no-refresh`.",
+          conf: "firsthand",
+        },
+        {
           cmd: "pi auth print-api-key --provider openai",
           desc: "Print an API key for an external client.",
           conf: "firsthand",
@@ -324,8 +329,15 @@ export const piCheatsheet: Cheatsheet = {
         },
         {
           cmd: "pi update [source|self|pi]",
-          desc: "Update Pi, installed packages, or model catalogs.",
+          desc: "Update Pi itself (the default), one named package, or - with flags - installed packages or model catalogs.",
           conf: "firsthand",
+          note: "Bare `pi update` updates Pi only. `--extensions` updates installed packages only, `--all` updates Pi and packages, `--models` refreshes model catalogs, `--force` reinstalls Pi.",
+        },
+        {
+          cmd: "pi mcp list",
+          desc: "Show MCP server state, tools, and errors without starting a session.",
+          conf: "firsthand",
+          note: "Also `pi mcp add|remove|login|logout`; config lives in `~/.pi/agent/mcp.json` or, in trusted projects, `.pi/mcp.json`. `--no-mcp` disables MCP for a run.",
         },
         {
           cmd: "pi remove <source>",

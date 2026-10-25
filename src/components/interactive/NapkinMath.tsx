@@ -11,7 +11,7 @@ import './napkin-math.css';
 import { useWidgetFrame } from './widget-frame';
 
 /**
- * NapkinMath — stateful sim: sliders for the reader's own relay habit,
+ * NapkinMath - stateful sim: sliders for the reader's own relay habit,
  * live arithmetic to hours/year, and a 46-cell year grid where filled
  * cells are working weeks spent as the human clipboard. Honesty rule:
  * labels itself arithmetic, refuses to model the rework half.

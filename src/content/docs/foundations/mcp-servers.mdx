@@ -1,6 +1,6 @@
 ---
 title: MCP servers
-description: How each CLI consumes Model Context Protocol servers - and why Claude Code and Codex can also be one.
+description: How each CLI consumes Model Context Protocol servers - and why Claude Code can also be one.
 ---
 
 import ToolTabs from '../../../components/ToolTabs.astro';
@@ -18,7 +18,7 @@ The **Model Context Protocol** (MCP) takes you out of that loop. MCP is an open 
 
 An MCP *server* is a typed adapter that exposes one of those systems as a set of tools (e.g. `jira.search_issues`, `postgres.query`, `figma.get_node`); the CLI is the *client* that discovers them at startup and lets the model call them as if they were built in. Now *the agent itself* runs `jira.get_ticket("AUTH-412")`, sees the result, and acts on it - the integration moves from "you, by hand" to "the agent, in-flow."
 
-Five of the six tools in scope are MCP *clients*; Pi is the exception, and deliberately so.
+All six tools in scope are MCP *clients*. Pi is the newest: it shipped built-in MCP support in 0.99.0 (September 2026) after launching without it.
 
 **Real-world examples of MCP servers people actually run:**
 
@@ -80,7 +80,7 @@ Three things follow from this shape, and they explain most of the per-tool quirk
 
 - **Discovery is dynamic.** The server defines what tools exist. Change the server, you change the agent's surface area without changing the CLI.
 - **Cost can land in the context window.** A client may put registered tool definitions in the model's context immediately, defer schemas until use, or apply its own search/indexing layer. A server exposing 60 tools can therefore become a 60-tool tax, depending on the host - which is why [`/mcp`](#comparison) commands exist to inspect what each server is costing you.
-- **Which side you're on.** Most tools in scope are MCP *clients* only. Two can also *be* a server over stdio, and they expose opposite things. `codex mcp-server` offers two tools, `codex` and `codex-reply`: you hand it a task and it runs a whole Codex turn. `claude mcp serve` offers Claude Code's own primitives instead - `Bash`, `Read`, `Edit`, `Write`, `WebSearch`, `Agent` and the rest - so the caller keeps the reasoning and borrows the toolbox. Delegate a turn, or borrow the tools: decide which you want before wiring either up. And don't read a `serve` subcommand as MCP by default, because `opencode serve` starts OpenCode's own HTTP API, not an MCP endpoint.
+- **Which side you're on.** Most tools in scope are MCP *clients* only. Claude Code can also *be* a server over stdio: `claude mcp serve` offers Claude Code's own primitives - `Bash`, `Read`, `Edit`, `Write`, `WebSearch`, `Agent` and the rest - so the caller keeps the reasoning and borrows the toolbox. Codex used to offer the opposite shape, `codex mcp-server` with `codex` and `codex-reply` tools that ran a whole Codex turn, but the command has been removed; integrations now use the Codex app server, which speaks its own JSON-RPC protocol rather than MCP. And don't read a `serve` subcommand as MCP by default, because `opencode serve` starts OpenCode's own HTTP API, not an MCP endpoint.
 
 The unusual property of MCP - and the reason it spread fast - is that the client and server are decoupled. The Jira MCP server you wrote for Claude Code works in Codex, OpenCode, Cursor, and Copilot unchanged. Compare with [skills](/foundations/skills/), which needed a published spec before other tools could converge on `SKILL.md` - MCP was a shared protocol from day one, with no spec-publication moment to wait for.
 
@@ -112,25 +112,25 @@ MCP is about *reach* - letting the agent touch systems outside the CLI. Skills, 
 
 | Aspect | Claude Code | Codex | OpenCode | Cursor | Copilot | Pi |
 |---|---|---|---|---|---|---|
-| Config file | `.mcp.json` | `~/.codex/config.toml` | `opencode.json` | `.cursor/mcp.json` | `.vscode/mcp.json` | - (no native MCP) |
-| Scopes | local / project / user / managed | user (`~/.codex/`) / project (`.codex/`) / managed | global / project / managed | project / user | workspace / user / org | - |
-| Inspect command | `/mcp` | `/mcp` | `/mcp` | `/mcp list`, `/mcp list-tools` | - | - |
-| Transports | stdio, HTTP (streamable-http), SSE (deprecated) | stdio, streamable HTTP | local (stdio), remote (HTTP) | stdio, SSE, streamable HTTP | stdio, HTTP, SSE | - |
-| Can be an MCP server | **Yes** (`claude mcp serve`) | **Yes** (`codex mcp-server`) | No | No | No | No |
-| Tool search (lazy schemas) | Availability and thresholds are version/configuration-dependent | - | - | - | - | N/A |
+| Config file | `.mcp.json` | `~/.codex/config.toml` | `opencode.json` | `.cursor/mcp.json` | `.vscode/mcp.json` (deprecated in VS Code's guided flow; `~/.copilot/mcp-config.json` is the global file) | `~/.pi/agent/mcp.json` (user), `.pi/mcp.json` (project) |
+| Scopes | local / project / user / managed | user (`~/.codex/`) / project (`.codex/`) / managed | global / project / managed | project / user | workspace / user / org | user / project |
+| Inspect command | `/mcp` | `/mcp` | `/mcp` | `/mcp list`, `/mcp list-tools` | - | `/mcp`, `pi mcp list` |
+| Transports | stdio, HTTP (streamable-http), SSE (deprecated) | stdio, streamable HTTP | local (stdio), remote (HTTP) | stdio, SSE, streamable HTTP | stdio, HTTP, SSE | stdio, streamable HTTP (SSE rejected) |
+| Can be an MCP server | **Yes** (`claude mcp serve`) | No (`codex mcp-server` was removed; the app server is a separate protocol) | No | No | No | No |
+| Tool search (lazy schemas) | Availability and thresholds are version/configuration-dependent | - | - | - | - | Built-in `tool_search` and `codemode` extensions |
 | LSP servers as first-class | No (LSP via MCP if at all) | No | **Yes** (diagnostics into agent context) | - | - | - |
 | One-click install | - | - | - | "Add to Cursor" deep link | MCP Registry browser | - |
-| OAuth for remote servers | Yes | Yes | Yes | Yes (fixed redirect URL) | Yes (VS Code); - (Coding Agent) | N/A |
+| OAuth for remote servers | Yes | Yes | Yes | Yes (fixed redirect URL) | Yes (VS Code); - (cloud agent) | Yes (`/mcp login`) |
 
 ## Name collisions
 
 - "MCP" specifically refers to the [Model Context Protocol](https://modelcontextprotocol.io/). Don't confuse with generic "plugins" - see [Plugins & marketplaces](/foundations/plugins/) for distribution-layer packaging.
-- Claude Code and Codex both hold a dual MCP role - *consumer* and *producer* - so "an MCP server" in either conversation can mean something the tool calls or the tool itself. Their own subcommands make the ambiguity concrete: `codex mcp` manages the servers Codex calls, while `codex mcp-server` turns Codex into one. Same word, opposite directions, one letter apart.
-- Copilot's MCP surface spans VS Code Chat agent mode, the Coding Agent, and the CLI - they share the protocol but not the config schema or capabilities. The IDE story (VS Code Chat, `.vscode/mcp.json`) is what this chapter focuses on.
+- Claude Code holds a dual MCP role - *consumer* and *producer* - so "an MCP server" in its conversation can mean something the tool calls or the tool itself. `claude mcp add` registers a server Claude Code calls, while `claude mcp serve` turns Claude Code into one. Codex dropped its producer role when `codex mcp-server` was removed, so `codex mcp` now only manages servers Codex calls.
+- Copilot's MCP surface spans VS Code Chat agent mode, the cloud agent, and the CLI - they share the protocol but not the config schema or capabilities. The IDE story (VS Code Chat, `.vscode/mcp.json`) is what this chapter focuses on.
 
-The next server you install, install it and then measure it. Claude Code, Codex, and OpenCode all answer `/mcp` with the servers currently connected, including ones that have quietly died mid-session. For the token side of the question in Claude Code, `/context` is the view that breaks down what's occupying the window; `/mcp` answers connection state, not cost. A server whose schema tax outweighs how often the agent actually calls it is the one to drop - or the one to leave to tool search rather than keep resident.
+The next server you install, install it and then measure it. Claude Code, Codex, OpenCode, and Pi all answer `/mcp` with the servers currently connected, including ones that have quietly died mid-session. For the token side of the question in Claude Code, `/context` is the view that breaks down what's occupying the window; `/mcp` answers connection state, not cost. A server whose schema tax outweighs how often the agent actually calls it is the one to drop - or the one to leave to tool search rather than keep resident.
 
-<UpstreamRefs checkedAt="2026-08-13"
+<UpstreamRefs checkedAt="2026-10-23"
   links={[
     {
       tool: 'Claude Code',
@@ -164,8 +164,8 @@ The next server you install, install it and then measure it. Claude Code, Codex,
 
     {
       tool: 'Pi',
-      label: 'Docs (no native MCP, by design)',
-      url: 'https://pi.dev/docs/latest',
+      label: 'MCP servers',
+      url: 'https://pi.dev/docs/latest/mcp',
     },
   ]}
 />

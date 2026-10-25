@@ -554,7 +554,7 @@ export default function CheatSandbox() {
         <div className="csb-term" onClick={() => inputRef.current?.focus()}>
           <div className="csb-term-bar">
             <span className="csb-term-dots" aria-hidden="true"><i /><i /><i /></span>
-            <span className="csb-term-title">claude · {sessionName} — simulated</span>
+            <span className="csb-term-title">claude · {sessionName} - simulated</span>
           </div>
 
           <div className="csb-body" ref={bodyRef} tabIndex={0} role="log" aria-label="Simulated Claude Code transcript">
