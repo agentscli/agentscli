@@ -56,4 +56,30 @@ approval_policy = { granular = { ... } }
 
 The table's fields each name a prompt category: `sandbox_approval` (requests to cross the sandbox boundary), `mcp_elicitations` (confirmations raised by MCP servers), and `rules`, `skill_approval`, and `request_permissions`, which gate their own respective prompt categories as the reference defines them. The decision rule for reaching for it: only when a whole policy demonstrably interrupts you on a category you have decided to trust - not preemptively, and not before you have felt the friction. The field-by-field values and defaults live in the [config reference](https://learn.chatgpt.com/docs/config-file/config-reference); treat that page as the source of truth, checked October 2026.
 
+## Newer controls - an automatic reviewer and permission profiles
+
+Three controls arrived after the two-policy model above. The first two change who answers a prompt; the third replaces how the sandbox is described. Evidence label for this section: **published**. The configuration keys and behavior below come from the [auto-review](https://learn.chatgpt.com/docs/sandboxing/auto-review) and [permissions](https://learn.chatgpt.com/docs/permissions) docs and the [agent approvals and security docs](https://learn.chatgpt.com/docs/agent-approvals-security), read October 2026. None of it was run for this course. The flag's help text was read from a local `codex-cli 0.163.0` with `codex --help`; no session was started.
+
+**An automatic reviewer (`approvals_reviewer`).** By default `approvals_reviewer = "user"`, so every approval request comes to you. Set `approvals_reviewer = "auto_review"` alongside an interactive policy such as `approval_policy = "on-request"` and a separate reviewer agent answers the prompts instead. The docs name the approval policy alone as not selecting the reviewer.
+
+```text
+codex --sandbox workspace-write --ask-for-approval on-request -c approvals_reviewer=auto_review
+```
+
+That command is the example form in the agent approvals docs. Four limits from the docs decide whether it fits your job:
+
+- It reviews only requests that would already stop for you: sandbox escalations, blocked network requests, edits outside writable roots, and MCP or app tool calls that need approval. Actions inside the sandbox still run without review.
+- It swaps the reviewer and grants nothing. It does not widen writable roots, open the network, or relax protected paths.
+- With `approval_policy = "never"` there is nothing to review, and full access can skip the requests review depends on.
+- Reviews use extra model calls, which can add to Codex usage. After 3 consecutive denials, or 10 in the last 50 reviews, the turn is interrupted.
+
+**`--approve-for-me`.** `codex --help` on 0.163.0 lists it as "Route approval requests through automatic review using the workspace-write sandbox", which reads as a shortcut for the combination above. The docs pages checked do not mention the flag, so treat that reading as unconfirmed: the help text states what the flag does, not which config keys it sets.
+
+**Permission profiles (beta).** `default_permissions` names the active profile: a built-in (`:read-only`, `:workspace`, `:danger-full-access`) or your own `[permissions.<name>]` table, which can start from another profile with `extends` and then set filesystem and network rules. Two cautions from the docs:
+
+- They are a different mechanism from the layer-file profiles in [the profiles lesson](/course/codex/approvals-sandbox/profiles-for-trust/), and the two share only a word. A layer file is selected with `--profile`; a permission profile is selected with `default_permissions`.
+- Permission profiles do not compose with `sandbox_mode`. If `sandbox_mode` appears in any loaded config, is passed with `--sandbox`, or comes from the selected `--profile` layer, Codex uses the older settings and ignores `default_permissions`.
+
+The `-s` sandbox levels taught in this chapter therefore remain the working model for the examples here. Domain rules under `network.domains` also need `features.network_proxy = true` to be enforced. The field-level syntax is on the [permissions page](https://learn.chatgpt.com/docs/permissions), which is the source of truth.
+
 One more boundary matters before profiles: outbound network access is off by default in the sandbox, so a task whose first move needs the network - a live exchange rate, a package registry, an API - fails until you open it on purpose: [why network is off, and how to widen the fence deliberately](/course/codex/approvals-sandbox/network-and-dirs/).
