@@ -3,6 +3,8 @@ title: The built-in subagents
 description: "About to burn your main context on a whole-directory scan? Hand it to a read-only worker instead - @explore and @general each run in an isolated context."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 You have the dedupe-hash question in front of you: *which parser adapters across `feedmill` - the course's illustrative Go feed aggregator - feed into the dedupe hash (the key feedmill computes to drop duplicate items), and where?* It's a real question - you're about to touch that hash and you need the call sites before you do - but answering it means reading every adapter file. (For this page, assume three of `feedmill`'s adapters call `dedupe.Key`: RSS in `internal/feed/rss.go`, JSON Feed in `internal/feed/json.go`, and Atom, normalized in `internal/adapter/normalise.go`.) Ask it in your main thread and every one of those reads lands in your context window: grep output, file dumps, the whole noisy trawl, sitting there for the rest of the session crowding out the actual work. And you will never reread a line of it. You want the *map*, not the trawl that produced it.
 
 That gap - between the reading a job takes and the reading you actually need back - is exactly what a subagent closes. It's a separate session with its own context window that does the scoped job off to the side and reports back, so the noisy intermediate reads stay in the child rather than landing in your thread. The agents documentation lists three of them, ready to use with no setup and invoked by `@mention` right in your prompt (as of October 2026; [agents documentation](https://opencode.ai/docs/agents/)). The current release ships two: the source removed `scout` in June 2026, and the docs page still lists it (v1.18.32; [`agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts), [removal pull request](https://github.com/anomalyco/opencode/pull/30435)).
@@ -19,6 +21,10 @@ The line that matters is **what each can touch**:
 - **`@general`** is a full-access worker. It has the same tools as your `build` agent (except the todo tool) - `build` is OpenCode's default primary agent, the one you normally type at - so it can read, edit, and run bash, and it can actually *change* things. Reach for it when the side job is real work that needs to write, not just look: a self-contained fix you want done in its own context so it doesn't clutter the main thread.
 - **`@explore`** is tuned for one thing: scanning *your* codebase fast. The docs describe it as "a fast, read-only agent for exploring codebases" that "cannot modify files" - you reach for it to find files by pattern, search code for a keyword, or answer a question about the repo. Read "read-only" precisely. Its shipped permission profile denies the edit tools, but it allows `bash` (as of October 2026; [OpenCode source, `agent.ts`](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/agent/agent.ts)), and a shell command such as `sed -i` can still change a file. So a stray edit through the edit tools is off the table, unless your config allows it: a top-level `permission` rule for `edit` (or `"*"`) in `opencode.json` is applied after the built-in profile, and the last matching rule wins. A write through the shell is unlikely for a scan prompt but is not blocked. When you need a hard wall, write a custom subagent that denies `bash` too (the next page).
 The docs page also lists **`@scout`**, a read-only worker for external docs and dependency source. The v1.18.32 source no longer defines it (see above), so check that `@scout` appears in the `@` autocomplete before you plan around it.
+
+<Aside type="caution" title="In OpenCode 2">
+OpenCode 2 lists four visible built-in agents, `build`, `plan`, `general` and `explore`, and its agents page states there is no built-in scout agent. Its `general` agent cannot launch further subagents, and `explore` allows shell commands, reads, globs, grep and web access while denying everything else. See [Builtins in the v2 agents documentation](https://opencode.ai/v2/docs/agents/#builtins), as of October 2026.
+</Aside>
 
 In the current release that leaves two workers, one read-only and one full-access. Most of the time on `feedmill` you'll want the read-only one - because most of the noise you want out of your thread is *reading*, not writing.
 
@@ -82,6 +88,10 @@ There's a second lever, and it's the one that makes a read-only worker genuinely
   }
 }
 ```
+
+<Aside type="caution" title="In OpenCode 2">
+This block is v1-shaped and still loads in OpenCode 2. The native v2 keys are `agents` for `agent`, a `permissions` list for the `permission` map (`{ "action": "edit", "resource": "*", "effect": "deny" }`, and the same with `shell` for `bash`), and `provider/model#variant` for a model with a separate `variant`. Keep each agent entry entirely in one format. See [Agents and modes in the migration guide](https://opencode.ai/v2/docs/migrate-v1/#agents-and-modes), as of October 2026.
+</Aside>
 
 Now the noisy scans can run on a cheaper model and your main `build` loop can keep the expensive one for the work that actually needs reasoning. The `bash` denial is what lets the description say read-only: `edit` covers only the edit, write, and patch tools. The `model` option for configured agents, built-ins included, is documented as of October 2026 in the [agents documentation](https://opencode.ai/docs/agents/); exact model IDs depend on the connected provider catalog.
 

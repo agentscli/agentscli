@@ -3,6 +3,7 @@ title: The server, CI, and GitHub
 description: "Stand OpenCode up as a headless server, containerize it so CI reviews every PR, attach a client to look inside, and let it act on issues from GitHub directly."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
 import NightShift from '../../../../../components/interactive/NightShift.tsx';
 
 A one-shot `opencode run` per task, with the output landing on your screen, is the right shape for a script you babysit. It's the wrong shape for the thing `feedmill` - the course's illustrative Go feed aggregator - actually needs from here on: an OpenCode review on *every* pull request, and an agent that can pick up an issue and open a PR without you in the loop at all. For that, OpenCode stops being a command you type and becomes something other systems run and talk to: a CI job, a server, a GitHub workflow.
@@ -29,6 +30,10 @@ $ OPENCODE_SERVER_PASSWORD=$(openssl rand -hex 16) \
 
 The discipline is the same whenever `feedmill`'s work leaves your machine: decide on purpose what's allowed to reach it. A server with no password on a routable host is an open agent anyone can run commands through.
 
+<Aside type="caution" title="In OpenCode 2">
+In OpenCode 2 the TUI connects to one shared background service by default, so `opencode serve` is the explicit foreground form (`--hostname`, `--port`, `--cors`, `--service`). Its API is new: integrations written for the v1 server API must migrate, and the TypeScript client is `@opencode/client` (`OpenCode.make({ baseUrl })`). `opencode api` makes a request to the running server, and `opencode pair` prints one-time links to connect a browser or app (`--remote` exposes the server to the internet). The v2 troubleshooting page refers to a server password as `OPENCODE_PASSWORD`, not `OPENCODE_SERVER_PASSWORD`; we did not confirm how a v2 server enforces authentication, so check before exposing one. See [CLI](https://opencode.ai/v2/docs/cli/), the [client page](https://opencode.ai/v2/docs/build/client) and the [migration guide](https://opencode.ai/v2/docs/migrate-v1/), as of October 2026.
+</Aside>
+
 ## Attach a client when you need to look inside
 
 A headless server is great until something goes wrong inside it and you want eyes on the running session rather than a log scrape. You don't restart anything - you attach a client to the server that's already up (an illustrative session):
@@ -51,6 +56,10 @@ $ opencode attach http://feedmill-ci:4096 -u opencode -p "$OPENCODE_SERVER_PASSW
 ```
 
 So the server can run unattended on a host you own, such as a feedmill cron box or a self-hosted runner, and you can still walk up to it interactively the instant you need to. The every-PR review below does not use the server: it is a one-shot `opencode run` on a hosted runner that is gone when the job ends, so nothing is left to attach to. Server and client are decoupled on purpose.
+
+<Aside type="caution" title="In OpenCode 2">
+`opencode attach` and `run --attach` do not exist in v2 (no such subcommand or flag in its `--help`). Point a client at a running server with `--server <url>` instead, for example `opencode --server http://localhost:4096`. `run` has no `--username` or `--password` flag in v2. See the [v2 CLI page](https://opencode.ai/v2/docs/cli/), as of October 2026.
+</Aside>
 
 ## Put it in a container for CI
 
@@ -175,6 +184,10 @@ It walks you through adding the GitHub App and drops a workflow at `.github/work
 OpenCode reads the issue, works the problem in the runner, and opens a pull request with the change - the full loop, triggered from a comment instead of your terminal. The workflow the installer writes triggers only on comments (`issue_comment` and `pull_request_review_comment`; [`github.handler.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/cli/cmd/github.handler.ts) at v1.18.32), so the every-PR review needs a `pull_request` trigger added to it. On a `pull_request` event with no prompt, the integration defaults to reviewing the PR. The triggers, the default-to-review behavior, and the permissions below are as documented ([GitHub integration documentation](https://opencode.ai/docs/github/), as of October 2026).
 
 The permissions depend on which token writes. In the default OIDC setup (OIDC, OpenID Connect, is how the workflow proves its identity), the action exchanges an OIDC token for an OpenCode GitHub App installation token and writes with that, so the workflow needs only `id-token: write`. With `use_github_token: true`, the action writes with the `GITHUB_TOKEN` you pass instead, so grant that token `contents: write` and `pull-requests: write` to create branches and PRs, and `issues: write` to comment on issues; `id-token: write` is then not needed.
+
+<Aside type="caution" title="In OpenCode 2">
+The v2.1.2 `--help` lists no `github` subcommand, and the v2 docs have no GitHub integration page, so `opencode github install` is a v1 command. We did not find a v2 equivalent. The pinned v1.18.32 workflow earlier on this page does not depend on it.
+</Aside>
 
 GitLab is supported but not symmetric - there's no `opencode gitlab install` to mirror the GitHub installer. Instead you wire it into your pipeline by including a CI/CD component in `.gitlab-ci.yml` (or by going through GitLab Duo):
 

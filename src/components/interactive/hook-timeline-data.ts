@@ -192,7 +192,7 @@ matcher = "Bash"
     configNote:
       'No declarative config - hooks live inside JS/TS plugins. The plugin receives `project`, `client`, `$` (shell), `directory`, `worktree`, and returns an object keyed by event name.',
     orderNote:
-      'OpenCode exposes event families rather than a fixed pipeline - which events fire, and when, depends on what the session does.',
+      'OpenCode exposes event families rather than a fixed pipeline - which events fire, and when, depends on what the session does. OpenCode 2 (October 2026) uses a new plugin API and does not run v1 plugins, so this event list is the v1 model; see opencode.ai/v2/docs/plugins/.',
     phases: ['Files', 'Commands', 'Permissions', 'Session & messages'],
     events: [
       {

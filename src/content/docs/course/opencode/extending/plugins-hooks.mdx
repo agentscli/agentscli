@@ -3,6 +3,7 @@ title: Gate moves with plugin hooks
 description: "You want the linter to run on every edit and a write to the protected path to be blocked. OpenCode's hooks are a JS/TS plugin subscribed to lifecycle events."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
 import GuaranteeLadder from '../../../../../components/interactive/GuaranteeLadder.tsx';
 
 Two things keep biting you on `feedmill`, the course's illustrative Go feed aggregator. First: the agent edits a parser, reports done, and you only find out at review that it left the package un-`gofmt`'d - the lint should have run the moment the file changed, not whenever you remembered to ask. Second, and sharper: there's a path you never want the agent to touch. `internal/feed/store.go` holds the schema of the SQLite reading store that every sync writes to; an edit there doesn't break a test, it silently changes the table under the stored reading queue. You've told the agent in `AGENTS.md` - the standing-instructions file OpenCode loads into every session - to leave it alone, and mostly it does. But "mostly" is the wrong guarantee for the one file that quietly corrupts your reading queue.
@@ -46,6 +47,10 @@ A quick note on *where this file lives*, because the docs and the community drif
 ```
 
 Local file for the thing you're writing today; the array for something you want to share or pull from npm.
+
+<Aside type="caution" title="In OpenCode 2">
+v1 plugin implementations do not run in OpenCode 2, and renaming the file or config entry is not enough. A v2 plugin is a directory module that default-exports `Plugin.define({ id, setup(ctx) })` from `@opencode/plugin`, listed under `plugins` (object form `{ "package": "./plugin/local", "options": {...} }`), and registers hooks inside `setup`, for example `ctx.tool.hook("execute.before", ...)` with one mutable `event` argument in place of `input` and `output`. The `$` Bun shell is not injected, so import the process API you need. `.opencode/plugins/` still loads. The hook and event names in the rest of this page are the v1 API; the v2 equivalent of each is in the [plugin migration guide](https://opencode.ai/v2/docs/build/plugins/migrate-v1/) and the [plugins page](https://opencode.ai/v2/docs/plugins/), as of October 2026.
+</Aside>
 
 One thing to keep straight as you wire these up: OpenCode distinguishes *event-bus event names* from *subscribable hook keys*, and they don't line up one-to-one. `file.edited` is an event **type** delivered through a generic `event` handler, not a top-level hook key you subscribe to directly. The keys you actually return are things like `tool.execute.before`, `tool.execute.after`, the `event` handler (where `file.edited` and friends arrive), the permission hook (`permission.ask`), the command hook (`command.execute.before`), `config`, `shell.env`, and a set of `experimental.*` transforms - plus session and server activity, which arrives as event *types* through that same `event` handler rather than as their own keys. The next two sections show both shapes.
 

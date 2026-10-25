@@ -3,6 +3,8 @@ title: Config reference
 description: "Every opencode.json and tui.json field this course uses, their defaults, and the order OpenCode merges its config sources."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 This page collects every OpenCode config field this course writes, with what it controls, its type, its default, and the lesson that introduces it. Two files are involved: `opencode.json` is OpenCode's main config file, a project copy at your repository root with a global copy at `~/.config/opencode/opencode.json`, and `tui.json` is the separate settings file for the terminal interface, with the same two locations: `tui.json` beside the project's `opencode.json`, and `~/.config/opencode/tui.json` globally. Defaults and field shapes are as of October 2026 - where this page and the [config documentation](https://opencode.ai/docs/config/) disagree, trust the doc, except where a row links the source file it was checked against.
 
 ## opencode.json fields
@@ -29,6 +31,17 @@ This page collects every OpenCode config field this course writes, with what it 
 
 The `permission.*` rows are the keys this course sets. The keys name the tools the agent actually calls, and the documented list ([permissions documentation](https://opencode.ai/docs/permissions/), as of October 2026) has thirteen of them: `read`, `edit`, `glob`, `grep`, `bash`, `task`, `skill`, `lsp`, `question`, `webfetch`, `websearch`, `external_directory`, and `doom_loop`. The config schema accepts two more the doc page doesn't list yet: `list`, directory listing - distinct from `glob`'s pattern-based search - and `todowrite` ([permission schema](https://github.com/anomalyco/opencode/blob/dev/packages/core/src/v1/config/permission.ts), as of October 2026). Left unset, most keys default to `allow`; `doom_loop` and `external_directory` default to `ask`. These are the base defaults: built-in agents layer their own rules on top, and your config applies after both. The `plan` agent denies the edit tools outside its plan files, denies launching the `general` subagent, and does not gate `bash` (as of October 2026, v1.18.32; [`agent.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/agent/agent.ts); the agents documentation says `plan` sets edits and bash to `ask`). `doom_loop` triggers when the same tool call repeats three times with identical input, and `external_directory` triggers when a tool touches a path outside the project directory. A map value matches what the tool acts on: a file path for `read` and `edit`, the subagent type for `task`, the skill name for `skill`. The permissions documentation calls `lsp` non-granular for now, so the table shows it with a single action. `permission.bash`'s map matches flat command strings, not filesystem globs; that grammar and the last-match-wins ordering rule are covered in [the per-tool, per-agent treatment](/course/opencode/permissions/per-tool-per-agent/).
 
+<Aside type="caution" title="In OpenCode 2">
+v2 reads every `opencode.json` field on this page in its v1 form and normalizes it in memory, with these exceptions and renames if you convert to the native v2 shape ([migration guide](https://opencode.ai/v2/docs/migrate-v1/), as of October 2026):
+
+- `permission` becomes an ordered `permissions` array of `{ action, resource, effect }` rules; actions are `shell` (was `bash`), `subagent` (was `task`), and `edit` (covers write and patch). If no rule matches, v2 asks, and the base policy allows everything except `.env` reads, which ask ([permissions documentation](https://opencode.ai/v2/docs/permissions/)).
+- `external_directory` is allowed by default in v2 (v1 asks). To keep the v1 behavior, add an `external_directory` rule with effect `ask`.
+- `doom_loop` and `lsp` are not v2 permission actions, and the `lsp` setting is accepted but language servers never run.
+- `compaction.prune` has no v2 equivalent, `reserved` becomes `buffer`, and `keep.tokens` (default 15000) is new ([compaction documentation](https://opencode.ai/v2/docs/compaction/)).
+- `agent` becomes `agents` (`prompt` becomes `system`), and `mcp` servers move under `mcp.servers`.
+- Todos are off by default; the `experimental.todo` flag turns them on.
+</Aside>
+
 ## How OpenCode merges config sources
 
 `opencode.json` is not one file but a stack of sources. Config sources are loaded in this order, later sources overriding earlier ones (as of October 2026; [config documentation](https://opencode.ai/docs/config/)):
@@ -47,6 +60,10 @@ In practice: a project `opencode.json` overrides your global file where both set
 ## tui.json fields
 
 The merge order above is for `opencode.json`. For `tui.json`, the project file overrides the global one where both set the same key, and the `OPENCODE_TUI_CONFIG` environment variable points OpenCode at a custom file, which overrides the global file but not the project files (as of October 2026; [config documentation](https://opencode.ai/docs/config/) and the [TUI config source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/config/tui.ts)).
+
+<Aside type="caution" title="In OpenCode 2">
+`tui.json` and `tui.jsonc` do not exist in v2. Terminal settings live in one global `~/.config/opencode/cli.json` (`$XDG_CONFIG_HOME/opencode/cli.json` when set), with no project-level file, and `OPENCODE_CLI_CONFIG_CONTENT` applies inline JSON settings (the v2 CLI settings page documents nothing equivalent to `OPENCODE_TUI_CONFIG`). `theme` is an object (`name`, `mode`), `leader_timeout` becomes `leader.timeout`, and keybind names are dotted. A first v2 start migrates a global `tui.json` and leaves the v1 files alone. See [CLI settings](https://opencode.ai/v2/docs/cli/config/), as of October 2026.
+</Aside>
 
 | Field | Controls | Type | Default | Introduced in |
 |-------|----------|------|---------|---------------|

@@ -3,6 +3,8 @@ title: Write a custom subagent
 description: "No built-in subagent both knows your one rule and cannot edit. Hand-write a markdown subagent with a pinned model and a permission map, scoped to one job."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 The built-in subagents (worker agents that run a delegated task in their own context and report back) get you a long way, but they're general by design. `explore` is documented as read-only and fast, `general` can do anything - and none of them knows the one rule you keep having to enforce by hand. `feedmill` - the course's illustrative Go feed aggregator - parses dozens of differently-shaped feeds, and every parser adapter has to normalize its source's date into UTC before it hands a timestamp upward; a parser that quietly stores the feed's local time is a bug that mis-sorts the reading queue while looking like a data problem. What you want is a worker whose entire job is to walk every adapter and check that rule - and which *cannot edit a file even if it wanted to*, because an auditor that can quietly "fix" what it finds is no longer an auditor. That's a custom subagent, and OpenCode lets you define one in a single markdown file.
 
 ## Two ways to make one
@@ -14,6 +16,10 @@ $ opencode agent create
 ```
 
 It runs interactively - asks where to save it (global or project) and what it's for, has you pick a starting permission posture, then generates the identifier and the system prompt and writes the markdown file for you (the command and its prompts are documented as of October 2026; [agents documentation](https://opencode.ai/docs/agents/)). That's the right move the first time, because it shows you the shape. But the file *is* the agent, and once you've seen it you'll usually just write the file directly, the same way you'd hand-edit `opencode.json` rather than re-run a wizard.
+
+<Aside type="caution" title="In OpenCode 2">
+OpenCode 2.1.2 has no `opencode agent create` subcommand, so there the file is the only route; `opencode debug agents` lists the agents it found. The `.opencode/agents/` directory is the same in v2. See the [v2 agents documentation](https://opencode.ai/v2/docs/agents/) and the [v2 CLI reference](https://opencode.ai/v2/docs/cli/), as of October 2026.
+</Aside>
 
 The file lives in one of two places, and the choice is the familiar one between ship-it-with-the-project and keep-it-on-your-machine:
 
@@ -67,6 +73,10 @@ Read that frontmatter field by field, because every line is doing a specific job
 - **`model`** pins this agent to its own model regardless of what your main session is running. The value is a `provider/model-id` string; `anthropic/claude-sonnet-4-6` is an illustrative ID from the catalog as of September 2026, and the IDs you can use depend on your connected providers. It's the same per-agent override OpenCode supports for any configured agent, built-ins included (the [per-agent model page](/course/opencode/providers-models/per-agent-model/) works that tradeoff in depth). Audit work is read-and-judge, so a solid mid-tier reasoner is the right fit; you don't need your most expensive model to check a rule, but you do need one that won't miss a sneaky `time.Parse` without a location.
 - **`temperature: 0.1`** keeps it boring on purpose. An auditor that gets creative is an auditor inventing violations.
 - **`permission`** is the part that makes this safe, and it's worth its own beat.
+
+<Aside type="caution" title="In OpenCode 2">
+In OpenCode 2, this frontmatter is still read as v1: `permission`, `task` and `tools` are translated. But `temperature` has no effect, because v2 does not send per-agent request values to the model; set it on a model variant and select it as `model: provider/model#variant`. The native permission form is a `permissions` list with `shell` for `bash` and `subagent` for `task`. A file that mixes v1 and v2 fields is read as v2 and the v1 ones are ignored with a warning. See [Agent files](https://opencode.ai/v2/docs/migrate-v1/#agent-files) and [Request](https://opencode.ai/v2/docs/agents/#request), as of October 2026.
+</Aside>
 
 ## The permission map is the whole point
 

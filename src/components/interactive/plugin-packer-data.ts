@@ -97,7 +97,7 @@ export const ppkTools: PpkToolSpec[] = [
       code: '// opencode.json\n"plugin": ["@our-org/team-stack"]',
     },
     dist: 'Plugins are live JS/TS modules - closer to a VS Code extension than a static bundle. npm packages auto-install at startup (via Bun); local files load from `.opencode/plugins/` or `~/.config/opencode/plugins/`.',
-    caveat: 'No official registry - the community index is `awesome-opencode` on GitHub.',
+    caveat: 'No official registry - the community index is `awesome-opencode` on GitHub. OpenCode 2 (October 2026) uses a new plugin API and a `plugins` config key, and v1 plugins do not run; see opencode.ai/v2/docs/plugins/.',
   },
   {
     id: 'cursor',

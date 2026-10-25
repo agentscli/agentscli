@@ -3,6 +3,8 @@ title: Run OpenCode headless
 description: "Run a fix as a one-shot command with no one at the keyboard. opencode run is the same agent minus the TUI, with JSON output you can pipe."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 Two jobs don't want a human in front of them. The first, on `feedmill` - the course's illustrative Go feed aggregator - is the suspect-feed repair you would normally work out interactively in the TUI (terminal user interface): the parser that chokes on one site's malformed date fields. Once a fix like that is understood, you want it as a repair script - the next time a feed goes bad, you run one command instead of reopening the whole session. The second is `feedmill`'s nightly digest: a regeneration job that should fire on a cron at 4am and leave you a fresh reading queue by morning, with nobody awake to approve anything.
 
 Both are the same need - OpenCode without the terminal in the loop. That's `opencode run`.
@@ -59,6 +61,10 @@ The wrinkle is permissions. Out of the box, most permissions default to `allow`,
 The `edit` rule is there for the night a feed fails to parse and the agent patches its parser, with the test fixtures walled off; if your job only regenerates the digest, set `"edit": "deny"` instead. Within each map the last matching pattern wins, so the catch-all `"*"` goes first ([`permission/index.ts`](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/permission/index.ts) at v1.18.32). Anything you leave out keeps its default: `doom_loop`, `external_directory` and `.env` reads still ask, so a run that trips one is rejected and ends, which is a stop you can accept for an unattended job. Under `--auto` those asks are approved instead, so if you do launch with it, deny secrets explicitly: `"read": { "*.env": "deny", "*.env.*": "deny", "*.env.example": "allow" }`.
 
 
+<Aside type="caution" title="In OpenCode 2">
+The defaults differ in v2. Its base permission policy allows everything except `.env` reads, which ask (`.env.example` is allowed). `external_directory` is allowed by default, so a run that reads or edits outside the project proceeds without a prompt where v1 asks, and `doom_loop` is not a v2 permission action. To get the v1 stop back, add `{ "action": "external_directory", "resource": "*", "effect": "ask" }` to `permissions` (or use `deny` to block it outright). Explicit `deny` rules are still enforced. The v2 docs leave the handling of `ask` in non-interactive clients to the client, so this page's description of `opencode run` auto-rejecting is v1 behavior that we did not confirm for v2. See [permissions](https://opencode.ai/v2/docs/permissions/), as of October 2026.
+</Aside>
+
 ```bash
 $ opencode run --agent digest "regenerate tonight's digest from the synced feeds"
 ```
@@ -80,6 +86,10 @@ Now the cron job leaves a per-event JSON line trail you can grep tomorrow, and t
 
 - `--format` takes exactly two values: `default` (the formatted output) and `json` (raw events). There is no `--quiet` or `--print` flag, and no schema-validation flag - the JSON is an event stream, not a fixed-shape contract you can pin a schema against. Parse it as a sequence of typed events.
 - The same `--format json` works on `opencode session list`, so a monitoring script can ask "what ran overnight" without scraping logs: `opencode session list --format json | jq '.[] | {id, title}'` (the json output is an array). Note the value sets differ per command: `run` takes `default` or `json`, `session list` takes `table` or `json` (its formatted default is a table), and `opencode db` takes `json` or `tsv` (as of October 2026; [CLI documentation](https://opencode.ai/docs/cli/)).
+
+<Aside type="caution" title="In OpenCode 2">
+v2 changes some of the surrounding commands. `opencode run` connects to a shared background service by default; `--standalone` starts a private server for that run and `--server <url>` connects to a specific one, and `opencode service start|stop|status|restart` manages the shared one. There is no `opencode db` subcommand: `opencode debug paths db` prints the database path. `run` accepts `--fork` and `--model provider/model#variant`. The `jq` filters on this page assume the v1 event shapes; the v2 docs do not describe its JSON events, so check them against a real run before reusing the filters. See the [v2 CLI page](https://opencode.ai/v2/docs/cli/), as of October 2026.
+</Aside>
 
 ## Wiring it into cron
 

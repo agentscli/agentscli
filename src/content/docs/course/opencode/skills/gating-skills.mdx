@@ -3,6 +3,8 @@ title: Control which agents can run a skill
 description: "A skill that tells the agent to run commands shouldn't be loadable by your review-only auditor. Gate skills per agent with permission.skill globs, or turn the skill tool off entirely."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 A packaged skill - a `SKILL.md` file under `.opencode/skills/<name>/`, whose frontmatter `name` and `description` the agent sees up front - is not a passive document. The add-a-feed skill for `feedmill` - the course's illustrative Go feed aggregator - tells the agent to fetch a sample of the feed over the network, write a parser adapter under `internal/feed/`, register the source, and round it off with a fixture test that runs `go test ./internal/feed/...`. That's exactly right for your `build` agent - OpenCode's default coding agent, the one that edits and runs commands. It's the wrong procedure for the auditor you spin up to review feedmill's parser code: a subagent you define in `.opencode/agents/auditor.md` and invoke by @-mentioning it, as `@auditor`, whose job is to read and report.
 
 Two different settings shape that auditor, and it pays to keep them apart. Its `edit`, `bash`, and `task` permissions are the **control** here, the rules OpenCode enforces on the tools themselves: set to `deny`, they block file writes, shell commands, and handing work to another agent, whatever the agent has read. The `skill` permission decides which procedures can enter the auditor's **context** - the instructions it has in view when it decides what to do. A skill body is guidance, not a capability; denying it doesn't stop a `curl` that `bash` allows, and allowing it doesn't let the agent past a `bash` deny. Gate the skill anyway, because a fetch-write-test procedure in a reviewer's context is at best noise and at worst an instruction that pushes it toward actions its permissions should refuse.
@@ -45,6 +47,10 @@ The equivalent `opencode.json` form nests the agent definition under `agent`:
 ```
 
 The `edit`, `bash`, and `task` lines keep the auditor from writing files, running commands, or delegating. Read the `skill` map the way OpenCode reads it: deny everything, then carve back the audit family. The `add-feed` skill matches `*`, hits `deny`, and never appears as something the auditor can load - while an `audit-parser-coverage` skill stays available. The [skills documentation](https://opencode.ai/docs/skills/) says denied skills are hidden and rejected; permission patterns are order-sensitive, with the last matching rule winning, so write the catch-all *first* and specific exceptions after it ([permissions documentation](https://opencode.ai/docs/permissions/), as of October 2026; worked examples in the [permissions chapter](/course/opencode/permissions/per-tool-per-agent/)). Flip the polarity when the agent is broadly trusted and you only want to fence off a few procedures, again in the trusted agent's own frontmatter:
+
+<Aside type="caution" title="In OpenCode 2">
+In OpenCode 2 the `skill` rule is matched against the skill ID, which comes from the path, not the frontmatter `name`; for `.opencode/skills/add-feed/SKILL.md` both are `add-feed`, but they can differ. The native form is an ordered `permissions` list, for example `{ "action": "skill", "resource": "*", "effect": "deny" }` followed by `{ "action": "skill", "resource": "audit-*", "effect": "allow" }`, with `task` renamed to the `subagent` action. A `deny` hides the skill from the model and rejects loading it, and the v1 map form above is still translated. See [Permissions in the v2 skills documentation](https://opencode.ai/v2/docs/skills/#permissions), as of October 2026.
+</Aside>
 
 ```yaml
 # .opencode/agents/trusted.md frontmatter

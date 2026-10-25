@@ -835,6 +835,7 @@ staged diff. Subject under 60 characters, imperative mood.`,
             tips: [
               'The `instructions` field is the workaround for AGENTS.md not supporting `@path` imports - list extra rule files here.',
               '`OPENCODE_CONFIG` / `OPENCODE_CONFIG_DIR` env vars override the default locations, useful in CI.',
+              'OpenCode 2 (October 2026) still reads this file, but v1 plugins do not run, `lsp` servers are accepted and never started, `external_directory` is allowed by default, and the TUI config moves to a global `~/.config/opencode/cli.json`. See opencode.ai/v2/docs/migrate-v1/.',
             ],
             chapter: CHAPTER.configuration,
           },
@@ -847,6 +848,9 @@ staged diff. Subject under 60 characters, imperative mood.`,
             when: 'Read at session start, every invocation.',
             description:
               'Follows the open `agents.md` spec and is portable from Codex unchanged. Project discovery walks upward and uses the first matching project instruction file; it does not stack every ancestor\'s AGENTS.md. Use `instructions` when you need an explicit additive set.',
+            tips: [
+              'OpenCode 2 (October 2026) differs: it loads the global AGENTS.md plus every AGENTS.md from the workspace toward the home directory or project root, combined in order, and does not fall back to CLAUDE.md. See opencode.ai/v2/docs/instructions/.',
+            ],
             chapter: CHAPTER.rules,
           },
           {
@@ -958,6 +962,9 @@ permission:
                 when: 'Read at session start for every project.',
                 description:
                   'Global rules are combined with the selected project instruction file. Within each category, the first matching filename wins (for example, AGENTS.md before CLAUDE.md).',
+                tips: [
+                  'OpenCode 2 (October 2026) recognizes AGENTS.md only; the CLAUDE.md fallback described here is OpenCode 1 behaviour. See opencode.ai/v2/docs/instructions/.',
+                ],
                 chapter: CHAPTER.rules,
               },
               {

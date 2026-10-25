@@ -167,7 +167,9 @@ export const cxActions: CxAction[] = [
 
 /* ---------- OpenCode ---------- */
 
-export const ocConfig = `# example per-agent permission maps
+export const ocConfig = `# OpenCode 1 shape. OpenCode 2 (Oct 2026) reads it too, but its native form is an ordered
+# permissions array (shell, edit, subagent actions): opencode.ai/v2/docs/permissions/
+# example per-agent permission maps
 agent:
   build:
     permission:

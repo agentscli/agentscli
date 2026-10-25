@@ -174,7 +174,7 @@ export const hlbTools: HlbToolSpec[] = [
       },
     },
     footnote:
-      'For GitHub, `opencode github install` generates a workflow triggered by `/oc` comments on PRs and issues; a GitLab CI component exists too.',
+      'For GitHub, `opencode github install` generates a workflow triggered by `/oc` comments on PRs and issues; a GitLab CI component exists too. OpenCode 2 (October 2026) has no `github` or `db` subcommand in its CLI, and its permission config is an ordered `permissions` array (actions `shell`, `edit`, `subagent`); v1 config still loads. See opencode.ai/v2/docs/migrate-v1/.',
   },
   {
     id: 'cursor',

@@ -216,7 +216,7 @@ export const rlrTools: RlrTool[] = [
     slug: 'opencode',
     label: 'OpenCode',
     model:
-      'First match wins - OpenCode walks up from the working directory and the first AGENTS.md found REPLACES the others. No merging.',
+      'First match wins - OpenCode walks up from the working directory and the first AGENTS.md found REPLACES the others. No merging. (OpenCode 2, as of October 2026: loads the global file plus every AGENTS.md from the workspace toward the home directory or project root, combined in order, and ignores CLAUDE.md. See opencode.ai/v2/docs/instructions/.)',
     results: {
       root: {
         outcomes: [

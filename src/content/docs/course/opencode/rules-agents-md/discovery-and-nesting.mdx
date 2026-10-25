@@ -4,6 +4,7 @@ description: "Drop an AGENTS.md in a subdirectory and whether it loads depends o
 ---
 
 import ConfigExplorer from '../../../../../components/interactive/ConfigExplorer.tsx';
+import { Aside } from '@astrojs/starlight/components';
 
 `feedmill`, the course's illustrative Go feed aggregator, carries a root `AGENTS.md` with two rules in it - timestamps parsed to UTC at ingest, fetches routed through the shared rate-limit limiter - and the agent has been applying both on tasks that touch them. So you reach for the obvious next step. `feedmill`'s HTTP sync server lives under `cmd/sync/` and has a convention of its own: every handler must wrap its response in the standard error envelope. Rather than bloat the root file with a server-only rule, you do the tidy thing and create a second `AGENTS.md` inside `cmd/sync/` with just that one rule in it. feedmill has no such file yet; you add it here.
 
@@ -12,6 +13,10 @@ Then you stop, because the stakes are not obvious. Whether that nested file *add
 ## OpenCode walks up to the repo root and loads every AGENTS.md
 
 Here's the mechanism. When OpenCode assembles the system prompt for a turn, it **walks up** from the directory you started it in to the root of the git worktree (the top of your checkout) and collects every `AGENTS.md` on that path. Filename precedence applies to the whole walk: if any `AGENTS.md` turns up, `CLAUDE.md` files are skipped, and only a walk that finds no `AGENTS.md` at all collects `CLAUDE.md` files instead. The [rules documentation](https://opencode.ai/docs/rules/) states the search order and the filename precedence. It does not say whether ancestors stack; the source does. Every `AGENTS.md` between the start directory and the repo root loads, not only the nearest one ([`instruction.ts` at v1.18.32](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/session/instruction.ts), as of October 2026).
+
+<Aside type="caution" title="In OpenCode 2">
+OpenCode 2 recognizes `AGENTS.md` only, so the `CLAUDE.md` filename precedence and the `~/.claude/CLAUDE.md` global fallback described on this page do not apply: a `CLAUDE.md` is never read. The walk-up and nearest-first loading of `AGENTS.md` files work as described. See the [v2 instructions documentation](https://opencode.ai/v2/docs/instructions/), as of October 2026.
+</Aside>
 
 So when you start OpenCode inside `cmd/sync/`, the walk finds `cmd/sync/AGENTS.md`, keeps climbing, and finds `feedmill/AGENTS.md` too. Both load: the envelope rule and the root UTC and rate-limit rules arrive together. The nested file adds to the root rules; it does not replace them.
 
