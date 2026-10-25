@@ -120,15 +120,15 @@ export const hlbTools: HlbToolSpec[] = [
     },
     postures: {
       readonly: {
-        part: '--sandbox read-only --ask-for-approval never',
-        note: 'The OS sandbox is the guardrail: reads work, writes and mutating commands are blocked at the sandbox layer. `never` keeps a headless run from waiting on an approval prompt.',
+        part: '--sandbox read-only -c approval_policy=never',
+        note: 'The OS sandbox is the guardrail: reads work, writes and mutating commands are blocked at the sandbox layer. `approval_policy=never` keeps a headless run from waiting on an approval prompt. `codex exec` has no `--ask-for-approval` flag (checked on 0.163.0), so the policy goes through `-c`.',
       },
       edit: {
-        part: '--sandbox workspace-write --ask-for-approval never',
+        part: '--sandbox workspace-write -c approval_policy=never',
         note: 'File edits and sandboxed commands allowed inside the workspace; the sandbox still bounds everything else.',
       },
       full: {
-        part: '--sandbox danger-full-access --ask-for-approval never',
+        part: '--sandbox danger-full-access -c approval_policy=never',
         note: 'The YOLO combination. The docs’ own advice: only in a throwaway environment.',
       },
     },

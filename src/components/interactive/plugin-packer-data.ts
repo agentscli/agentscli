@@ -136,7 +136,7 @@ export const ppkTools: PpkToolSpec[] = [
       },
     },
     ship: {
-      text: 'Install from a plugin marketplace - `github/copilot-plugins` (official) and `github/awesome-copilot` (community) are registered by default; marketplaces can live on GitHub, any Git server, or disk.',
+      text: 'Install from a plugin marketplace - `github/awesome-copilot` (community) is registered by default and `github/copilot-plugins` (official) is added with `copilot plugin marketplace add github/copilot-plugins`; marketplaces can live on GitHub, any Git server, or disk.',
     },
     dist: 'Plugins bundle agents + skills + hooks + MCP + LSP for both VS Code and the Copilot CLI. Enterprise admins can set baseline plugins for every user (enterprise-managed plugins remain in public preview).',
     caveat:
