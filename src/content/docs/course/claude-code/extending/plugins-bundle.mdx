@@ -64,4 +64,25 @@ That session runs as if the plugin were installed: the database and board tools 
 
 One attribution caveat: the repo's originals - the MCP config, the `.claude/settings.json` hook wiring, the `.claude/skills/` and `.claude/agents/` copies - stay active alongside the plugin, so the tools appearing and the hook firing prove nothing by themselves; the namespaced `/payments-kit:finish-pr` is unmistakably the plugin's, and for the rest the clean check is to temporarily retire the originals and rerun the command - anything that disappears is something you have not folded yet, and retiring them is what the fold is for.
 
+## Test the plugin with claude plugin eval
+
+Loading a plugin from disk shows that it loads. It does not show that it changes behavior. `claude plugin eval` runs a suite of cases against a plugin and scores the results; it is in `claude plugin --help` on Claude Code 2.1.310, and the docs require v2.1.269 or later ([plugin evals docs](https://code.claude.com/docs/en/plugin-evals), checked 2026-10-25). Each case is a realistic prompt plus graders, and a grader is a pass/fail check: a regex over the reply, whether a particular tool was called, or a rubric a second model judges. The suite lives in an `evals/` directory inside the plugin.
+
+```bash
+claude plugin eval init      # asks about the plugin, proposes cases and graders, writes the files
+claude plugin eval ./payments-kit
+```
+
+Three properties decide how to read the output:
+
+- **Each case runs three times by default**, and the case score is the mean, because one run of a non-deterministic agent tells you little. A case passes when its score reaches `--threshold` (default 1.0).
+- **A no-plugin baseline runs alongside.** You get a `WITH` score, a `W/OUT` score, and the difference `Δ`. A case that scores 1.0 both ways passed because Claude did it anyway, not because of your plugin. Pass `--ablation none` to skip the baseline when you do not need `Δ`.
+- **Every run and every model-judged grader is a real model call** on your plan or API bill, so cost grows with cases times runs, doubled by the baseline. `--max-cost-usd` sets a ceiling.
+
+For CI, the docs show `--trust-plugin` (so the job never waits at the first-run trust prompt), `--json results.json`, a pinned `--model` and `--judge-model`, and `--max-cost-usd`. Exit code 0 means every case met the threshold, 1 means a case failed or the run could not start, and 2 means a partial run: the cost ceiling was hit or the credential was rejected at the first run. The command runs the plugin on your machine as you, so the docs say to evaluate only plugins you trust.
+
+## Plugins can also change the interface (mods)
+
+A plugin can carry skills, agents, hooks, and MCP servers, as above. The docs also describe a **mod**: a plugin made of JavaScript or TypeScript event handlers that run inside Claude Code and can draw a pane beside the transcript, replace parts of the interface, hold or rewrite a tool call, or add a `/command` that runs your function without a model turn ([mods overview](https://code.claude.com/docs/en/plugins/mods/overview), checked 2026-10-25). Mods are on by default and work in the CLI (v2.1.287 or later), the Desktop Code tab, and the VS Code extension. A mod is code that runs with your permissions and installs like any plugin (`/plugin install name@marketplace`), so apply the same trust test you would to any script from a marketplace you did not write. Anthropic publishes sample mods, unsupported, in the `claude-code-playground` repository. For most teams the settings-file hook from the [gate lesson](/course/claude-code/extending/hooks-gate/) remains the simpler way to enforce a rule; a mod is for features that need to live inside the interface.
+
 What you have now is the entire payments-service agent configuration as *one directory* - reach, gate, and ritual, manifested and versioned, running from a single flag. The last step is making it run on your *team's* machines from a single command, which is what a [marketplace](/course/claude-code/extending/plugins-marketplace/) is for.

@@ -1,0 +1,111 @@
+---
+title: Drive OpenCode from code with the SDK
+description: "A shell script can run one prompt. A program that needs sessions, file search, streamed events and schema-checked answers uses the JS/TS SDK against the same server the TUI uses."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`opencode run` is a good fit when a shell script sends one prompt and reads one answer. It gets awkward when a program has to hold a session open across several prompts, search files through the same engine, react to events as they stream, or get an answer back as data instead of prose. `feedmill`, the course's illustrative Go feed aggregator, hits this the day a small internal tool wants to ask OpenCode "which parser handles this feed URL?" and receive `{ "parser": "atom", "file": "internal/feed/atom.go" }` it can act on.
+
+For that, OpenCode publishes a JavaScript/TypeScript SDK. The [server lesson](/course/opencode/share-and-headless/server-and-ci/) established that the TUI is one client of an OpenCode server; the SDK is another client of the same server, with typed methods in place of keystrokes.
+
+This page is a docs-sourced concept lesson (the [SDK documentation](https://opencode.ai/docs/sdk/), accessed 2026-10-25), not a captured run. It describes the v1 line (`opencode-ai` 1.19.x) and its `@opencode-ai/sdk` package.
+
+## Start a server and a client together, or connect to one
+
+Install the package, then choose between two entry points:
+
+```bash
+npm install @opencode-ai/sdk
+```
+
+`createOpencode()` starts a local server and returns a client for it. It takes optional `hostname` (default `127.0.0.1`), `port` (default `4096`), `signal`, `timeout` (milliseconds, default `5000`) and `config` values. The inline `config` overrides or extends your `opencode.json` for that server:
+
+```ts
+import { createOpencode } from "@opencode-ai/sdk"
+
+const opencode = await createOpencode({
+  hostname: "127.0.0.1",
+  port: 4096,
+  config: { model: "anthropic/claude-sonnet-5-5" },
+})
+
+console.log(`Server running at ${opencode.server.url}`)
+// ... use opencode.client ...
+opencode.server.close()
+```
+
+`createOpencodeClient()` makes only the client, for a server that is already running, such as the `opencode serve` process from the CI lesson:
+
+```ts
+import { createOpencodeClient } from "@opencode-ai/sdk"
+
+const client = createOpencodeClient({ baseUrl: "http://localhost:4096" })
+```
+
+`baseUrl` has no default. Other options are `fetch`, `parseAs`, `responseStyle` and `throwOnError` (default `false`). By default an HTTP error comes back in `result.error` instead of throwing; set `throwOnError: true` if you want exceptions. Network failures can throw either way. Types such as `Session`, `Message` and `Part` are exported from the package and are generated from the server's OpenAPI spec, so the client follows the server's real shape.
+
+A server reachable beyond localhost needs the same care as `opencode serve` and `opencode web`: set `OPENCODE_SERVER_PASSWORD` before exposing it ([web documentation](https://opencode.ai/docs/web/), accessed 2026-10-25).
+
+## What the client can do
+
+The docs group the methods by area. The ones a first tool is likely to use:
+
+- **Sessions.** `session.create`, `session.list`, `session.get`, `session.prompt` (send a message; `noReply: true` adds context without asking for a model reply), `session.messages`, `session.abort`, `session.revert` and `session.unrevert`, and `session.init`, which analyzes the app and creates `AGENTS.md`. `session.share()` is listed as discontinued and returns an error, matching the share removal in v1.19.1.
+- **Files.** `find.text`, `find.files` and `find.symbols` search the project; `file.read` and `file.status` read content and status.
+- **TUI control.** `tui.appendPrompt`, `tui.submitPrompt`, `tui.clearPrompt`, `tui.executeCommand` and `tui.showToast` drive a running TUI, which is how an editor plugin can push a prompt into it.
+- **Config and auth.** `config.get`, `config.providers`, and `auth.set` for storing a provider key.
+- **Events.** `event.subscribe()` returns a server-sent-event stream:
+
+```ts
+const events = await client.event.subscribe()
+for await (const event of events.stream) {
+  console.log("Event:", event.type, event.properties)
+}
+```
+
+Permission requests arrive through the same server, so a program that prompts the agent must also answer the ones its rules set to `ask`. The client's `postSessionByIdPermissionsByPermissionId({ path, body })` method responds to one ([SDK documentation](https://opencode.ai/docs/sdk/)); the [headless lesson](/course/opencode/share-and-headless/headless-run/) covers how `opencode run` handles the same requests.
+
+## Get an answer as data
+
+For the feedmill tool, free text is the wrong output. The SDK can ask the model for JSON that matches a schema. This feature is documented for the client from `@opencode-ai/sdk/v2`, which uses flat parameters, so import it from that path:
+
+```ts
+import { createOpencodeClient } from "@opencode-ai/sdk/v2"
+
+const client = createOpencodeClient({ baseUrl: "http://localhost:4096" })
+
+// sessionID comes from a session created earlier with client.session.create
+const result = await client.session.prompt(
+  {
+    sessionID,
+    parts: [{ type: "text", text: "Which parser handles https://example.com/feed.json?" }],
+    format: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: {
+          parser: { type: "string", description: "Parser name" },
+          file: { type: "string", description: "Path to the parser source" },
+        },
+        required: ["parser", "file"],
+      },
+    },
+  },
+  { throwOnError: true },
+)
+
+console.log(result.data.info.structured)
+```
+
+`format.type` is `text` (the default) or `json_schema`. A `json_schema` format takes the `schema` and an optional `retryCount` (default 2) for validation retries. If the model still fails to produce valid output, `result.data.info.error` is a `StructuredOutputError` with the retry count. The docs advise clear property descriptions, a `required` list, and small focused schemas. Validation checks the shape of the JSON, not that the answer is true: a schema-valid `file` path can still name a file that does not exist, so check it before acting on it.
+
+## Pick the right door
+
+Three programmatic doors now exist, and they suit different jobs. `opencode run --format json` is the lightest: one process per job, events on stdout. The SDK is for a program that keeps state, streams events or wants typed methods. ACP, from the end of the [server lesson](/course/opencode/share-and-headless/server-and-ci/), is for an editor or tool that wants OpenCode as an embedded agent over a standard protocol.
+
+<Aside type="caution" title="In OpenCode 2">
+The server API and clients changed in v2, so code written against `@opencode-ai/sdk` does not carry over. The released v2 client package is `@opencode/client`, generated from the v2 API reference; v2 also offers Effect APIs for plugins, clients and embedded apps. Do not point v1 SDK code at a v2 server. See the [migration guide](https://opencode.ai/v2/docs/migrate-v1/) and the [build documentation](https://opencode.ai/v2/docs/build/), as of October 2026.
+</Aside>
+
+The headless half is now complete from one-shot command to typed client. Back in the interactive loop, [the daily-workflow chapter](/course/opencode/daily-workflow/) covers the habits that make it fast.

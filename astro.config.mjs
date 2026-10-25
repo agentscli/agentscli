@@ -221,6 +221,7 @@ export default defineConfig({
 										{ label: 'Delegate · isolated context', slug: 'course/claude-code/subagents/delegate' },
 										{ label: 'Fan out · parallel slices', slug: 'course/claude-code/subagents/fan-out' },
 										{ label: 'Background · Ctrl+B', slug: 'course/claude-code/subagents/background' },
+										{ label: 'Agent view · manage background sessions', slug: 'course/claude-code/subagents/agent-view' },
 										{ label: 'Custom · reusable agent', slug: 'course/claude-code/subagents/custom' },
 									],
 								},
@@ -256,6 +257,8 @@ export default defineConfig({
 										{ label: 'Headless permissions · dontAsk, allow, deny', slug: 'course/claude-code/automation/permissions' },
 										{ label: 'CI · GitHub Actions on trusted PRs', slug: 'course/claude-code/automation/ci' },
 										{ label: 'Loops · nightly job, guardrails', slug: 'course/claude-code/automation/loops' },
+										{ label: 'Scheduled tasks · run on a timer', slug: 'course/claude-code/automation/scheduled-tasks' },
+										{ label: 'Remote Control · drive from another device', slug: 'course/claude-code/automation/remote-control' },
 									],
 								},
 								{
@@ -299,6 +302,7 @@ export default defineConfig({
 										{ label: '/fork · two approaches', slug: 'course/codex/sessions-context/fork' },
 										{ label: '/side · quick tangent', slug: 'course/codex/sessions-context/side' },
 										{ label: '/compact · shrink thread', slug: 'course/codex/sessions-context/compact' },
+										{ label: 'Memories · facts across sessions', slug: 'course/codex/sessions-context/memories' },
 										{ label: '/status · window usage', slug: 'course/codex/sessions-context/status' },
 										{ label: '/new & /clear · reset', slug: 'course/codex/sessions-context/reset' },
 									],
@@ -313,6 +317,7 @@ export default defineConfig({
 										{ label: 'Approval policies · the checkpoint', slug: 'course/codex/approvals-sandbox/approval-modes' },
 										{ label: 'Network & dirs · network-off default', slug: 'course/codex/approvals-sandbox/network-and-dirs' },
 										{ label: 'Profiles · trust as one flag', slug: 'course/codex/approvals-sandbox/profiles-for-trust' },
+										{ label: 'Rules files · execpolicy', slug: 'course/codex/approvals-sandbox/rules-files' },
 									],
 								},
 								{
@@ -387,6 +392,7 @@ export default defineConfig({
 										{ label: 'Profiles · the two-profile habit', slug: 'course/codex/daily-workflow/profiles-habit' },
 										{ label: 'Prompting · brief well, edit fast', slug: 'course/codex/daily-workflow/prompting-ergonomics' },
 										{ label: 'Error recovery · steer or restart', slug: 'course/codex/daily-workflow/error-recovery' },
+										{ label: 'Code review · review a diff', slug: 'course/codex/daily-workflow/code-review' },
 										{ label: 'Finale · the whole arc', slug: 'course/codex/daily-workflow/finale' },
 									],
 								},
@@ -418,6 +424,7 @@ export default defineConfig({
 										{ label: 'Agent · hand off the whole task', slug: 'course/copilot/modes/agent' },
 										{ label: 'Plan · see the plan first', slug: 'course/copilot/modes/plan' },
 										{ label: 'Switch · match the role to the risk', slug: 'course/copilot/modes/switching' },
+										{ label: 'Harnesses · where the session runs', slug: 'course/copilot/modes/harnesses' },
 									],
 								},
 								{
@@ -471,6 +478,7 @@ export default defineConfig({
 										{ label: 'Connect · .vscode/mcp.json', slug: 'course/copilot/extending/connect' },
 										{ label: 'Trust · confirm before it runs', slug: 'course/copilot/extending/trust' },
 										{ label: 'Scope · per-agent tool access', slug: 'course/copilot/extending/scope' },
+										{ label: 'Hooks · deterministic gates', slug: 'course/copilot/extending/hooks' },
 									],
 								},
 								{
@@ -610,6 +618,7 @@ export default defineConfig({
 										{ label: 'Fan-out · Parallel worktrees', slug: 'course/cursor/composer-multi-agent/local-fan-out' },
 										{ label: 'Subagents · Delegated work', slug: 'course/cursor/composer-multi-agent/subagents' },
 										{ label: 'Cloud Agents · Remote VMs', slug: 'course/cursor/composer-multi-agent/cloud-agents' },
+										{ label: 'Projects · a coordinator that delegates', slug: 'course/cursor/composer-multi-agent/projects' },
 										{ label: 'Taxonomy · Which flavor', slug: 'course/cursor/composer-multi-agent/taxonomy' },
 									],
 								},
@@ -633,6 +642,8 @@ export default defineConfig({
 									{ label: 'Slash commands · the TUI set', slug: 'course/cursor/cli-headless-ci/slash-commands' },
 									{ label: 'CI · gate the push', slug: 'course/cursor/cli-headless-ci/ci' },
 									{ label: 'Cloud & Bugbot · off your machine', slug: 'course/cursor/cli-headless-ci/cloud-and-bugbot' },
+									{ label: 'Automations · cloud agents on triggers', slug: 'course/cursor/cli-headless-ci/automations' },
+									{ label: 'SDK & ACP · programmatic control', slug: 'course/cursor/cli-headless-ci/sdk-and-acp' },
 								],
 							},
 								{
@@ -738,6 +749,7 @@ export default defineConfig({
 										{ label: 'Module intro', slug: 'course/opencode/extending' },
 										{ label: 'MCP servers', slug: 'course/opencode/extending/mcp-servers' },
 										{ label: 'The LSP channel', slug: 'course/opencode/extending/lsp-diagnostics' },
+										{ label: 'Formatters · format after every edit', slug: 'course/opencode/extending/formatters' },
 									{ label: 'Plugin hooks', slug: 'course/opencode/extending/plugins-hooks' },
 									{ label: 'Custom tools · tool()', slug: 'course/opencode/extending/custom-tools' },
 								],
@@ -750,6 +762,7 @@ export default defineConfig({
 										{ label: 'Sharing (discontinued)', slug: 'course/opencode/share-and-headless/share-links' },
 										{ label: 'Run headless', slug: 'course/opencode/share-and-headless/headless-run' },
 										{ label: 'Server, CI & GitHub', slug: 'course/opencode/share-and-headless/server-and-ci' },
+										{ label: 'SDK · drive OpenCode from code', slug: 'course/opencode/share-and-headless/sdk' },
 									],
 								},
 								{
@@ -789,6 +802,7 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/the-core' },
 										{ label: 'Four tools · read/write/edit/bash', slug: 'course/pi/the-core/four-tools' },
+										{ label: 'Codemode · script the tool calls', slug: 'course/pi/the-core/codemode' },
 										{ label: 'The loop · steering vs follow-up', slug: 'course/pi/the-core/the-loop-in-depth' },
 										{ label: 'See the context · observability', slug: 'course/pi/the-core/see-the-context' },
 										{ label: 'The tiny prompt · under 1k tokens', slug: 'course/pi/the-core/the-tiny-prompt' },
@@ -842,6 +856,7 @@ export default defineConfig({
 									items: [
 										{ label: 'Module intro', slug: 'course/pi/skills-packages' },
 										{ label: 'Skills · SKILL.md', slug: 'course/pi/skills-packages/skills' },
+										{ label: 'MCP · servers in Pi', slug: 'course/pi/skills-packages/mcp' },
 										{ label: 'Templates & themes', slug: 'course/pi/skills-packages/templates-themes' },
 										{ label: 'Packages · share the setup', slug: 'course/pi/skills-packages/packages' },
 									],

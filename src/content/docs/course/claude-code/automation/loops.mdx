@@ -75,6 +75,26 @@ All four quietly assume the run can tell success from failure at all. With nobod
 
 Play all three endings. Shipping on the claim outsources the checks to production. Build and types are the lint-green trap: both pass, nothing exercised the behavior. The full stack retries the reds and flags the seam break honestly - a failure that lives between two services, invisible to unit tests that pass against their own mocks of the other side - and even then, the misread ticket ships green, the one defect no wired check catches. That is the standing division of labor this course ends on: the machine verifies what can be wired; the morning review verifies what cannot.
 
+## Keep one session working with /goal
+
+The nightly job starts a fresh run on a clock. A different unattended need is one session that should keep going until a stated end state is true. `/goal <condition>` does that: after every turn, a small fast model checks the condition against the conversation, and if it is not yet met Claude starts another turn instead of handing control back ([`/goal` docs](https://code.claude.com/docs/en/goal), checked 2026-10-25).
+
+```text
+/goal all tests in test/auth pass and the lint step is clean, or stop after 20 turns
+```
+
+What matters for an unattended run:
+
+- **The evaluator reads the transcript, not the repo.** It does not run commands or open files. Write the condition as something Claude's own output can demonstrate, such as "`npm test` exits 0", so the proof is in the conversation. A condition can be up to 4,000 characters.
+- **Bound it yourself.** Put a turn or time clause in the condition. Without one, the goal ends only when the evaluator says met or impossible, when you run `/goal clear`, or when an error you must fix clears it (authentication failure, exhausted credit, an unrecoverable context overflow, an unavailable model).
+- **It does not change the permission mode.** In Manual mode Claude still stops for tool calls your settings do not allow. Run it in auto mode to remove per-tool prompts; the docs describe auto mode as removing per-tool prompts and `/goal` as removing per-turn prompts.
+- **It also runs headless.** `claude -p "/goal CHANGELOG.md has an entry for every PR merged this week"` loops to completion in one invocation. Add `--output-format stream-json --verbose` or the run looks stuck, because the default text output prints only at the end.
+- **It is the same mechanism as a Stop hook.** `/goal` wraps a session-scoped prompt-based Stop hook. A Stop hook in settings applies to every session in its scope and can run a script for a deterministic check; `/goal` is the quick, one-session form.
+
+Run `/goal` with no argument to see the condition, elapsed time, turns evaluated, token spend, and the evaluator's latest reason. The condition is only as good as its evidence: a model judging "done" from the transcript is still a model's judgment, so pair it with a check that fails loudly, like a test exit code.
+
+To run whole jobs on a schedule without a laptop, compare [the four scheduling hosts](/course/claude-code/automation/scheduled-tasks/), which include Claude Code's cloud scheduled tasks (a research preview as of October 2026).
+
 ## Where the course goes last
 
 Step back at what you have assembled. The review pass you used to run by hand now runs in two places without you: on every trusted, same-repository pull request the moment it opens, and every night against `main` before anyone is awake. Fork pull requests need the separate secret-safe design from the CI lesson. Both jobs use the same headless call the chapter started with ([`claude -p`, a prompt, and flags](/course/claude-code/automation/headless/)), wrapped in the same three-layer posture ([deny rules, `dontAsk`, a tight allow list](/course/claude-code/automation/permissions/)), fired by a trigger instead of a keystroke.

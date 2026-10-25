@@ -1,0 +1,111 @@
+---
+title: Hooks - deterministic gates around the agent
+description: "A hook is a command that runs at a fixed point in the agent loop and can deny a tool call. Where Copilot hooks live, which events exist, and what fails open versus closed."
+---
+
+An instruction such as "never run `git push`" is guidance: the agent usually follows it, and nothing stops it when it does not. A **hook** is the other kind of control. It is an external command that Copilot runs at a fixed point in a session, whether or not the model remembers the rule, and for some events it can stop the action. This lesson covers what the Copilot harness supports, which is the same hook format the Copilot CLI uses.
+
+This is a docs-sourced concept lesson, not a captured run. The facts come from GitHub's [hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference) and VS Code's [agent hooks page](https://code.visualstudio.com/docs/agent-customization/hooks), read on 25 October 2026. VS Code labels its hooks experience **Preview**, so treat file names and event details as subject to change and re-check them before you commit hooks to a shared repository.
+
+## Which harness reads these hooks
+
+Hooks follow the harness you chose in [the harness lesson](/course/copilot/modes/harnesses/). Select **Copilot** as the Session Target to use the format below; it is shared by VS Code, the GitHub Copilot app and the Copilot CLI. The Claude and Codex harnesses use their own providers' hook systems, and the older Local harness has a separate reference. Sharing a file location does not make a hook portable: event names select the payload shape, tool names can differ, and output behavior can differ. Test a migrated hook in a disposable session of the destination harness.
+
+## Where hooks live
+
+Hooks from every source run together; a new repository hook does not replace a user or plugin hook for the same event. The CLI documentation lists these sources:
+
+| Source | Location |
+| --- | --- |
+| Policy (administrators) | Machine-wide files, for example `/etc/github-copilot/policy.d/*.json` on Linux and macOS; cannot be turned off by `disableAllHooks` |
+| Repository | `.github/hooks/*.json` at the repository root |
+| User | `~/.copilot/hooks/` (or `$COPILOT_HOME/hooks/`) |
+| Inline settings | A `hooks` field in `.github/copilot/settings.json`, `.github/copilot/settings.local.json` or `~/.copilot/settings.json` |
+| Plugins | A `hooks.json` shipped inside an installed plugin |
+| One custom agent | A `hooks` map in the agent's frontmatter, active only while that agent is selected |
+
+Because hook files are executable configuration, treat a hook in a shared repository or plugin like code that runs on your machine: review it, and do not interpolate untrusted tool arguments into a shell command.
+
+## A first hook
+
+Create `.github/hooks/audit.json`:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "node .github/hooks/log-tool-use.cjs",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}
+```
+
+A command hook receives the event as JSON on standard input and may write one JSON object to standard output. VS Code's own first example logs only the tool name, so that no arguments or results end up in a log file:
+
+```javascript
+const fs = require('node:fs');
+const path = require('node:path');
+const event = JSON.parse(fs.readFileSync(0, 'utf8'));
+if (typeof event.toolName !== 'string') {
+  throw new Error('Expected a Copilot preToolUse event with toolName.');
+}
+fs.appendFileSync(path.join(__dirname, 'tool-use.log'), `${JSON.stringify(event.toolName)}\n`);
+process.stdout.write('{}');
+```
+
+Returning `{}` makes no decision; it does not approve the tool. Add the log file to `.gitignore`, start a new Copilot-harness session, ask for something harmless that uses a tool, and confirm the log gained a line. The docs stress that a hook file shown in the editor is not proof it ran.
+
+## The main events
+
+| Event | Fires when | Can it change the outcome |
+| --- | --- | --- |
+| `sessionStart` | A session begins or resumes | Can add context (`additionalContext`) |
+| `userPromptSubmitted` | You submit a prompt | Command-hook output is ignored; only SDK programmatic hooks can rewrite the prompt |
+| `preToolUse` | Before each tool runs | Yes: allow, deny or modify arguments |
+| `permissionRequest` (CLI only; not under cloud agent) | Before the permission service runs | Yes: can allow or deny programmatically |
+| `postToolUse` / `postToolUseFailure` | After a tool succeeds or fails | Can add context or recovery guidance; cannot undo the action |
+| `preCompact` | Context compaction is about to begin | No, notification only |
+| `subagentStart` / `subagentStop` | A subagent spawns or finishes | Stop can block and force continuation; start can prepend context |
+| `agentStop` | The main agent finishes a turn | Yes: `decision: "block"` forces another turn |
+| `sessionEnd` | The session terminates | No |
+
+The [hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference#hook-events) lists the rest, including `errorOccurred`, `notification` and `userPromptTransformed`.
+
+Event names also pick the input format. `preToolUse` receives `toolName` and `toolArgs`. A compatible PascalCase alias, `PreToolUse`, receives snake_case fields and can report Claude-style tool names such as `Read` and `Write`, so do not assume a hook written for one form works unchanged for the other.
+
+## Denying a tool call
+
+For `preToolUse`, return a decision on standard output:
+
+```json
+{
+  "permissionDecision": "deny",
+  "permissionDecisionReason": "Pushes need a human. Ask the user to run git push."
+}
+```
+
+`permissionDecisionReason` is required with a deny, and the agent sees it, so write it as an instruction the agent can act on. The other values are `allow` and `ask`; `ask` needs an interactive approval flow, and in CLI autopilot mode, where no prompt is shown, it is treated as a deny. A hook can also supply `modifiedArgs` to substitute different tool arguments.
+
+## Fail open or fail closed
+
+A hook is only a boundary if you know what happens when it breaks. The reference defines the exit-code rules:
+
+- Exit code 0 is success, and standard output is parsed as the hook's JSON.
+- Exit code 2 is a warning for most events, with standard error shown to you. For `preToolUse` and `permissionRequest` it is a deny, even if the hook's output claims `allow`.
+- Any other non-zero exit is logged and the run continues for most events. The exception is `preToolUse`, which is fail-closed: a crash or other non-zero exit denies the tool call.
+- A timeout kills the hook, logs it and continues - fail-open for every event, including `preToolUse` and administrator policy hooks, where the call goes on to the normal permission checks.
+
+So a safety hook that does slow work can silently stop protecting you. Keep the check fast, set a short `timeoutSec`, and test the timeout path separately from the error path. Hooks also run inside the session sandbox when it is enabled, with the same access as the agent's shell commands, except policy hooks, which always run on the host.
+
+## What hooks are not
+
+Hooks do not replace [permission levels](/course/copilot/permissions/levels/), the sandbox or organization controls. They sit alongside them: a `preToolUse` hook that denies `git push` is a project-specific rule enforced by code, while the permission level decides the general latitude. Use `disableAllHooks` when you want to pause the automation without deleting the configuration, for example while debugging whether a hook caused a problem. To verify one, run the script directly with a non-sensitive fixture event, then confirm in a disposable session that it fires for the expected event and tool.
+
+Hooks are not tied to VS Code: because the Copilot CLI shares the format, the same `.github/hooks/*.json` applies when a teammate runs your repository in [the terminal](/course/copilot/beyond-vscode/cli/).
+
+Hooks close the extension points. The question they all lead to is how much the agent may do before you look. [Next chapter: Permissions & autonomy](/course/copilot/permissions/).

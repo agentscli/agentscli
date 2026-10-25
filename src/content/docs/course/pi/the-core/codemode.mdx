@@ -1,0 +1,49 @@
+---
+title: Codemode - let the model script its tool calls
+description: "A built-in tool where the model writes JavaScript that calls Pi's other tools in a sandbox, and only the script's output returns to the context. Off by default; how to turn it on and what it changes."
+---
+
+:::note[About this lesson]
+This is a docs-sourced concept lesson. Nothing here is a captured Pi run; every behavior is quoted from [Pi's codemode docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/codemode.md) and [CLI docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/cli.md), read 2026-10-25 against Pi 1.4.0. Codemode shipped in Pi 0.99.0.
+:::
+
+[The four tools](/course/pi/the-core/four-tools/) put one rule on every call: each result, up to the 2,000-line or 50KB cap, lands in the context window. A `bash` that lists three hundred rows puts three hundred rows in front of the model, and the model has to read every result before it can decide what to keep. `codemode` is Pi's answer to both, and it is a fifth tool you opt into, not a change to the four.
+
+## What it is
+
+With `codemode`, the model writes a JavaScript script instead of making separate calls. The script runs as the body of an async function in a QuickJS sandbox, so top-level `await` and `return` work. The sandbox has no Node APIs, no file system, no network and no timers; the script reaches anything outside only through `tools.<name>(args)`, one method per tool the session can call, and through a `models` global for non-LLM models such as classifiers. **Only the script's output reaches the model**, so a script can run calls in parallel and filter large results before the model sees them.
+
+For `stash`, the shape of the win: re-sync five feeds with `Promise.all`, collect only the ones that failed, and return a three-line summary. Five tool calls and their full output never enter the window.
+
+## Turn it on
+
+Codemode is off by default. Add it to the default tools in `~/.pi/agent/settings.json` or a project's `.pi/settings.json`:
+
+```json
+{
+  "defaultTools": ["+codemode"]
+}
+```
+
+That keeps `read`, `bash`, `edit` and `write` and adds `codemode`. For one run, use `pi --tools +codemode`. Pi also activates it on its own when an MCP server with `codemode` exposure connects (see [MCP servers](/course/pi/skills-packages/mcp/)); `"autoEnableCodemode": false` next to `mcpServers` prevents that.
+
+## The globals worth knowing
+
+- `tools.<name>(args)` calls a tool. Failures reject with an `Error`, so `Promise.allSettled()` keeps the calls that succeeded. Tool calls are real: calls made before a script fails are not undone.
+- `text(value)`, `return` and `console.log` produce the output the model sees. `max_output_tokens` (default 10000) caps it; longer output keeps its start and end and the full text goes to a temp file whose path is in the result. A first-line `// @options: {"timeout_ms": 60000}` sets a hard deadline.
+- `searchTools(query)`, `describeTool(name)`, `describeNamespace(name)` and `ALL_TOOLS` find tools that the `codemode` description does not list. That is how a script reaches a large MCP server without declaring every tool up front.
+- `store(key, value)` and `load(key)` keep small JSON values (IDs, cursors, summaries) across `codemode` calls; they are saved on the session branch and survive resume.
+- `models` lists and runs classifier and image models with the session's credentials; chat models are listed but cannot be run from a script. Usage counts toward session cost.
+
+## Limits to know before you rely on it
+
+- A script cannot start another `codemode` script.
+- At most two codemode workers run per Pi process by default; extra scripts queue for up to 60 seconds. `PI_CODEMODE_MAX_WORKERS` raises the limit (1.4.0 changelog).
+- A script's VM has 256 MB of memory. Filter or aggregate large data instead of accumulating it.
+- `codemode.mode` in settings decides how other tools are presented: `on` (default) leaves declared tools declared; `only` hides them and lists them in the `codemode` description so the model calls everything through scripts.
+
+## Where it fits the harness arc
+
+Pi's stance is that the core stays small and you opt into what you need. Codemode is that stance applied to context cost: instead of shrinking the tool list, it moves the cost of large or repetitive results out of the window. The trade is auditability. A script is one tool call in the transcript, so you read the script and its output, not each inner call; if you gate tool calls with a `tool_call` hook (see [permissions](/course/pi/rebuild-the-defaults/permissions/)), calls made from a script still pass through it, and carry the codemode call ID as `parentToolCallId` per the MCP docs.
+
+Next, the other reason codemode exists: [reaching MCP servers without paying for their schemas on every turn](/course/pi/skills-packages/mcp/).

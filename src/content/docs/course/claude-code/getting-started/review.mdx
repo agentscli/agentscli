@@ -35,6 +35,31 @@ Claude Code's `/rewind` menu lets you choose a checkpoint and what to restore. W
 
 After a restoration, inspect Git status and rerun the relevant checks. The useful question is what is on disk now. A remembered good state is not a substitute for looking.
 
+## Add a second reader with /code-review
+
+Reading the diff yourself catches whether the patch matches the ticket. A separate reviewer can catch defects you were not looking for. `/code-review` runs one inside your session: it reviews the changes on your branch for correctness bugs, in a background [subagent](/course/claude-code/subagents/) with its own context window, and the findings arrive in your conversation when it finishes. It works on any plan and counts toward your usage like the rest of the session ([local code review docs](https://code.claude.com/docs/en/code-review-local), checked 2026-10-25).
+
+```text
+/code-review
+/code-review 1234
+/code-review src/auth
+/code-review main...my-feature
+```
+
+With no target it covers your branch's commits ahead of upstream plus uncommitted changes. A pull request number, a path, a branch comparison, or a commit range works as a target. Three flags change what happens to the findings:
+
+- `--fix` also asks Claude to apply the findings to the working tree. Its edits go through your permission mode, and a background review's edits sit outside the session's checkpoints, so `/rewind` will not undo them. Use git to revert.
+- `--comment` posts the findings on a GitHub pull request as inline comments, or on a GitLab merge request as one note.
+- An effort level before the target (`low` through `max`) trades coverage for confidence. At `low` the review reports only the findings it is most confident in.
+
+Treat the output as a list of leads, not a verdict. It does not replace the diff reading above; it is a second pass over the same files. The review follows your `CLAUDE.md`, so a rule like the payments project's integer-cents requirement is something it can check against.
+
+### Cloud review with ultrareview (research preview)
+
+`/code-review ultra` (aliased as `/ultrareview` where available to your account) runs a fleet of reviewer agents in a cloud sandbox and reports findings that were independently reproduced. The docs label it a research preview, so its pricing and availability can change. It needs a claude.ai login, shows a cost confirmation before launching, and is unavailable on Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry, and organizations with Zero Data Retention or the HIPAA configuration, where `/code-review ultra` falls back to a local review ([ultrareview docs](https://code.claude.com/docs/en/ultrareview), checked 2026-10-25). In scripts, use `claude ultrareview` (optionally with a PR number); it blocks until the review finishes and prints the findings. `claude -p '/code-review ultra'` launches the review and exits without waiting, so it does not return findings.
+
+For reviews on every pull request without anyone typing a command, the docs describe a separate managed [Code Review](https://code.claude.com/docs/en/code-review) service that an organization Owner turns on.
+
 ## Decide whether there is a commit to make
 
 The course payments project's instructions require passing tests before a commit. Its shipped baseline is six passing tests, so any full-suite failure after this change is a regression unless your own recorded baseline says otherwise. Stop and investigate it. Do not expand the health ticket into an unrelated payment repair just to reach a satisfying ending.
