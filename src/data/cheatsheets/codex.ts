@@ -61,11 +61,15 @@ export const codexCheatsheet: Cheatsheet = {
         { cmd: 'codex --add-dir <dir>', desc: 'Add another writable directory alongside the primary workspace.', conf: 'firsthand' },
         { cmd: 'codex -m <model>', desc: 'Choose the model for the session.', note: 'Long form: `--model`.', conf: 'firsthand' },
         { cmd: 'codex --worktree', desc: 'Run the session in a new managed Git worktree.', note: 'Also works with `codex exec` and `codex fork`.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
-        { cmd: 'codex -i screenshot.png "fix the layout"', desc: 'Attach one or more images to the initial prompt.', note: 'Repeat `-i`/`--image` for multiple files.', conf: 'firsthand' },
+        { cmd: 'codex "fix the layout" -i screenshot.png', desc: 'Attach one or more images to the initial prompt.', note: 'Repeat `-i`/`--image` for multiple files.', conf: 'firsthand' },
         { cmd: '/model', desc: 'Choose or change the model and reasoning effort in the TUI.', conf: 'documented', doc: `${DOCS}/cli` },
         { cmd: '/status', desc: 'Show current session configuration.', conf: 'documented', doc: `${DOCS}/cli` },
         { cmd: '/review', desc: 'Review changes and find issues from inside a session.', conf: 'documented', doc: `${DOCS}/cli` },
         { cmd: '/permissions', desc: 'Open the permissions picker and change the active permissions profile.', conf: 'documented', doc: `${DOCS}/sandboxing` },
+        { cmd: '/goal', desc: 'Set or view the goal for a long-running task.', note: 'The `goals` flag is stable in 0.163.0.', conf: 'documented', doc: `https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/tui/src/slash_command.rs` },
+        { cmd: '/memories', desc: 'Choose whether this chat uses and generates memories.', note: 'Needs `features.memories = true`; local memories are off by default.', conf: 'documented', doc: `${DOCS}/customization/memories` },
+        { cmd: '/export', desc: 'Export the whole TUI conversation to Markdown, to the clipboard or a new file.', note: 'From the 0.148.0 release notes.', conf: 'documented', doc: 'https://github.com/openai/codex/releases/tag/rust-v0.148.0' },
+        { cmd: '/import', desc: 'Import settings, MCP servers, plugins, sessions and commands from Claude Code or Cursor.', note: 'From the 0.140.0 and 0.145.0 release notes.', conf: 'documented', doc: 'https://github.com/openai/codex/releases/tag/rust-v0.145.0' },
       ],
     },
     {
@@ -99,6 +103,7 @@ export const codexCheatsheet: Cheatsheet = {
         { cmd: 'codex exec -o result.txt "summarize failures"', desc: 'Write the final agent message to a file.', note: 'Long form: `--output-last-message`.', conf: 'firsthand', doc: `${DOCS}/non-interactive-mode` },
         { cmd: 'codex exec --output-schema schema.json -o result.json "extract metadata"', desc: 'Request a final response matching a JSON Schema and save it.', conf: 'firsthand', doc: `${DOCS}/non-interactive-mode` },
         { cmd: 'codex review', desc: 'Run a non-interactive review of uncommitted changes, a branch diff, or a commit.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
+        { cmd: 'codex review --uncommitted | --base <BRANCH> | --commit <SHA> | "<instructions>"', desc: 'Pick one scope, or pass custom review instructions instead (`-` reads them from stdin).', conf: 'firsthand' },
       ],
     },
     {
@@ -113,6 +118,7 @@ export const codexCheatsheet: Cheatsheet = {
         { cmd: 'CODEX_HOME=<dir> codex', desc: 'Use an alternate Codex home for isolated config, auth, and session state.', conf: 'documented', doc: `${DOCS}/developer-commands` },
         { cmd: 'AGENTS.md', desc: 'Project or parent-directory instructions Codex loads as standing guidance.', conf: 'documented', doc: `${DOCS}/subagents` },
         { cmd: 'codex features', desc: 'Inspect feature flags and persistently enable or disable them in config.toml.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
+        { cmd: 'codex execpolicy check --pretty --rules <file> -- <command>', desc: 'Test which execpolicy decision (allow, prompt, forbidden) a command gets from a `.rules` file.', note: 'Rules live in `~/.codex/rules/*.rules`; the docs call them experimental.', conf: 'firsthand', doc: 'https://learn.chatgpt.com/docs/agent-configuration/rules' },
       ],
     },
     {
@@ -144,6 +150,7 @@ export const codexCheatsheet: Cheatsheet = {
         { cmd: '~/.codex/agents/<name>.toml', desc: 'Define a personal custom agent.', note: 'Project-scoped agents live in `.codex/agents/`.', conf: 'documented', doc: `${DOCS}/subagents` },
         { cmd: '[agents]', desc: 'Configure multi-agent enablement, concurrency, default model, and reasoning effort.', conf: 'documented', doc: `${DOCS}/subagents` },
         { cmd: 'codex plugin', desc: 'Add, list, and remove Codex plugins; `codex plugin marketplace` manages marketplace sources.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
+        { cmd: 'codex plugin add <plugin>@<marketplace>', desc: 'Install a plugin from a configured or remote marketplace.', conf: 'firsthand' },
       ],
     },
     {
@@ -153,8 +160,9 @@ export const codexCheatsheet: Cheatsheet = {
       entries: [
         { cmd: 'codex completion zsh', desc: 'Generate shell completion scripts.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
         { cmd: 'codex apply <TASK_ID>', desc: 'Apply a diff generated by a Codex cloud task to the local working tree.', note: 'Alias: `codex a <TASK_ID>`.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
+        { cmd: 'codex cloud exec --env <ENV_ID> "<task>"', desc: 'Submit a Codex Cloud task without the TUI; `codex cloud list`, `status`, `diff` and `apply` follow it up.', note: 'Marked [EXPERIMENTAL] in `--help`.', conf: 'firsthand' },
         { cmd: 'codex agents', desc: 'Browse all agent sessions on the shared local app-server daemon.', note: '`--no-daemon` runs the CLI without that shared background server.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
-        { cmd: 'codex queue --thread <session> --message "<text>"', desc: 'Queue a message for an existing session.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
+        { cmd: 'codex queue --thread <session> --message "<text>"', desc: 'Queue a message for an existing session, by UUID or exact name.', conf: 'firsthand', doc: `${DOCS}/developer-commands` },
         { cmd: 'codex archive <session>', desc: 'Archive a saved session by ID or name.', conf: 'firsthand' },
         { cmd: 'codex unarchive <session>', desc: 'Restore an archived session.', conf: 'firsthand' },
         { cmd: 'codex delete <session>', desc: 'Permanently delete a saved session.', note: 'Destructive; verify the session identifier first.', conf: 'firsthand' },

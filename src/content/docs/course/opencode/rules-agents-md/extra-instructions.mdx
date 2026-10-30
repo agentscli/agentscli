@@ -3,6 +3,8 @@ title: Point feedmill's AGENTS.md at more instruction files
 description: "Your conventions are too long to live inline in AGENTS.md, and OpenCode never resolves an @path import. List the extra files in the instructions field instead."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 In `feedmill`, the course's illustrative Go feed aggregator, the `AGENTS.md` started tight - the UTC rule, the rate-limit rule - but it's filling up. Every feed source has its own shape: Atom items take their timestamp from `updated`, JSON Feed items prefer `date_published` and fall back to `date_modified`, and the linkblog fixtures carry their own decoding note. You've written all of that down once, in `docs/feed-formats.md` (assume feedmill has this file; any long conventions doc of your own works the same way), and you don't want to paste it into `AGENTS.md` - it grows with every source you add, and it would bury the two rules that actually need to be read on every turn.
 
 So you do the thing your fingers may already know how to do. You drop a reference into `AGENTS.md`:
@@ -87,4 +89,39 @@ docs/feeds/ first (e.g. docs/feeds/json.md for JSON feeds).
 
 That instruction the agent *can* act on, because it's a directive it understands - "read this file when X" - not an import directive it's expected to expand. It is guidance, not a load: the model usually follows it, but nothing makes it open the file. If a task skips the file and gets the detail wrong, move that file into `instructions`. The difference is the whole lesson: OpenCode won't resolve a path for you, but the model will usually follow an instruction to go read one. So either list the file in `instructions` and have it loaded for you, or write the prose and have the agent fetch it on demand. What you can't rely on is the middle thing - an `@path` that looks like both and is neither: OpenCode never loads it, and it stays text the model may or may not act on.
 
-Your rules now span a clean `AGENTS.md` plus a set of focused docs, all in context on every turn through one config field. Notice what it costs: every one of those files rides along on every turn, whether the turn needs it or not. The next chapter is the exact inverse - a procedure the agent loads *only* when the job calls for it, so a long onboarding routine can be one fetch away without sitting in the window all day. [Next chapter: Skills](/course/opencode/skills/).
+## Context that lives in another directory or repo: `references`
+
+`instructions` loads files from your own project. When the context is a whole other directory or repository, such as the product docs, a shared library, or an SDK the code calls, OpenCode has a separate `references` key that gives the agent named access to it ([references documentation](https://opencode.ai/docs/references/), accessed 2026-10-25). Each entry is an alias, and it points at either a local `path` or a Git `repository`:
+
+```jsonc title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "references": {
+    "docs": {
+      "path": "../product-docs",
+      "description": "Use for product behavior and documentation conventions"
+    },
+    "effect": {
+      "repository": "Effect-TS/effect",
+      "branch": "main",
+      "description": "Use for Effect API details"
+    }
+  }
+}
+```
+
+How it behaves, per the docs:
+
+- A `path` can be relative to the config file, absolute, or home-relative (`~/`). A `repository` takes a Git URL, a host/path form, or GitHub `owner/repo`; `branch` is optional and defaults to the repository's default branch. Git references refresh asynchronously, so a newly added one may take a moment to clone.
+- `description` is what tells agents when to use a reference. A reference without one stays available through autocomplete but is not advertised to agents, so write a short, specific line.
+- In the TUI, type `@docs` to attach the reference root or `@docs/` to search files inside it. `hidden: true` removes the alias from `@` autocomplete only; a hidden reference that has a description is still described to agents.
+- Reference directories are allowed through the external-directory permission boundary, but normal tool permissions still apply, so a read-only agent does not gain edit access.
+- Aliases cannot be empty or contain `/`, whitespace, backticks, or commas.
+
+The choice between the two keys is cost. A file in `instructions` is loaded on every turn. A reference costs its resolved path and description on every turn and the files themselves only when the agent opens them, which fits large or rarely needed material.
+
+<Aside type="caution" title="In OpenCode 2">
+References exist in v2 with the same `path`, `repository`, `branch` and `description` fields. The v2 page adds details to plan around: a string shorthand counts as a local path only if it starts with `.`, `/` or `~`, so write `"./docs"` because a bare `"docs"` is read as a Git repository, and local `file:` repositories are not supported. See the [v2 references documentation](https://opencode.ai/v2/docs/references/), as of October 2026.
+</Aside>
+
+Your instruction files now span a clean `AGENTS.md` plus a set of focused docs, all in context on every turn through one config field (references, above, are the on-demand exception). Notice what it costs: every one of those files rides along on every turn, whether the turn needs it or not. The next chapter is the exact inverse - a procedure the agent loads *only* when the job calls for it, so a long onboarding routine can be one fetch away without sitting in the window all day. [Next chapter: Skills](/course/opencode/skills/).

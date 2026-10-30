@@ -1,0 +1,73 @@
+---
+title: Write execpolicy rules to allow, prompt for, or forbid specific commands
+description: "A .rules file lets you decide per command prefix whether Codex runs it outside the sandbox, asks first, or is blocked - with prefix_rule and codex execpolicy check."
+---
+
+The sandbox and approval dials from [the two-axis lesson](/course/codex/approvals-sandbox/two-axis/) are coarse. You might want `gh pr view` to run without a prompt, `gh pr merge` to always ask, and `git push --force` to be blocked, whatever the mode. **Execpolicy rules** are the per-command layer for that: small files that match a command's argument list and attach a decision.
+
+This is not the `AGENTS.md` "rules" chapter. `AGENTS.md` is guidance the model reads; a `.rules` file is configuration Codex enforces, so it belongs with control. The OpenAI docs label rules **experimental and subject to change** (https://learn.chatgpt.com/docs/agent-configuration/rules, read 2026-10-25), so re-check the syntax after upgrades. This lesson is docs-sourced and the check command was confirmed to exist in `codex execpolicy --help` on codex-cli 0.163.0; no rule file was run against a live session.
+
+## Where rule files live
+
+- Put a `.rules` file in a `rules/` folder next to an active config layer, for example `~/.codex/rules/default.rules`.
+- Codex scans `rules/` under every active config layer at startup, including the user layer.
+- Project rules in `<repo>/.codex/rules/` load only when that project's `.codex/` layer is trusted.
+- Restart Codex after adding a rule.
+- Approving a command into the TUI allow list writes to `~/.codex/rules/default.rules`, so that file can already exist on your machine.
+
+## The shape of a rule
+
+```python
+prefix_rule(
+    pattern = ["gh", "pr", "view"],
+    decision = "prompt",
+    justification = "Viewing PRs is allowed with approval",
+    match = [
+        "gh pr view 7888",
+        "gh pr view --repo openai/codex",
+    ],
+    not_match = [
+        "gh pr --repo openai/codex view 7888",
+    ],
+)
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `pattern` | Yes | Non-empty list that defines the command prefix. Each element is a literal string, or a list of alternatives such as `["view", "list"]` |
+| `decision` | No, defaults to `"allow"` | `allow`, `prompt`, or `forbidden` |
+| `justification` | No | Human-readable reason Codex may show in an approval prompt or a rejection |
+| `match` | No | Example commands that must match; checked when the rules load |
+| `not_match` | No | Example commands that must not match; checked when the rules load |
+
+The pattern is compared to the command's argument list the way `execvp(3)` receives it, and it must be an exact **prefix**. That is why `gh pr --repo openai/codex view 7888` is a `not_match` above: the flag sits between `pr` and `view`, so the prefix `gh pr view` no longer applies. The `match` and `not_match` lists double as inline tests, and a typo in your pattern surfaces when the file loads.
+
+## What the three decisions do
+
+| Decision | Effect |
+| --- | --- |
+| `allow` | Runs the command outside the sandbox without prompting |
+| `prompt` | Asks before each matching invocation |
+| `forbidden` | Blocks the request without prompting |
+
+Read `allow` carefully: it lifts the sandbox for that command. It is a bigger grant than an approval, so keep allow patterns narrow. When several rules match one command, the most restrictive decision wins, in the order `forbidden`, then `prompt`, then `allow`. A broad `allow` therefore cannot override a narrow `forbidden`.
+
+## Shell wrappers
+
+Codex often runs commands as `bash -lc "<script>"`. For linear scripts made of plain words joined by `&&`, `||`, `;` or `|`, the docs say Codex splits the script and evaluates each command separately, and the most restrictive result applies. Scripts that use redirection, substitution, variables, wildcards or control flow are not split, so they are evaluated as one `["bash", "-lc", "<full script>"]` invocation and your command-level rules will not see inside them.
+
+## Test a rule before you rely on it
+
+```bash
+codex execpolicy check --pretty \
+  --rules ~/.codex/rules/default.rules \
+  -- gh pr view 7888 --json title,body,comments
+```
+
+The command prints JSON with the strictest decision and the rules that matched, including their `justification`. Pass `--rules` more than once to combine files. Run it against a command you expect to be forbidden as well as one you expect to be allowed.
+
+## Rules versus the other ways to say no
+
+- A rule decides about one command prefix. The [sandbox](/course/codex/approvals-sandbox/sandbox-modes/) bounds everything else the agent does.
+- An `AGENTS.md` line asking Codex not to force-push is a request. A `forbidden` rule on `["git", "push", "--force"]` is enforcement, within the limits of the wrapper note above. Prefix matching means `git push origin main --force` and `git push -f` slip past that pattern; forbid `["git", "push"]` and allow the safe forms, or use a hook.
+- For team-wide enforcement, see [hooks](/course/codex/extending/hooks-gate/), which can gate on tool events rather than command prefixes.

@@ -1,0 +1,70 @@
+---
+title: Memories - what Codex can carry from one chat into the next
+description: "Turn on Codex's local memories, see where they are stored, control them per chat with /memories, and decide what still belongs in AGENTS.md."
+---
+
+You told Codex on Monday that `budgetcli` keeps money as integer cents and that the test command is `pytest -q`. On Wednesday you open a new chat and it asks again. [`AGENTS.md`](/course/codex/rules/) fixes that for facts you decide to write down. **Memories** are the other route: Codex distils earlier chats into notes and loads them into later ones, so recall does not depend on you remembering to write the fact down.
+
+This lesson is sourced from the OpenAI docs and the installed CLI, not from a captured run. Memories are **off by default**, and the docs page does not give them a maturity label. The local `codex features list` (codex-cli 0.163.0, checked 2026-10-25) shows the `memories` flag as `stable`, default `false`. Treat "stable flag, opt-in" as the verified state and nothing stronger.
+
+## Memories are a recall layer, not a rulebook
+
+The docs say it plainly: keep required team guidance in `AGENTS.md` or checked-in documentation, because memories are a recall layer and not the only source for rules that must always apply. The difference is who controls the content.
+
+| | `AGENTS.md` | Memories |
+| --- | --- | --- |
+| Written by | You, reviewed in a pull request | Codex, generated from earlier chats |
+| Shared with the team | Yes, it is in the repo | No, it is local to your Codex home |
+| Predictable | Loaded the same way every session | Depends on what earlier chats contained |
+| Right for | Conventions that must hold | Preferences and context you would otherwise retype |
+
+A convention you would be unhappy to see missing belongs in `AGENTS.md`. A habit of yours that you are tired of restating can live in memory.
+
+## Turn them on
+
+In `config.toml`:
+
+```toml
+[features]
+memories = true
+```
+
+The desktop app has the equivalent switch under Settings > Personalization (Enable Codex memories). Both are from the memories docs page, https://learn.chatgpt.com/docs/customization/memories, read 2026-10-25.
+
+Generated state lives under your Codex home, which defaults to `~/.codex`, in `~/.codex/memories/`. The docs describe the files as summaries, durable entries, recent inputs and supporting evidence, and treat them as generated state rather than something to hand-edit. Memories also do not update the moment a chat ends: Codex waits until the chat is idle.
+
+## The settings that matter
+
+The docs list these keys under `[memories]`. They give no default values for them, so check your own behaviour before relying on one.
+
+| Key | What it controls |
+| --- | --- |
+| `generate_memories` | Whether new chats can become inputs for memory generation |
+| `use_memories` | Whether existing memories are injected into future sessions |
+| `disable_on_external_context` | When `true`, chats that used MCP tool calls, web search or tool search are excluded from generation |
+| `min_rate_limit_remaining_percent` | Minimum remaining rate-limit percentage needed before a generation pass starts |
+| `extract_model` | Overrides the model that extracts memory from each chat |
+| `consolidation_model` | Overrides the model that consolidates memory globally |
+
+`disable_on_external_context` is the one to think about on a work repo. A chat that pulled in a Jira ticket through MCP or a web page through search has third-party text in it; excluding those chats keeps that text out of your long-term notes. The older name `no_memories_if_mcp_or_web_search` is still accepted as an alias.
+
+## Per-chat control with /memories
+
+Inside an interactive session, `/memories` sets two things for the current chat only: whether this chat uses existing memories, and whether it can generate new ones. Neither choice changes your global settings. Use it when a chat is a disposable experiment you do not want remembered, or when you want to check an answer without remembered context influencing it.
+
+## What the docs say is skipped
+
+- Active or short-lived sessions.
+- Chats that used external context, when `disable_on_external_context` is `true`.
+- A generation pass when the rate-limit threshold is not met.
+
+Secrets are redacted from generated memory fields, and the docs say not to store secrets in memories. The docs page does not list other exclusions, so do not assume anything beyond this.
+
+## Resetting
+
+The desktop app has a Delete Codex memories action that resets the memory store of the selected machine, and on a local machine also clears Computer History when that feature is available. The docs page names no CLI command for it. Because the files are plain generated state under `~/.codex/memories/`, inspect them before you decide whether a reset is worth it.
+
+## Related
+
+- [Resume](/course/codex/sessions-context/resume/) restores one specific conversation; memory carries distilled facts across all of them.
+- The foundations [Rules chapter](/foundations/rules/) covers why agent-managed memory is a different primitive from a human-written rules file.

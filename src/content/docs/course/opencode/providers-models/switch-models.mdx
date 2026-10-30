@@ -3,6 +3,8 @@ title: Switch models without leaving the session
 description: "A cheap model is flailing on your timezone logic. Open /models and jump to a stronger reasoner for that one hard stretch - same thread, same context."
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 Say you're working `feedmill`'s suspected date bug - `feedmill` is the course's illustrative Go feed aggregator, and one feed type parses its published dates wrong - and the session started on a cheap, fast model. For the easy parts that was the right call: it read the parsers, mapped the dedupe path, and proposed sane edits without burning much. Then you hit the part of `feedmill` that always bites: timezone normalization. Feeds publish timestamps in a dozen shapes - `Z`, `+05:30`, naive local, an Atom feed that lies about its offset - and the cheap model is on its third wrong proposal, each one fixing one source and quietly breaking another. This isn't a prompting problem. It's a *reasoning* problem, and the wrong model is on it.
 
 The move is not to quit, re-launch with a bigger model, and re-explain everything. It's to swap the model under the live session and keep going.
@@ -65,6 +67,31 @@ A stronger base model is one lever; how hard it *thinks* is another. For reasoni
 The variants are provider-shaped, so what `ctrl+t` cycles through depends on who you're talking to. As of October 2026 the [models documentation](https://opencode.ai/docs/models/) lists the built-in ones: Anthropic models toggle between `high` and `max`; OpenAI reasoning models step across a wider band - `none`, `minimal`, `low`, `medium`, `high`, up to `xhigh`; Google models offer `low` and `high`. Which lever first: when the current model supports variants and is nearly right, bump its variant and keep the model; when it repeats the same wrong reasoning, switch models. The cheap model here had failed three times, so the switch came first, and the variant bump goes on the strong model. For this timezone resolver, a notch up buys the model room to actually hold every feed shape in mind at once instead of patching them one at a time.
 
 Spend it deliberately. The reason you started cheap and only switched here is that the expensive combination - strong model, high variant - is exactly that, expensive, and most of `feedmill`'s work doesn't need it. Reading parsers, wiring a new source, writing a test: a cheap model on a low variant clears all of it. Reserve the heavy reasoner for the stretch that defeated the cheap one, then switch back down.
+
+You can also define your own variants. Under the model in `provider.<id>.models`, a `variants` object adds a named variant with its own options, or overrides a built-in one by reusing its name, and `"disabled": true` turns one off ([models documentation](https://opencode.ai/docs/models/), accessed 2026-10-25):
+
+```jsonc title="opencode.json"
+{
+  "provider": {
+    "openai": {
+      "models": {
+        "gpt-6.1-sol": {
+          "variants": {
+            "thinking": { "reasoningEffort": "high", "textVerbosity": "low" },
+            "fast": { "disabled": true }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+In a script, `opencode run --variant <name>` selects a variant for one run.
+
+<Aside type="caution" title="In OpenCode 2">
+v2 `run` has no `--variant` flag; select a variant with a suffix on the model (`opencode run --model openai/gpt-6.1-sol#high`). The v2-native form for custom variants is a `variants` array of `{ id, settings }` entries under `providers.<id>.models.<model>`. An unknown variant name is a model-resolution error. See the [v2 models documentation](https://opencode.ai/v2/docs/models/), as of October 2026.
+</Aside>
 
 ## Drop back when the hard part is done
 

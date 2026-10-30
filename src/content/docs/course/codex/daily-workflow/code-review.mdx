@@ -1,0 +1,47 @@
+---
+title: Review a diff with /review, codex review, and @codex review
+description: "Ask Codex for a code review before you commit: /review presets in the TUI, codex review for scripts, and where GitHub pull request reviews fit."
+---
+
+An agent that wrote a change is a poor judge of it in the same chat: it already believes its own plan. A **review** is a separate pass where Codex reads a diff with no job except finding problems. Codex has three entry points, and they differ in where they run and what they can touch.
+
+This lesson is sourced from the OpenAI code review page (https://learn.chatgpt.com/docs/code-review, read 2026-10-25) and local `codex review --help` on codex-cli 0.163.0. No review was run for it.
+
+## /review in the terminal
+
+Type `/review` in an interactive session to open the review presets. The docs list four scopes:
+
+- Review against a base branch
+- Review uncommitted changes
+- Review a commit
+- Custom review instructions
+
+Codex starts a dedicated reviewer that reads the selected diff, and the docs say it does not change your working tree. By default the result appears in the current chat. The `review_model` key in `config.toml` sets a different model for reviews, which is the lever for "use a stronger model only for review" without changing your working model.
+
+Reviewing against a base branch is the pre-pull-request check: it covers everything on your branch, not only what you have not yet committed. Reviewing uncommitted changes is the pre-commit check.
+
+## codex review for scripts and hooks
+
+The docs page documents only `/review`. The installed CLI also has a non-interactive command (`codex review --help`, verified 2026-10-25):
+
+```bash
+codex review --uncommitted                 # staged, unstaged and untracked changes
+codex review --base main                   # changes against a base branch
+codex review --commit <SHA>                # the changes a commit introduced
+codex review "check money handling uses integer cents"   # custom instructions, no scope flag
+echo "focus on error paths" | codex review --base main -
+```
+
+A prompt argument gives custom review instructions and is an alternative to `--uncommitted`, `--base` and `--commit`, not an addition to them (the CLI rejects the combination). `-` reads the instructions from stdin. `--title` supplies a commit title to display in the review summary. `codex review` runs without the TUI, so it fits a pre-push script. For CI, use `codex exec review`, which takes the same scope flags plus the reproducibility flags from [reproducible runs](/course/codex/automation/reproducible/) (`--ignore-user-config`, `--ignore-rules`); checked against `codex exec review --help` on 0.163.0.
+
+## Pull request reviews on GitHub
+
+The same docs page describes reviews triggered by writing `@codex review` on a pull request. With the ChatGPT Codex connector installed, the required repository permissions, and automatic reviews enabled, Codex can also review a GitHub pull request before you open it, with comments appearing on GitHub. The page says cloud review does not require you to create a cloud environment. GitLab merge request support is described as preview. Setup is in the GitHub integration guide, which this lesson did not fetch, so follow it rather than this summary.
+
+## Making reviews match your standards
+
+The code review page says review criteria come from review instructions set in the product settings, and from skills and connected sources that hold your team's review guidelines. It does not mention `AGENTS.md` for reviews. If you want your conventions applied, say so explicitly in the custom instructions or a skill, and test that with a diff where you know the answer.
+
+## A reviewer is a second opinion, not a gate
+
+A review finds what it was shown. It does not run your test suite unless the instructions ask for it, and it can miss behaviour that no diff line reveals. Treat findings as leads to verify with tests, the way you would a colleague's comments. For something that must be enforced, use a [hook](/course/codex/extending/hooks-gate/) or CI check, not a review.

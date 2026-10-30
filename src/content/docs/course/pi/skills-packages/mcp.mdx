@@ -1,0 +1,47 @@
+---
+title: MCP servers in Pi - built in, off the schema budget
+description: "Pi has MCP support built in since 0.99. Where servers are configured, how exposure keeps their tools off the per-turn context bill, and how this squares with Pi's 'no MCP' reputation."
+---
+
+:::note[About this lesson]
+Docs-sourced concept lesson, not a captured run. Sources: [Pi's MCP docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/mcp.md) and local `pi mcp --help` (Pi 1.4.0), read 2026-10-25.
+:::
+
+For a long time the honest line about Pi was "no MCP; build an extension or call a CLI." That changed with Pi 0.99.0 (late September 2026): Pi now connects to MCP servers over stdio or streamable HTTP and exposes their tools and resources. The legacy SSE transport is not supported. The philosophy did not flip, though. The defaults, though, are built around context cost: MCP tools are not declared to the model unless you ask for it, so they stay off the context you have spent this course measuring.
+
+## Add a server
+
+```bash
+pi mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem .
+pi mcp add docs --url https://example.com/mcp --bearer-token-env-var DOCS_TOKEN
+pi mcp list
+```
+
+`pi mcp add|remove|list|login|logout` work from a shell without starting a session. `pi mcp list` connects to every enabled server, prints state, tools and errors, and exits 1 on a bad entry or a disconnected server. Inside a session, `/mcp` inspects connections, signs in, reconnects, changes exposure and enables or disables servers; run `/reload` after editing the files outside the session.
+
+Servers live in `~/.pi/agent/mcp.json` (user) and `.pi/mcp.json` (project; read only after project trust is granted, `-l` on `add`/`remove` targets it). A project entry replaces a user entry of the same name, and a project entry with no `command`, `url` or `type` overrides only `enabled`, `exposure` and `toolExposure`. The format matches other clients' `mcpServers` object; the docs include conversion notes for Claude Code, Cursor, VS Code, Codex and OpenCode. Keep credentials in the user file.
+
+## OAuth
+
+Remote servers that use OAuth need no credentials in the file. When the server rejects an unauthenticated connection, `/mcp` shows it needs sign-in; run `pi mcp login <server>` and Pi opens the authorization page. Tokens are stored in `~/.pi/agent/mcp-auth.json`. The `oauth` block covers servers that do not support dynamic registration (`clientId`, `clientSecret`, `callbackPort`), ones that only accept known client names (`clientName`), Client ID Metadata Document registration (`clientRegistration: "cimd"`), and servers advertising the wrong authorization server (`authServerMetadataUrl`).
+
+## Exposure is the point
+
+Each server tool is registered as `mcp__<server>__<tool>`. The server's `exposure` decides how the model reaches it:
+
+| Exposure | Behavior |
+|---|---|
+| `codemode` (default) | Callable from [codemode](/course/pi/the-core/codemode/) scripts; not declared to the model. |
+| `deferred` | Not declared until `tool_search` loads a match for the next model call. |
+| `direct` | Declared like a built-in tool and also callable from codemode. |
+| `hidden` | Registered but unreachable. |
+
+`toolExposure` overrides this per tool with exact names or `*` patterns, so a server can be mostly `hidden` with a few `direct` tools. Servers with `codemode` or `deferred` tools get a short entry in the system prompt's `mcp_servers` section (from the `description` field, or the server's own instructions once connected). Connecting a `codemode` server activates `codemode`; a `deferred` server activates `tool_search`. `--no-mcp` disables MCP for one run.
+
+This is the context argument from [the hooks lesson](/course/pi/first-extension/hooks/) applied to MCP: a tool declared to the model costs schema on every turn, so the default is to not declare MCP tools at all and let scripts or search find them. Use `direct` only for a small, frequently used set.
+
+## Permissions
+
+Every MCP call passes through Pi's tool pipeline, so extension `tool_call` and `tool_result` handlers, including permission gates like the one in [the permissions lesson](/course/pi/rebuild-the-defaults/permissions/), apply to MCP tools. `pi.getAllTools()` reports each server's declared `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`; the docs note these hints are unverified, so treat them as input to a gate, not as proof.
+
+An installed extension that registers `/mcp` (for example `pi-mcp-adapter`) replaces the built-in support for sessions. To turn built-in MCP off without a replacement, disable it in `pi config` or set `"extensions": ["-builtin:mcp"]`.

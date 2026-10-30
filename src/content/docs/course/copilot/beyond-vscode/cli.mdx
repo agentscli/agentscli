@@ -1,16 +1,83 @@
 ---
 title: The terminal surface - Copilot CLI
-description: "A terminal-native way into the same assistant - same account, same rules - for when you're already in a shell. Kept deliberately short."
+description: "The same assistant in a terminal: modes, autopilot with a spending cap, permission levels, context control, sessions, worktrees, plugins, and remote steering. A docs-sourced tour of the 1.0 CLI."
 ---
 
-This is the shortest lesson in the chapter on purpose. There is one more surface to name and then close the book on: the **Copilot CLI**, a terminal-native way to reach the same assistant.
+The Copilot CLI is the terminal-native way into the assistant this course has used so far. The rest of the course is IDE-first and that does not change, but the CLI is no longer a footnote: as of October 2026 it is on a 1.0.x release line (the npm package `@github/copilot` reports 1.0.103) with its own modes, permission levels, session management, plugins and remote control. This lesson is a tour of the parts that matter for daily work.
 
-It is, deliberately, a small part of this course: the course is IDE-first, and nothing about the CLI changes that. But it exists, and it is worth a page so you are not surprised when a colleague mentions it.
+One note on evidence. Everything below is sourced from GitHub's [CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference), the [Autopilot](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/autopilot) and [remote control](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-remote-control) pages, and the [hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference), read on 25 October 2026. This lesson does not show captured terminal output. Run `/help` in your own session to see which commands your installed version has, because the surface changes between releases.
 
-The thing to understand is that it is **the same Copilot**, not a separate tool to learn. Same GitHub account, same Copilot plan, and - the part that matters for everything you built - it reads the **same rules files**: the `AGENTS.md` at the root of your repos applies in the terminal as it does elsewhere (per this course's September 2026 verification; the Copilot docs' [CLI section](https://docs.github.com/en/copilot) covers installing it and adding its custom instructions). No second copy of your conventions to maintain - the CLI inherits that work. The CLI became generally available in early 2026 (per this course's September 2026 verification).
+## Same assistant, same rules
 
-So when would you reach for it? When you are *already in the terminal* and moving would be friction. You are in a shell mid-flow on a git operation or a quick check inside the service, and you want to ask the agent something without switching windows to the editor. That is the niche: terminal-native moments, not a primary workspace. For the careful, multi-file, review-heavy work this course is built around, you still want the editor, where the full review machinery lives.
+It is the same Copilot, not a separate tool. Same GitHub account, same plan, and it reads the same repository instructions you wrote in the [Rules chapter](/course/copilot/rules/): `AGENTS.md` at the repository root applies in the terminal as it does elsewhere. Run `copilot init` (or `/init` inside a session) and the CLI analyzes the repository and initializes custom instructions for it. `/env` lists what the session actually loaded - instructions, MCP servers, skills, agents, hooks, plugins and language servers - which is the fastest way to check that your rules arrived.
 
-That's the whole footnote. Don't overbuild a CLI habit; treat it as the same assistant answering the door when you happen to already be standing in the terminal.
+Install it with `npm install -g @github/copilot` (Node.js 22 or later per the getting-started guide), then run `copilot` in a repository and `/login` or `copilot login` to authenticate.
 
-And that closes the surfaces. You have now seen Copilot as the same assistant across VS Code, JetBrains, and the terminal - one account, one set of conventions, three places to stand. Everything left is putting it together into a working rhythm. [Next chapter: the daily workflow](/course/copilot/daily-workflow/).
+## Three modes on one key
+
+Press `Shift+Tab` to cycle the session between standard, plan and autopilot mode. This maps onto the roles you already know from the [modes chapter](/course/copilot/modes/): standard is the interactive agent loop, plan produces an implementation plan before any code (`/plan [prompt]` does the same from the prompt), and autopilot is the new one.
+
+You can start in a chosen mode from the command line. `copilot --plan` starts in plan mode, and `copilot --plan --mode autopilot` starts in plan mode and moves to autopilot on its own once the plan is ready - without waiting for you to approve it. If you want the review gate, stay in the interactive flow instead: enter plan mode, revise the plan, then choose the option to accept it and continue in autopilot.
+
+## Autopilot: continuation is not permission
+
+In standard mode the agent stops and waits for your next prompt when it has finished a step. In autopilot it keeps going through successive steps until it decides the task is complete, then returns control. Start it with `Shift+Tab`, or with `/autopilot <objective>` (alias `/goal`).
+
+The docs separate three controls that are easy to confuse:
+
+| Control | What it changes |
+| --- | --- |
+| Autopilot mode | Continuation - the agent keeps working without a new prompt |
+| `--allow-all` (alias `--yolo`) | Approvals - tools, paths and URLs run without asking |
+| `--no-ask-user` | Questions - the agent decides rather than asking you |
+
+Turning on autopilot without granting permissions has a practical consequence. When you enter it, the CLI asks whether to enable all permissions or use manual approval. If you choose manual approval, requests that need approval are denied automatically, which can leave the task unfinished. That is the control principle in miniature: the loop only runs unattended as far as the boundary you set lets it.
+
+Because an unattended loop spends money, there are brakes:
+
+- `/goal Refactor the auth module --max-ai-credits 50` caps AI Credits for that objective. The flag form `--max-ai-credits=CREDITS` sets a soft limit per response that resets with each user message, and `/limits` adjusts it mid-session.
+- `--max-autopilot-continues=COUNT` caps the number of automatic continuation messages.
+- Press `Esc` twice to interrupt a running turn, or `Shift+Tab` to leave autopilot.
+
+By default autopilot is sticky: after a task completes, the next prompt also runs in autopilot. Set `stayInAutopilot` to `false` (`/settings stayInAutopilot false`) to return to standard mode after each task. As with every unattended run, read the diff (`/diff`) and run the tests before you commit; the cost and risk of an unreviewed autonomous run belong in the [permissions chapter](/course/copilot/permissions/) alongside the VS Code levels.
+
+## Permission levels in the terminal
+
+The CLI has its own version of the dial from [the levels lesson](/course/copilot/permissions/levels/). `/permissions` switches between `default`, `assisted` and `allow-all`, and `show` prints the current one. `/allow-all` and `/yolo` are aliases for allow-all, and `/permissions reset` clears the approvals the session has accumulated so it re-prompts. In assisted mode every request still prompts, but an LLM safety recommendation is attached so the CLI can auto-approve requests the model judges acceptable.
+
+For finer control than a mode, use rules on the command line. `--allow-tool` pre-approves matching tool calls and `--deny-tool` blocks them; denial wins over allow, so `--allow-tool "shell(git:*)" --deny-tool "shell(git push)"` allows git except pushes. Organizations can disable the bypass modes: with `permissions.disableBypassPermissionsMode` set to `"disable"`, every `--allow-all` style flag and `/allow-all` is suppressed, and `"allow-auto-only"` blocks full allow-all but permits `/permissions assisted`.
+
+Pair a loose mode with a sandbox where you can. `/sandbox enable session` turns on OS-level restrictions on filesystem and network access for the current session (bare `/sandbox` opens its settings dialog, and `/sandbox enable` also changes your saved default; `--sandbox` and `--no-sandbox` do the same for one run). Inside an autopilot run, a sandbox lets the agent finish anything it can do within the walls, and denies the steps that need to escape them. An enterprise policy can force the sandbox on even when you pass `--no-sandbox`.
+
+## Controlling context
+
+A long session fills its context window. Two commands matter here: `/context` shows token usage and a visualization of the window, and `/compact [focus]` summarizes the history to free space, with optional focus instructions such as `/compact focus on the auth module`. `/ask <question>` (alias `/btw`) asks a side question that is answered without being added to the conversation history, so it does not consume context for later turns.
+
+## Sessions you can come back to
+
+- `copilot --continue` resumes the most recent session in the current directory; `copilot --resume` opens a picker, and `-n NAME` names a session so you can find it by name. Inside a session, `/resume` switches sessions.
+- `/rewind` (alias `/undo`) opens a picker to roll back to an earlier turn, either conversation only or conversation plus the file changes Copilot made, which are tracked per turn so Git is not required.
+- `/tasks` lists running subagents and shell commands; `/fleet` runs parts of a task in parallel through subagents.
+- `/review` runs the code review agent on your changes, `/diff` opens the diff view, and `/pr` manages the pull request for the current branch (`/pr create` follows your repository's pull request template when there is one).
+- For parallel work that should not collide, `copilot -w` (or `--worktree`) starts the session in an isolated Git worktree, and `/new worktree` starts a fresh session in a new worktree while leaving the current one alone. `/fork` branches the current session into a new one.
+
+## Extending it: skills, plugins, MCP, hooks
+
+The extension points match the rest of the course, with terminal-friendly management commands:
+
+- **Skills** - `copilot skill add ./my-skill/SKILL.md` installs one (`--project` scopes it to the repository), with `list`, `enable`, `disable` and `remove` alongside.
+- **Plugins** - `copilot plugin` manages plugins and marketplaces from the shell; inside a session, `/plugin` opens a dashboard and `/plugin marketplace add <source>` registers a marketplace before `/plugin install`. `copilot plugins` (plural) is a legacy alias.
+- **MCP** - `copilot mcp add`, `list` and `get`, and `/mcp` in a session. The same trust questions from [the trust lesson](/course/copilot/extending/trust/) apply.
+- **Hooks** - the CLI loads hook files from `.github/hooks/*.json` and `~/.copilot/hooks/`. The [hooks lesson](/course/copilot/extending/hooks/) covers the events and the deny decision.
+
+## Remote steering and cloud sessions
+
+By default a CLI session can only be steered from the machine it runs on. `/remote on` lets you monitor it and answer permission requests and questions from GitHub.com or GitHub Mobile while the session keeps running on your machine. It works only for interactive sessions, and if your seat comes from an organization the "Store local sessions in the Cloud" policy must be set to "View and control". Slash commands are not available from the remote interface. `/remote off` ends the connection. The older `--remote` flag is not supported for interactive startup.
+
+Where cloud sessions are available on your account, pressing `Ctrl+E` on an empty prompt before your first message opens an environment picker to run the conversation locally or in a cloud environment. The CLI reference says this depends on account availability, and the documentation does not describe a stable flag for it, so check it in your own session rather than scripting around it. `/delegate` hands changes to a remote repository as an AI-generated pull request, which is the same hand-off idea as the [automation chapter](/course/copilot/automation/).
+
+## When to reach for it
+
+Use the CLI when you are already in a terminal, when a task suits a long unattended run with a spending cap, or when you want scripted runs: `copilot -p "..." --allow-tool ...` with `-s` for response-only output and `--output-format json` for JSONL. For careful multi-file work with a full diff view and the review machinery this course is built around, the editor is still the better place to stand. Both surfaces read the same rules, so the choice is about ergonomics, not about maintaining two sets of conventions.
+
+That closes the surfaces: one account, one set of conventions, three places to stand. Everything left is putting it together into a working rhythm. [Next chapter: the daily workflow](/course/copilot/daily-workflow/).

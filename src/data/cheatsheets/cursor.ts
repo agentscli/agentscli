@@ -343,6 +343,27 @@ export const cursorCheatsheet: Cheatsheet = {
           note: "Use `cursor-agent worker --help` for pool, token, labels, and opt-in computer-use options.",
         },
         {
+          cmd: "agent acp",
+          desc: "Run the CLI as an Agent Client Protocol server (JSON-RPC 2.0 over stdio) for editors and custom clients.",
+          conf: "documented",
+          doc: `${CLI}/acp`,
+          note: "Documented as of 2026-10-25; not present in the v2026.10.01 binary checked on 2026-10-23, so it may need a newer CLI.",
+        },
+        {
+          cmd: "/agent-review",
+          desc: "Run a dedicated review of your local changes from the agent input (Quick or Deep depth).",
+          conf: "documented",
+          doc: `${DOCS}/agent/agent-review`,
+          note: "Editor command; reads BUGBOT.md rules. Setting moves to Git & PRs > Pull Requests from Cursor 3.11.",
+        },
+        {
+          cmd: "/remote-control",
+          desc: "Hand a local agent session to the Cursor iOS app so you can keep directing it from your phone.",
+          conf: "documented",
+          doc: `${DOCS}/cloud-agent/mobile`,
+          note: "Agents Window only; needs Cursor 3.9.8 or later. Your computer must stay awake and online.",
+        },
+        {
           cmd: ".cursor/BUGBOT.md",
           desc: "Project-specific instructions automatically included in Bugbot reviews.",
           conf: "documented",

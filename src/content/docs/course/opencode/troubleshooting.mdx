@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: "Six common OpenCode failure modes and the checks that resolve them: LSP startup, MCP servers, /undo, compaction, `ask` rules in headless runs, and the serve port."
+description: "Seven common OpenCode failure modes and the checks that resolve them: LSP startup, MCP servers, /undo, compaction, `ask` rules in headless runs, the serve port, and corporate proxies."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -57,4 +57,14 @@ Permissions and the unattended flag changed shape: rules are an ordered `permiss
 
 <Aside type="caution" title="In OpenCode 2">
 The shared background service means a v2 TUI normally has no port of its own: clients connect to one service per user account. `opencode serve` accepts `--hostname` and `--port`, and `opencode service status` shows the shared service. The `4096` default is documented for v1, so pass `--port` explicitly. See the [CLI documentation](https://opencode.ai/v2/docs/cli/), as of October 2026.
+</Aside>
+
+### Requests fail behind a corporate proxy or TLS-inspecting CA
+
+On a network that forces traffic through a proxy, OpenCode reads the standard proxy variables. Set `HTTPS_PROXY` (or `HTTP_PROXY` if the proxy has no HTTPS form) and always set `NO_PROXY=localhost,127.0.0.1`. The TUI talks to a local HTTP server, and without the bypass its own requests are sent to the proxy and loop. If the proxy needs basic authentication, put the credentials in the URL (`http://username:password@proxy.example.com:8080`) and keep the password in an environment variable or credential store, not in a committed file. The docs state that proxies using NTLM or Kerberos are not handled directly and suggest an LLM gateway that supports your authentication method ([network documentation](https://opencode.ai/docs/network/), accessed 2026-10-25).
+
+When the company inspects TLS with its own certificate authority, point OpenCode at the CA file with `NODE_EXTRA_CA_CERTS=/path/to/ca-cert.pem`; it applies to the proxy connection and to direct API calls ([network documentation](https://opencode.ai/docs/network/)). For a private npm registry (plugins are installed through npm), OpenCode relies on Bun's native `.npmrc` support: run `npm login --registry=<your registry URL>` first so `~/.npmrc` exists, because you must be logged into the private registry before running OpenCode ([enterprise documentation](https://opencode.ai/docs/enterprise/), accessed 2026-10-25).
+
+<Aside type="caution" title="In OpenCode 2">
+The same variables apply, and `NO_PROXY` should also list `::1`. Because v2 clients talk to a background service, exporting the variables in your shell reaches that service only if it starts from that shell. Persist them with `opencode service set env HTTPS_PROXY <url>` (likewise `NO_PROXY` and `NODE_EXTRA_CA_CERTS`), then run `opencode service start`. `opencode serve` and `--standalone` use the environment of their own process. See the [network documentation](https://opencode.ai/v2/docs/network/), as of October 2026.
 </Aside>

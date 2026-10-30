@@ -1,0 +1,55 @@
+---
+title: "Programmatic control: the SDK and ACP"
+description: "Drive the same Cursor agent from your own code with the TypeScript SDK, or from an editor you control with the CLI's Agent Client Protocol mode."
+---
+
+Headless `agent -p` is a command you run. Two other entry points let a program run the agent: the **Cursor SDK** for scripts and services, and **`agent acp`** for editors and custom clients. Facts below are from the Cursor documentation as of October 2026; neither page states a beta or general-availability label.
+
+## The TypeScript SDK
+
+The package is `@cursor/sdk` (the bare `cursor/sdk` name does not exist on npm), installed with `npm install @cursor/sdk`. It needs Node.js 22.13 or later ([TypeScript SDK documentation](https://cursor.com/docs/sdk/typescript)). The docs' minimal example:
+
+```typescript
+import { Agent } from "@cursor/sdk";
+
+const agent = await Agent.create({
+  apiKey: process.env.CURSOR_API_KEY!,
+  model: { id: "composer-2.5" },
+  local: { cwd: process.cwd() },
+});
+
+const run = await agent.send("Summarize what this repository does");
+
+for await (const event of run.stream()) {
+  console.log(event);
+}
+```
+
+The `local` or `cloud` option picks the runtime:
+
+| Runtime | Where it runs | The docs' use case |
+|---|---|---|
+| `local` | The agent loop runs inline in your Node process; files come from disk | Dev scripts and CI checks against a working tree |
+| `cloud` | An isolated Cursor-hosted VM with your repo cloned in | The caller lacks the repo, many parallel agents are needed, or runs must survive the caller disconnecting |
+
+Inference is hosted by Cursor in both modes; "local" refers to where the loop and file access run. A run exposes `stream()`, `wait()`, `cancel()`, and a status of `running`, `finished`, `error`, or `cancelled`. Authentication takes a user API key or a service account API key; the docs state that Team Admin API keys are not yet supported.
+
+For `budgetcli`, the course's illustrative personal-finance API, the SDK suits a script that runs the agent over each changed importer and collects results as typed events, which is awkward to parse from `-p` text output. If you only need one prompt in a pipeline, the headless flags are still simpler. The REST route to the same cloud runs is the Cloud Agents API, which the docs label "in public beta" and warn "may change before general availability"; its v1 surface covers agents, runs (including follow-up and steering), artifacts, usage, environments, and secrets ([API endpoints](https://cursor.com/docs/cloud-agent/api/endpoints)). Its docs say webhooks are "coming soon" in v1 and remain available in the legacy v0 API.
+
+## ACP: the CLI as a protocol server
+
+`agent acp` starts the CLI in Agent Client Protocol mode: JSON-RPC 2.0 over stdio, newline-delimited, with the client writing requests to stdin and the CLI answering on stdout ([ACP documentation](https://cursor.com/docs/cli/acp)). The page frames it as "for advanced integrations"; day-to-day terminal work uses the interactive CLI.
+
+- **Flow.** A client calls `initialize`, then `authenticate` with `methodId: "cursor_login"`, then `session/new` or `session/load`, then `session/prompt`, and handles `session/update` notifications and `session/request_permission` requests. If the client never answers a permission request, tool execution can block.
+- **Modes.** `agent` (full tools), `plan` (read-only planning), and `ask` (read-only Q&A).
+- **Auth before startup.** `agent login`, `--api-key` or `CURSOR_API_KEY`, or `--auth-token` or `CURSOR_AUTH_TOKEN`.
+- **MCP.** Servers in project or user `.cursor/mcp.json` work; team servers configured in the dashboard do not.
+- **Clients.** The page lists JetBrains IDEs (with a linked integration guide), Neovim through avante.nvim (with a lazy.nvim configuration), and Zed, which can spawn `agent acp`; any editor with extension support can implement a client.
+
+The practical case is a team on JetBrains IDEs that wants the Cursor agent without the Cursor editor. The same permission rules apply as in the interactive CLI, so decide the client's answer to `session/request_permission` deliberately rather than auto-allowing it.
+
+## The shape to carry out of the chapter
+
+Editor for deciding, headless for scripting, CI for gating, Cloud Agents, Automations, and Bugbot for the work that should happen without you at all, and the SDK and ACP for the work another program starts. The discipline that makes the last two safe is the one this chapter has been building: the further the agent runs from your keyboard, the less you trust its flags and the more you trust *where* it runs, *who can start it*, and *what it is allowed to touch*. And every flag, format, command, and price here is version-fluid by design - the CLI was called a beta whose safeguards were still evolving, Cloud Agents were renamed once already, and Bugbot's pricing moves - so confirm each against the docs cited inline before it goes into a pipeline you can't watch.
+
+That is the last programmatic entry point in the chapter. [Next: the daily workflow](/course/cursor/daily-workflow/).

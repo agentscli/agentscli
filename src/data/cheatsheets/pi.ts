@@ -340,6 +340,12 @@ export const piCheatsheet: Cheatsheet = {
           note: "Also `pi mcp add|remove|login|logout`; config lives in `~/.pi/agent/mcp.json` or, in trusted projects, `.pi/mcp.json`. `--no-mcp` disables MCP for a run.",
         },
         {
+          cmd: "pi --tools +codemode",
+          desc: "Add the codemode tool for one run: the model writes JavaScript that calls other tools in a sandbox and only the output returns.",
+          conf: "documented",
+          note: "Persist it with `\"defaultTools\": [\"+codemode\"]` in settings.json. `PI_CODEMODE_MAX_WORKERS` raises the default limit of two workers. Docs: codemode.md, cli.md.",
+        },
+        {
           cmd: "pi remove <source>",
           desc: "Remove a package source from settings.",
           conf: "firsthand",

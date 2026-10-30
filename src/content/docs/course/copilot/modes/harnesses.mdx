@@ -1,0 +1,63 @@
+---
+title: Harnesses and the Agents window
+description: "Which agent runtime runs your session decides what survives closing the editor, which tools exist, and which hooks fire. How to pick a harness, run sessions in the Agents window, and compare models on one task."
+---
+
+You have been choosing a role - Ask, Plan or Agent - and a model. There is a third choice underneath both that VS Code now asks you to make, and it decides things the first two cannot: whether the work keeps running after you close the editor window, which tools the agent has, and which hooks and sandbox rules apply. That choice is the **harness**.
+
+This is a docs-sourced concept lesson. The facts come from VS Code's pages on [choosing an agent harness](https://code.visualstudio.com/docs/agents/run/agent-harnesses), the [Agents window](https://code.visualstudio.com/docs/agents/run/agents-window) and [comparing model results](https://code.visualstudio.com/docs/agents/run/compare-models), read on 25 October 2026. Labels such as Preview and Experimental move between releases, so check the pages before relying on one.
+
+## What a harness is
+
+A harness is the runtime that coordinates the language model, the context and the tools for an agent session. The model is the reasoning; the harness decides which tools it can call, how it loads your customizations, and where the session lives. VS Code lists these harnesses, plus the Cloud execution target, in the **Session Target** control:
+
+| Harness | What runs it | What it means for you |
+| --- | --- | --- |
+| Copilot | The Copilot SDK, the runtime shared across GitHub Copilot products, working in VS Code's Agent Host | The session runs independently of the editor window and can continue in the background after you close it, while the Agent Host stays running |
+| Local | VS Code's built-in agent harness, in the extension host | The session is tied to the editor window; closing it stops the work |
+| Claude | The Anthropic Claude Agent SDK, integrated into VS Code | Uses Claude project configuration; disabled when enterprise-managed settings apply |
+| Codex | The OpenAI Codex extension, or an experimental Agent Host integration | Availability depends on which integration you use; also disabled under enterprise-managed settings |
+| Cloud | An available provider's harness on remote infrastructure (an execution target, not one harness) | Works against a GitHub repository and returns a pull request; it does not use your local editor context |
+
+The docs recommend starting with the Copilot harness for day-to-day work. Two clarifications prevent common mistakes. First, "Local" is a harness name, not a statement about where the model runs: the Copilot, Claude and Codex harnesses can also work on your machine, and the model behind any of them can be hosted elsewhere. Second, changing the model or the role does not change the harness - a Claude model selected in a Copilot-harness session still uses the Copilot harness.
+
+## Why the harness matters to the rest of this course
+
+Several earlier lessons carry a caveat that names this layer, and now the caveat has a home:
+
+- [Prompt files](/course/copilot/prompt-files/) run only in the Local harness. Agent Skills are the route for the other harnesses.
+- [Hooks](/course/copilot/extending/hooks/) are configured per harness: the Copilot harness shares its hook format with the Copilot CLI, and the older Local harness has a separate reference.
+- Sandboxing and managed permission rules are enforced by the Copilot harness. The docs warn that Local does not enforce runtime-only sandbox and permission rules, and that enterprise-managed sandbox or permission settings can automatically move a Local session to the Copilot harness so the policy can be enforced.
+- Tool availability and MCP configuration compatibility differ between harnesses, so the docs tell you to check both before moving an existing workflow.
+
+If a customization you rely on is Local-only, you can keep Local available while you migrate. For an unmanaged editor the docs list three experimental settings that make Local visible and stop automatic Copilot preference: `chat.editor.localAgent.enabled`, `chat.defaultToCopilotHarness` and `chat.editor.preferCopilotHarness`. An organization policy can override them.
+
+## Switching harness mid-task
+
+A handoff continues an ongoing task in a different harness, carrying the conversation history and context with it. The tools, permissions and models may change, because the new harness provides different capabilities. From a Local session, open the **Session Target** dropdown in the chat input and choose Copilot, Claude, Codex or Cloud. In a Copilot-harness session, `/delegate` continues a well-scoped task with a cloud agent, which connects to the [automation chapter](/course/copilot/automation/).
+
+## The Agents window
+
+The Agents window is a dedicated VS Code window for orchestrating several sessions instead of collaborating over one file. It opens from the **Open in Agents** button in the title bar, the **Chat: Open Agents window** command, or `code --agents`. Its main areas are a sessions list grouped by workspace, a customizations panel, the chat area, and Changes and Files panels for the active session.
+
+Three things make it different from the Chat view:
+
+- **Sessions span workspaces.** The list shows sessions from all your projects with their status and change statistics, so you can start one with `Alt+Enter` in the background and come back to it.
+- **Code isolation is explicit.** For a workspace session you choose whether the agent edits your current folder or works in a separate Git worktree. A worktree starts from committed state, so uncommitted changes and Git-ignored files such as `.env` are absent unless you copy them in (`git.worktreeIncludeFiles`). The docs state that worktree sessions use Allow all and do not offer manual approval prompts, so the isolation is protecting your working tree, not restricting commands or network access. Folder sessions offer the permission levels from [the levels lesson](/course/copilot/permissions/levels/).
+- **The Changes view scopes the diff.** Its dropdown selects branch changes, uncommitted changes, all changes, or changes from the last agent turn, which helps review one turn at a time.
+
+A Copilot-harness session can be continued between the Chat view and the Agents window, and the Agents window can also run in a browser for remote sessions.
+
+## Compare models on one task (Preview)
+
+Model comparison runs the same task across two to ten attempts - different models, different thinking efforts for the same model, or different harnesses - each in its own worktree, then lets you compare them side by side. It is a Preview feature available only in the Agents window, behind `sessions.chat.compareAgents.enabled`, and it needs a Git repository with a branch, a commit and a configured remote. **Auto** and other routing choices are not available for comparisons. Optionally you choose a **Judge** model that evaluates the attempts, and a **Synthesizer** model that combines the best parts into one implementation; synthesis requires both.
+
+This is the capability-versus-cost trade-off made visible. A comparison costs several runs, so spend it on a decision where the difference matters, for example the shared-library change from this course, and not on routine CRUD.
+
+## Canvases (Preview)
+
+Canvases, in Preview, are interactive visual surfaces the agent and you share, such as a diagram the agent keeps updated, each provided by a canvas extension. They are enabled with `chat.canvases.enabled`, you create one with the `/create-canvas` skill when it is available, and they work only on desktop in local Copilot Agent Host sessions - not in the Claude or Codex harnesses, extension-host Local sessions, remote sessions or the browser client. The docs say they might change before general availability, so treat them as a feature to try rather than a workflow to build on.
+
+## Choosing
+
+Start new work in the Copilot harness unless a Local-only customization blocks you. Use the Chat view when you want to read code alongside the agent, and the Agents window when you are running several tasks and mostly reviewing. Check the harness in the chat title prefix or the session tooltip before you assume a prompt file, hook or sandbox rule applies. The harness decides where the agent runs; the next question is what it should know before it starts. [Next chapter: Rules - teaching Copilot your conventions](/course/copilot/rules/).

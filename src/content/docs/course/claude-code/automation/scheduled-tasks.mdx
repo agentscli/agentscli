@@ -1,0 +1,53 @@
+---
+title: Choose where a scheduled Claude Code job runs
+description: "Cloud scheduled tasks (formerly routines), Desktop scheduled tasks, /loop, and a GitHub Actions cron job all run a prompt without you. Pick by where the job must run and what it must touch."
+---
+
+A nightly or per-pull-request job needs a host: something that is awake when you are not. [The nightly regression lesson](/course/claude-code/automation/loops/) builds that host out of a GitHub Actions workflow and the headless `claude -p` call. Claude Code also ships three scheduling features of its own. This lesson is a concept and reference page sourced from the Claude Code documentation (checked 2026-10-25). It describes what the docs say; it is not a captured run.
+
+## Four hosts for the same prompt
+
+| | Cloud scheduled task | Desktop scheduled task | `/loop` | GitHub Actions cron |
+| :- | :- | :- | :- | :- |
+| Runs on | Anthropic-managed cloud by default | Your machine | Your machine, inside an open session | A GitHub runner |
+| Needs your machine on | No | Yes | Yes | No |
+| Needs an open session | No | No | Yes | No |
+| Sees your local files | No, fresh clone | Yes | Yes | Only what the workflow checks out |
+| Smallest interval | 1 hour | 1 minute when Claude sets it, 1 hour in the forms | 1 minute | 5 minutes; runs can be delayed or dropped under load |
+| Permission prompts | Auto mode by default | Configurable per task | Inherited from the session | Whatever flags you pass to `claude -p` |
+
+The first three columns come from the [scheduling comparison](https://code.claude.com/docs/en/scheduled-tasks#compare-scheduling-options) in the docs. The last column is the setup from the nightly lesson, included so the choice is complete; its interval limit is from [GitHub's `schedule` event docs](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule), which also note scheduled workflows run only on the default branch. The rule of thumb in the docs: use cloud tasks for work that must run without your machine, Desktop tasks when the job needs local files and tools, and `/loop` for quick polling while a session is open.
+
+## Cloud scheduled tasks
+
+A cloud scheduled task is a saved configuration: a prompt, one or more GitHub repositories, and a set of connectors. It runs on Anthropic's infrastructure, so it keeps working with your laptop closed. The docs previously called these routines and still use that name in some places (the `/routines` alias, the `claude.ai/code/routines` address, and an API beta header). **As of October 2026 the docs label scheduled tasks a research preview**, and say behavior, limits, and the API surface may change. They are available on Pro, Max, Team, and Enterprise plans ([scheduled tasks docs](https://code.claude.com/docs/en/routines)).
+
+One task can carry several triggers:
+
+- **Schedule**: hourly, nightly, weekly, or a one-off run at a future time.
+- **API**: an HTTP POST to the task's own endpoint with a bearer token. The endpoint ships under an `experimental-cc-routine-2026-04-01` beta header, so treat its request shapes as unstable.
+- **GitHub**: repository events such as pull requests or releases, with filters.
+
+Create one with `/schedule` in a session, for example `/schedule daily PR review at 9am`, and Claude asks follow-up questions about the schedule, repositories, and prompt before saving. API triggers are added on the web. Adding a GitHub trigger from the CLI needs Claude Code v2.1.225 or later.
+
+Four constraints decide whether a cloud task fits your job:
+
+1. **The prompt must stand alone.** The saved prompt is the whole assignment. The docs state it is not live user input, so it cannot count as approval for actions during the run.
+2. **A fresh clone each run.** Each repository is cloned on every run, from the default branch unless the prompt says otherwise. Claude pushes to a `claude/`-prefixed branch by default. Use branch protection rules on GitHub to bound where a run can push.
+3. **It acts as you.** Tasks belong to your individual claude.ai account. Commits, pull requests, and connector actions carry your identity, and the docs advise removing connectors the task does not need because included connectors can write.
+4. **Auto mode, with limits.** A cloud run starts in auto mode unless it is unavailable, so a classifier decides on actions that would otherwise prompt. Repeated blocks can leave the run waiting for an answer in its session.
+
+Usage limits to plan around: scheduled runs are capped at 100 per hour per account, and Run now plus API fires at 30 per hour per task. Runs also draw down subscription usage like interactive sessions do.
+
+## Desktop scheduled tasks and /loop
+
+Both run on your machine, so both can read local files and use your local MCP configuration. A Desktop task is persistent and does not need an open session. `/loop` lives inside the session: `/loop 5m check the deploy` runs on a fixed interval, `/loop check the deploy` lets Claude choose the interval each time, and bare `/loop` runs a built-in maintenance prompt or your own `loop.md`. Session-scoped scheduled tasks expire after seven days and are restored on `--resume` with documented exceptions ([`/loop` docs](https://code.claude.com/docs/en/scheduled-tasks)). A scheduled fire only runs skills that Claude is allowed to invoke itself, so a skill with `disable-model-invocation: true` arrives as plain text.
+
+## Choosing
+
+- The job must run when nobody's machine is on, and it works from a repository: a cloud scheduled task, accepting the preview label, or a GitHub Actions cron job if you want the schedule, secrets, and audit trail to stay in infrastructure your team already operates.
+- The job needs files or tools that exist only on your computer: a Desktop scheduled task.
+- You are babysitting something for an hour: `/loop`.
+- You need the unattended-run guardrails from the nightly lesson (fail-closed permissions, a turn cap, a read-mostly posture, a loud result): any host still needs them. Cloud tasks change who pays the permission cost, not whether the cost exists.
+
+For keeping one live session working until a condition holds, rather than scheduling new runs, see `/goal` in [the nightly lesson](/course/claude-code/automation/loops/#keep-one-session-working-with-goal).

@@ -547,6 +547,20 @@ export const opencodeCheatsheet: Cheatsheet = {
           doc: `${OC}/skills`,
         },
         {
+          cmd: '"formatter": true',
+          desc: "Run the built-in formatters after the agent writes or edits a file.",
+          note: "Off by default. Use an object to override (`command` with a `$FILE` placeholder, `extensions`, `environment`, `disabled`) or add a formatter; `false` disables all.",
+          conf: "documented",
+          doc: `${OC}/formatters`,
+        },
+        {
+          cmd: '"references": { "docs": { "path": "../product-docs", "description": "..." } }',
+          desc: "Give the agent named access to another directory or Git repository.",
+          note: "Use `repository` and optional `branch` for Git. Attach with `@docs` in the TUI; `description` controls whether agents are told about it. OpenCode 2: write local shorthand paths as `./docs`.",
+          conf: "documented",
+          doc: `${OC}/references`,
+        },
+        {
           cmd: "opencode --pure",
           desc: "Run without external plugins.",
           conf: "firsthand",
@@ -587,6 +601,27 @@ export const opencodeCheatsheet: Cheatsheet = {
           conf: "firsthand",
           doc: `${OC}/cli`,
           note: "OpenCode 2: use `opencode run --server <url>` (or `--standalone` for a private server).",
+        },
+        {
+          cmd: 'opencode run --title "<name>" --thinking "<prompt>"',
+          desc: "Name the session and show the model's thinking blocks.",
+          note: "OpenCode 2: `--title` and `--thinking` exist on `run`.",
+          conf: "firsthand",
+          doc: `${OC}/cli`,
+        },
+        {
+          cmd: 'opencode run --dir <path> --port <n> "<prompt>"',
+          desc: "Run in another directory (a path on the server when attaching) and fix the local server's port.",
+          note: "Also `--command <name>` to run a custom command and `-i, --interactive` for a split-footer interactive mode. OpenCode 2: `run` has none of `--dir`, `--port`, `--command` or `--interactive`.",
+          conf: "firsthand",
+          doc: `${OC}/cli`,
+        },
+        {
+          cmd: "opencode --mini",
+          desc: "Start the minimal interactive interface instead of the full TUI.",
+          note: "`--no-replay` skips history replay on resume and after resize; `--replay-limit <n>` shows only the newest N messages. OpenCode 2: use the `opencode mini` subcommand.",
+          conf: "firsthand",
+          doc: `${OC}/cli`,
         },
         {
           cmd: "opencode serve --port 4096",

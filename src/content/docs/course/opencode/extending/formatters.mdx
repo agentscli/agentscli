@@ -1,0 +1,67 @@
+---
+title: Format after every edit
+description: "OpenCode can run a language formatter on each file the agent writes or edits. It is off by default, takes one config field, and replaces the formatting hook you would otherwise script."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Agents write code that is correct and styled slightly wrong: a missing import grouping, a line `gofmt` would have wrapped, a Markdown table the repo's formatter would realign. None of it breaks the build, all of it lands in your diff, and a reviewer ends up commenting on whitespace. The usual fix is a hook that runs the formatter after each edit. OpenCode already ships that behavior as a config field, so the hook is not needed for the common case.
+
+This page is a reference-style lesson sourced from the [formatters documentation](https://opencode.ai/docs/formatters/) (accessed 2026-10-25), not a captured run.
+
+## It is off until you turn it on
+
+When a file is written or edited and formatters are enabled, OpenCode checks the file's extension against the enabled formatters, runs the matching formatter command, and applies the result in the background. If `formatter` is omitted from the config, all formatters are disabled. To enable every built-in:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "formatter": true
+}
+```
+
+For `feedmill`, the course's illustrative Go feed aggregator, that is enough: `gofmt` is a built-in for `.go` files and runs when the `gofmt` command is available on the machine. Each built-in has its own requirement. `prettier` runs only when `prettier` is in the project's `package.json`, `biome` needs a `biome.json(c)` file, `ruff` needs the `ruff` command with config, `pint` needs `laravel/pint` in `composer.json`, and `clang-format` needs a `.clang-format` file. The docs list about two dozen built-ins, from `gofmt`, `rustfmt` and `shfmt` to `terraform`, `ktlint`, `ocamlformat` and `zig`; check the table in the documentation for the one you use, because the list grows between releases.
+
+## Override one, add one, disable one
+
+Use the object form when `true` is too coarse. An empty object keeps the built-ins enabled, and each entry you add changes one formatter. An entry accepts four properties:
+
+| Property | Type | Meaning |
+|---|---|---|
+| `disabled` | boolean | Turns that formatter off when `true` |
+| `command` | string array | The command to run. Required for a custom formatter, optional for a built-in |
+| `environment` | object | Environment variables set while the formatter runs |
+| `extensions` | string array | File extensions the formatter handles |
+
+In `command`, the placeholder `$FILE` is replaced with the path of the file being formatted. This example keeps the built-ins, runs Prettier through `npx`, and adds a custom Markdown formatter:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "formatter": {
+    "prettier": {
+      "command": ["npx", "prettier", "--write", "$FILE"],
+      "environment": { "NODE_ENV": "development" },
+      "extensions": [".js", ".ts", ".jsx", ".tsx"]
+    },
+    "custom-markdown-formatter": {
+      "command": ["deno", "fmt", "$FILE"],
+      "extensions": [".md"]
+    }
+  }
+}
+```
+
+To switch off a single built-in, set `"disabled": true` on its entry. To switch everything off, even when a higher-level config enabled formatters, set `"formatter": false`.
+
+## Formatter or hook
+
+The [plugin hooks lesson](/course/opencode/extending/plugins-hooks/) runs `gofmt` from a `file.edited` event. That works, and it is the right tool when the step is more than formatting (running `go vet`, writing a log, calling another service). If formatting is all you need, the config field is less to maintain: no plugin file, no event handler, and the same behavior for every agent. A pairing that works is the built-in formatter for style and the hook for checks that must report back to the agent.
+
+The formatter does not replace your project's own check. Run the same formatter in CI so a file changed outside the agent, by hand or by a shell command, is still caught.
+
+<Aside type="caution" title="In OpenCode 2">
+The `formatter` field works the same way in v2. The v2 page also documents that an empty object keeps inherited formatter settings while `true` resets them to the built-ins, that `$FILE` is the file's absolute path, and that `latexindent` is a built-in. See the [v2 formatters documentation](https://opencode.ai/v2/docs/formatters/), as of October 2026.
+</Aside>
+
+Formatters keep style consistent without the agent thinking about it. The [LSP lesson](/course/opencode/extending/lsp-diagnostics/) covers the opposite signal, type errors coming back to the agent, and the [plugin hooks lesson](/course/opencode/extending/plugins-hooks/) covers the checks that must be able to say no.
