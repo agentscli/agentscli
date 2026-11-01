@@ -30,7 +30,7 @@ pi --mode json -p "imports/old-saves.json holds the URLs to import. Take the
 
 Read that flag by flag, because each one is a deliberate choice, not boilerplate:
 
-- **`--mode json`** - instead of TUI chrome, stdout becomes a stream of newline-delimited JSON events: text as the model writes it, every tool call, every result, and a final event when the turn ends. This is what makes a child process legible to a parent process instead of just a wall of terminal output.
+- **`--mode json`** - instead of TUI chrome, stdout becomes a stream of newline-delimited JSON events: text as the model writes it, every tool call, every result, and closing events when the run ends (`agent_end`, then `agent_settled` once Pi has no retries or follow-ups left). This is what makes a child process legible to a parent process instead of just a wall of terminal output.
 - **`-p "<prompt>"`** - print mode. One prompt in, the agent runs to completion, then exits. No follow-up turn, no chat - you'll come back to why that matters when you build the verifier.
 - **`--no-session`** - this child is ephemeral. It doesn't need to remember this one URL tomorrow; when it exits, its context goes with it. (Give it `--session <file>` instead if you *do* want it resumable - that's how a dispatcher gives each specialist persistent memory across repeated calls, and it's also what the verifier two lessons from now depends on.)
 - **`--tools read,bash`** - a narrower toolset than your own session gets. This child greps pages, runs inline Python against `stash.db` (the database of `stash`, the course's running example, a small FastAPI feed reader), and reads what came back; it has no business editing `stash`'s code, so `write` and `edit` stay out. Scoping a child's tools to exactly what its one job needs is the same instinct behind the [damage-control gate](/course/pi/rebuild-the-defaults/permissions/) (a rule file deciding which actions are off the table) - just applied per-process instead of per-rule.
@@ -76,6 +76,7 @@ function handleEvent(event) {
       console.log(`\n[tool] ${event.toolName}`);
       break;
     case "agent_end": {
+      if (event.willRetry) break; // Pi 1.x: a retry or compaction run follows
       const lastAssistant = [...event.messages].reverse().find((m) => m.role === "assistant");
       console.log(`\n[done] stop reason: ${lastAssistant?.stopReason}`);
       break;
@@ -90,18 +91,18 @@ That distinction sounds exotic until you remember what's *inside* these records.
 
 The ten lines above are the fix the docs recommend: accumulate chunks in your own buffer, cut at each `\n` and only at `\n`, parse what you cut, keep the remainder for the next chunk. It is barely more code than `readline`, and it is correct on the input `readline` silently corrupts.
 
-Past the splitting, `message_update` carries the model's own words as they stream; `tool_execution_start`/`tool_execution_end` mark every `bash` call the child makes; `agent_end` fires once, when the child's turn is fully done, carrying the whole `messages[]` array for the run - you pull `stopReason` (and `usage`, if you're tracking token spend) off the *last assistant message* in that array, not off the event itself.
+Past the splitting, `message_update` carries the model's own words as they stream; `tool_execution_start`/`tool_execution_end` mark every `bash` call the child makes; `agent_end` fires when a run finishes, carrying the `messages[]` that run produced - and in Pi 1.x it can fire more than once, because `willRetry: true` means a retry or compaction run follows; `agent_settled` is the event that says the child is truly done. From the final `agent_end` (the one with `willRetry: false`), you pull `stopReason` (and `usage`, if you're tracking token spend) off the *last assistant message* in that array, not off the event itself.
 
 Nothing here is Pi-specific plumbing you have to reverse-engineer - it's the same event vocabulary your own interactive session is built on, just handed to you directly on a pipe instead of rendered into a terminal UI.
 
 :::note[Check the payload shapes against your installed version]
-The event names above - `message_update`, `tool_execution_start`, `tool_execution_end`, `agent_end` - are stable. The finer detail of what each payload carries is the part that moves between releases, and a parser that silently reads the wrong field is exactly the failure you won't notice in an unattended run. Log one raw event before you write the code that depends on its shape.
+The event names above - `message_update`, `tool_execution_start`, `tool_execution_end`, `agent_end`, `agent_settled` - are stable. The finer detail of what each payload carries is the part that moves between releases, and a parser that silently reads the wrong field is exactly the failure you won't notice in an unattended run. Log one raw event before you write the code that depends on its shape.
 :::
 
 :::caution[What the naked spawn does not give you]
 The call above is a process and a pipe, nothing else. No retry if the child crashes mid-run. No timeout if it hangs on a bad `bash` command or a site that trickles bytes forever - you kill it yourself, or it runs until you do. No cost accounting beyond whatever you choose to read out of `usage` on the last assistant message.
 
-A dispatcher tool like Claude Code's `Task` gives you some of this out of the box - usage reporting is built in - and how much of the rest (run bounds, retries, hang handling, spend caps) you actually get varies by tool. Raw spawn makes you decide whether you want them badly enough to build them - before you've built anything else in this module.
+A dispatcher tool like Claude Code's `Agent` tool (formerly `Task`) gives you some of this out of the box - usage reporting is built in - and how much of the rest (run bounds, retries, hang handling, spend caps) you actually get varies by tool. Raw spawn makes you decide whether you want them badly enough to build them - before you've built anything else in this module.
 :::
 
 :::tip[Try it - predict before you run]

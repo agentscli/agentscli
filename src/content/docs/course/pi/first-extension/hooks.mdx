@@ -19,7 +19,7 @@ Pi's extension API exposes a broad lifecycle surface. These are the events this 
 |---|---|---|
 | `session_start` | Session loads | `event.reason` is `"startup"`, `"reload"`, `"new"`, `"resume"`, or `"fork"` |
 | `session_shutdown` | Session ending | Clean up anything you opened during the session |
-| `before_agent_start` | Before an agent turn starts | Can inject messages or rewrite the system prompt for that turn |
+| `before_agent_start` | Once per prompt, before the agent run starts (not before every model turn) | Can inject messages or rewrite the system prompt for that run |
 | `tool_call` | Before a tool executes | `event.input` is **mutable** - return `{ block: true, reason }` to stop it |
 | `tool_result` | After the tool finishes executing, before the result reaches the model | Can modify or replace the result before the model sees it |
 | `input` | User input arrives, before skill/template expansion | Return `{ action: "handled" }` to swallow it, `"transform"` to rewrite it, `"continue"` to pass it through |
@@ -34,7 +34,7 @@ The main path through a session, in firing order - a partial sketch, not every e
  session_start            setup        session loaded; note the reason, set things up
         │
         ▼
- before_agent_start       mutable      inject messages or rewrite this turn's system prompt
+ before_agent_start       mutable      inject messages or rewrite this run's system prompt
         │
         ▼
  tool_call                mutable      edit event.input in place, or return { block: true }
@@ -81,9 +81,9 @@ This is a taste of a much bigger idea, deliberately kept small here. A regex che
 
 **`event.input` mutable, a `{ block: true }` return that stops the call cold - that's the whole vocabulary a guardrail needs.**
 
-## Shaping the turn before it starts: `before_agent_start`
+## Shaping the run before it starts: `before_agent_start`
 
-The other hook worth seeing now, because it's the same mechanism [`.pi/APPEND_SYSTEM.md`](/course/pi/context/system-md/) rides at the whole-session level, applied per-turn:
+The other hook worth seeing now, because it's the same mechanism [`.pi/APPEND_SYSTEM.md`](/course/pi/context/system-md/) rides at the whole-session level, applied per-prompt:
 
 ```typescript
 // same file as /stash: .pi/extensions/stash-tools.ts, or a sibling in that folder
@@ -98,7 +98,7 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-Returning `{ systemPrompt: ... }` replaces what the model sees for that turn - append to it, as above, or template it entirely. And `includes("resync_feed")` is not a relevance detector - on any session with the tool loaded, its schema puts that name in the prompt on every turn, so the condition is simply always true there. The reminder rides along every turn of any tool-loaded session.
+Returning `{ systemPrompt: ... }` replaces what the model sees for that run - append to it, as above, or template it entirely. And `includes("resync_feed")` is not a relevance detector - on any session with the tool loaded, its schema puts that name in the prompt on every turn, so the condition is simply always true there. The reminder rides along every turn of any tool-loaded session.
 
 ## Where this leaves the "guarantee" question
 

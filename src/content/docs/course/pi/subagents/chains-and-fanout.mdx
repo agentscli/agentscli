@@ -43,7 +43,7 @@ steps:
 
 `$INPUT` is a plain string substitution - whatever the previous step's child agent wrote as its final answer, dropped into the next step's prompt verbatim. `$ORIGINAL` carries the very first task through the whole chain, so a step three levels deep still knows what it's ultimately in service of.
 
-A driver script walks the steps with a plain `for...await` loop - spawn, wait for `agent_end`, capture the output, build the next prompt, spawn again. Nothing about this is more sophisticated than the single spawn call from the last lesson; it's that same call, three times, each one seeded by the last.
+A driver script walks the steps with a plain `for...await` loop - spawn, wait for the child to settle (`agent_settled`; in a plain `-p` run, the `agent_end` with `willRetry: false` is close enough), capture the output, build the next prompt, spawn again. Nothing about this is more sophisticated than the single spawn call from the last lesson; it's that same call, three times, each one seeded by the last.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -74,7 +74,7 @@ Split the import into batches - by site, by save date, by whatever keeps each ba
 
 Partial failure in a fan-out is data you triage, not a crash that discards everything.
 
-This is exactly the kind of glue worth having Pi write instead of typing it by hand. You already have the one primitive from the last lesson - the `spawn("pi", [...])` child runner, with its LF-only JSONL parsing loop wired to `agent_end`.
+This is exactly the kind of glue worth having Pi write instead of typing it by hand. You already have the one primitive from the last lesson - the `spawn("pi", [...])` child runner, with its LF-only JSONL parsing loop wired to `agent_end` and skipping the ones marked `willRetry`.
 
 Hand Pi a prompt roughly like this: *"Take the child-runner function from the spawn lesson (the spawn-and-parse code you saved as your own driver file) and wrap it in a fan-out helper: split an array of URLs into batches of a given size, spawn one child per batch concurrently, and return each batch's result - success or failure - without letting one crashed batch cancel the others. Use `Promise.allSettled`, not `Promise.all`. Cap concurrency so we're not spawning more than a handful of `pi` processes at once."*
 
@@ -92,7 +92,7 @@ Concurrency isn't free, and the wave arithmetic above shows exactly what it cost
 
 Past that ceiling, children don't run slower - they start failing outright, one 429 at a time, and the naked spawn has no backoff built in for that. Your driver either retries with a delay, or the batch is just gone.
 
-The other risk narrowing concurrency doesn't fix is a child that hangs: a `bash` command that never returns, a site that trickles bytes forever. Raw spawn hands you a process, not a supervisor, and nothing kills it for you. A stuck child holds up everything behind it - in a wave-by-wave driver, every wave after it; in a slot-style pool, one slot forever - because your driver is still waiting on an `agent_end` event that's never coming.
+The other risk narrowing concurrency doesn't fix is a child that hangs: a `bash` command that never returns, a site that trickles bytes forever. Raw spawn hands you a process, not a supervisor, and nothing kills it for you. A stuck child holds up everything behind it - in a wave-by-wave driver, every wave after it; in a slot-style pool, one slot forever - because your driver is still waiting on a completion event that's never coming.
 
 Start narrow - a handful of batches, five like this lesson's trace - and put a timeout in your own driver before you add more concurrency, not after.
 

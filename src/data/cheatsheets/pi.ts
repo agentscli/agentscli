@@ -545,7 +545,7 @@ export const piCheatsheet: Cheatsheet = {
           desc: "Keep credentials and potentially sensitive transcripts outside source control.",
           conf: "documented",
           doc: `${REPO}/README.md`,
-          note: "`/share` uploads a private GitHub gist; private does not mean safe for secrets.",
+          note: "`/share` uploads to a Radius artifact when Radius auth is configured, otherwise a private GitHub gist (`sessionShareDestination` forces one); neither is safe for secrets.",
         },
       ],
     },
